@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forkline Web</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <strong>Forkline</strong>
+          <span>中文 Git 可视化工作台</span>
+        </div>
+      </div>
+
+      <div class="repo-bar">
+        <div class="repo-pill">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="repoName">示例仓库</strong>
+            <span id="repoPath">未连接真实仓库</span>
+          </div>
+        </div>
+        <div class="path-open">
+          <input id="repoInput" autocomplete="off" spellcheck="false" placeholder="输入本机 Git 仓库路径，例如 D:\project\demo" />
+          <button id="openRepo" class="btn primary" type="button">打开</button>
+        </div>
+        <label class="search">
+          <span aria-hidden="true"></span>
+          <input id="searchInput" type="search" placeholder="搜索提交、作者、分支或 SHA" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="themeToggle" class="icon-btn theme-toggle" title="切换浅色/深色" type="button">浅色</button>
+        <button class="icon-btn" data-action="fetch" title="抓取" type="button">抓取</button>
+        <button class="icon-btn" data-action="pull" title="拉取" type="button">拉取</button>
+        <button class="icon-btn" data-action="push" title="推送" type="button">推送</button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <section class="repo-card">
+          <div class="avatar">FL</div>
+          <div>
+            <strong id="sideRepoName">atlas-dashboard</strong>
+            <span id="sideRepoBranch">feature/visual-history</span>
+          </div>
+        </section>
+
+        <section class="side-section">
+          <div class="side-title">本地分支</div>
+          <div id="branchList" class="nav-list"></div>
+        </section>
+
+        <section class="side-section">
+          <div class="side-title">远端分支</div>
+          <div id="remoteList" class="nav-list"></div>
+        </section>
+
+        <section class="worktree">
+          <div class="side-title">工作区</div>
+          <div id="worktreeList" class="file-stack"></div>
+        </section>
+      </aside>
+
+      <div class="workspace-resizer" data-resizer="sidebar" title="拖拽调整左侧栏"></div>
+
+      <main class="main">
+        <nav id="branchStrip" class="branch-strip"></nav>
+
+        <section class="history">
+          <div class="history-head">
+            <span class="graph-head"><b>图谱</b><em id="graphModeLabel">全部分支</em></span>
+            <span>提交信息</span>
+            <span>作者</span>
+            <span>时间</span>
+            <span>SHA</span>
+          </div>
+          <div id="historyScroll" class="history-scroll">
+            <div id="commitGraph" class="commit-graph"></div>
+          </div>
+        </section>
+
+        <section class="stage">
+          <div class="stage-resizer-y" data-resizer="stage" title="拖拽调整变更面板高度"></div>
+          <div class="changes">
+            <div class="panel-title">
+              <span>未暂存的更改</span>
+              <div class="panel-actions">
+                <button id="refreshChanges" class="mini-btn" type="button">刷新</button>
+                <button id="stageAll" class="mini-btn" type="button">暂存全部</button>
+              </div>
+            </div>
+            <div id="changeList" class="change-list"></div>
+          </div>
+          <div class="stage-split-resizer" data-resizer="changes" title="拖拽调整变更文件宽度"></div>
+          <div class="stage-workbench">
+            <section class="work-diff">
+              <div class="panel-title">
+                <div class="panel-title-text">
+                  <span id="workDiffTitle">变更对照</span>
+                  <span id="workDiffPath" class="panel-subtitle">未选择文件</span>
+                </div>
+                <button id="maximizeDiff" class="mini-btn diff-max-btn" type="button" disabled>最大化</button>
+              </div>
+              <div id="workDiffView" class="work-diff-view empty">未选择文件</div>
+            </section>
+            <div class="workbench-resizer-y" data-resizer="commitForm" title="拖拽调整提交框高度"></div>
+            <form id="commitForm" class="commit-form">
+              <input id="commitSummary" autocomplete="off" placeholder="提交摘要" />
+              <textarea id="commitBody" placeholder="提交说明"></textarea>
+              <div class="commit-bottom">
+                <span id="draftNote">示例模式</span>
+                <button class="btn primary" type="submit">创建提交</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+
+      <div class="workspace-resizer" data-resizer="inspector" title="拖拽调整右侧栏"></div>
+
+      <aside class="inspector">
+        <header class="detail-head">
+          <div id="detailNode" class="detail-node"></div>
+          <div>
+            <strong id="detailTitle">提交详情</strong>
+            <span id="detailSub">选择提交查看详情</span>
+          </div>
+        </header>
+
+        <div class="tabs">
+          <button class="tab active" data-tab="details" type="button">详情</button>
+          <button class="tab" data-tab="files" type="button">文件</button>
+          <button class="tab" data-tab="branches" type="button">分支</button>
+        </div>
+
+        <div id="detailBody" class="detail-body"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="diffModal" class="diff-modal" aria-hidden="true">
+    <div class="diff-modal-head">
+      <div>
+        <strong id="diffModalTitle">变更对照</strong>
+        <span id="diffModalPath"></span>
+      </div>
+      <button id="closeDiffModal" class="icon-btn" type="button">关闭</button>
+    </div>
+    <div id="diffModalBody" class="diff-modal-body"></div>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>
