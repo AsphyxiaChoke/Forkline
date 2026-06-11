@@ -260,7 +260,7 @@ button {
 
 .path-open input,
 .search input,
-.commit-form input,
+.commit-form > input,
 .commit-form textarea {
   width: 100%;
   min-width: 0;
@@ -337,6 +337,17 @@ button {
 .btn.primary {
   border-color: rgba(35, 199, 183, 0.7);
   background: var(--primary);
+}
+
+.mini-btn.danger {
+  border-color: rgba(240, 99, 99, 0.45);
+  color: var(--danger);
+}
+
+.mini-btn.danger:hover:not(:disabled) {
+  border-color: rgba(240, 99, 99, 0.75);
+  background: rgba(240, 99, 99, 0.1);
+  color: var(--danger);
 }
 
 .theme-toggle {
@@ -438,11 +449,21 @@ body.resizing .workspace-resizer::before {
 }
 
 .side-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   height: 30px;
   color: var(--quiet);
   font-size: 12px;
   font-weight: 800;
   line-height: 30px;
+}
+
+.side-mini {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .nav-list,
@@ -474,6 +495,15 @@ body.resizing .workspace-resizer::before {
   height: 100%;
 }
 
+.branch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
 .file-stack {
   height: 100%;
   padding-right: 2px;
@@ -486,9 +516,83 @@ body.resizing .workspace-resizer::before {
   gap: 8px;
   width: 100%;
   height: 30px;
-  margin-bottom: 4px;
   padding: 0 10px;
   text-align: left;
+}
+
+.side-section > .nav-item,
+.worktree > .nav-item {
+  margin-bottom: 4px;
+}
+
+.branch-checkout,
+.branch-merge,
+.branch-rename,
+.branch-delete {
+  height: 30px;
+  min-width: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.branch-rename,
+.branch-delete {
+  min-width: 32px;
+}
+
+.branch-merge {
+  color: var(--teal);
+}
+
+.branch-delete {
+  color: var(--danger);
+}
+
+.branch-checkout:hover:not(:disabled),
+.branch-merge:hover:not(:disabled),
+.branch-rename:hover:not(:disabled),
+.branch-delete:hover:not(:disabled) {
+  border-color: rgba(35, 199, 183, 0.75);
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.branch-delete:hover:not(:disabled) {
+  border-color: rgba(240, 99, 99, 0.75);
+  background: rgba(240, 99, 99, 0.1);
+  color: var(--danger);
+}
+
+.branch-checkout:disabled,
+.branch-merge:disabled,
+.branch-rename:disabled,
+.branch-delete:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.branch-checkout.blocked {
+  border-color: rgba(240, 184, 91, 0.4);
+  color: var(--amber);
+  opacity: 0.8;
+}
+
+.branch-checkout.prune {
+  border-color: rgba(240, 184, 91, 0.55);
+  color: var(--amber);
+  opacity: 1;
+}
+
+.branch-checkout.prune:hover:not(:disabled) {
+  border-color: rgba(240, 184, 91, 0.85);
+  background: rgba(240, 184, 91, 0.1);
+  color: var(--amber);
 }
 
 .nav-item.active {
@@ -1304,7 +1408,7 @@ body.resizing .workbench-resizer-y::before {
   background: var(--field);
 }
 
-.commit-form input,
+.commit-form > input,
 .commit-form textarea {
   padding: 0 12px;
   border-bottom: 1px solid var(--line-soft);
@@ -1329,6 +1433,34 @@ body.resizing .workbench-resizer-y::before {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+}
+
+.amend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.amend-toggle:hover {
+  border-color: rgba(35, 199, 183, 0.75);
+  background: var(--panel-3);
+}
+
+.amend-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--teal);
 }
 
 #draftNote {
@@ -1366,7 +1498,7 @@ body.resizing .workbench-resizer-y::before {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -1480,6 +1612,145 @@ body.resizing .workbench-resizer-y::before {
   white-space: nowrap;
 }
 
+.empty-panel {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.empty-panel strong {
+  color: var(--text);
+}
+
+.empty-panel.compact {
+  padding: 10px;
+}
+
+.stash-layout {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stash-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.stash-row {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+}
+
+.stash-row:hover,
+.stash-row.active {
+  border-color: rgba(240, 184, 91, 0.55);
+  background: rgba(240, 184, 91, 0.08);
+}
+
+.stash-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stash-row-top strong,
+.stash-row-top em,
+.stash-message,
+.stash-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-row-top em,
+.stash-branch {
+  color: var(--quiet);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.stash-message {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stash-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stash-meta {
+  margin-bottom: 0;
+}
+
+.stash-files {
+  min-width: 0;
+  max-height: 190px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.stash-diff-title {
+  margin-top: 2px;
+}
+
+.stash-diff {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.stash-diff .side-diff {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+}
+
 .diff {
   overflow: hidden;
   border: 1px solid var(--line-soft);
@@ -1542,6 +1813,7 @@ body.resizing .workbench-resizer-y::before {
   background: var(--toast-bg);
   color: var(--text);
   font-size: 14px;
+  line-height: 1.45;
   opacity: 0;
   pointer-events: none;
   transform: translateY(10px);
@@ -1552,6 +1824,212 @@ body.resizing .workbench-resizer-y::before {
 .toast.show {
   opacity: 1;
   transform: translateY(0);
+}
+
+.context-menu {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: none;
+  width: 220px;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.36);
+  z-index: 90;
+}
+
+.context-menu.show {
+  display: grid;
+  gap: 3px;
+}
+
+.context-menu button {
+  height: 32px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu button:hover {
+  background: var(--panel-3);
+}
+
+.context-menu button:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.context-menu button:disabled:hover {
+  background: transparent;
+}
+
+.checkout-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.34);
+  z-index: 60;
+}
+
+.checkout-modal.show {
+  display: grid;
+}
+
+.checkout-dialog {
+  width: min(840px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+}
+
+.checkout-warning {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 26px 28px;
+  background: var(--panel-2);
+}
+
+.checkout-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 50px;
+  clip-path: polygon(50% 3%, 98% 94%, 2% 94%);
+  background: #ffc928;
+  color: #20232a;
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.branch-icon {
+  clip-path: none;
+  border-radius: 10px;
+  background: var(--teal);
+  color: var(--badge-text);
+}
+
+.checkout-warning strong,
+.checkout-warning span {
+  display: block;
+  min-width: 0;
+}
+
+.checkout-warning strong {
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.checkout-warning span {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.checkout-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.stash-restore-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.branch-form-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 0 28px 22px;
+  background: var(--panel-2);
+}
+
+.branch-check-toggle {
+  width: fit-content;
+}
+
+.branch-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checkout-choice {
+  height: 44px;
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.checkout-choice:hover {
+  border-color: rgba(35, 199, 183, 0.75);
+  background: var(--panel-3);
+}
+
+.checkout-choice.primary {
+  border-color: rgba(92, 169, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(92, 169, 255, 0.35);
+}
+
+.checkout-choice.danger:hover {
+  border-color: rgba(240, 99, 99, 0.82);
+}
+
+@media (max-width: 720px) {
+  .checkout-warning {
+    grid-template-columns: 44px minmax(0, 1fr);
+    padding: 22px 18px;
+  }
+
+  .checkout-icon {
+    width: 44px;
+    height: 40px;
+    font-size: 26px;
+  }
+
+  .checkout-warning strong {
+    font-size: 19px;
+  }
+
+  .checkout-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 14px 18px;
+  }
+
+  .checkout-choice {
+    font-size: 15px;
+  }
 }
 
 .diff-modal {

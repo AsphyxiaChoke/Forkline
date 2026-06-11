@@ -11,10 +11,19 @@ const state = {
   selectedCommitFile: "",
   activeDiff: null,
   openDiffOnInit: false,
+  branchStartSha: "",
+  branchModalMode: "create",
+  branchRenameOld: "",
+  tagTargetSha: "",
+  contextCommitSha: "",
+  contextBranch: null,
   diffRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
   commitDetails: new Map(),
+  stashDetails: new Map(),
+  selectedStash: "",
+  ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
 };
@@ -31,16 +40,19 @@ const els = {
   openRepo: $("#openRepo"),
   searchInput: $("#searchInput"),
   branchList: $("#branchList"),
+  newBranch: $("#newBranch"),
   remoteList: $("#remoteList"),
   worktreeList: $("#worktreeList"),
   branchStrip: $("#branchStrip"),
   commitGraph: $("#commitGraph"),
   changeList: $("#changeList"),
   stageAll: $("#stageAll"),
+  discardAll: $("#discardAll"),
   commitForm: $("#commitForm"),
   commitSummary: $("#commitSummary"),
   commitBody: $("#commitBody"),
-  amendCommit: $("#amendCommit"),
+  amendToggle: $("#amendToggle"),
+  commitSubmit: $("#commitSubmit"),
   draftNote: $("#draftNote"),
   workDiffTitle: $("#workDiffTitle"),
   workDiffPath: $("#workDiffPath"),
@@ -52,10 +64,33 @@ const els = {
   diffModalPath: $("#diffModalPath"),
   diffModalBody: $("#diffModalBody"),
   closeDiffModal: $("#closeDiffModal"),
+  commitContextMenu: $("#commitContextMenu"),
+  branchContextMenu: $("#branchContextMenu"),
   detailNode: $("#detailNode"),
   detailTitle: $("#detailTitle"),
   detailSub: $("#detailSub"),
   detailBody: $("#detailBody"),
+  checkoutModal: $("#checkoutModal"),
+  checkoutModalText: $("#checkoutModalText"),
+  stashRestoreModal: $("#stashRestoreModal"),
+  stashRestoreText: $("#stashRestoreText"),
+  branchModal: $("#branchModal"),
+  branchForm: $("#branchForm"),
+  branchNameInput: $("#branchNameInput"),
+  branchModalTitle: $("#branchModalTitle"),
+  branchStartText: $("#branchStartText"),
+  branchCheckoutLabel: $("#branchCheckoutLabel"),
+  branchCheckoutToggle: $("#branchCheckoutToggle"),
+  branchSubmit: $("#branchSubmit"),
+  branchCancel: $("#branchCancel"),
+  tagModal: $("#tagModal"),
+  tagForm: $("#tagForm"),
+  tagNameInput: $("#tagNameInput"),
+  tagAnnotatedToggle: $("#tagAnnotatedToggle"),
+  tagMessageInput: $("#tagMessageInput"),
+  tagStartText: $("#tagStartText"),
+  tagSubmit: $("#tagSubmit"),
+  tagCancel: $("#tagCancel"),
   toast: $("#toast"),
   themeToggle: $("#themeToggle"),
   graphModeLabel: $("#graphModeLabel"),
@@ -77,7 +112,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "branches"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "branches", "stashes"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -88,6 +123,7 @@ async function init() {
       renderInspector();
       if (state.openDiffOnInit) openDiffModal();
     }
+    await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     toast(error.message);
   }
@@ -116,6 +152,7 @@ function renderBranches() {
   els.remoteList.innerHTML = "";
   els.branchStrip.innerHTML = "";
   const currentRef = state.selectedRef;
+  const currentBranch = state.data.repo.branch;
 
   const allChip = document.createElement("button");
   allChip.className = `branch-chip ${state.selectedRef ? "" : "active"}`;
@@ -124,27 +161,315 @@ function renderBranches() {
   allChip.addEventListener("click", () => selectRef(""));
   els.branchStrip.appendChild(allChip);
 
+  const branchInfo = state.data.branchInfo || {};
   state.data.branches.forEach((branch, index) => {
-    els.branchList.appendChild(branchButton(branch, index, branch === currentRef));
+    const info = branchInfo[branch] || {};
+    const options = {
+      local: true,
+      checkout: true,
+      current: branch === currentBranch,
+      occupied: Boolean(info.worktreePath),
+      worktreePath: info.worktreePath,
+      prunable: info.prunable,
+      merge: true,
+      rename: true,
+      delete: true,
+    };
+    els.branchList.appendChild(branchButton(branch, index, branch === currentRef, options));
     const chip = document.createElement("button");
     chip.className = `branch-chip ${branch === currentRef ? "active" : ""}`;
     chip.type = "button";
     chip.innerHTML = `<span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span>`;
     chip.addEventListener("click", () => selectRef(branch));
+    chip.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showBranchContextMenu(event, branch, options);
+    });
     els.branchStrip.appendChild(chip);
   });
   state.data.remotes.forEach((branch, index) => {
-    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef));
+    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef, { remote: true, merge: true }));
   });
 }
 
-function branchButton(branch, index, active) {
+function branchButton(branch, index, active, options = {}) {
+  const row = document.createElement("div");
+  row.className = "branch-row";
+  row.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showBranchContextMenu(event, branch, options);
+  });
   const button = document.createElement("button");
   button.className = `nav-item ${active ? "active" : ""}`;
   button.type = "button";
   button.innerHTML = `<span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span>`;
   button.addEventListener("click", () => selectRef(branch));
-  return button;
+  row.appendChild(button);
+  if (options.checkout) {
+    const checkout = document.createElement("button");
+    const blocked = options.occupied && !options.current;
+    const canPrune = blocked && options.prunable;
+    checkout.className = "branch-checkout";
+    checkout.type = "button";
+    checkout.textContent = options.current ? "当前" : canPrune ? "清理" : blocked ? "占用" : "切换";
+    checkout.disabled = Boolean(options.current || (blocked && !canPrune));
+    checkout.title = branchCheckoutTitle(branch, options, blocked);
+    if (canPrune) {
+      checkout.classList.add("prune");
+      checkout.addEventListener("click", (event) => {
+        event.stopPropagation();
+        cleanupStaleWorktree(branch, checkout, options);
+      });
+    } else if (blocked) {
+      checkout.classList.add("blocked");
+    } else {
+      checkout.addEventListener("click", (event) => {
+        event.stopPropagation();
+        checkoutBranch(branch, checkout);
+      });
+    }
+    row.appendChild(checkout);
+  }
+  if (options.merge) {
+    const merge = document.createElement("button");
+    merge.className = "branch-merge";
+    merge.type = "button";
+    merge.textContent = "合并";
+    merge.disabled = Boolean(options.current);
+    merge.title = options.current ? "不能把当前分支合并到自己" : `合并 ${branch} 到当前分支`;
+    merge.addEventListener("click", (event) => {
+      event.stopPropagation();
+      mergeBranchRef(branch);
+    });
+    row.appendChild(merge);
+  }
+  if (options.delete) {
+    const rename = document.createElement("button");
+    const renameBlocked = Boolean(options.occupied && !options.current);
+    rename.className = "branch-rename";
+    rename.type = "button";
+    rename.textContent = "改";
+    rename.disabled = renameBlocked;
+    rename.title = renameBlocked ? "分支被其他工作树占用，不能重命名" : `重命名本地分支 ${branch}`;
+    rename.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openRenameBranchModal(branch);
+    });
+    row.appendChild(rename);
+
+    const remove = document.createElement("button");
+    const blocked = Boolean(options.current || options.occupied);
+    remove.className = "branch-delete";
+    remove.type = "button";
+    remove.textContent = "删";
+    remove.disabled = blocked;
+    remove.title = branchDeleteTitle(branch, options, blocked);
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteBranch(branch, remove);
+    });
+    row.appendChild(remove);
+  }
+  return row;
+}
+
+function branchCheckoutTitle(branch, options, blocked) {
+  if (options.current) return "当前分支";
+  if (!blocked) return `切换到 ${branch}`;
+  if (options.prunable) return `失效 worktree 占用：${options.worktreePath || "未知路径"}。点击清理后可再切换`;
+  return `已在其他工作树签出：${options.worktreePath || "未知路径"}`;
+}
+
+function branchDeleteTitle(branch, options, blocked) {
+  if (options.current) return "不能删除当前分支";
+  if (options.occupied) return "分支被其他工作树占用，先清理或切换后再删除";
+  return `删除本地分支 ${branch}`;
+}
+
+async function deleteBranch(branch, button) {
+  if (!state.data || !branch) return;
+  if (!confirm(`确认删除本地分支：${branch}？\n\n会使用安全删除；如果分支还没有合并，Git 会阻止删除。`)) return;
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteBranch", branch }) });
+    toast(result.output || `已删除本地分支 ${branch}`);
+    state.commitDetails.clear();
+    if (state.selectedRef === branch) state.selectedRef = state.data.repo.branch || "";
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function cleanupStaleWorktree(branch, button, options = {}) {
+  if (!state.data) return;
+  const pathText = options.worktreePath ? `\n占用路径：${options.worktreePath}` : "";
+  if (!state.data.repo.isSample && !confirm(`确认清理 ${branch} 的失效 worktree 记录？${pathText}\n\n这只清理 Git 的失效 worktree 元数据，不会删除当前工作区文件。`)) return;
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "pruneWorktrees", branch }) });
+    toast(result.output || "已清理失效 worktree 记录");
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function openBranchModal() {
+  if (!state.data) return;
+  const commit = state.data.commits.find((item) => item.sha === state.selectedSha);
+  state.branchModalMode = "create";
+  state.branchRenameOld = "";
+  state.branchStartSha = commit?.sha || "";
+  els.branchNameInput.value = "";
+  els.branchModalTitle.textContent = "新建分支";
+  els.branchNameInput.placeholder = "例如 feature/login";
+  els.branchCheckoutToggle.checked = true;
+  els.branchCheckoutLabel.style.display = "";
+  els.branchSubmit.textContent = "创建分支";
+  els.branchStartText.textContent = commit
+    ? `从选中提交 ${commit.short} 创建分支。`
+    : "从当前 HEAD 创建分支。";
+  els.branchModal.classList.add("show");
+  els.branchModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.branchNameInput.focus(), 0);
+}
+
+function openBranchModalFromRef(ref, label = "分支") {
+  if (!state.data || !ref) return;
+  state.branchModalMode = "create";
+  state.branchRenameOld = "";
+  state.branchStartSha = ref;
+  els.branchNameInput.value = "";
+  els.branchModalTitle.textContent = "新建分支";
+  els.branchNameInput.placeholder = "例如 feature/login";
+  els.branchCheckoutToggle.checked = true;
+  els.branchCheckoutLabel.style.display = "";
+  els.branchSubmit.textContent = "创建分支";
+  els.branchStartText.textContent = `从${label} ${ref} 的最新提交创建分支。`;
+  els.branchModal.classList.add("show");
+  els.branchModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.branchNameInput.focus(), 0);
+}
+
+function openRenameBranchModal(branch) {
+  if (!state.data || !branch) return;
+  state.branchModalMode = "rename";
+  state.branchRenameOld = branch;
+  state.branchStartSha = "";
+  els.branchNameInput.value = branch;
+  els.branchNameInput.placeholder = "新的分支名";
+  els.branchModalTitle.textContent = "重命名分支";
+  els.branchStartText.textContent = `将 ${branch} 重命名为新的本地分支名。`;
+  els.branchCheckoutLabel.style.display = "none";
+  els.branchSubmit.textContent = "重命名";
+  els.branchModal.classList.add("show");
+  els.branchModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => {
+    els.branchNameInput.focus();
+    els.branchNameInput.select();
+  }, 0);
+}
+
+function closeBranchModal() {
+  els.branchModal.classList.remove("show");
+  els.branchModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+}
+
+async function submitBranchForm(event) {
+  event.preventDefault();
+  if (!state.data) return;
+  const branch = els.branchNameInput.value.trim();
+  if (!branch) {
+    toast("请输入分支名");
+    els.branchNameInput.focus();
+    return;
+  }
+  if (state.branchModalMode === "rename") {
+    await renameBranchFromForm(branch);
+    return;
+  }
+  const checkout = els.branchCheckoutToggle.checked;
+  const submit = els.branchForm.querySelector('button[type="submit"]');
+  try {
+    submit.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout }),
+    });
+    toast(result.output || `已创建分支 ${branch}`);
+    closeBranchModal();
+    state.commitDetails.clear();
+    state.selectedRef = result.checkedOut ? branch : state.selectedRef;
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function renameBranchFromForm(nextBranch) {
+  const oldBranch = state.branchRenameOld;
+  if (!oldBranch) return;
+  if (oldBranch === nextBranch) {
+    closeBranchModal();
+    return;
+  }
+  const submit = els.branchSubmit;
+  try {
+    submit.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "renameBranch", branch: oldBranch, newBranch: nextBranch }),
+    });
+    toast(result.output || `已重命名为 ${nextBranch}`);
+    closeBranchModal();
+    state.commitDetails.clear();
+    if (state.selectedRef === oldBranch || state.data.repo.branch === oldBranch) state.selectedRef = nextBranch;
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 function renderWorkingFiles() {
@@ -289,6 +614,7 @@ function renderCommits() {
     const row = document.createElement("button");
     row.className = `commit-row ${commit.sha === state.selectedSha ? "selected" : ""}`;
     row.type = "button";
+    row.dataset.sha = commit.sha;
     row.innerHTML = `
       <div class="graph-cell">
       </div>
@@ -304,14 +630,260 @@ function renderCommits() {
       <div class="sha">${escapeHtml(commit.short)}</div>
     `;
     row.addEventListener("click", async () => {
-      state.selectedSha = commit.sha;
-      renderCommits();
-      await loadCommit(commit.sha);
-      renderInspector();
+      await selectCommit(commit.sha);
+    });
+    row.addEventListener("contextmenu", async (event) => {
+      event.preventDefault();
+      await selectCommit(commit.sha);
+      showCommitContextMenu(event, commit);
     });
     els.commitGraph.appendChild(row);
   });
   renderInspector();
+}
+
+async function selectCommit(sha) {
+  if (!sha) return;
+  state.selectedSha = sha;
+  renderCommits();
+  await loadCommit(sha);
+  renderInspector();
+}
+
+function showCommitContextMenu(event, commit) {
+  hideBranchContextMenu();
+  state.contextCommitSha = commit.sha;
+  const menu = els.commitContextMenu;
+  menu.classList.add("show");
+  menu.setAttribute("aria-hidden", "false");
+  positionContextMenu(menu, event, 220);
+}
+
+function positionContextMenu(menu, event, fallbackHeight = 220) {
+  const width = menu.offsetWidth || 230;
+  const height = menu.offsetHeight || fallbackHeight;
+  const x = clamp(event.clientX, 8, window.innerWidth - width - 8);
+  const y = clamp(event.clientY, 8, window.innerHeight - height - 8);
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+}
+
+function hideCommitContextMenu() {
+  els.commitContextMenu.classList.remove("show");
+  els.commitContextMenu.setAttribute("aria-hidden", "true");
+  state.contextCommitSha = "";
+}
+
+function showBranchContextMenu(event, branch, options = {}) {
+  hideCommitContextMenu();
+  state.contextBranch = { name: branch, ...options };
+  const menu = els.branchContextMenu;
+  const isLocal = Boolean(options.local || options.checkout || options.rename || options.delete);
+  const isRemote = Boolean(options.remote);
+  const isCurrent = Boolean(options.current);
+  const occupied = Boolean(options.occupied);
+  const prunable = Boolean(options.prunable);
+  const checkoutButton = menu.querySelector('[data-branch-action="checkout"]');
+  const mergeButton = menu.querySelector('[data-branch-action="merge"]');
+  const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
+  const renameButton = menu.querySelector('[data-branch-action="rename"]');
+  const deleteButton = menu.querySelector('[data-branch-action="delete"]');
+  checkoutButton.disabled = !isLocal || isCurrent || occupied;
+  checkoutButton.title = isRemote ? "远端分支不能直接切换，请先从它新建本地分支" : isCurrent ? "当前分支" : occupied ? "分支被其他工作树占用" : "";
+  mergeButton.disabled = isCurrent;
+  mergeButton.title = isCurrent ? "不能把当前分支合并到自己" : `合并 ${branch} 到当前分支`;
+  cleanupButton.hidden = !prunable;
+  cleanupButton.disabled = !prunable;
+  renameButton.disabled = !isLocal || (occupied && !isCurrent);
+  renameButton.title = isRemote ? "远端分支不能在本地直接重命名" : occupied && !isCurrent ? "分支被其他工作树占用，不能重命名" : "";
+  deleteButton.disabled = !isLocal || isCurrent || occupied;
+  deleteButton.title = isRemote ? "远端分支删除暂未接入" : isCurrent ? "不能删除当前分支" : occupied ? "分支被其他工作树占用" : "";
+  menu.classList.add("show");
+  menu.setAttribute("aria-hidden", "false");
+  positionContextMenu(menu, event, 240);
+}
+
+function hideBranchContextMenu() {
+  els.branchContextMenu.classList.remove("show");
+  els.branchContextMenu.setAttribute("aria-hidden", "true");
+  state.contextBranch = null;
+}
+
+async function runBranchContextAction(action) {
+  const context = state.contextBranch;
+  hideBranchContextMenu();
+  if (!context?.name) return;
+  const branch = context.name;
+  const isLocal = Boolean(context.local || context.checkout || context.rename || context.delete);
+  const isRemote = Boolean(context.remote);
+  if (action === "view") {
+    await selectRef(branch);
+    return;
+  }
+  if (action === "checkout") {
+    if (!isLocal) {
+      toast("远端分支不能直接切换，请先从它新建本地分支");
+      return;
+    }
+    await checkoutBranch(branch);
+    return;
+  }
+  if (action === "merge") {
+    await mergeBranchRef(branch);
+    return;
+  }
+  if (action === "cleanup") {
+    await cleanupStaleWorktree(branch, null, context);
+    return;
+  }
+  if (action === "branch") {
+    openBranchModalFromRef(branch, isRemote ? "远端分支" : "分支");
+    return;
+  }
+  if (action === "copy") {
+    await copyText(branch);
+    toast("已复制分支名");
+    return;
+  }
+  if (action === "rename") {
+    if (!isLocal) {
+      toast("远端分支不能在本地直接重命名");
+      return;
+    }
+    openRenameBranchModal(branch);
+    return;
+  }
+  if (action === "delete") {
+    if (!isLocal) {
+      toast("远端分支删除暂未接入");
+      return;
+    }
+    await deleteBranch(branch);
+  }
+}
+
+async function runCommitContextAction(action) {
+  const commit = state.data?.commits.find((item) => item.sha === state.contextCommitSha || item.sha === state.selectedSha);
+  hideCommitContextMenu();
+  if (!commit) return;
+  if (action === "details") {
+    state.selectedTab = "details";
+    await selectCommit(commit.sha);
+    return;
+  }
+  if (action === "branch") {
+    state.selectedSha = commit.sha;
+    renderCommits();
+    await loadCommit(commit.sha);
+    renderInspector();
+    openBranchModal();
+    return;
+  }
+  if (action === "tag") {
+    state.selectedSha = commit.sha;
+    renderCommits();
+    await loadCommit(commit.sha);
+    renderInspector();
+    openTagModal(commit);
+    return;
+  }
+  if (action === "copySha") {
+    await copyText(commit.sha);
+    toast("已复制提交 SHA");
+    return;
+  }
+  if (action === "copyMessage") {
+    await copyText(commit.message);
+    toast("已复制提交信息");
+    return;
+  }
+  if (action === "editMessage") {
+    state.selectedTab = "details";
+    await selectCommit(commit.sha);
+    setTimeout(() => els.detailBody.querySelector("[data-reword-form] input")?.focus(), 0);
+  }
+}
+
+async function copyText(text) {
+  const value = String(text || "");
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function openTagModal(commit) {
+  if (!commit) return;
+  state.tagTargetSha = commit.sha;
+  els.tagNameInput.value = "";
+  els.tagAnnotatedToggle.checked = false;
+  els.tagMessageInput.value = "";
+  els.tagStartText.textContent = `基于提交 ${commit.short} 创建 Tag。`;
+  els.tagModal.classList.add("show");
+  els.tagModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.tagNameInput.focus(), 0);
+}
+
+function closeTagModal() {
+  els.tagModal.classList.remove("show");
+  els.tagModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+  state.tagTargetSha = "";
+}
+
+async function createTagFromForm(event) {
+  event.preventDefault();
+  if (!state.data) return;
+  const name = els.tagNameInput.value.trim();
+  if (!name) {
+    toast("请输入标签名");
+    els.tagNameInput.focus();
+    return;
+  }
+  const target = state.tagTargetSha || state.selectedSha;
+  if (!target) {
+    toast("没有选中的提交");
+    return;
+  }
+  try {
+    els.tagSubmit.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "createTag",
+        name,
+        target,
+        annotated: els.tagAnnotatedToggle.checked,
+        message: els.tagMessageInput.value.trim(),
+      }),
+    });
+    toast(result.output || `已创建 Tag ${name}`);
+    closeTagModal();
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    els.tagSubmit.disabled = false;
+  }
 }
 
 function renderGraphSvg(commits, height, selectedRef) {
@@ -529,6 +1101,11 @@ async function loadCommit(sha) {
 }
 
 function renderInspector() {
+  document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.selectedTab));
+  if (state.selectedTab === "stashes") {
+    renderStashesTab();
+    return;
+  }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
@@ -540,7 +1117,6 @@ function renderInspector() {
   els.detailNode.style.borderColor = commit.color;
   els.detailTitle.textContent = commit.message;
   els.detailSub.textContent = `${commit.short} · ${commit.author} · ${commit.time}`;
-  document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.selectedTab));
   if (state.selectedTab === "files") renderFilesTab(commit, detail);
   else if (state.selectedTab === "branches") renderBranchesTab(commit);
   else renderDetailsTab(commit, detail);
@@ -629,6 +1205,148 @@ function renderBranchesTab(commit) {
       .map((ref, index) => `<button class="nav-item" type="button"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(ref.trim())}</span></button>`)
       .join("")}
   `;
+}
+
+function renderStashesTab() {
+  const stashes = state.data?.stashes || [];
+  if (state.selectedStash && !stashes.some((stash) => stash.ref === state.selectedStash)) {
+    state.selectedStash = "";
+  }
+  if (!state.selectedStash && stashes.length) state.selectedStash = stashes[0].ref;
+  const selected = stashes.find((stash) => stash.ref === state.selectedStash);
+  let detail = selected ? state.stashDetails.get(selected.ref) : null;
+  if (selected && !detail) {
+    detail = { loading: true };
+    loadStashDetail(selected.ref);
+  }
+
+  els.detailNode.style.borderColor = "var(--amber)";
+  els.detailTitle.textContent = "储藏列表";
+  els.detailSub.textContent = stashes.length ? `${stashes.length} 个储藏` : "没有储藏";
+  if (!stashes.length) {
+    els.detailBody.innerHTML = `
+      <div class="empty-panel">
+        <strong>没有储藏记录</strong>
+        <span>使用“储藏并签出”或 Git stash 后会显示在这里。</span>
+      </div>
+    `;
+    return;
+  }
+
+  const files = detail?.files || [];
+  const diff = detail?.diff || [];
+  if (selected && diff.length) {
+    setActiveDiff({ source: "stash", title: `${selected.ref} · 储藏`, path: selected.message, diff, emptyText: "没有可显示的储藏改动" });
+  } else {
+    setActiveDiff(null);
+  }
+  els.detailBody.innerHTML = `
+    <div class="stash-layout">
+      <div class="stash-list">
+        ${stashes.map((stash) => stashRowHtml(stash, stash.ref === state.selectedStash)).join("")}
+      </div>
+      <div class="stash-detail">
+        ${selected ? stashDetailHtml(selected, detail, files, diff) : ""}
+      </div>
+    </div>
+  `;
+}
+
+function stashRowHtml(stash, active) {
+  return `
+    <button class="stash-row ${active ? "active" : ""}" data-stash-ref="${escapeAttr(stash.ref)}" type="button">
+      <span class="stash-row-top">
+        <strong>${escapeHtml(stash.ref)}</strong>
+        <em>${escapeHtml(stash.time || "")}</em>
+      </span>
+      <span class="stash-message" title="${escapeAttr(stash.message)}">${escapeHtml(stash.message)}</span>
+      <span class="stash-branch" title="${escapeAttr(stash.subject)}">${escapeHtml(stash.branch || "未知分支")}</span>
+    </button>
+  `;
+}
+
+function stashDetailHtml(stash, detail, files, diff) {
+  if (detail?.loading) {
+    return `<div class="empty-panel compact"><span>正在读取储藏内容...</span></div>`;
+  }
+  if (detail?.error) {
+    return `<div class="empty-panel compact"><strong>读取失败</strong><span>${escapeHtml(detail.error)}</span></div>`;
+  }
+  return `
+    <div class="stash-actions">
+      <button class="mini-btn" data-stash-action="apply" data-stash-ref="${escapeAttr(stash.ref)}" type="button">应用</button>
+      <button class="mini-btn" data-stash-action="pop" data-stash-ref="${escapeAttr(stash.ref)}" type="button">弹出</button>
+      <button class="mini-btn danger" data-stash-action="drop" data-stash-ref="${escapeAttr(stash.ref)}" type="button">删除</button>
+    </div>
+    <div class="meta-grid stash-meta">
+      <span>引用</span><div class="meta-value">${escapeHtml(stash.ref)}</div>
+      <span>分支</span><div class="meta-value">${escapeHtml(stash.branch || "未知")}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(stash.time || "未知")}</div>
+      <span>消息</span><div class="meta-value" title="${escapeAttr(stash.message)}">${escapeHtml(stash.message)}</div>
+    </div>
+    <div class="detail-section-title">变更文件</div>
+    <div class="stash-files">${files.length ? fileTreeHtml(files) : `<div class="file-row"><span></span><span class="file-name">没有文件列表</span><span></span></div>`}</div>
+    <div class="panel-title compact stash-diff-title">
+      <div class="panel-title-text">
+        <span>储藏差异</span>
+        <span class="panel-subtitle">${escapeHtml(stash.ref)}</span>
+      </div>
+      <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${diff.length ? "" : "disabled"}>最大化</button>
+    </div>
+    <div class="stash-diff">${renderSideDiff(diff, "没有可显示的储藏改动")}</div>
+  `;
+}
+
+async function loadStashDetail(ref) {
+  if (!ref || state.stashDetails.get(ref)?.loading) return;
+  state.stashDetails.set(ref, { loading: true });
+  try {
+    const detail = await api(`/api/stash?ref=${encodeURIComponent(ref)}`);
+    state.stashDetails.set(ref, detail);
+  } catch (error) {
+    state.stashDetails.set(ref, { error: error.message });
+  }
+  if (state.selectedTab === "stashes" && state.selectedStash === ref) renderInspector();
+}
+
+function selectStash(ref) {
+  if (!ref || ref === state.selectedStash) return;
+  state.selectedStash = ref;
+  renderInspector();
+}
+
+async function runStashAction(action, ref, button) {
+  if (!state.data || !ref) return;
+  const names = { apply: "应用储藏", pop: "弹出储藏", drop: "删除储藏" };
+  const message = stashActionConfirmMessage(action, ref);
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref }) });
+    toast(result.output || `${names[action] || "储藏操作"}完成`);
+    state.stashDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    if (!state.data.stashes?.some((stash) => stash.ref === state.selectedStash)) {
+      state.selectedStash = state.data.stashes?.[0]?.ref || "";
+    }
+    renderAll();
+    if (state.selectedSha && state.selectedTab !== "stashes") {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function stashActionConfirmMessage(action, ref) {
+  if (action === "apply") return `确认应用 ${ref}？储藏会保留在列表中。`;
+  if (action === "pop") return `确认弹出 ${ref}？成功后这条储藏会从列表删除。`;
+  if (action === "drop") return `确认删除 ${ref}？这个操作不能撤销。`;
+  return `确认操作 ${ref}？`;
 }
 
 function renderDiff(diff) {
@@ -1039,6 +1757,7 @@ async function openRepo() {
       renderInspector();
     }
     toast(`已打开 ${state.data.repo.name}`);
+    await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     toast(error.message);
   } finally {
@@ -1064,15 +1783,187 @@ async function selectRef(ref) {
       await loadCommit(state.selectedSha);
       renderInspector();
     }
-    toast(ref ? `已切换到 ${ref}` : "已显示全部分支");
+    toast(ref ? `已查看 ${ref}` : "已显示全部分支");
   } catch (error) {
     toast(error.message);
   }
 }
 
+async function checkoutBranch(branch, button) {
+  if (!state.data || !branch) return;
+  if (branch === state.data.repo.branch) {
+    toast("已经在这个分支上");
+    return;
+  }
+  const dirtyCount = (state.data.workingFiles || []).length;
+  let mode = "keep";
+  if (!state.data.repo.isSample && dirtyCount) {
+    mode = await chooseCheckoutMode(branch, dirtyCount);
+    if (!mode) return;
+  } else if (!state.data.repo.isSample && !confirm(`确认切换到分支：${branch}？`)) {
+    return;
+  }
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode }) });
+    rememberCheckoutStash(result.stash);
+    toast(result.output || `已切换到 ${branch}`);
+    state.commitDetails.clear();
+    state.selectedRef = branch;
+    state.data = await api(`/api/state?ref=${encodeURIComponent(branch)}`);
+    state.selectedRef = state.data.repo.selectedRef || branch;
+    state.selectedSha = state.data.commits[0]?.sha || "";
+    els.searchInput.value = "";
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+    await maybeRestoreCheckoutStash(state.data.repo.branch);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function mergeBranchRef(ref) {
+  if (!state.data || !ref) return;
+  const current = state.data.repo.branch || "当前分支";
+  if (ref === current) {
+    toast("不能把当前分支合并到自己");
+    return;
+  }
+  const dirtyCount = (state.data.workingFiles || []).length;
+  const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 可能会阻止合并。建议先提交或储藏。` : "";
+  if (!state.data.repo.isSample && !confirm(`确认将 ${ref} 合并到当前分支 ${current}？${dirtyNote}`)) return;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref }) });
+    toast(result.output || `已合并 ${ref}`);
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+    await refreshWorktree(true);
+  }
+}
+
+function chooseCheckoutMode(branch, count) {
+  els.checkoutModalText.textContent = `切换到 ${branch} 前，当前工作区有 ${count} 个未提交改动。`;
+  els.checkoutModal.classList.add("show");
+  els.checkoutModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  return new Promise((resolve) => {
+    const cleanup = (mode) => {
+      els.checkoutModal.classList.remove("show");
+      els.checkoutModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      els.checkoutModal.removeEventListener("click", onClick);
+      document.removeEventListener("keydown", onKeydown);
+      resolve(mode);
+    };
+    const onClick = (event) => {
+      const button = event.target.closest("[data-checkout-mode]");
+      if (!button) return;
+      const mode = button.dataset.checkoutMode;
+      cleanup(mode === "cancel" ? "" : mode);
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") cleanup("");
+    };
+    els.checkoutModal.addEventListener("click", onClick);
+    document.addEventListener("keydown", onKeydown);
+  });
+}
+
+function rememberCheckoutStash(stash) {
+  if (!stash?.message || !state.data?.repo?.path) return;
+  const records = checkoutStashRecords().filter((item) => item.message !== stash.message);
+  records.unshift({ ...stash, repoPath: state.data.repo.path });
+  localStorage.setItem("forkline-checkout-stashes", JSON.stringify(records.slice(0, 12)));
+}
+
+function checkoutStashRecords() {
+  try {
+    const data = JSON.parse(localStorage.getItem("forkline-checkout-stashes") || "[]");
+    return Array.isArray(data) ? data.filter((item) => item?.message && item?.branch) : [];
+  } catch {
+    return [];
+  }
+}
+
+function forgetCheckoutStash(stash) {
+  if (!stash?.message) return;
+  const records = checkoutStashRecords().filter((item) => item.message !== stash.message);
+  localStorage.setItem("forkline-checkout-stashes", JSON.stringify(records));
+}
+
+async function maybeRestoreCheckoutStash(branch) {
+  if (!branch || state.data?.repo?.isSample) return;
+  let stash = checkoutStashRecords().find((item) => item.repoPath === state.data.repo.path && item.branch === branch);
+  if (!stash) {
+    const found = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "findCheckoutStash", branch }) });
+    stash = found.stash;
+  }
+  if (!stash?.message || state.ignoredCheckoutStashes.has(stash.message)) return;
+  const restore = await chooseStashRestore(stash);
+  if (!restore) {
+    state.ignoredCheckoutStashes.add(stash.message);
+    return;
+  }
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "restoreCheckoutStash", branch, message: stash.message }),
+    });
+    forgetCheckoutStash(stash);
+    toast(result.output || "已恢复储藏的本地更改");
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function chooseStashRestore(stash) {
+  els.stashRestoreText.textContent = `${stash.label || stash.message} 可以恢复到当前分支。`;
+  els.stashRestoreModal.classList.add("show");
+  els.stashRestoreModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  return new Promise((resolve) => {
+    const cleanup = (restore) => {
+      els.stashRestoreModal.classList.remove("show");
+      els.stashRestoreModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      els.stashRestoreModal.removeEventListener("click", onClick);
+      document.removeEventListener("keydown", onKeydown);
+      resolve(restore);
+    };
+    const onClick = (event) => {
+      const button = event.target.closest("[data-stash-restore]");
+      if (!button) return;
+      cleanup(button.dataset.stashRestore === "restore");
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") cleanup(false);
+    };
+    els.stashRestoreModal.addEventListener("click", onClick);
+    document.addEventListener("keydown", onKeydown);
+  });
+}
+
 async function runAction(action) {
   if (!state.data) return;
-  const names = { fetch: "抓取", pull: "拉取", push: "推送", stageAll: "暂存全部", commit: "创建提交", amendCommit: "追加提交" };
+  const names = { fetch: "抓取", pull: "拉取", push: "推送", stageAll: "暂存全部", discardAll: "丢弃全部", commit: "创建提交", amendCommit: "追加提交" };
   if (!state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return;
   try {
     const payload = { action };
@@ -1100,8 +1991,33 @@ async function runAction(action) {
   }
 }
 
+async function fillLatestCommitMessage() {
+  const commit = state.data?.commits?.[0];
+  if (!commit) {
+    els.amendToggle.checked = false;
+    toast("没有可追加的上一次提交");
+    return;
+  }
+  try {
+    const detail = await api(`/api/commit?sha=${encodeURIComponent(commit.sha)}`);
+    const message = commitMessageParts(commit, detail);
+    els.commitSummary.value = message.summary;
+    els.commitBody.value = message.body;
+  } catch (error) {
+    els.amendToggle.checked = false;
+    toast(error.message);
+  }
+}
+
+function updateAmendMode() {
+  const enabled = Boolean(els.amendToggle.checked);
+  els.commitSubmit.textContent = enabled ? "追加提交" : "创建提交";
+  els.commitSubmit.title = enabled ? "追加到上一次提交" : "创建新的提交";
+}
+
 function actionConfirmMessage(action, name) {
   if (action === "amendCommit") return "确认追加到上一次提交？这会重写最新提交 SHA。";
+  if (action === "discardAll") return "确认丢弃全部未提交更改？这会清空已暂存、未暂存和未跟踪文件，无法撤销。";
   return `确认执行：${name}？`;
 }
 
@@ -1326,10 +2242,12 @@ function escapeAttr(value) {
 }
 
 function toast(message) {
-  els.toast.textContent = message;
+  const text = String(message || "");
+  els.toast.textContent = text;
   els.toast.classList.add("show");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => els.toast.classList.remove("show"), 2600);
+  const duration = clamp(2200 + text.length * 45, 2600, 7600);
+  toast.timer = setTimeout(() => els.toast.classList.remove("show"), duration);
 }
 
 els.openRepo.addEventListener("click", openRepo);
@@ -1338,6 +2256,17 @@ els.repoInput.addEventListener("keydown", (event) => {
 });
 els.searchInput.addEventListener("input", renderCommits);
 els.themeToggle.addEventListener("click", toggleTheme);
+els.newBranch.addEventListener("click", openBranchModal);
+els.branchForm.addEventListener("submit", submitBranchForm);
+els.branchCancel.addEventListener("click", closeBranchModal);
+els.branchModal.addEventListener("click", (event) => {
+  if (event.target === els.branchModal) closeBranchModal();
+});
+els.tagForm.addEventListener("submit", createTagFromForm);
+els.tagCancel.addEventListener("click", closeTagModal);
+els.tagModal.addEventListener("click", (event) => {
+  if (event.target === els.tagModal) closeTagModal();
+});
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
 els.closeDiffModal.addEventListener("click", closeDiffModal);
@@ -1345,10 +2274,14 @@ els.diffModal.addEventListener("click", (event) => {
   if (event.target === els.diffModal) closeDiffModal();
 });
 els.stageAll.addEventListener("click", () => runAction("stageAll"));
-els.amendCommit.addEventListener("click", () => runAction("amendCommit"));
+els.discardAll.addEventListener("click", () => runAction("discardAll"));
+els.amendToggle.addEventListener("change", () => {
+  updateAmendMode();
+  if (els.amendToggle.checked) fillLatestCommitMessage();
+});
 els.commitForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  runAction("commit");
+  runAction(els.amendToggle.checked ? "amendCommit" : "commit");
 });
 els.detailBody.addEventListener("submit", (event) => {
   const form = event.target.closest("[data-reword-form]");
@@ -1366,6 +2299,34 @@ document.querySelectorAll(".tab").forEach((tab) => {
   });
 });
 document.addEventListener("click", (event) => {
+  const commitMenuAction = event.target.closest("[data-commit-action]");
+  if (commitMenuAction) {
+    event.stopPropagation();
+    runCommitContextAction(commitMenuAction.dataset.commitAction).catch((error) => toast(error.message));
+    return;
+  }
+  const branchMenuAction = event.target.closest("[data-branch-action]");
+  if (branchMenuAction) {
+    event.stopPropagation();
+    if (!branchMenuAction.disabled) {
+      runBranchContextAction(branchMenuAction.dataset.branchAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
+  if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
+  const stashAction = event.target.closest("[data-stash-action]");
+  if (stashAction) {
+    event.stopPropagation();
+    runStashAction(stashAction.dataset.stashAction, stashAction.dataset.stashRef || "", stashAction);
+    return;
+  }
+  const stashRow = event.target.closest("[data-stash-ref]");
+  if (stashRow && stashRow.classList.contains("stash-row")) {
+    event.stopPropagation();
+    selectStash(stashRow.dataset.stashRef || "");
+    return;
+  }
   const bulkAction = event.target.closest("[data-bulk-file-action]");
   if (bulkAction) {
     event.stopPropagation();
@@ -1376,9 +2337,22 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
+  if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
+  if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
+  if (event.key === "Escape" && els.commitContextMenu.classList.contains("show")) hideCommitContextMenu();
+  if (event.key === "Escape" && els.branchContextMenu.classList.contains("show")) hideBranchContextMenu();
+});
+document.addEventListener("scroll", () => {
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+}, true);
+window.addEventListener("resize", () => {
+  hideCommitContextMenu();
+  hideBranchContextMenu();
 });
 
 initTheme();
 initLayoutResizers();
 initWorktreeAutoRefresh();
+updateAmendMode();
 init();

@@ -75,10 +75,12 @@ async function openRepo(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, statusOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
     git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "detached HEAD"),
     git(currentRepo, ["branch", "--all", "--format=%(refname:short)"]).catch(() => ""),
+    git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+    git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
     git(currentRepo, logArgs(ref)),
   ]);
 
@@ -102,8 +104,10 @@ async function readState(ref = "") {
       isSample: false,
     },
     branches: branches.slice(0, 32),
+    branchInfo: parseWorktreeBranches(worktreeOutput, currentRepo),
     remotes: remotes.slice(0, 32),
     workingFiles: parseStatus(statusOutput),
+    stashes: parseStashList(stashOutput),
     commits: parseLog(logOutput),
   };
 }
@@ -166,6 +170,22 @@ async function readWorkingDiff(filePath) {
   return { file, diff: parseDiff(output) };
 }
 
+async function readStash(ref) {
+  if (!currentRepo) {
+    return { ref: "", files: [], diff: [] };
+  }
+  const stashRef = normalizeStashRef(ref);
+  const [filesOutput, diffOutput] = await Promise.all([
+    git(currentRepo, ["stash", "show", "--include-untracked", "--name-status", stashRef], { maxBuffer: 1024 * 1024 * 2 }),
+    git(currentRepo, ["stash", "show", "--include-untracked", "--patch", "--no-ext-diff", "--unified=8", stashRef], { maxBuffer: 1024 * 1024 * 5 }),
+  ]);
+  return {
+    ref: stashRef,
+    files: parseNameStatus(filesOutput),
+    diff: parseDiff(diffOutput),
+  };
+}
+
 async function runAction(body) {
   if (!currentRepo) {
     return { ok: true, sample: true, output: "示例模式不会执行真实 Git 命令" };
@@ -182,6 +202,50 @@ async function runAction(body) {
   }
   if (action === "stageAll") {
     return commandResult(await git(currentRepo, ["add", "-A"], { timeout: 60000 }));
+  }
+  if (action === "discardAll") {
+    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
+    await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
+    return { ok: true, output: "已丢弃全部未提交更改" };
+  }
+  if (action === "checkoutBranch") {
+    return checkoutBranch(body);
+  }
+  if (action === "createBranch") {
+    return createBranch(body);
+  }
+  if (action === "renameBranch") {
+    return renameBranch(body);
+  }
+  if (action === "deleteBranch") {
+    return deleteBranch(body);
+  }
+  if (action === "mergeRef") {
+    return mergeRef(body);
+  }
+  if (action === "createTag") {
+    return createTag(body);
+  }
+  if (action === "pruneWorktrees") {
+    return pruneWorktrees(body);
+  }
+  if (action === "findCheckoutStash") {
+    return findCheckoutStash(body);
+  }
+  if (action === "restoreCheckoutStash") {
+    return commandResult(await restoreCheckoutStash(body));
+  }
+  if (action === "applyStash") {
+    const ref = normalizeStashRef(body.ref);
+    return commandResult(await git(currentRepo, ["stash", "apply", ref], { timeout: 120000 }));
+  }
+  if (action === "popStash") {
+    const ref = normalizeStashRef(body.ref);
+    return commandResult(await git(currentRepo, ["stash", "pop", ref], { timeout: 120000 }));
+  }
+  if (action === "dropStash") {
+    const ref = normalizeStashRef(body.ref);
+    return commandResult(await git(currentRepo, ["stash", "drop", ref], { timeout: 120000 }));
   }
   if (action === "stageFile") {
     const file = normalizeRepoFile(body.file);
@@ -222,6 +286,143 @@ async function runAction(body) {
     return commandResult(await rewordCommit(body));
   }
   throw new Error("未知操作");
+}
+
+async function checkoutBranch(body) {
+  const branch = normalizeBranchName(body.branch);
+  const mode = normalizeCheckoutMode(body.mode);
+  const sourceBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const branchOutput = await git(currentRepo, ["branch", "--format=%(refname:short)"]);
+  const branches = branchOutput.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  if (!branches.includes(branch)) throw new Error("只能切换到本地分支");
+  const worktrees = parseWorktreeBranches(await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""), currentRepo);
+  if (worktrees[branch]) {
+    const info = worktrees[branch];
+    const suffix = info.prunable ? "。这个占用记录已经失效，可以清理 worktree 记录后再切换" : "";
+    throw new Error(`分支 ${branch} 已在其他工作树签出：${info.worktreePath}${suffix}`);
+  }
+  if (mode === "stash") {
+    const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+    let stash = null;
+    if (dirty.trim()) {
+      const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+      const message = `Forkline: checkout ${branch} ${stamp}`;
+      await git(currentRepo, ["stash", "push", "-u", "-m", message], { timeout: 120000 });
+      stash = { branch: sourceBranch, target: branch, ref: "stash@{0}", message };
+    }
+    await git(currentRepo, ["switch", branch], { timeout: 60000 });
+    return { ok: true, output: "已储藏本地更改并切换分支", stash };
+  }
+  if (mode === "force") {
+    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
+    await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
+    await git(currentRepo, ["switch", "--force", branch], { timeout: 60000 });
+    return { ok: true, output: "已丢弃本地更改并强制切换分支" };
+  }
+  await git(currentRepo, ["switch", branch], { timeout: 60000 });
+  return { ok: true, output: "已切换分支并保留本地更改" };
+}
+
+async function createBranch(body) {
+  const branch = normalizeBranchName(body.branch);
+  const start = normalizeBranchStart(body.start);
+  const checkout = Boolean(body.checkout);
+  await git(currentRepo, ["check-ref-format", "--branch", branch]).catch(() => {
+    throw new Error("分支名不合法");
+  });
+  const args = checkout ? ["switch", "-c", branch] : ["branch", branch];
+  if (start) args.push(start);
+  await git(currentRepo, args, { timeout: 60000 });
+  return {
+    ok: true,
+    branch,
+    checkedOut: checkout,
+    output: checkout ? `已创建并切换到 ${branch}` : `已创建分支 ${branch}`,
+  };
+}
+
+async function deleteBranch(body) {
+  const branch = normalizeBranchName(body.branch);
+  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
+  await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
+  return { ok: true, output: `已删除本地分支 ${branch}` };
+}
+
+async function renameBranch(body) {
+  const branch = normalizeBranchName(body.branch);
+  const newBranch = normalizeBranchName(body.newBranch);
+  if (branch === newBranch) return { ok: true, branch, output: "分支名没有变化" };
+  await git(currentRepo, ["check-ref-format", "--branch", newBranch]).catch(() => {
+    throw new Error("分支名不合法");
+  });
+  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const args = branch === currentBranch ? ["branch", "-m", newBranch] : ["branch", "-m", branch, newBranch];
+  await git(currentRepo, args, { timeout: 60000 });
+  return { ok: true, branch: newBranch, output: `已重命名分支：${branch} -> ${newBranch}` };
+}
+
+async function mergeRef(body) {
+  const ref = normalizeRefName(body.ref, "合并目标");
+  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (ref === currentBranch) throw new Error("不能把当前分支合并到自己");
+  const output = await git(currentRepo, ["merge", "--no-edit", ref], { timeout: 120000 });
+  return commandResult(output || `已合并 ${ref}`);
+}
+
+async function createTag(body) {
+  const name = normalizeTagName(body.name);
+  const target = normalizeSha(body.target);
+  const annotated = Boolean(body.annotated);
+  const message = String(body.message || "").trim() || name;
+  await git(currentRepo, ["check-ref-format", `refs/tags/${name}`]).catch(() => {
+    throw new Error("标签名不合法");
+  });
+  const args = annotated ? ["tag", "-a", name, target, "-m", message] : ["tag", name, target];
+  await git(currentRepo, args, { timeout: 60000 });
+  return { ok: true, tag: name, output: `已创建 Tag ${name}` };
+}
+
+async function pruneWorktrees(body) {
+  const branch = normalizeBranchName(body.branch);
+  const worktrees = parseWorktreeBranches(await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""), currentRepo);
+  const info = worktrees[branch];
+  if (!info) return { ok: true, output: "没有发现需要清理的失效 worktree 记录" };
+  if (!info.prunable) {
+    throw new Error(`分支 ${branch} 已在其他工作树签出：${info.worktreePath}`);
+  }
+  const output = await git(currentRepo, ["worktree", "prune", "--verbose"], { timeout: 60000 });
+  return commandResult(output || "已清理失效 worktree 记录");
+}
+
+async function findCheckoutStash(body) {
+  const branch = normalizeBranchName(body.branch);
+  const stash = await findForklineStash(branch, String(body.message || "").trim());
+  return { ok: true, stash };
+}
+
+async function restoreCheckoutStash(body) {
+  const branch = normalizeBranchName(body.branch);
+  const stash = await findForklineStash(branch, String(body.message || "").trim());
+  if (!stash) throw new Error("没有找到可恢复的 Forkline 储藏");
+  await git(currentRepo, ["stash", "pop", stash.ref], { timeout: 120000 });
+  return "已恢复储藏的本地更改";
+}
+
+async function findForklineStash(branch, message = "") {
+  const output = await git(currentRepo, ["stash", "list", "--format=%gd%x1f%s"]).catch(() => "");
+  const rows = output
+    .split(/\r?\n/)
+    .map((line) => {
+      const [ref, subject] = line.split("\x1f");
+      return { ref: (ref || "").trim(), subject: (subject || "").trim() };
+    })
+    .filter((item) => item.ref && item.subject);
+  const match = rows.find((item) => message && item.subject.includes(message))
+    || rows.find((item) => item.subject.startsWith(`On ${branch}: Forkline: checkout `));
+  if (!match) return null;
+  const messagePart = match.subject.replace(/^On [^:]+:\s*/, "");
+  return { ref: match.ref, branch, message: messagePart, label: match.subject };
 }
 
 async function discardWorktreeFile(body) {
@@ -344,6 +545,97 @@ function normalizeRepoFile(filePath) {
   return value;
 }
 
+function normalizeBranchName(branchName) {
+  const branch = String(branchName || "").trim();
+  if (!branch || branch.includes("\0")) throw new Error("请选择要切换的分支");
+  if (branch.startsWith("-") || branch.includes("\\") || branch.includes("..") || branch.includes("@{")) {
+    throw new Error("分支名不合法");
+  }
+  if (branch.endsWith(".lock") || branch.split("/").some((part) => !part || part.endsWith("."))) {
+    throw new Error("分支名不合法");
+  }
+  return branch;
+}
+
+function normalizeCheckoutMode(value) {
+  const mode = String(value || "keep").trim();
+  if (["keep", "stash", "force"].includes(mode)) return mode;
+  throw new Error("切换分支方式不合法");
+}
+
+function normalizeBranchStart(value) {
+  const start = String(value || "").trim();
+  if (!start) return "";
+  if (/^[0-9a-f]{7,40}$/i.test(start)) return start;
+  return normalizeRefName(start);
+}
+
+function normalizeRefName(value, label = "分支起点") {
+  const ref = String(value || "").trim();
+  if (!ref || ref.includes("\0")) throw new Error(`${label}不合法`);
+  if (ref.startsWith("-") || ref.includes("\\") || ref.includes("..") || ref.includes("@{") || /\s/.test(ref)) {
+    throw new Error(`${label}不合法`);
+  }
+  if (ref.endsWith(".lock") || ref.endsWith(".") || ref.split("/").some((part) => !part || part.endsWith("."))) {
+    throw new Error(`${label}不合法`);
+  }
+  return ref;
+}
+
+function normalizeStashRef(value) {
+  const ref = String(value || "").trim();
+  if (/^stash@\{\d+\}$/.test(ref)) return ref;
+  throw new Error("储藏引用不合法");
+}
+
+function normalizeTagName(value) {
+  const name = String(value || "").trim();
+  if (!name || name.includes("\0")) throw new Error("请输入标签名");
+  if (name.startsWith("-") || name.includes("\\") || name.includes("..") || name.includes("@{")) {
+    throw new Error("标签名不合法");
+  }
+  if (name.endsWith(".lock") || name.endsWith(".") || name.split("/").some((part) => !part || part.endsWith("."))) {
+    throw new Error("标签名不合法");
+  }
+  return name;
+}
+
+function parseWorktreeBranches(output, repoPath) {
+  const info = {};
+  let entry = {};
+  const flush = () => {
+    if (!entry.worktree || !entry.branch) return;
+    const branch = entry.branch.replace(/^refs\/heads\//, "");
+    if (!branch || sameFsPath(entry.worktree, repoPath)) return;
+    info[branch] = {
+      worktreePath: entry.worktree,
+      prunable: Boolean(entry.prunable),
+      reason: typeof entry.prunable === "string" ? entry.prunable : "",
+    };
+  };
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) {
+      flush();
+      entry = {};
+      continue;
+    }
+    const space = line.indexOf(" ");
+    const key = space === -1 ? line : line.slice(0, space);
+    const value = space === -1 ? "" : line.slice(space + 1);
+    if (key === "worktree") entry.worktree = value;
+    if (key === "branch") entry.branch = value;
+    if (key === "prunable") entry.prunable = value || true;
+  }
+  flush();
+  return info;
+}
+
+function sameFsPath(left, right) {
+  if (!left || !right) return false;
+  const normalize = (value) => path.resolve(String(value).replaceAll("/", path.sep)).replace(/[\\/]+/g, "\\").toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
 function readNewFileDiff(file) {
   const repoRoot = path.resolve(currentRepo);
   const fullPath = path.resolve(repoRoot, file);
@@ -420,6 +712,35 @@ function parseStatusPath(value) {
     });
   }
   return text;
+}
+
+function parseStashList(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(0, 80)
+    .map((line) => {
+      const [ref, subject = "", time = ""] = line.split("\x1f");
+      const parsed = parseStashSubject(subject);
+      return {
+        ref,
+        branch: parsed.branch,
+        message: parsed.message,
+        subject,
+        time,
+        label: `${ref} · ${parsed.branch || "未知分支"}`,
+      };
+    })
+    .filter((item) => /^stash@\{\d+\}$/.test(item.ref));
+}
+
+function parseStashSubject(subject) {
+  const text = String(subject || "").trim();
+  const onMatch = text.match(/^On ([^:]+):\s*(.*)$/);
+  if (onMatch) return { branch: onMatch[1], message: onMatch[2] || "储藏更改" };
+  const wipMatch = text.match(/^WIP on ([^:]+):\s*(?:[0-9a-f]{7,40}\s+)?(.*)$/i);
+  if (wipMatch) return { branch: wipMatch[1], message: wipMatch[2] || "WIP" };
+  return { branch: "", message: text || "储藏更改" };
 }
 
 function parseNameStatus(output) {
@@ -552,7 +873,55 @@ function sendJson(res, status, data) {
 }
 
 function sendError(res, error) {
-  sendJson(res, 400, { error: error.message || String(error) });
+  sendJson(res, 400, { error: friendlyErrorMessage(error) });
+}
+
+function friendlyErrorMessage(error) {
+  const raw = String(error?.message || error || "").trim();
+  const text = raw || "操作失败";
+  const lower = text.toLowerCase();
+  if (lower.includes("index.lock") && (lower.includes("unable to create") || lower.includes("file exists"))) {
+    const lockPath = text.match(/['"]([^'"]*index\.lock)['"]/)?.[1] || "";
+    const suffix = lockPath ? ` 锁文件：${lockPath}` : "";
+    return `Git 仓库正在被另一个操作占用，暂时不能继续。请等几秒再试，或关闭正在操作这个仓库的 Git/编辑器；如果确认没有 Git 操作在运行，再删除 index.lock 后重试。${suffix}`;
+  }
+  if (lower.includes("your local changes") && lower.includes("would be overwritten")) {
+    return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
+  }
+  if (lower.includes("please commit your changes or stash them")) {
+    return "当前有未提交修改。请先提交或储藏后再试。";
+  }
+  if (lower.includes("automatic merge failed") || lower.includes("merge conflict") || lower.includes("conflict (")) {
+    return "合并发生冲突。请在工作区查看冲突文件，手动解决后提交；不想继续时可以执行中止合并。";
+  }
+  if (lower.includes("merge_head exists") || lower.includes("not concluded your merge")) {
+    return "上一次合并还没有结束。请先解决冲突并提交，或中止当前合并后再继续。";
+  }
+  if (lower.includes("unmerged files") || lower.includes("needs merge")) {
+    return "当前还有未解决的合并冲突文件。请先处理这些文件后再继续操作。";
+  }
+  if (lower.includes("not a git repository")) {
+    return "这个路径不是 Git 仓库，请打开包含 .git 的项目目录。";
+  }
+  if (lower.includes("already exists") && lower.includes("branch")) {
+    return "分支已存在，请换一个分支名。";
+  }
+  if (lower.includes("already exists") && lower.includes("tag")) {
+    return "标签已存在，请换一个标签名。";
+  }
+  if (lower.includes("not fully merged")) {
+    return "这个分支还没有完全合并，安全删除已被 Git 阻止。确认不需要后，再做强制删除。";
+  }
+  if (lower.includes("cannot delete branch") && lower.includes("checked out")) {
+    return "这个分支正在其他工作树中使用，不能删除。请先切换或清理对应工作树。";
+  }
+  if (lower.includes("could not read from remote repository")) {
+    return "无法读取远端仓库。请检查网络、远端地址和账号权限。";
+  }
+  if (lower.includes("authentication failed")) {
+    return "远端认证失败。请检查 Git 账号、Token 或凭据管理器。";
+  }
+  return text;
 }
 
 function serveStatic(req, res) {
@@ -608,6 +977,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree-diff") {
       sendJson(res, 200, await readWorkingDiff(parsed.searchParams.get("file") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/stash") {
+      sendJson(res, 200, await readStash(parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "POST" && parsed.pathname === "/api/action") {

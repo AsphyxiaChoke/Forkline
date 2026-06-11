@@ -54,7 +54,10 @@
         </section>
 
         <section class="side-section">
-          <div class="side-title">本地分支</div>
+          <div class="side-title branch-title">
+            <span>本地分支</span>
+            <button id="newBranch" class="mini-btn side-mini" type="button">新建</button>
+          </div>
           <div id="branchList" class="nav-list"></div>
         </section>
 
@@ -95,6 +98,7 @@
               <div class="panel-actions">
                 <button id="refreshChanges" class="mini-btn" type="button">刷新</button>
                 <button id="stageAll" class="mini-btn" type="button">暂存全部</button>
+                <button id="discardAll" class="mini-btn danger" type="button">丢弃全部</button>
               </div>
             </div>
             <div id="changeList" class="change-list"></div>
@@ -118,8 +122,11 @@
               <div class="commit-bottom">
                 <span id="draftNote">示例模式</span>
                 <div class="commit-actions">
-                  <button id="amendCommit" class="btn" type="button">追加提交</button>
-                  <button class="btn primary" type="submit">创建提交</button>
+                  <label class="amend-toggle" title="勾选后使用上一次提交信息并追加到上一次提交">
+                    <input id="amendToggle" type="checkbox" />
+                    <span>追加</span>
+                  </label>
+                  <button id="commitSubmit" class="btn primary" type="submit">创建提交</button>
                 </div>
               </div>
             </form>
@@ -142,6 +149,7 @@
           <button class="tab active" data-tab="details" type="button">详情</button>
           <button class="tab" data-tab="files" type="button">文件</button>
           <button class="tab" data-tab="branches" type="button">分支</button>
+          <button class="tab" data-tab="stashes" type="button">储藏</button>
         </div>
 
         <div id="detailBody" class="detail-body"></div>
@@ -150,6 +158,110 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="commitContextMenu" class="context-menu" aria-hidden="true">
+    <button data-commit-action="details" type="button">查看详情</button>
+    <button data-commit-action="branch" type="button">从此提交新建分支</button>
+    <button data-commit-action="tag" type="button">创建 Tag</button>
+    <button data-commit-action="copySha" type="button">复制 SHA</button>
+    <button data-commit-action="copyMessage" type="button">复制提交信息</button>
+    <button data-commit-action="editMessage" type="button">修改提交信息</button>
+  </div>
+  <div id="branchContextMenu" class="context-menu" aria-hidden="true">
+    <button data-branch-action="view" type="button">查看此分支提交</button>
+    <button data-branch-action="checkout" type="button">切换到此分支</button>
+    <button data-branch-action="merge" type="button">合并分支到当前分支</button>
+    <button data-branch-action="cleanup" type="button" hidden>清理失效占用</button>
+    <button data-branch-action="branch" type="button">从此分支新建分支</button>
+    <button data-branch-action="copy" type="button">复制分支名</button>
+    <button data-branch-action="rename" type="button">重命名分支</button>
+    <button data-branch-action="delete" type="button">删除分支</button>
+  </div>
+  <div id="checkoutModal" class="checkout-modal" aria-hidden="true">
+    <div class="checkout-dialog" role="dialog" aria-modal="true" aria-labelledby="checkoutModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon">!</div>
+        <div>
+          <strong id="checkoutModalTitle">签出会覆盖本地更改。</strong>
+          <span id="checkoutModalText">当前工作区有未提交的更改。</span>
+        </div>
+      </div>
+      <div class="checkout-actions">
+        <button class="checkout-choice primary" data-checkout-mode="stash" type="button">储藏并签出</button>
+        <button class="checkout-choice" data-checkout-mode="keep" type="button">迁移更改</button>
+        <button class="checkout-choice danger" data-checkout-mode="force" type="button">强制签出</button>
+        <button class="checkout-choice" data-checkout-mode="cancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+  <div id="stashRestoreModal" class="checkout-modal" aria-hidden="true">
+    <div class="checkout-dialog" role="dialog" aria-modal="true" aria-labelledby="stashRestoreTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon">!</div>
+        <div>
+          <strong id="stashRestoreTitle">发现可恢复的储藏更改。</strong>
+          <span id="stashRestoreText">刚才储藏的本地更改可以恢复到当前分支。</span>
+        </div>
+      </div>
+      <div class="checkout-actions stash-restore-actions">
+        <button class="checkout-choice primary" data-stash-restore="restore" type="button">恢复更改</button>
+        <button class="checkout-choice" data-stash-restore="keep" type="button">暂不恢复</button>
+      </div>
+    </div>
+  </div>
+  <div id="branchModal" class="checkout-modal" aria-hidden="true">
+    <form id="branchForm" class="checkout-dialog branch-dialog" role="dialog" aria-modal="true" aria-labelledby="branchModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon branch-icon">+</div>
+        <div>
+          <strong id="branchModalTitle">新建分支</strong>
+          <span id="branchStartText">从当前 HEAD 创建分支。</span>
+        </div>
+      </div>
+      <div class="branch-form-body">
+        <label class="edit-field">
+          <span>分支名</span>
+          <input id="branchNameInput" autocomplete="off" spellcheck="false" placeholder="例如 feature/login" />
+        </label>
+        <label id="branchCheckoutLabel" class="amend-toggle branch-check-toggle">
+          <input id="branchCheckoutToggle" type="checkbox" checked />
+          <span>创建后切换</span>
+        </label>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="branchSubmit" class="checkout-choice primary" type="submit">创建分支</button>
+        <button id="branchCancel" class="checkout-choice" type="button">取消</button>
+      </div>
+    </form>
+  </div>
+  <div id="tagModal" class="checkout-modal" aria-hidden="true">
+    <form id="tagForm" class="checkout-dialog tag-dialog" role="dialog" aria-modal="true" aria-labelledby="tagModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon branch-icon">#</div>
+        <div>
+          <strong id="tagModalTitle">创建 Tag</strong>
+          <span id="tagStartText">基于选中的提交创建 Tag。</span>
+        </div>
+      </div>
+      <div class="branch-form-body">
+        <label class="edit-field">
+          <span>Tag 名称</span>
+          <input id="tagNameInput" autocomplete="off" spellcheck="false" placeholder="例如 v1.0.0" />
+        </label>
+        <label class="amend-toggle branch-check-toggle">
+          <input id="tagAnnotatedToggle" type="checkbox" />
+          <span>附注 Tag</span>
+        </label>
+        <label class="edit-field">
+          <span>说明</span>
+          <textarea id="tagMessageInput" placeholder="附注 Tag 说明，可留空"></textarea>
+        </label>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="tagSubmit" class="checkout-choice primary" type="submit">创建 Tag</button>
+        <button id="tagCancel" class="checkout-choice" type="button">取消</button>
+      </div>
+    </form>
+  </div>
   <div id="diffModal" class="diff-modal" aria-hidden="true">
     <div class="diff-modal-head">
       <div>
