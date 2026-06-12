@@ -806,6 +806,9 @@ async function runAction(body) {
     const ref = normalizeStashRef(body.ref);
     return commandResult(await git(currentRepo, ["stash", "drop", ref], { timeout: 120000 }));
   }
+  if (action === "branchFromStash") {
+    return branchFromStash(body);
+  }
   if (action === "restoreRecoveryPoint") {
     return restoreRecoveryPoint(body);
   }
@@ -970,6 +973,7 @@ function actionLabel(body = {}) {
     applyStash: ref ? `应用储藏 ${ref}` : "应用储藏",
     popStash: ref ? `弹出储藏 ${ref}` : "弹出储藏",
     dropStash: ref ? `删除储藏 ${ref}` : "删除储藏",
+    branchFromStash: branch && ref ? `从储藏 ${ref} 创建分支 ${branch}` : "从储藏创建分支",
     restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
     deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",
     deleteRecoveryPoints: Array.isArray(body.refs) ? `批量删除 ${body.refs.length} 个恢复点` : "批量删除恢复点",
@@ -1435,6 +1439,24 @@ async function createStash(body) {
   if (files.length) args.push("--", ...files);
   const output = await git(currentRepo, args, { timeout: 120000 });
   return commandResult(output || `已创建储藏：${message}`);
+}
+
+async function branchFromStash(body) {
+  const ref = normalizeStashRef(body.ref);
+  const branch = normalizeBranchName(body.branch);
+  await ensureCleanWorktree("从储藏创建分支前，请先提交、储藏或丢弃当前工作区改动。");
+  const existing = (await git(currentRepo, ["show-ref", "--verify", `refs/heads/${branch}`]).catch(() => "")).trim();
+  if (existing) throw new Error(`本地分支 ${branch} 已存在，请换一个分支名。`);
+  const output = await git(currentRepo, ["stash", "branch", branch, ref], { timeout: 120000, maxBuffer: 1024 * 1024 * 8 });
+  const state = await readState();
+  return {
+    ok: true,
+    branch,
+    ref,
+    state,
+    output: [`已从 ${ref} 创建并切换到分支 ${branch}`, "储藏已应用到新分支，并从储藏列表移除。"].join("\n"),
+    gitOutput: shortText(output, 2000),
+  };
 }
 
 async function findForklineStash(branch, message = "") {

@@ -2621,6 +2621,7 @@ function stashDetailHtml(stash, detail, files, diff) {
     <div class="stash-actions">
       <button class="mini-btn" data-stash-action="apply" data-stash-ref="${escapeAttr(stash.ref)}" type="button">应用</button>
       <button class="mini-btn" data-stash-action="pop" data-stash-ref="${escapeAttr(stash.ref)}" type="button">弹出</button>
+      <button class="mini-btn" data-stash-action="branch" data-stash-ref="${escapeAttr(stash.ref)}" type="button">建分支</button>
       <button class="mini-btn danger" data-stash-action="drop" data-stash-ref="${escapeAttr(stash.ref)}" type="button">删除</button>
     </div>
     <div class="meta-grid stash-meta">
@@ -2662,7 +2663,11 @@ function selectStash(ref) {
 
 async function runStashAction(action, ref, button) {
   if (!state.data || !ref) return;
-  const names = { apply: "应用储藏", pop: "弹出储藏", drop: "删除储藏" };
+  const names = { apply: "应用储藏", pop: "弹出储藏", drop: "删除储藏", branch: "从储藏创建分支" };
+  if (action === "branch") {
+    await branchFromStash(ref, button);
+    return;
+  }
   const message = stashActionConfirmMessage(action, ref);
   if (!state.data.repo.isSample && !confirm(message)) return;
   try {
@@ -2685,6 +2690,57 @@ async function runStashAction(action, ref, button) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+async function branchFromStash(ref, button) {
+  const defaultName = defaultStashBranchName(ref);
+  const branch = prompt(`从 ${ref} 创建新分支：`, defaultName);
+  if (branch === null) return;
+  const trimmed = branch.trim();
+  if (!trimmed) {
+    toast("请填写分支名");
+    return;
+  }
+  const message = [
+    `确认从 ${ref} 创建并切换到分支 ${trimmed}？`,
+    "",
+    "命令：git stash branch <分支> <储藏>",
+    "成功后这条储藏会从列表删除，改动会出现在新分支工作区。",
+  ].join("\n");
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "branchFromStash", ref, branch: trimmed }),
+    });
+    toast(result.output || `已从 ${ref} 创建分支 ${trimmed}`);
+    state.stashDetails.clear();
+    if (result.state) {
+      state.data = result.state;
+    } else {
+      state.data = await api("/api/state");
+    }
+    state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
+    state.selectedStash = state.data.stashes?.[0]?.ref || "";
+    state.selectedTab = "stashes";
+    state.selectedSha = state.data.commits[0]?.sha || "";
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function defaultStashBranchName(ref) {
+  const index = String(ref || "").match(/\d+/)?.[0] || "0";
+  const stamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  return `stash/${stamp}-${index}`;
 }
 
 function stashActionConfirmMessage(action, ref) {

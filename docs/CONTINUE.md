@@ -25,6 +25,7 @@
 - “合并分支”已改为 `--no-ff --no-edit`，即使可以快进也会保留 merge commit，方便在“全部分支”图谱里看到分支回归主线的样式。
 - Stash 入口已补齐：工作区顶部有“储藏”按钮，文件右键菜单支持“储藏所选”，储藏列表继续支持查看 Diff、应用、弹出和删除。
 - Stash 体验已调整：储藏成功后会自动打开右侧“储藏”页，并提示“工作区更改已移到右侧储藏列表”；工作区顶部按钮文案改短并补 tooltip，避免按钮挤在一起。
+- 从储藏创建分支已接入：右侧“储藏”详情新增“建分支”，后端新增 `branchFromStash`，执行 `git stash branch <分支> <储藏>`；会要求工作区干净、拒绝已存在本地分支，成功后切到新分支、应用储藏改动并从储藏列表移除对应 stash；成功提示保持中文，原始 Git 输出放在 `gitOutput` 中。
 - `index.lock` 提示已增强：写入操作失败时会显示刚才执行的 Forkline 操作名、锁文件路径/时间、活跃 Forkline 操作和可检测到的 Git 进程；toast 支持多行并延长显示时间。
 - 提交右键菜单和提交详情面板都已加入“还原”和软 / 混合 / 硬重置入口，并在文案旁标注 `git revert`、`git reset --soft`、`git reset --mixed`、`git reset --hard`。还原会创建反向提交；硬重置入口标红且确认文案会提示会丢弃工作区改动。
 - GitKraken 风格学习方向：图谱保持主视觉区域，左栏承载仓库/分支/工作区导航，右栏承载所选提交的上下文详情；右键菜单按动作类别分组，左侧中文动作、右侧灰色等宽 Git 指令提示，危险动作明确标红。
@@ -62,6 +63,7 @@
 - 合并图谱验证：通过 Forkline API 将 `forkline/merge-clean` 合并到 `main` 后生成两父 merge commit `2f1ec54`，API 返回 `parents.Count = 2`，页面首行显示 `Merge branch 'forkline/merge-clean'`，SVG 图谱进入 `overview` 模式并有回归连线数据。
 - Stash 验证：通过 Forkline API 对 `forkline-fixtures/stash-api-temp.txt` 执行所选文件储藏，临时文件被 stash 移除，stash 数量从 1 增至 2；随后已删除临时 stash，GitTest 原有测试改动保持不变。UI 验证：工作区顶部显示“储藏”，文件右键菜单显示“储藏所选”，并能按未暂存/已暂存状态禁用不适用动作。
 - Stash 说明：储藏会把改动从工作区移到 Git stash，所以工作区改动消失是正常行为；用户可在右侧“储藏”页恢复。
+- 从储藏创建分支 API 验证：临时服务 `http://127.0.0.1:5208` 打开 GitTest 后创建临时 stash `Forkline stash branch api test 2 20260613`，调用 `branchFromStash` 从 `stash@{0}` 创建 `forkline/stash-branch-api-2-20260613`；API 返回中文“已从 stash@{0} 创建并切换到分支...”，`gitOutput` 单独保存 Git 原始输出；新分支工作区出现临时未跟踪文件，stash 列表移除该项。另验证已存在分支会中文拒绝“本地分支 ... 已存在”。临时文件、临时分支已清理，GitTest 已恢复 `123` 分支干净状态。
 - `index.lock` 验证：在 `D:\桌面\GitTest\.git\index.lock` 临时创建测试锁后调用 `stageAll`，API 返回“刚才的‘暂存全部更改’没有执行成功”，并显示锁文件路径、锁文件时间和 Git 进程检测说明；测试锁随后已删除。
 - Revert / Reset 验证：在 GitTest 临时分支 `forkline/revert-reset-api-20260612134014` 上创建两个测试提交，API 调用 `revertCommit` 生成 `Revert "Forkline revert target ..."` 提交；随后分别验证 `resetToCommit` 的 soft、mixed、hard 模式可移动 HEAD，最终测试分支工作区干净。
 - Cherry-pick API 验证：在 GitTest 临时分支 `forkline/cherry-source-*` / `forkline/cherry-target-*` 验证普通挑选成功；在 `forkline/cherry-conflict-*` 验证冲突后返回中文提示、`operation.type = cherryPick`、冲突文件可识别，并验证 `abortCherryPick` 可恢复干净。
