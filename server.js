@@ -113,6 +113,7 @@ async function readState(ref = "") {
   }
 
   const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
+  const sync = await readCurrentSyncDetails();
   return {
     repo: {
       name: path.basename(currentRepo),
@@ -126,6 +127,7 @@ async function readState(ref = "") {
     branches: branches.slice(0, 32),
     branchInfo,
     remotes: remotes.slice(0, 32),
+    sync,
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
     tags: parseTags(tagOutput),
@@ -1622,6 +1624,53 @@ function parseLog(output) {
   return commits;
 }
 
+async function readCurrentSyncDetails() {
+  const state = await readCurrentSyncState();
+  const details = {
+    ...state,
+    incoming: [],
+    outgoing: [],
+  };
+  if (state.detached || !state.upstream || state.upstreamGone) return details;
+  const [incomingOutput, outgoingOutput] = await Promise.all([
+    state.behind ? git(currentRepo, syncLogArgs(`HEAD..${state.upstream}`)).catch(() => "") : "",
+    state.ahead ? git(currentRepo, syncLogArgs(`${state.upstream}..HEAD`)).catch(() => "") : "",
+  ]);
+  details.incoming = parseSyncCommits(incomingOutput);
+  details.outgoing = parseSyncCommits(outgoingOutput);
+  return details;
+}
+
+function syncLogArgs(range) {
+  return [
+    "log",
+    "--max-count=20",
+    "--date=relative",
+    "--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%D%x1f%P",
+    range,
+  ];
+}
+
+function parseSyncCommits(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .filter((line) => line.includes("\x1f"))
+    .slice(0, 20)
+    .map((line) => {
+      const parts = line.split("\x1f");
+      return {
+        sha: parts[0] || "",
+        short: parts[1] || "",
+        author: parts[2] || "unknown",
+        time: parts[3] || "",
+        message: parts[4] || "(无提交信息)",
+        refs: parts[5] || "",
+        parents: parts[6] ? parts[6].split(" ").filter(Boolean) : [],
+      };
+    })
+    .filter((commit) => commit.sha);
+}
+
 function sampleState() {
   const files = [
     { state: "M", file: "src/views/HistoryPanel.tsx", extra: "+28 -6" },
@@ -1665,6 +1714,20 @@ function sampleState() {
     },
     branches: ["feature/visual-history", "main", "release/2.9", "fix/diff-pane-resize", "experiment/ai-summary", "chore/design-tokens"],
     remotes: ["origin/main", "origin/feature/visual-history", "upstream/release/2.9"],
+    sync: {
+      branch: "feature/visual-history",
+      upstream: "origin/feature/visual-history",
+      upstreamGone: false,
+      ahead: 2,
+      behind: 1,
+      incoming: [
+        { sha: "b91a4d3c22aa", short: "b91a4d3", author: "Nora", time: "18 分钟前", message: "远端补充发布说明", refs: "origin/feature/visual-history", parents: [] },
+      ],
+      outgoing: [
+        { sha: "f83a9c2b0177", short: "f83a9c2", author: "Mina", time: "12 分钟前", message: "打磨提交图连线动画", refs: "feature/visual-history", parents: [] },
+        { sha: "d41c2ab91020", short: "d41c2ab", author: "Leon", time: "38 分钟前", message: "添加语义化 Diff 分组", refs: "", parents: [] },
+      ],
+    },
     tags: [
       { name: "v2.9.0", object: "4ab612e", time: "昨天", subject: "发布候选版本构建", type: "commit" },
       { name: "ui-graph-beta", object: "d41c2ab", time: "38 分钟前", subject: "添加语义化 Diff 分组", type: "tag" },

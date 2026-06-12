@@ -10,6 +10,7 @@
 - 顶部“推送”已改为智能推送：已有 upstream 时执行 `git push`；没有 upstream 时优先执行 `git push -u origin <当前分支>`，没有 `origin` 则使用第一个远端。
 - Fetch / Pull / Push 同步摘要已接入：操作完成后会显示当前分支 upstream、同步状态、领先/落后变化，以及远端新增/更新/删除引用；无 upstream 智能推送会显示“跟踪变化：未设置 -> origin/... ”。
 - 安全强推已接入：顶部工具栏新增“强推”，当前本地分支右键菜单新增“安全强推当前分支”，后端执行 `git push --force-with-lease <远端> HEAD:<分支>`；普通 push 非快进拒绝和 force-with-lease stale 拒绝都有中文提示。
+- 右侧“同步”页已接入：显示当前分支 upstream、同步状态、操作建议、待拉取提交和待推送提交，并提供抓取 / 拉取 / 推送 / 安全强推入口。
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - Tag 管理已接入：右侧新增“标签”页，显示本地 Tag 列表和详情，支持查看 Tag 提交、复制名称、推送 Tag、删除本地 Tag、删除远端 Tag；Tag 行右键菜单也提供同样的相关动作和 Git 指令提示。
@@ -56,6 +57,8 @@
 - 同步摘要 API 验证：浏览器服务 `http://127.0.0.1:5188` 打开 GitTest 后，验证 `fetch` 能显示“新增远端分支 origin/forkline/sync-fetch-*”；验证远端领先时 `fetch` 显示“落后 0 -> 1”，随后 `pull` 显示“落后 1 -> 0”；验证本地领先时 `push` 显示“领先 1 -> 0”；验证无 upstream 分支 `push` 会设置 upstream，并显示“跟踪变化：未设置 -> origin/...”。测试后 GitTest 已切回 `123` 且工作区干净。
 - 安全强推 API 验证：浏览器服务 `http://127.0.0.1:5190` 打开 GitTest 后，在 `forkline/lease-force-*` 分支验证改写历史后普通 `push` 返回非快进中文拒绝，`forcePushLease` 成功并显示“领先 1 -> 0，落后 1 -> 0”和“强制更新”；在 `forkline/lease-stale-*` 分支验证远端被其他克隆推进后 `forcePushLease` 被 `--force-with-lease` 拒绝并返回中文 stale 提示。
 - 安全强推 UI 验证：浏览器打开 `http://127.0.0.1:5190`，顶部工具栏显示“强推”且无横向溢出；当前分支右键菜单显示“安全强推当前分支 git push --force-with-lease”，按钮启用，菜单无横向溢出，控制台无 Forkline 错误。
+- 同步详情 API 验证：浏览器服务 `http://127.0.0.1:5191` 打开 GitTest 后，在 `forkline/sync-panel-*` 分支验证 `sync.ahead = 1`、`sync.behind = 1`，`incoming` 包含远端提交 `Forkline sync panel remote incoming ...`，`outgoing` 包含本地提交 `Forkline sync panel local outgoing ...`。
+- 同步详情 UI 验证：右侧“同步”标签显示“分叉：领先 1，落后 1”，待拉取和待推送列表各显示一条提交，抓取 / 拉取 / 推送 / 安全强推按钮可见且无横向溢出，控制台无 Forkline 错误。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
@@ -73,7 +76,7 @@
 - 本地远端：`origin -> D:\桌面\GitTestRemote.git`
 - 上游丢失测试分支：`forkline/remote-workflow-20260612155930`，用于验证本地分支显示 `[gone]` / “上游丢失”。
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
-- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*`、`forkline/history-*`、`forkline/sync-*`、`forkline/lease-*` 临时验证分支。
+- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*`、`forkline/history-*`、`forkline/sync-*`、`forkline/sync-panel-*`、`forkline/lease-*` 临时验证分支。
 - 测试 Tag：`forkline-v0.1.0`
 
 ## 下一步建议
