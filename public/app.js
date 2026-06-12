@@ -42,6 +42,7 @@ const state = {
   remoteCheck: null,
   historyPlan: null,
   historyQueue: { items: [], loading: false, preview: null, error: "" },
+  historyQueuePreviewTimer: 0,
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
@@ -845,6 +846,7 @@ function showCommitContextMenu(event, commit) {
   const queueSquashButton = menu.querySelector('[data-commit-action="queueSquash"]');
   const queueFixupButton = menu.querySelector('[data-commit-action="queueFixup"]');
   const queueDropButton = menu.querySelector('[data-commit-action="queueDrop"]');
+  const queueRewordButton = menu.querySelector('[data-commit-action="queueReword"]');
   if (cherryPickButton) {
     cherryPickButton.disabled = false;
     cherryPickButton.title = isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支";
@@ -876,6 +878,10 @@ function showCommitContextMenu(event, commit) {
   if (queueDropButton) {
     queueDropButton.disabled = !canDrop;
     queueDropButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 drop 丢弃此提交";
+  }
+  if (queueRewordButton) {
+    queueRewordButton.disabled = !canDrop;
+    queueRewordButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 reword 修改提交信息";
   }
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
@@ -1292,6 +1298,7 @@ async function runCommitContextAction(action) {
     action === "queueSquash" ||
     action === "queueFixup" ||
     action === "queueDrop" ||
+    action === "queueReword" ||
     action === "resetSoft" ||
     action === "resetMixed" ||
     action === "resetHard"
@@ -1353,6 +1360,12 @@ function historyRewriteConfig(mode) {
       effect: "此提交会从当前分支历史中删除，后续提交会被重新播放。",
       needsParent: false,
     },
+    reword: {
+      title: "修改提交信息",
+      command: "git rebase -i / reword",
+      effect: "只修改此提交的提交信息，后续提交会被重新播放。",
+      needsParent: false,
+    },
   }[mode];
 }
 
@@ -1361,7 +1374,31 @@ function historyQueueModeFromAction(action) {
     queueSquash: "squash",
     queueFixup: "fixup",
     queueDrop: "drop",
+    queueReword: "reword",
   }[action];
+}
+
+function historyQueueMessageParts(item) {
+  const detail = item?.sha ? state.commitDetails.get(item.sha) || {} : {};
+  return commitMessageParts(item || {}, detail);
+}
+
+function historyQueueItemWithMode(item, mode) {
+  if (mode !== "reword") return { ...item, mode };
+  const parts = item.summary ? { summary: item.summary, body: item.body || "" } : historyQueueMessageParts(item);
+  return { ...item, mode, summary: parts.summary, body: parts.body || "" };
+}
+
+function historyQueuePayload(items = state.historyQueue.items) {
+  return items.map((item) => {
+    const payload = { sha: item.sha, mode: item.mode };
+    if (item.mode === "reword") {
+      const next = historyQueueItemWithMode(item, "reword");
+      payload.summary = next.summary || "";
+      payload.body = next.body || "";
+    }
+    return payload;
+  });
 }
 
 async function addHistoryQueueItem(commit, mode) {
@@ -1377,12 +1414,15 @@ async function addHistoryQueueItem(commit, mode) {
     return;
   }
   const existing = state.historyQueue.items.find((item) => item.sha === commit.sha);
+  const message = historyQueueMessageParts(commit);
   const nextItem = {
     sha: commit.sha,
     short: commit.short,
     message: commit.message,
     mode,
     parents: commit.parents || [],
+    summary: mode === "reword" ? existing?.summary || message.summary : existing?.summary || "",
+    body: mode === "reword" ? existing?.body ?? message.body : existing?.body || "",
   };
   const items = existing
     ? state.historyQueue.items.map((item) => (item.sha === commit.sha ? { ...item, ...nextItem } : item))
@@ -1403,7 +1443,7 @@ async function addHistoryQueueItem(commit, mode) {
 }
 
 function historyQueueSignature(items = state.historyQueue.items) {
-  return items.map((item) => `${item.sha}:${item.mode}`).join("|");
+  return items.map((item) => `${item.sha}:${item.mode}:${item.mode === "reword" ? `${item.summary || ""}\n${item.body || ""}` : ""}`).join("|");
 }
 
 async function refreshHistoryRewriteQueuePreview() {
@@ -1419,7 +1459,7 @@ async function refreshHistoryRewriteQueuePreview() {
   try {
     const preview = await api("/api/history-rewrite-queue-preview", {
       method: "POST",
-      body: JSON.stringify({ items: items.map((item) => ({ sha: item.sha, mode: item.mode })) }),
+      body: JSON.stringify({ items: historyQueuePayload(items) }),
     });
     if (signature !== historyQueueSignature()) return;
     state.historyQueue = { ...state.historyQueue, loading: false, preview, error: "" };
@@ -1435,6 +1475,27 @@ async function replaceHistoryQueueItems(items) {
   state.historyQueue = { items, loading: Boolean(items.length), preview: null, error: "" };
   renderInspector();
   await refreshHistoryRewriteQueuePreview();
+}
+
+function scheduleHistoryQueuePreviewRefresh() {
+  if (state.historyQueuePreviewTimer) window.clearTimeout(state.historyQueuePreviewTimer);
+  state.historyQueuePreviewTimer = window.setTimeout(() => {
+    state.historyQueuePreviewTimer = 0;
+    refreshHistoryRewriteQueuePreview().catch((error) => toast(error.message));
+  }, 450);
+}
+
+function updateHistoryQueueField(control) {
+  const sha = control?.dataset.sha || "";
+  const field = control?.dataset.field || "";
+  if (!sha || !["summary", "body"].includes(field)) return;
+  const value = control.value;
+  const items = state.historyQueue.items.map((item) => {
+    if (item.sha !== sha) return item;
+    return { ...historyQueueItemWithMode(item, "reword"), [field]: value };
+  });
+  state.historyQueue = { ...state.historyQueue, items, error: "" };
+  scheduleHistoryQueuePreviewRefresh();
 }
 
 async function runHistoryRewriteQueue(action, button) {
@@ -1469,7 +1530,7 @@ async function runHistoryRewriteQueue(action, button) {
     const mode = button?.dataset.mode || button?.value || "";
     const config = historyRewriteConfig(mode);
     if (!sha || !config) return;
-    const items = state.historyQueue.items.map((item) => (item.sha === sha ? { ...item, mode } : item));
+    const items = state.historyQueue.items.map((item) => (item.sha === sha ? historyQueueItemWithMode(item, mode) : item));
     await replaceHistoryQueueItems(items);
     return;
   }
@@ -1495,7 +1556,7 @@ async function runHistoryRewriteQueue(action, button) {
       method: "POST",
       body: JSON.stringify({
         action: "rewriteHistoryQueue",
-        items: state.historyQueue.items.map((item) => ({ sha: item.sha, mode: item.mode })),
+        items: historyQueuePayload(),
       }),
     });
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
@@ -2125,6 +2186,7 @@ function renderDetailsTab(commit, detail) {
     <div class="commit-tools">
       <button class="mini-btn" data-commit-tool="queueSquash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${canFold ? "加入历史编辑队列，执行时压缩进前一条提交" : "此提交不能加入压缩队列"}"><span>加入队列：压缩</span><span class="command-hint">queue squash</span></button>
       <button class="mini-btn" data-commit-tool="queueFixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${canFold ? "加入历史编辑队列，执行时修补进前一条提交" : "此提交不能加入修补队列"}"><span>加入队列：修补</span><span class="command-hint">queue fixup</span></button>
+      <button class="mini-btn" data-commit-tool="queueReword" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${canDrop ? "加入历史编辑队列，执行时修改提交信息" : "此提交不能加入改信息队列"}"><span>加入队列：改信息</span><span class="command-hint">queue reword</span></button>
       <button class="mini-btn danger" data-commit-tool="queueDrop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${canDrop ? "加入历史编辑队列，执行时丢弃此提交" : "此提交不能加入丢弃队列"}"><span>加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
     </div>
     ${renderHistoryRewriteQueue()}
@@ -2248,7 +2310,7 @@ function renderHistoryRewriteQueue() {
         <strong>历史编辑队列</strong>
         <span>git rebase -i / queue</span>
       </div>
-      <p class="history-plan-effect">把多个 squash / fixup / drop 动作排队，预检通过后一次重写当前分支历史。</p>
+      <p class="history-plan-effect">把多个 squash / fixup / drop / reword 动作排队，预检通过后一次重写当前分支历史。</p>
       <div class="history-plan-grid">
         <span>当前分支</span><strong>${escapeHtml(preview.branch || state.data?.repo?.branch || "未知")}</strong>
         <span>队列动作</span><strong>${escapeHtml(String(preview.queueCount ?? items.length))} 项</strong>
@@ -2291,12 +2353,28 @@ function renderHistoryRewriteQueue() {
 function renderHistoryQueueItem(item, index, detail) {
   const config = historyRewriteConfig(item.mode) || { title: "编辑历史", command: "git rebase -i" };
   const target = detail?.target || item;
-  const modeOptions = ["squash", "fixup", "drop"]
+  const commandText = item.mode === "reword" && item.summary ? `${config.command} -> ${item.summary}` : config.command;
+  const modeOptions = ["squash", "fixup", "reword", "drop"]
     .map((mode) => {
       const modeConfig = historyRewriteConfig(mode);
       return `<option value="${escapeAttr(mode)}" ${mode === item.mode ? "selected" : ""}>${escapeHtml(modeConfig.title)}</option>`;
     })
     .join("");
+  const rewordItem = historyQueueItemWithMode(item, "reword");
+  const rewordFields = item.mode === "reword"
+    ? `
+      <div class="history-queue-reword">
+        <label>
+          <span>新摘要</span>
+          <input data-history-queue-field data-sha="${escapeAttr(item.sha)}" data-field="summary" value="${escapeAttr(rewordItem.summary || "")}" autocomplete="off" />
+        </label>
+        <label>
+          <span>新正文</span>
+          <textarea data-history-queue-field data-sha="${escapeAttr(item.sha)}" data-field="body">${escapeHtml(rewordItem.body || "")}</textarea>
+        </label>
+      </div>
+    `
+    : "";
   return `
     <div class="history-plan-commit history-queue-item ${item.mode === "drop" ? "danger" : ""}">
       <div class="history-queue-mode-cell">
@@ -2307,8 +2385,9 @@ function renderHistoryQueueItem(item, index, detail) {
       </div>
       <div class="history-queue-copy">
         <strong>${escapeHtml(target.short || item.short || item.sha.slice(0, 7))} · ${escapeHtml(target.message || item.message || "")}</strong>
-        <em>${escapeHtml(config.command)}</em>
+        <em>${escapeHtml(commandText)}</em>
       </div>
+      ${rewordFields}
       <div class="history-queue-buttons">
         <button class="mini-btn" data-history-queue-action="moveUp" data-sha="${escapeAttr(item.sha)}" type="button" ${index === 0 ? "disabled" : ""} title="上移队列显示顺序">上移</button>
         <button class="mini-btn" data-history-queue-action="moveDown" data-sha="${escapeAttr(item.sha)}" type="button" ${index >= state.historyQueue.items.length - 1 ? "disabled" : ""} title="下移队列显示顺序">下移</button>
@@ -2321,11 +2400,12 @@ function renderHistoryQueueItem(item, index, detail) {
 function renderHistoryQueueAffectedCommit(commit) {
   const action = commit.queueAction || "pick";
   const isChanged = action !== "pick";
+  const command = commit.queueSummary ? `${commit.queueCommand || "pick"} -> ${commit.queueSummary}` : commit.queueCommand || "pick";
   return `
     <div class="history-plan-commit ${isChanged ? "target" : ""} ${action === "drop" ? "danger" : ""}">
       <span>${escapeHtml(commit.queueActionLabel || (isChanged ? action : "保留"))}</span>
       <strong>${escapeHtml(commit.short)} · ${escapeHtml(commit.message)}</strong>
-      <em>${escapeHtml(commit.queueCommand || "pick")} · ${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
+      <em>${escapeHtml(command)} · ${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
     </div>
   `;
 }
@@ -5546,6 +5626,11 @@ els.detailBody.addEventListener("submit", (event) => {
   rewordSelectedCommit(form);
 });
 els.detailBody.addEventListener("input", (event) => {
+  const historyQueueField = event.target.closest("[data-history-queue-field]");
+  if (historyQueueField) {
+    updateHistoryQueueField(historyQueueField);
+    return;
+  }
   const filter = event.target.closest("[data-recovery-filter]");
   if (filter && state.selectedTab === "recovery") {
     updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
