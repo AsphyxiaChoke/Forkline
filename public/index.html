@@ -36,8 +36,10 @@
           <button id="openRepo" class="btn primary" type="button">打开</button>
         </div>
         <label class="search">
-          <span aria-hidden="true"></span>
+          <span class="search-icon" aria-hidden="true"></span>
           <input id="searchInput" type="search" placeholder="搜索提交、作者、分支或 SHA" />
+          <output id="searchCount" class="search-count" hidden></output>
+          <button id="clearSearch" class="search-clear" type="button" title="清空搜索" aria-label="清空搜索" hidden>×</button>
         </label>
       </div>
 

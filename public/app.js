@@ -66,6 +66,8 @@ const els = {
   initRepo: $("#initRepo"),
   openRepo: $("#openRepo"),
   searchInput: $("#searchInput"),
+  searchCount: $("#searchCount"),
+  clearSearch: $("#clearSearch"),
   branchList: $("#branchList"),
   newBranch: $("#newBranch"),
   remoteList: $("#remoteList"),
@@ -759,15 +761,11 @@ function pruneSelectedChanges(groups) {
 }
 
 function renderCommits() {
-  const term = els.searchInput.value.trim().toLowerCase();
-  state.filtered = !term
+  const terms = commitSearchTerms();
+  state.filtered = !terms.length
     ? state.data.commits
-    : state.data.commits.filter((commit) => {
-        return [commit.sha, commit.short, commit.author, commit.message, commit.refs]
-          .join(" ")
-          .toLowerCase()
-          .includes(term);
-      });
+    : state.data.commits.filter((commit) => commitMatchesSearch(commit, terms));
+  updateCommitSearchMeta(terms, state.filtered.length, state.data.commits.length);
 
   if (state.filtered.length && !state.filtered.some((commit) => commit.sha === state.selectedSha)) {
     state.selectedSha = state.filtered[0].sha;
@@ -784,8 +782,8 @@ function renderCommits() {
   els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef);
 
   if (!state.filtered.length) {
-    const emptyTitle = term ? "没有匹配的提交" : "还没有提交";
-    const emptySub = term ? "换一个关键词试试" : "暂存文件后创建第一次提交";
+    const emptyTitle = terms.length ? "没有匹配的提交" : "还没有提交";
+    const emptySub = terms.length ? "换一个关键词试试" : "暂存文件后创建第一次提交";
     els.commitGraph.insertAdjacentHTML(
       "beforeend",
       `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>${emptyTitle}</strong><span>${emptySub}</span></div></div>`
@@ -803,15 +801,15 @@ function renderCommits() {
       <div class="graph-cell">
       </div>
       <div class="message">
-        <strong title="${escapeAttr(commit.message)}">${escapeHtml(commit.message)}</strong>
-        <span title="${escapeAttr(commit.refs || "提交历史")}">${escapeHtml(commit.refs || "提交历史")}</span>
+        <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, terms)}</strong>
+        <span title="${escapeAttr(commit.refs || "提交历史")}">${highlightSearchText(commit.refs || "提交历史", terms)}</span>
       </div>
       <div class="author">
         <span class="author-badge" style="--avatar:${commit.color}">${initials(commit.author)}</span>
-        <span>${escapeHtml(commit.author)}</span>
+        <span title="${escapeAttr(commit.author)}">${highlightSearchText(commit.author, terms)}</span>
       </div>
       <div class="time">${escapeHtml(commit.time)}</div>
-      <div class="sha">${escapeHtml(commit.short)}</div>
+      <div class="sha" title="${escapeAttr(commit.sha)}">${highlightSearchText(commit.short, terms)}</div>
     `;
     row.addEventListener("click", async () => {
       await selectCommit(commit.sha);
@@ -824,6 +822,57 @@ function renderCommits() {
     els.commitGraph.appendChild(row);
   });
   renderInspector();
+}
+
+function commitSearchTerms() {
+  return els.searchInput.value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function commitMatchesSearch(commit, terms) {
+  const text = [commit.sha, commit.short, commit.author, commit.message, commit.refs]
+    .join(" ")
+    .toLowerCase();
+  return terms.every((term) => text.includes(term));
+}
+
+function updateCommitSearchMeta(terms, visibleCount, totalCount) {
+  const active = terms.length > 0;
+  els.searchCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
+  els.searchCount.title = active ? `搜索结果：${visibleCount} / ${totalCount} 个提交` : "";
+  els.searchCount.hidden = !active;
+  els.clearSearch.hidden = !active;
+  els.searchInput.closest(".search")?.classList.toggle("active", active);
+}
+
+function highlightSearchText(value, terms) {
+  const text = String(value || "");
+  if (!terms.length || !text) return escapeHtml(text);
+  const unique = [...new Set(terms)].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`(${unique.map(escapeRegExp).join("|")})`, "gi");
+  let result = "";
+  let cursor = 0;
+  text.replace(pattern, (match, _group, offset) => {
+    result += escapeHtml(text.slice(cursor, offset));
+    result += `<mark class="search-hit">${escapeHtml(match)}</mark>`;
+    cursor = offset + match.length;
+    return match;
+  });
+  return result + escapeHtml(text.slice(cursor));
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function clearCommitSearch() {
+  if (!els.searchInput.value) return;
+  els.searchInput.value = "";
+  renderCommits();
+  els.searchInput.focus();
 }
 
 async function selectCommit(sha) {
@@ -5732,6 +5781,7 @@ els.cloneTargetInput.addEventListener("input", () => {
 els.initForm.addEventListener("submit", submitInitForm);
 els.initCancel.addEventListener("click", closeInitModal);
 els.searchInput.addEventListener("input", renderCommits);
+els.clearSearch.addEventListener("click", clearCommitSearch);
 els.themeToggle.addEventListener("click", toggleTheme);
 els.newBranch.addEventListener("click", openBranchModal);
 els.branchForm.addEventListener("submit", submitBranchForm);

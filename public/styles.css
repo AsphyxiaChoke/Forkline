@@ -328,11 +328,17 @@ button {
 
 .search {
   position: relative;
-  padding-left: 38px;
+  gap: 6px;
+  padding: 0 6px 0 38px;
   background: var(--field);
 }
 
-.search span {
+.search input {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.search-icon {
   position: absolute;
   left: 14px;
   width: 13px;
@@ -341,7 +347,7 @@ button {
   border-radius: 50%;
 }
 
-.search span::after {
+.search-icon::after {
   content: "";
   position: absolute;
   right: -6px;
@@ -351,6 +357,45 @@ button {
   border-radius: 4px;
   background: var(--quiet);
   transform: rotate(45deg);
+}
+
+.search-count {
+  max-width: 78px;
+  flex: 0 1 auto;
+  padding: 2px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.search-clear {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.search-clear:hover {
+  border-color: rgba(35, 199, 183, 0.55);
+  color: var(--text);
+}
+
+.search-count[hidden],
+.search-clear[hidden] {
+  display: none;
 }
 
 .actions {
@@ -935,6 +980,14 @@ body.resizing .workspace-resizer::before {
 .message span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.commit-row .search-hit {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: rgba(255, 209, 102, 0.24);
+  color: var(--text);
+  font: inherit;
 }
 
 .author {
