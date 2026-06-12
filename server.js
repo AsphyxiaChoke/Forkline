@@ -423,7 +423,7 @@ async function mergeRef(body) {
   const ref = normalizeRefName(body.ref, "合并目标");
   const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
   if (ref === currentBranch) throw new Error("不能把当前分支合并到自己");
-  const output = await git(currentRepo, ["merge", "--no-edit", ref], { timeout: 120000 });
+  const output = await git(currentRepo, ["merge", "--no-ff", "--no-edit", ref], { timeout: 120000 });
   return commandResult(output || `已合并 ${ref}`);
 }
 
