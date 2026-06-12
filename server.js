@@ -172,6 +172,103 @@ async function readCommit(sha) {
   };
 }
 
+async function readHistoryRewritePreview(sha, rawMode) {
+  const mode = normalizeHistoryRewriteMode(rawMode);
+  if (!currentRepo) {
+    const sample = sampleState();
+    const target = sample.commits.find((item) => item.sha === sha) || sample.commits[0];
+    return {
+      ok: true,
+      mode,
+      title: historyRewritePreviewTitle(mode),
+      command: historyRewriteCommand(mode),
+      effect: historyRewriteEffect(mode),
+      branch: sample.repo.branch,
+      target,
+      parent: sample.commits.find((item) => item.sha === target?.parents?.[0]) || null,
+      affectedCount: 3,
+      affectedPreview: sample.commits.slice(0, 3),
+      blockers: [],
+      warnings: ["示例模式不会执行真实 Git 命令"],
+      canRun: false,
+    };
+  }
+  const targetSha = await resolveCommit(sha);
+  const target = await readBasicCommit(targetSha);
+  const blockers = [];
+  const warnings = ["执行前会自动创建恢复点", "执行后目标提交之后的 SHA 会改变"];
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) blockers.push(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
+
+  const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+  const dirtyCount = parseStatus(statusOutput).length;
+  if (statusOutput.trim()) blockers.push(`当前还有 ${dirtyCount || "未提交"} 个未提交改动。请先提交、储藏或丢弃后再编辑历史。`);
+
+  let branch = "";
+  try {
+    branch = await currentLocalBranchForRewrite();
+  } catch (error) {
+    blockers.push(error.message);
+  }
+  try {
+    await ensureCommitInCurrentHistory(targetSha);
+  } catch (error) {
+    blockers.push(error.message);
+  }
+
+  const parents = await commitParents(targetSha);
+  if (parents.length > 1) blockers.push("暂不支持对 merge 提交执行压缩、修补或丢弃");
+  if ((mode === "squash" || mode === "fixup") && parents.length === 0) {
+    blockers.push("根提交没有父提交，不能压缩或修补进父提交");
+  }
+
+  const parent = parents[0] ? await readBasicCommit(parents[0]).catch(() => null) : null;
+  let upstream = "";
+  let rebaseStart = "";
+  let affectedPreview = [];
+  let affectedCount = 0;
+  let targetIndex = -1;
+  if (!parents.length && (mode === "squash" || mode === "fixup")) {
+    affectedPreview = [target];
+    affectedCount = 1;
+    targetIndex = 0;
+  } else {
+    const base = mode === "drop" ? targetSha : parents[0];
+    const baseParents = base ? await commitParents(base).catch(() => []) : [];
+    upstream = baseParents.length ? `${base}^` : "--root";
+    rebaseStart = upstream === "--root" ? "仓库根提交" : `${baseParents[0]?.slice(0, 7) || base.slice(0, 7)} 之后`;
+    const affected = await readRewriteRangeCommits(upstream).catch(() => []);
+    affectedCount = affected.length;
+    affectedPreview = affected.slice(0, 12);
+    targetIndex = affected.findIndex((item) => item.sha === targetSha);
+    const merges = affected.filter((item) => item.parents.length > 1);
+    if (merges.length) {
+      blockers.push(`这段历史里包含 merge 提交 ${merges[0].short}。为避免破坏分支拓扑，暂不自动执行 ${historyRewriteActionLabel(mode)}。`);
+    }
+    if (targetIndex === -1) blockers.push("目标提交不在这次历史编辑序列中，请刷新后重试。");
+  }
+  if (mode === "drop") warnings.push("丢弃提交可能让后续提交产生冲突");
+  return {
+    ok: true,
+    mode,
+    title: historyRewritePreviewTitle(mode),
+    command: historyRewriteCommand(mode),
+    effect: historyRewriteEffect(mode),
+    branch,
+    target,
+    parent,
+    upstream,
+    rebaseStart,
+    affectedCount,
+    affectedPreview,
+    targetIndex,
+    dirtyCount,
+    blockers: [...new Set(blockers.filter(Boolean))],
+    warnings,
+    canRun: blockers.length === 0,
+  };
+}
+
 async function readWorktree() {
   if (!currentRepo) {
     return { workingFiles: sampleState().workingFiles, operation: null };
@@ -1166,15 +1263,55 @@ async function commitParents(target) {
 }
 
 async function ensureLinearRewriteRange(upstream, mode) {
-  const args = upstream === "--root" ? ["rev-list", "--parents", "HEAD"] : ["rev-list", "--parents", `${upstream}..HEAD`];
-  const merges = (await git(currentRepo, args))
-    .split(/\r?\n/)
-    .map((line) => line.trim().split(/\s+/).filter(Boolean))
-    .filter((parts) => parts.length > 2);
+  const merges = await readRewriteRangeMerges(upstream);
   if (merges.length) {
-    const first = merges[0][0]?.slice(0, 7) || "";
+    const first = merges[0]?.short || "";
     throw new Error(`这段历史里包含 merge 提交 ${first}。为避免破坏分支拓扑，暂不自动执行 ${historyRewriteActionLabel(mode)}。`);
   }
+}
+
+async function readRewriteRangeMerges(upstream) {
+  const args = upstream === "--root" ? ["rev-list", "--parents", "HEAD"] : ["rev-list", "--parents", `${upstream}..HEAD`];
+  return (await git(currentRepo, args))
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/).filter(Boolean))
+    .filter((parts) => parts.length > 2)
+    .map((parts) => ({ sha: parts[0], short: parts[0]?.slice(0, 7) || "", parents: parts.slice(1) }));
+}
+
+async function readRewriteRangeCommits(upstream) {
+  const args = [
+    "log",
+    "--reverse",
+    "--topo-order",
+    "--date=relative",
+    "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P",
+  ];
+  args.push(upstream === "--root" ? "HEAD" : `${upstream}..HEAD`);
+  return parseBasicCommits(await git(currentRepo, args, { maxBuffer: 1024 * 1024 * 2 }));
+}
+
+async function readBasicCommit(sha) {
+  const output = await git(currentRepo, ["show", "-s", "--date=relative", "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P", sha], { maxBuffer: 1024 * 256 });
+  return parseBasicCommits(output)[0] || { sha, short: sha.slice(0, 7), author: "", time: "", message: "", parents: [] };
+}
+
+function parseBasicCommits(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .map((line) => {
+      const parts = line.split("\x1f");
+      if (parts.length < 6) return null;
+      return {
+        sha: parts[0],
+        short: parts[1],
+        author: parts[2] || "unknown",
+        time: parts[3] || "",
+        message: parts[4] || "(无提交信息)",
+        parents: parts[5] ? parts[5].split(" ").filter(Boolean) : [],
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeResetMode(value) {
@@ -1194,6 +1331,27 @@ function historyRewriteResultLabel(mode) {
   if (mode === "fixup") return "已将提交修补进父提交";
   if (mode === "drop") return "已丢弃提交";
   return "已编辑提交";
+}
+
+function historyRewritePreviewTitle(mode) {
+  if (mode === "squash") return "压缩进父提交";
+  if (mode === "fixup") return "修补进父提交";
+  if (mode === "drop") return "丢弃此提交";
+  return "编辑历史";
+}
+
+function historyRewriteCommand(mode) {
+  if (mode === "squash") return "git rebase -i / squash";
+  if (mode === "fixup") return "git rebase -i / fixup";
+  if (mode === "drop") return "git rebase -i / drop";
+  return "git rebase -i";
+}
+
+function historyRewriteEffect(mode) {
+  if (mode === "squash") return "把此提交的改动和提交信息合并进父提交，然后重新播放后续提交。";
+  if (mode === "fixup") return "把此提交的改动合并进父提交，丢弃此提交信息，然后重新播放后续提交。";
+  if (mode === "drop") return "从当前分支历史中删除此提交，然后重新播放后续提交。";
+  return "重写当前分支历史。";
 }
 
 function normalizeMainline(value, parentCount) {
@@ -2440,6 +2598,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/commit") {
       sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/history-rewrite-preview") {
+      sendJson(res, 200, await readHistoryRewritePreview(parsed.searchParams.get("sha") || "", parsed.searchParams.get("mode") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree") {

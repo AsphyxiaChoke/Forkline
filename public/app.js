@@ -33,6 +33,7 @@ const state = {
   selectedStash: "",
   selectedTag: "",
   selectedRecoveryRef: "",
+  historyPlan: null,
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
@@ -787,6 +788,7 @@ function renderCommits() {
 
 async function selectCommit(sha) {
   if (!sha) return;
+  if (state.historyPlan?.sha !== sha) state.historyPlan = null;
   state.selectedSha = sha;
   renderCommits();
   await loadCommit(sha);
@@ -1211,7 +1213,7 @@ async function runCommitToolAction(action, sha) {
     return;
   }
   if (action === "squash" || action === "fixup" || action === "drop") {
-    await rewriteHistoryCommit(commit, action);
+    await openHistoryRewritePlan(commit, action);
     return;
   }
   if (action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
@@ -1240,6 +1242,74 @@ function historyRewriteConfig(mode) {
       needsParent: false,
     },
   }[mode];
+}
+
+async function openHistoryRewritePlan(commit, mode) {
+  if (!state.data || !commit) return;
+  const config = historyRewriteConfig(mode);
+  if (!config) return;
+  if (needsMainline(commit)) {
+    toast("暂不支持对 merge 提交执行自动历史编辑。");
+    return;
+  }
+  if (config.needsParent && !(commit.parents || []).length) {
+    toast("根提交没有父提交，不能压缩或修补。");
+    return;
+  }
+  state.selectedTab = "details";
+  state.selectedSha = commit.sha;
+  state.historyPlan = { sha: commit.sha, mode, loading: true, preview: null, error: "" };
+  renderCommits();
+  await loadCommit(commit.sha);
+  renderInspector();
+  try {
+    const preview = await api(`/api/history-rewrite-preview?sha=${encodeURIComponent(commit.sha)}&mode=${encodeURIComponent(mode)}`);
+    if (state.historyPlan?.sha !== commit.sha || state.historyPlan?.mode !== mode) return;
+    state.historyPlan = { sha: commit.sha, mode, loading: false, preview, error: "" };
+    renderInspector();
+  } catch (error) {
+    if (state.historyPlan?.sha !== commit.sha || state.historyPlan?.mode !== mode) return;
+    state.historyPlan = { sha: commit.sha, mode, loading: false, preview: null, error: error.message };
+    renderInspector();
+  }
+}
+
+async function runHistoryRewritePlan(action, button) {
+  const plan = state.historyPlan;
+  if (!plan) return;
+  const commit = state.data?.commits.find((item) => item.sha === plan.sha || item.sha === state.selectedSha);
+  if (action === "cancel") {
+    state.historyPlan = null;
+    renderInspector();
+    return;
+  }
+  if (action === "refresh") {
+    await openHistoryRewritePlan(commit, plan.mode);
+    return;
+  }
+  if (action !== "execute") return;
+  const preview = plan.preview;
+  if (!preview?.canRun) {
+    toast((preview?.blockers || ["当前计划还不能执行"]).join("\n"));
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "rewriteHistoryCommit", sha: plan.sha, mode: plan.mode }),
+    });
+    state.historyPlan = null;
+    toast(result.output || `已${preview.title || "编辑历史"} ${preview.target?.short || ""}`);
+    await reloadAfterHistoryAction();
+  } catch (error) {
+    toast(error.message);
+    state.historyPlan = { ...plan, loading: false, error: error.message };
+    renderInspector();
+    await refreshWorktree(true);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function rewriteHistoryCommit(commit, mode) {
@@ -1766,6 +1836,7 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn" data-commit-tool="fixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补"}"><span>修补进父提交</span><span class="command-hint">git rebase -i fixup</span></button>
       <button class="mini-btn danger" data-commit-tool="drop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交"}"><span>丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
     </div>
+    ${renderHistoryRewritePlan(commit)}
     <div class="detail-section-title">提交信息</div>
     <form class="reword-form" data-reword-form data-sha="${escapeAttr(commit.sha)}">
       <label class="edit-field">
@@ -1783,6 +1854,89 @@ function renderDetailsTab(commit, detail) {
     </form>
     <div class="detail-section-title">DIFF 预览</div>
     ${renderDiff(detail.diff)}
+  `;
+}
+
+function renderHistoryRewritePlan(commit) {
+  const plan = state.historyPlan;
+  if (!plan || plan.sha !== commit.sha) return "";
+  const config = historyRewriteConfig(plan.mode) || { title: "编辑历史", command: "git rebase -i" };
+  if (plan.loading) {
+    return `
+      <section class="history-plan loading">
+        <div class="history-plan-head">
+          <strong>${escapeHtml(config.title)}计划</strong>
+          <span>${escapeHtml(config.command)}</span>
+        </div>
+        <div class="history-plan-empty">正在预检历史编辑范围...</div>
+      </section>
+    `;
+  }
+  if (plan.error && !plan.preview) {
+    return `
+      <section class="history-plan blocked">
+        <div class="history-plan-head">
+          <strong>${escapeHtml(config.title)}计划</strong>
+          <span>${escapeHtml(config.command)}</span>
+        </div>
+        <div class="history-plan-alert">${escapeHtml(plan.error)}</div>
+        <div class="history-plan-actions">
+          <button class="mini-btn" data-history-plan-action="refresh" type="button">重新预检</button>
+          <button class="mini-btn" data-history-plan-action="cancel" type="button">取消</button>
+        </div>
+      </section>
+    `;
+  }
+  const preview = plan.preview || {};
+  const blockers = preview.blockers || [];
+  const warnings = preview.warnings || [];
+  const affected = preview.affectedPreview || [];
+  return `
+    <section class="history-plan ${preview.canRun ? "" : "blocked"}">
+      <div class="history-plan-head">
+        <strong>${escapeHtml(preview.title || config.title)}计划</strong>
+        <span>${escapeHtml(preview.command || config.command)}</span>
+      </div>
+      <p class="history-plan-effect">${escapeHtml(preview.effect || config.effect || "")}</p>
+      <div class="history-plan-grid">
+        <span>当前分支</span><strong>${escapeHtml(preview.branch || state.data?.repo?.branch || "未知")}</strong>
+        <span>目标提交</span><strong>${escapeHtml(preview.target?.short || commit.short)} · ${escapeHtml(preview.target?.message || commit.message)}</strong>
+        <span>父提交</span><strong>${preview.parent ? `${escapeHtml(preview.parent.short)} · ${escapeHtml(preview.parent.message)}` : "无父提交"}</strong>
+        <span>重放范围</span><strong>${escapeHtml(preview.rebaseStart || "待计算")}</strong>
+        <span>影响提交</span><strong>${escapeHtml(String(preview.affectedCount ?? affected.length))} 个</strong>
+      </div>
+      ${
+        blockers.length
+          ? `<div class="history-plan-alert">${blockers.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+          : `<div class="history-plan-ok">预检通过，可以执行。执行前会创建恢复点。</div>`
+      }
+      ${
+        warnings.length
+          ? `<div class="history-plan-warnings">${warnings.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+          : ""
+      }
+      <div class="history-plan-list">
+        ${affected.length ? affected.map((item) => renderHistoryPlanCommit(item, preview.target?.sha)).join("") : `<div class="history-plan-empty">没有可显示的影响提交</div>`}
+      </div>
+      <div class="history-plan-actions">
+        <button class="mini-btn" data-history-plan-action="refresh" type="button">重新预检</button>
+        <button class="mini-btn" data-history-plan-action="cancel" type="button">取消</button>
+        <button class="mini-btn ${plan.mode === "drop" ? "danger" : ""}" data-history-plan-action="execute" type="button" ${preview.canRun ? "" : "disabled"}>
+          <span>确认执行</span><span class="command-hint">${escapeHtml(preview.command || config.command)}</span>
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderHistoryPlanCommit(commit, targetSha) {
+  const isTarget = commit.sha === targetSha;
+  return `
+    <div class="history-plan-commit ${isTarget ? "target" : ""}">
+      <span>${isTarget ? "目标" : "重放"}</span>
+      <strong>${escapeHtml(commit.short)} · ${escapeHtml(commit.message)}</strong>
+      <em>${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
+    </div>
   `;
 }
 
@@ -3912,6 +4066,14 @@ els.detailBody.addEventListener("click", (event) => {
   if (recoveryRow) {
     event.preventDefault();
     selectRecoveryPoint(recoveryRow.dataset.recoveryRef || "");
+    return;
+  }
+  const historyPlanAction = event.target.closest("[data-history-plan-action]");
+  if (historyPlanAction) {
+    event.preventDefault();
+    if (!historyPlanAction.disabled) {
+      runHistoryRewritePlan(historyPlanAction.dataset.historyPlanAction, historyPlanAction).catch((error) => toast(error.message));
+    }
     return;
   }
   const button = event.target.closest("[data-commit-tool]");

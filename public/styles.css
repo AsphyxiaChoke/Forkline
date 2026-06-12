@@ -1784,6 +1784,156 @@ body.resizing .workbench-resizer-y::before {
   text-align: left;
 }
 
+.history-plan {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(35, 199, 183, 0.28);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--field) 86%, var(--teal) 14%);
+}
+
+.history-plan.blocked {
+  border-color: rgba(240, 184, 91, 0.38);
+  background: color-mix(in srgb, var(--field) 88%, var(--amber) 12%);
+}
+
+.history-plan-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-plan-head strong,
+.history-plan-head span,
+.history-plan-grid strong,
+.history-plan-commit strong,
+.history-plan-commit em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-plan-head span {
+  color: var(--quiet);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.history-plan-effect,
+.history-plan-empty,
+.history-plan-ok {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.history-plan-ok {
+  color: var(--teal);
+}
+
+.history-plan-grid {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 7px 10px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.history-plan-grid span {
+  color: var(--quiet);
+  font-weight: 800;
+}
+
+.history-plan-grid strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.history-plan-alert,
+.history-plan-warnings {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.history-plan-alert {
+  color: var(--amber);
+}
+
+.history-plan-warnings {
+  color: var(--quiet);
+}
+
+.history-plan-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-plan-commit {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 2px 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.history-plan-commit span {
+  grid-row: span 2;
+  align-self: center;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.history-plan-commit.target {
+  border-color: rgba(35, 199, 183, 0.55);
+}
+
+.history-plan-commit.target span {
+  color: var(--teal);
+}
+
+.history-plan-commit strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.history-plan-commit em {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.history-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-plan-actions .mini-btn {
+  min-height: 28px;
+  height: auto;
+}
+
 .edit-field {
   display: grid;
   gap: 6px;
