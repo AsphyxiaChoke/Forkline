@@ -1945,6 +1945,44 @@ body.resizing .workbench-resizer-y::before {
   min-width: 0;
 }
 
+.upstream-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 4px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.upstream-select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.upstream-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.upstream-actions .mini-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
 .remote-list {
   display: grid;
   gap: 8px;

@@ -860,11 +860,16 @@ function showBranchContextMenu(event, branch, options = {}) {
   const mergeButton = menu.querySelector('[data-branch-action="merge"]');
   const rebaseButton = menu.querySelector('[data-branch-action="rebase"]');
   const forcePushButton = menu.querySelector('[data-branch-action="forcePush"]');
+  const setUpstreamButton = menu.querySelector('[data-branch-action="setUpstream"]');
+  const unsetUpstreamButton = menu.querySelector('[data-branch-action="unsetUpstream"]');
   const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
   const renameButton = menu.querySelector('[data-branch-action="rename"]');
   const deleteButton = menu.querySelector('[data-branch-action="delete"]');
   const remoteLocalBranch = isRemote ? remoteCheckoutBranch(branch) : "";
   const remoteIsCurrent = Boolean(remoteLocalBranch && remoteLocalBranch === state.data?.repo?.branch);
+  const currentBranch = state.data?.repo?.branch || "";
+  const currentInfo = state.data?.branchInfo?.[currentBranch] || {};
+  const canSetUpstream = Boolean(isRemote && currentBranch && currentBranch !== "detached HEAD" && !branch.endsWith("/HEAD"));
   checkoutButton.textContent = isRemote ? "签出为本地分支" : "切换到此分支";
   checkoutButton.disabled = isRemote ? !remoteLocalBranch || remoteIsCurrent : !isLocal || isCurrent || occupied;
   checkoutButton.title = isRemote
@@ -896,6 +901,14 @@ function showBranchContextMenu(event, branch, options = {}) {
     : !isCurrent
       ? "请先切换到这个分支后再安全强推"
       : "使用 git push --force-with-lease 推送当前分支";
+  setUpstreamButton.disabled = !canSetUpstream || currentInfo.upstream === branch;
+  setUpstreamButton.title = !canSetUpstream
+    ? "只能把远端分支设为当前本地分支的 upstream"
+    : currentInfo.upstream === branch
+      ? "当前分支已经跟踪这个远端分支"
+      : `把当前分支 ${currentBranch} 跟踪到 ${branch}`;
+  unsetUpstreamButton.disabled = !isLocal || !isCurrent || !options.upstream;
+  unsetUpstreamButton.title = !isLocal || !isCurrent ? "只能在当前本地分支上取消 upstream" : options.upstream ? `取消 ${branch} -> ${options.upstream}` : "当前分支没有 upstream";
   cleanupButton.hidden = !prunable;
   cleanupButton.disabled = !prunable;
   renameButton.textContent = isRemote ? "重命名分支" : "重命名本地分支";
@@ -1068,6 +1081,18 @@ async function runBranchContextAction(action) {
   }
   if (action === "forcePush") {
     await runAction("forcePushLease");
+    return;
+  }
+  if (action === "setUpstream") {
+    if (!isRemote) {
+      toast("请选择远端分支作为 upstream");
+      return;
+    }
+    await runUpstreamAction("set", branch);
+    return;
+  }
+  if (action === "unsetUpstream") {
+    await runUpstreamAction("unset");
     return;
   }
   if (action === "cleanup") {
@@ -1959,6 +1984,8 @@ function renderSyncTab() {
       <span>同步状态</span><div class="meta-value">${escapeHtml(syncStatusText(sync))}</div>
       <span>建议</span><div class="meta-value">${escapeHtml(syncAdviceText(sync))}</div>
     </div>
+    <div class="detail-section-title">上游分支</div>
+    ${upstreamControlHtml(sync)}
     <div class="sync-section-head">
       <div class="detail-section-title">远端仓库</div>
       <button class="mini-btn" data-remote-action="add" type="button"><span>添加远端</span><span class="command-hint">git remote add</span></button>
@@ -1991,6 +2018,41 @@ function syncAdviceText(sync) {
   if (behind) return "拉取前可以先查看待拉取提交。";
   if (ahead) return "可以推送；如果改写过远端历史，请使用安全强推。";
   return "不需要同步操作。";
+}
+
+function upstreamControlHtml(sync) {
+  const remoteBranches = upstreamRemoteBranches();
+  const selected = selectedUpstreamCandidate(sync, remoteBranches);
+  const detached = sync?.detached || sync?.branch === "HEAD" || sync?.branch === "detached HEAD";
+  const canSet = remoteBranches.length && !detached;
+  const canUnset = Boolean(sync?.upstream) && !detached;
+  return `
+    <div class="upstream-panel">
+      <select class="upstream-select" data-upstream-select ${canSet ? "" : "disabled"}>
+        ${remoteBranches.length ? remoteBranches.map((ref) => `<option value="${escapeAttr(ref)}" ${ref === selected ? "selected" : ""}>${escapeHtml(ref)}</option>`).join("") : `<option value="">没有远端分支</option>`}
+      </select>
+      <div class="upstream-actions">
+        <button class="mini-btn" data-upstream-action="set" type="button" ${canSet ? "" : "disabled"}><span>设置 upstream</span><span class="command-hint">git branch -u</span></button>
+        <button class="mini-btn" data-upstream-action="unset" type="button" ${canUnset ? "" : "disabled"}><span>取消 upstream</span><span class="command-hint">--unset-upstream</span></button>
+      </div>
+    </div>
+  `;
+}
+
+function upstreamRemoteBranches() {
+  const remoteNames = state.data?.repo?.remoteNames || [];
+  return (state.data?.remotes || [])
+    .filter((ref) => ref && !ref.endsWith("/HEAD"))
+    .filter((ref) => remoteNames.some((remote) => ref.startsWith(`${remote}/`) && ref.length > remote.length + 1));
+}
+
+function selectedUpstreamCandidate(sync, branches) {
+  if (sync?.upstream && branches.includes(sync.upstream)) return sync.upstream;
+  const branch = sync?.branch || state.data?.repo?.branch || "";
+  const originMatch = branch ? branches.find((ref) => ref === `origin/${branch}`) : "";
+  if (originMatch) return originMatch;
+  const suffixMatch = branch ? branches.find((ref) => ref.endsWith(`/${branch}`)) : "";
+  return suffixMatch || branches[0] || "";
 }
 
 function syncCommitListHtml(commits, emptyText) {
@@ -2989,6 +3051,42 @@ function actionConfirmMessage(action, name) {
   return `确认执行：${name}？`;
 }
 
+async function runUpstreamAction(action, ref = "", button = null) {
+  if (!state.data) return;
+  const branch = state.data?.repo?.branch || "当前分支";
+  const selectedRef = ref || els.detailBody.querySelector("[data-upstream-select]")?.value || "";
+  let payload = null;
+  let message = "";
+  if (action === "set") {
+    if (!selectedRef) {
+      toast("请选择远端分支");
+      return;
+    }
+    payload = { action: "setUpstream", ref: selectedRef };
+    message = `确认设置当前分支 upstream？\n\n当前分支：${branch}\n目标：${selectedRef}\n命令：git branch --set-upstream-to=${selectedRef} ${branch}`;
+  } else if (action === "unset") {
+    const upstream = state.data?.sync?.upstream || state.data?.branchInfo?.[branch]?.upstream || "";
+    payload = { action: "unsetUpstream" };
+    message = `确认取消当前分支 upstream？\n\n当前分支：${branch}\n原 upstream：${upstream || "未设置"}\n命令：git branch --unset-upstream ${branch}`;
+  }
+  if (!payload) return;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    toast(result.output || "upstream 操作完成");
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedTab = "sync";
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function runRemoteAction(action, remoteName = "", button = null) {
   if (!state.data) return;
   const remote = findRemote(remoteName);
@@ -3432,6 +3530,14 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     if (!remoteAction.disabled) {
       runRemoteAction(remoteAction.dataset.remoteAction, remoteAction.dataset.remoteName || "", remoteAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const upstreamAction = event.target.closest("[data-upstream-action]");
+  if (upstreamAction) {
+    event.preventDefault();
+    if (!upstreamAction.disabled) {
+      runUpstreamAction(upstreamAction.dataset.upstreamAction, "", upstreamAction).catch((error) => toast(error.message));
     }
     return;
   }

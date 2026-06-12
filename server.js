@@ -238,6 +238,12 @@ async function runAction(body) {
   if (action === "deleteRemote") {
     return deleteRemote(body);
   }
+  if (action === "setUpstream") {
+    return setCurrentBranchUpstream(body);
+  }
+  if (action === "unsetUpstream") {
+    return unsetCurrentBranchUpstream();
+  }
   if (action === "stageAll") {
     return commandResult(await git(currentRepo, ["add", "-A"], { timeout: 60000 }));
   }
@@ -413,6 +419,8 @@ function actionLabel(body = {}) {
     addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
     setRemoteUrl: body.name ? `修改远端 ${shortText(body.name, 72)} URL` : "修改远端 URL",
     deleteRemote: body.name ? `删除远端 ${shortText(body.name, 72)}` : "删除远端",
+    setUpstream: body.ref ? `设置 upstream ${shortText(body.ref, 72)}` : "设置 upstream",
+    unsetUpstream: "取消 upstream",
     stageAll: "暂存全部更改",
     discardAll: "丢弃全部未提交更改",
     continueRevert: "继续还原",
@@ -665,6 +673,29 @@ async function deleteRemote(body) {
   const remote = await ensureRemoteName(body.name);
   await git(currentRepo, ["remote", "remove", remote], { timeout: 60000 });
   return { ok: true, output: `已删除远端 ${remote}` };
+}
+
+async function setCurrentBranchUpstream(body) {
+  const branch = await currentLocalBranch("设置 upstream");
+  const upstream = await ensureRemoteBranchRef(body.ref || body.upstream);
+  const before = await readCurrentSyncState();
+  if (before.upstream === upstream) {
+    return { ok: true, output: `当前分支 ${branch} 已经跟踪 ${upstream}` };
+  }
+  await git(currentRepo, ["branch", `--set-upstream-to=${upstream}`, branch], { timeout: 60000 });
+  const after = await readCurrentSyncState();
+  const state = syncStateLine(after);
+  return { ok: true, output: [`已设置 upstream：${branch} -> ${upstream}`, state].filter(Boolean).join("\n") };
+}
+
+async function unsetCurrentBranchUpstream() {
+  const branch = await currentLocalBranch("取消 upstream");
+  const before = await readCurrentSyncState();
+  if (!before.upstream) {
+    return { ok: true, output: `当前分支 ${branch} 没有 upstream，无需取消` };
+  }
+  await git(currentRepo, ["branch", "--unset-upstream", branch], { timeout: 60000 });
+  return { ok: true, output: `已取消 upstream：${branch}\n原 upstream：${before.upstream}` };
 }
 
 async function deleteRemoteBranch(body) {
@@ -1239,6 +1270,32 @@ async function ensureRemoteName(value) {
   return remote;
 }
 
+async function currentLocalBranch(actionText = "执行操作") {
+  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+    throw new Error(`当前处于游离 HEAD，不能${actionText}。请先切换到本地分支。`);
+  }
+  return branch;
+}
+
+async function readRemoteBranchNames() {
+  const remoteNames = await readRemoteNames();
+  const output = await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]).catch(() => "");
+  return String(output || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter((item) => item && !item.endsWith("/HEAD") && isKnownRemoteBranch(item, remoteNames));
+}
+
+async function ensureRemoteBranchRef(value) {
+  const ref = normalizeRefName(value, "远端分支");
+  if (ref.endsWith("/HEAD")) throw new Error("不能把远端 HEAD 设为 upstream");
+  const branches = await readRemoteBranchNames();
+  if (!branches.includes(ref)) throw new Error(`远端分支 ${ref} 不存在。请先抓取远端后再试。`);
+  splitRemoteBranchRef(ref, await readRemoteNames());
+  return ref;
+}
+
 async function readRemoteDetails() {
   const [names, verboseOutput] = await Promise.all([readRemoteNames(), git(currentRepo, ["remote", "-v"]).catch(() => "")]);
   return parseRemoteDetails(verboseOutput, names);
@@ -1803,6 +1860,7 @@ function sampleState() {
       path: "示例仓库",
       branch: "feature/visual-history",
       isSample: true,
+      remoteNames: ["origin", "upstream"],
     },
     branches: ["feature/visual-history", "main", "release/2.9", "fix/diff-pane-resize", "experiment/ai-summary", "chore/design-tokens"],
     remotes: ["origin/main", "origin/feature/visual-history", "upstream/release/2.9"],
