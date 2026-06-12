@@ -22,6 +22,8 @@
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - 分支比较已接入：本地/远端分支右键菜单新增“与当前分支比较”，右侧新增“比较”页；后端 `/api/compare` 返回两边独有提交数量、最多 40 条独有提交、目标分支相对共同祖先的文件列表和 Diff，并复用最大化对照。
+- 分支整理已接入：右侧“分支”页现在汇总本地分支的已合并、上游丢失和长期未动状态，显示最后提交、upstream、领先/落后、保护/占用原因；分支右键菜单和命令面板可直接打开分支整理，列表中可查看、比较、安全删除单个分支，也可批量安全删除已合并分支。
+- 分支整理删除策略：后端新增 `deleteBranches`，批量删除仍逐个执行 `git branch -d`；当前分支、`main` / `master` / `develop` / `dev` / `trunk` 这类主干分支、以及其他 worktree 占用分支会在 UI 禁用，未完全合并的分支仍由 Git 拦截并返回中文原因。
 - 比较页任意引用选择器已接入：右侧“比较”页现在显示“基准引用 / 目标引用”两个输入框，带本地分支、远端分支、Tag 和 `HEAD` 候选，也可直接输入提交 SHA；支持开始比较、刷新、交换 base/head，分支右键比较仍会自动填入并运行。
 - Tag 管理已接入：右侧新增“标签”页，显示本地 Tag 列表和详情，支持查看 Tag 提交、复制名称、推送 Tag、删除本地 Tag、删除远端 Tag；Tag 行右键菜单也提供同样的相关动作和 Git 指令提示。
 - “合并分支”已改为 `--no-ff --no-edit`，即使可以快进也会保留 merge commit，方便在“全部分支”图谱里看到分支回归主线的样式。
@@ -131,6 +133,7 @@
 - 恢复点策略偏好/候选预览静态验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 通过；HTTP 静态资源检查确认最新 `app.js` 返回 `forkline-recovery-policy`、`saveRecoveryPolicyPreference`、`recoveryRetentionPreviewHtml`，最新 `styles.css` 返回 `.recovery-retention-preview-row`。内置浏览器打开 localhost 本次仍超时并重置会话，未记为视觉验证。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 - 比较页任意引用选择器 API/HTTP 验证：临时服务 `http://127.0.0.1:5239` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `base = 123`、`head = forkline/merge-clean`、目标独有提交 3 个、文件变化 6 个；HTTP 静态检查确认 `comparePickerHtml`、`data-compare-run` 和 `.compare-picker` 均已从最新资源返回。内置 Browser 本次打开 localhost 仍超时，未记为视觉验证。
+- 分支整理 API 验证：临时服务 `http://127.0.0.1:5256` 打开 GitTest 后，创建本地临时分支 `forkline/cleanup-api-verify` 指向当前 HEAD；`branchCleanup` 返回该分支 `mergedIntoCurrent = true`、`canDelete = true`、`statusLabel = 已合并`；调用 `deleteBranches` 后返回“已删除 1 个本地分支”，`show-ref` 确认该临时分支不存在。内置 Browser 本次打开 localhost 仍卡在连接/加载层，未记为视觉验证；GitTest 最终保持 `123` 分支且工作区干净。
 - 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。
 - 克隆仓库 API 验证：临时服务 `http://127.0.0.1:5202` 调用 `cloneRepository`，从 `D:\桌面\GitTestRemote.git` 克隆到 `C:\tmp\forkline-clone-api-20260613`，返回 `ok=true`、新仓库 `forkline-clone-api-20260613`、分支 `main`、工作区改动 0；再次克隆到同一非空目录会中文拒绝“目标文件夹不是空的”。测试克隆目录已删除，临时服务已关闭。
 - 初始化仓库 API 验证：临时服务 `http://127.0.0.1:5206` 调用 `initRepository` 初始化 `C:\tmp\forkline-init-api-20260613`，返回 `ok=true`、新仓库 `forkline-init-api-20260613`、分支 `master`、同步状态分支 `master`、提交数 0；重复初始化同一目录会中文拒绝“这个文件夹已经是 Git 仓库”。另验证已有普通非空目录 `C:\tmp\forkline-init-existing-api-20260613` 可初始化且不强制打开。HTTP 静态检查确认 `initRepo`、`initModal`、`initForm` 和“初始化仓库”入口存在；内置浏览器本次打开本地页仍超时，未记为视觉验证。临时测试目录已清理，临时服务已关闭。

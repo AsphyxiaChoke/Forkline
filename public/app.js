@@ -1179,6 +1179,7 @@ function commandPaletteItems() {
     }),
     commandItem("tabDetails", "打开详情", "查看当前提交详情", "详情", "details commit", hasRepo, () => switchInspectorTab("details")),
     commandItem("tabFiles", "打开文件", "查看当前提交文件改动", "文件", "files diff", hasRepo, () => switchInspectorTab("files")),
+    commandItem("tabBranches", "打开分支整理", "查看已合并、上游丢失和长期未动分支", "分支", "branch cleanup prune", hasRepo, () => switchInspectorTab("branches")),
     commandItem("tabSync", "打开同步", "查看 upstream、待拉取和待推送提交", "同步", "fetch pull push upstream", hasRepo, () => switchInspectorTab("sync")),
     commandItem("tabStashes", "打开储藏", "查看和恢复 Git stash", "储藏", "stash", hasRepo, () => switchInspectorTab("stashes")),
     commandItem("tabTags", "打开标签", "查看和管理 Tag", "标签", "tag release", hasRepo, () => switchInspectorTab("tags")),
@@ -1615,6 +1616,11 @@ async function runBranchContextAction(action) {
   }
   if (action === "compare") {
     await openCompareBranch(branch);
+    return;
+  }
+  if (action === "cleanupView") {
+    state.selectedTab = "branches";
+    renderInspector();
     return;
   }
   if (action === "checkout") {
@@ -2695,6 +2701,11 @@ function renderInspector() {
     renderFileBlameTab();
     return;
   }
+  if (state.selectedTab === "branches") {
+    const branchCommit = state.data?.commits.find((item) => item.sha === state.selectedSha) || state.data?.commits?.[0] || null;
+    renderBranchesTab(branchCommit);
+    return;
+  }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
@@ -2707,7 +2718,6 @@ function renderInspector() {
   els.detailTitle.textContent = commit.message;
   els.detailSub.textContent = `${commit.short} · ${commit.author} · ${commit.time}`;
   if (state.selectedTab === "files") renderFilesTab(commit, detail);
-  else if (state.selectedTab === "branches") renderBranchesTab(commit);
   else renderDetailsTab(commit, detail);
 }
 
@@ -3214,23 +3224,250 @@ async function runFileHistoryAction(action, button) {
 }
 
 function renderBranchesTab(commit) {
+  const rows = branchCleanupRows();
+  const summary = branchCleanupSummary(rows);
+  const realRepo = Boolean(state.data && !state.data.repo.isSample);
+  els.detailNode.style.borderColor = "var(--teal)";
+  els.detailTitle.textContent = "分支整理";
+  els.detailSub.textContent = rows.length ? `${rows.length} 个本地分支 · 基准 ${state.data?.repo?.branch || "HEAD"}` : "没有本地分支";
+  if (!rows.length) {
+    els.detailBody.innerHTML = `
+      <div class="empty-panel">
+        <strong>没有本地分支</strong>
+        <span>打开真实 Git 仓库后会在这里显示分支整理建议。</span>
+      </div>
+    `;
+    return;
+  }
+  const relatedRefs = (commit?.refs || state.data?.repo?.branch || "")
+    .split(",")
+    .map((ref) => ({ label: ref.trim(), ref: normalizeCommitRefLabel(ref) }))
+    .filter((item) => item.label && item.ref)
+    .slice(0, 8);
+  const relatedHtml = relatedRefs.length
+    ? `
+      <div class="branch-focus">
+        <div class="detail-section-title">当前提交引用</div>
+        <div class="branch-focus-list">
+          ${relatedRefs.map((item, index) => `<button class="nav-item" data-branch-cleanup-action="view" data-branch="${escapeAttr(item.ref)}" type="button" title="${escapeAttr(item.ref)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(item.label)}</span></button>`).join("")}
+        </div>
+      </div>
+    `
+    : "";
   els.detailBody.innerHTML = `
-    <div class="detail-section-title">分支图</div>
-    <svg class="mini-graph" viewBox="0 0 320 220" role="img" aria-label="分支图">
-      <path d="M 28 164 C 92 164, 116 74, 180 74 S 260 88, 292 58" fill="none" stroke="#23c7b7" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 28 164 C 112 164, 126 142, 188 142 S 250 152, 292 146" fill="none" stroke="#f0b85b" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 76 164 C 126 164, 128 112, 184 112 S 248 112, 292 98" fill="none" stroke="#ff7a67" stroke-width="6" stroke-linecap="round"/>
-      <circle cx="178" cy="${commit.lane === 0 ? 74 : commit.lane === 1 ? 112 : 146}" r="12" fill="var(--graph-node-fill)" stroke="${commit.color}" stroke-width="6"/>
-      <text x="18" y="28" fill="var(--quiet)" font-size="13" font-family="Consolas">${escapeHtml(commit.short)}</text>
-      <text x="18" y="196" fill="var(--text)" font-size="13">${escapeHtml(commit.refs || state.data.repo.branch)}</text>
-    </svg>
-    <div class="detail-section-title">相关引用</div>
-    ${(commit.refs || state.data.repo.branch)
-      .split(",")
-      .filter(Boolean)
-      .map((ref, index) => `<button class="nav-item" type="button"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(ref.trim())}</span></button>`)
-      .join("")}
+    <div class="branch-cleanup-layout">
+      <div class="branch-cleanup-summary">
+        <div><span>已合并</span><strong>${summary.merged}</strong></div>
+        <div><span>上游丢失</span><strong>${summary.gone}</strong></div>
+        <div><span>长期未动</span><strong>${summary.stale}</strong></div>
+      </div>
+      <div class="branch-cleanup-actions">
+        <button class="mini-btn" data-branch-cleanup-action="refresh" type="button"><span>刷新</span><span class="command-hint">git branch</span></button>
+        <button class="mini-btn danger" data-branch-cleanup-action="deleteMerged" type="button" ${!realRepo || !summary.deletableMerged ? "disabled" : ""}>
+          <span>删除已合并</span><span class="command-hint">git branch -d</span>
+        </button>
+      </div>
+      ${relatedHtml}
+      <div class="branch-cleanup-list">
+        ${rows.map((row, index) => branchCleanupRowHtml(row, index, realRepo)).join("")}
+      </div>
+    </div>
   `;
+}
+
+function normalizeCommitRefLabel(ref) {
+  return String(ref || "")
+    .trim()
+    .replace(/^HEAD\s*->\s*/, "")
+    .replace(/^tag:\s*/, "")
+    .trim();
+}
+
+function branchCleanupRows() {
+  const rows = state.data?.branchCleanup;
+  if (Array.isArray(rows) && rows.length) return rows;
+  const current = state.data?.repo?.branch || "";
+  const branchInfo = state.data?.branchInfo || {};
+  return (state.data?.branches || []).map((branch) => {
+    const info = branchInfo[branch] || {};
+    const protectedBranch = branch === current || ["main", "master", "develop", "development", "dev", "trunk"].includes(String(branch || "").toLowerCase());
+    return {
+      branch,
+      current: branch === current,
+      protected: protectedBranch,
+      upstream: info.upstream || "",
+      upstreamGone: Boolean(info.upstreamGone),
+      ahead: Number(info.ahead) || 0,
+      behind: Number(info.behind) || 0,
+      occupied: Boolean(info.worktreePath),
+      worktreePath: info.worktreePath || "",
+      canDelete: !protectedBranch && !info.worktreePath,
+      statusLabel: branch === current ? "当前" : protectedBranch ? "保护" : info.upstreamGone ? "上游丢失" : "活跃",
+      reason: branch === current ? "当前所在分支不能删除" : protectedBranch ? "主干或长期分支默认保留" : info.upstreamGone ? "上游分支已经不存在，删除前先确认本地提交是否还需要" : "等待 Git 状态刷新",
+    };
+  });
+}
+
+function branchCleanupSummary(rows) {
+  return rows.reduce(
+    (acc, row) => {
+      if (row.mergedIntoCurrent) acc.merged += 1;
+      if (row.upstreamGone) acc.gone += 1;
+      if (row.stale) acc.stale += 1;
+      if (row.canDelete && row.mergedIntoCurrent) acc.deletableMerged += 1;
+      return acc;
+    },
+    { merged: 0, gone: 0, stale: 0, deletableMerged: 0 }
+  );
+}
+
+function branchCleanupRowHtml(row, index, realRepo) {
+  const canDelete = Boolean(realRepo && row.canDelete);
+  const classes = ["branch-cleanup-row", branchCleanupStatusClass(row), row.recommended ? "recommended" : "", row.attention ? "attention" : ""].filter(Boolean).join(" ");
+  const branch = row.branch || "";
+  const meta = branchCleanupMetaHtml(row);
+  const deleteTitle = canDelete ? `安全删除本地分支 ${branch}` : row.deleteBlockedReason || row.protectedReason || (realRepo ? "这个分支暂不适合删除" : "示例仓库不能执行删除");
+  return `
+    <div class="${classes}" data-branch-name="${escapeAttr(branch)}">
+      <div class="branch-cleanup-head">
+        <strong title="${escapeAttr(branch)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span></strong>
+        <span class="branch-cleanup-status">${escapeHtml(row.statusLabel || "活跃")}</span>
+      </div>
+      ${meta}
+      <div class="branch-cleanup-last">
+        <code>${escapeHtml(row.lastCommitShort || "")}</code>
+        <span title="${escapeAttr(row.lastSubject || "")}">${escapeHtml(row.lastSubject || "没有提交摘要")}</span>
+        <em>${escapeHtml(row.lastUpdated || "")}</em>
+      </div>
+      <p title="${escapeAttr(row.reason || "")}">${escapeHtml(row.reason || "")}</p>
+      <div class="branch-cleanup-row-actions">
+        <button class="mini-btn" data-branch-cleanup-action="view" data-branch="${escapeAttr(branch)}" type="button">查看</button>
+        <button class="mini-btn" data-branch-cleanup-action="compare" data-branch="${escapeAttr(branch)}" type="button" ${row.current ? "disabled" : ""}>比较</button>
+        <button class="mini-btn danger" data-branch-cleanup-action="delete" data-branch="${escapeAttr(branch)}" type="button" title="${escapeAttr(deleteTitle)}" ${canDelete ? "" : "disabled"}>
+          <span>删除</span><span class="command-hint">git branch -d</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function branchCleanupMetaHtml(row) {
+  const badges = [];
+  if (row.upstream) badges.push(`<span class="branch-badge upstream" title="${escapeAttr(row.upstream)}">${escapeHtml(row.upstream)}</span>`);
+  else if (row.current) badges.push(`<span class="branch-badge muted">未设置 upstream</span>`);
+  if (row.upstreamGone) badges.push(`<span class="branch-badge danger">上游丢失</span>`);
+  if (row.ahead) badges.push(`<span class="branch-badge ahead">领先 ${escapeHtml(row.ahead)}</span>`);
+  if (row.behind) badges.push(`<span class="branch-badge behind">落后 ${escapeHtml(row.behind)}</span>`);
+  if (row.mergedIntoCurrent) badges.push(`<span class="branch-badge merged">已合并</span>`);
+  if (row.stale) badges.push(`<span class="branch-badge stale">${escapeHtml(row.staleDays || 0)} 天未动</span>`);
+  if (row.occupied) badges.push(`<span class="branch-badge danger">worktree 占用</span>`);
+  if (row.protected && !row.current) badges.push(`<span class="branch-badge muted">保护</span>`);
+  return badges.length ? `<div class="branch-cleanup-meta">${badges.join("")}</div>` : `<div class="branch-cleanup-meta"><span class="branch-badge muted">无 upstream</span></div>`;
+}
+
+function branchCleanupStatusClass(row) {
+  if (row.current) return "current";
+  if (row.protected) return "protected";
+  if (row.occupied) return "occupied";
+  if (row.mergedIntoCurrent) return "merged";
+  if (row.upstreamGone) return "gone";
+  if (row.stale) return "stale";
+  return "active";
+}
+
+async function runBranchCleanupAction(action, button) {
+  const branch = button?.dataset?.branch || "";
+  if (action === "refresh") {
+    await refreshBranchCleanup(button);
+    return;
+  }
+  if (action === "deleteMerged") {
+    await deleteMergedCleanupBranches(button);
+    return;
+  }
+  if (!branch) return;
+  if (action === "view") {
+    await selectRef(branch);
+    return;
+  }
+  if (action === "compare") {
+    await openCompareBranch(branch);
+    return;
+  }
+  if (action === "delete") {
+    await deleteBranch(branch, button);
+  }
+}
+
+async function refreshBranchCleanup(button) {
+  if (!state.data) return;
+  if (button) button.disabled = true;
+  try {
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+    renderInspector();
+    toast("分支整理已刷新");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function deleteMergedCleanupBranches(button) {
+  if (!state.data || state.data.repo.isSample) return;
+  const branches = branchCleanupRows()
+    .filter((row) => row.canDelete && row.mergedIntoCurrent)
+    .map((row) => row.branch)
+    .filter(Boolean);
+  if (!branches.length) {
+    toast("没有可安全删除的已合并分支");
+    return;
+  }
+  const preview = branches.slice(0, 8).join("\n");
+  const suffix = branches.length > 8 ? `\n... 还有 ${branches.length - 8} 个` : "";
+  if (!confirm(`确认安全删除这些已合并分支？\n\n${preview}${suffix}\n\n命令：git branch -d <分支>\n如果 Git 判断未完全合并，会自动阻止。`)) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "deleteBranches", branches }),
+    });
+    toast(result.output || `已删除 ${branches.length} 个分支`);
+    state.commitDetails.clear();
+    if (branches.includes(state.selectedRef)) state.selectedRef = state.data.repo.branch || "";
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function branchCleanupContextOptions(branch) {
+  const row = branchCleanupRows().find((item) => item.branch === branch) || {};
+  return {
+    local: true,
+    checkout: true,
+    rename: true,
+    delete: true,
+    current: Boolean(row.current || branch === state.data?.repo?.branch),
+    occupied: Boolean(row.occupied),
+    worktreePath: row.worktreePath || "",
+    prunable: false,
+    upstream: row.upstream || "",
+    upstreamGone: Boolean(row.upstreamGone),
+    ahead: Number(row.ahead) || 0,
+    behind: Number(row.behind) || 0,
+  };
 }
 
 function renderStashesTab() {
@@ -6691,6 +6928,14 @@ els.detailBody.addEventListener("change", (event) => {
   }
 });
 els.detailBody.addEventListener("click", (event) => {
+  const branchCleanupAction = event.target.closest("[data-branch-cleanup-action]");
+  if (branchCleanupAction) {
+    event.preventDefault();
+    if (!branchCleanupAction.disabled) {
+      runBranchCleanupAction(branchCleanupAction.dataset.branchCleanupAction, branchCleanupAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   const compareRun = event.target.closest("[data-compare-run]");
   if (compareRun) {
     event.preventDefault();
@@ -6866,6 +7111,14 @@ els.detailBody.addEventListener("click", (event) => {
   runCommitToolAction(button.dataset.commitTool, button.dataset.sha).catch((error) => toast(error.message));
 });
 els.detailBody.addEventListener("contextmenu", (event) => {
+  const cleanupRow = event.target.closest(".branch-cleanup-row[data-branch-name]");
+  if (cleanupRow) {
+    event.preventDefault();
+    event.stopPropagation();
+    const branch = cleanupRow.dataset.branchName || "";
+    if (branch) showBranchContextMenu(event, branch, branchCleanupContextOptions(branch));
+    return;
+  }
   const remoteRow = event.target.closest(".remote-row[data-remote-name]");
   if (remoteRow) {
     event.preventDefault();

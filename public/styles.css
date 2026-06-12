@@ -878,6 +878,14 @@ body.resizing .workspace-resizer::before {
   color: var(--quiet);
 }
 
+.branch-badge.merged {
+  color: var(--green);
+}
+
+.branch-badge.stale {
+  color: var(--amber);
+}
+
 .nav-item span:last-child,
 .branch-chip span:last-child,
 .message strong,
@@ -2017,6 +2025,208 @@ body.resizing .workbench-resizer-y::before {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.branch-cleanup-layout {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.branch-cleanup-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.branch-cleanup-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.branch-cleanup-summary span {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-cleanup-summary strong {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.branch-cleanup-actions,
+.branch-cleanup-row-actions,
+.branch-focus-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.branch-cleanup-actions .mini-btn,
+.branch-cleanup-row-actions .mini-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 30px;
+  height: auto;
+}
+
+.branch-cleanup-actions .mini-btn {
+  flex: 1 1 118px;
+}
+
+.branch-cleanup-row-actions .mini-btn {
+  flex: 1 1 72px;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.branch-cleanup-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.branch-cleanup-row {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.branch-cleanup-row.recommended {
+  border-color: rgba(107, 213, 140, 0.35);
+  background: rgba(107, 213, 140, 0.06);
+}
+
+.branch-cleanup-row.attention {
+  border-color: rgba(240, 184, 91, 0.35);
+  background: rgba(240, 184, 91, 0.06);
+}
+
+.branch-cleanup-row.current,
+.branch-cleanup-row.protected {
+  background: var(--panel-2);
+}
+
+.branch-cleanup-head,
+.branch-cleanup-last {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.branch-cleanup-head strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.branch-cleanup-head strong span:last-child,
+.branch-cleanup-last span,
+.branch-cleanup-last em,
+.branch-cleanup-row p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-cleanup-status {
+  max-width: 76px;
+  padding: 2px 7px;
+  overflow: hidden;
+  border: 1px solid rgba(35, 199, 183, 0.24);
+  border-radius: 999px;
+  background: rgba(35, 199, 183, 0.08);
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-cleanup-row.gone .branch-cleanup-status,
+.branch-cleanup-row.stale .branch-cleanup-status {
+  border-color: rgba(240, 184, 91, 0.34);
+  background: rgba(240, 184, 91, 0.08);
+  color: var(--amber);
+}
+
+.branch-cleanup-row.occupied .branch-cleanup-status {
+  border-color: rgba(240, 99, 99, 0.34);
+  background: rgba(240, 99, 99, 0.08);
+  color: var(--danger);
+}
+
+.branch-cleanup-row.protected .branch-cleanup-status,
+.branch-cleanup-row.current .branch-cleanup-status {
+  border-color: rgba(154, 166, 184, 0.24);
+  background: rgba(154, 166, 184, 0.08);
+  color: var(--muted);
+}
+
+.branch-cleanup-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.branch-cleanup-last {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.branch-cleanup-last code {
+  min-width: 0;
+  color: var(--blue);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.branch-cleanup-last span,
+.branch-cleanup-last em,
+.branch-cleanup-row p {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.branch-cleanup-row p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.branch-focus {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
 }
 
 .reword-form {

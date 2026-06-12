@@ -10,6 +10,8 @@ const GIT_BIN = findGitExecutable();
 const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
 const WORKTREE_DIFF_CONTEXT = "8";
 const UNTRACKED_DIFF_HUNK_SIZE = 40;
+const BRANCH_STALE_DAYS = 30;
+const PROTECTED_BRANCH_NAMES = new Set(["main", "master", "develop", "development", "dev", "trunk"]);
 
 let currentRepo = null;
 let nextOperationId = 1;
@@ -113,10 +115,12 @@ async function readBranchDisplayName(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, trackingOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
     readBranchDisplayName(currentRepo),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
+    git(currentRepo, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
+    git(currentRepo, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => ""),
     git(currentRepo, ["remote"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
@@ -154,6 +158,13 @@ async function readState(ref = "") {
   }
 
   const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
+  const branchCleanup = buildBranchCleanup({
+    branches,
+    branchInfo,
+    branchMeta: parseBranchCleanupMeta(branchMetaOutput),
+    mergedBranches: parseSimpleLines(mergedBranchOutput),
+    currentBranch,
+  });
   const sync = await readCurrentSyncDetails();
   return {
     repo: {
@@ -167,6 +178,7 @@ async function readState(ref = "") {
     },
     branches: branches.slice(0, 32),
     branchInfo,
+    branchCleanup,
     remotes: remotes.slice(0, 32),
     sync,
     workingFiles: parseStatus(statusOutput),
@@ -783,6 +795,9 @@ async function runAction(body) {
   if (action === "deleteBranch") {
     return deleteBranch(body);
   }
+  if (action === "deleteBranches") {
+    return deleteBranches(body);
+  }
   if (action === "deleteRemoteBranch") {
     return deleteRemoteBranch(body);
   }
@@ -999,6 +1014,7 @@ function actionLabel(body = {}) {
     createBranch: branch ? `创建分支 ${branch}` : "创建分支",
     renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
     deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
+    deleteBranches: Array.isArray(body.branches) ? `批量删除 ${body.branches.length} 个分支` : "批量删除分支",
     deleteRemoteBranch: body.ref ? `删除远端分支 ${shortText(body.ref, 72)}` : "删除远端分支",
     mergeRef: ref ? `合并分支 ${ref}` : "合并分支",
     rebaseOntoRef: ref ? `变基到 ${ref}` : "变基当前分支",
@@ -1164,6 +1180,30 @@ async function deleteBranch(body) {
   if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
   await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
   return { ok: true, output: `已删除本地分支 ${branch}` };
+}
+
+async function deleteBranches(body) {
+  const branches = Array.isArray(body.branches) ? [...new Set(body.branches.map((item) => normalizeBranchName(item)))] : [];
+  if (!branches.length) throw new Error("请选择要删除的本地分支");
+  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const deleted = [];
+  const failed = [];
+  for (const branch of branches) {
+    try {
+      if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
+      await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
+      deleted.push(branch);
+    } catch (error) {
+      failed.push({ branch, error: friendlyErrorMessage(error, { body: { action: "deleteBranch", branch } }) });
+    }
+  }
+  if (!deleted.length && failed.length) {
+    throw new Error(`没有删除任何分支。\n${failed.map((item) => `${item.branch}：${item.error}`).join("\n")}`);
+  }
+  const lines = [`已删除 ${deleted.length} 个本地分支`];
+  if (deleted.length) lines.push(`成功：${deleted.join("、")}`);
+  if (failed.length) lines.push(`被 Git 阻止：${failed.map((item) => `${item.branch}（${item.error}）`).join("；")}`);
+  return { ok: true, deleted, failed, output: lines.join("\n") };
 }
 
 async function pushCurrentBranch() {
@@ -3027,6 +3067,103 @@ function mergeBranchInfo(...sources) {
   return merged;
 }
 
+function parseBranchCleanupMeta(output) {
+  const meta = {};
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    const branch = parts[0]?.trim();
+    if (!branch) continue;
+    meta[branch] = {
+      sha: parts[1] || "",
+      short: parts[2] || "",
+      updated: parts[3] || "",
+      updatedUnix: Number(parts[4]) || 0,
+      subject: parts.slice(5).join("\t").trim(),
+    };
+  }
+  return meta;
+}
+
+function parseSimpleLines(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function buildBranchCleanup({ branches, branchInfo, branchMeta, mergedBranches, currentBranch }) {
+  const mergedSet = new Set(mergedBranches || []);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return (branches || []).map((branch) => {
+    const info = branchInfo?.[branch] || {};
+    const meta = branchMeta?.[branch] || {};
+    const current = Boolean(branch && branch === currentBranch);
+    const protectedName = PROTECTED_BRANCH_NAMES.has(String(branch || "").toLowerCase());
+    const occupied = Boolean(info.worktreePath);
+    const mergedIntoCurrent = mergedSet.has(branch);
+    const ageDays = meta.updatedUnix ? Math.max(0, Math.floor((nowSeconds - meta.updatedUnix) / 86400)) : 0;
+    const stale = Boolean(ageDays >= BRANCH_STALE_DAYS);
+    const deleteBlockedReason = current
+      ? "当前分支"
+      : protectedName
+        ? "主干/长期分支"
+        : occupied
+          ? "被其他工作树占用"
+          : "";
+    const canDelete = !deleteBlockedReason;
+    const recommended = Boolean(canDelete && mergedIntoCurrent);
+    const attention = Boolean(canDelete && !mergedIntoCurrent && (info.upstreamGone || stale));
+    const statusLabel = branchCleanupStatus({ current, protectedName, occupied, mergedIntoCurrent, upstreamGone: info.upstreamGone, stale });
+    return {
+      branch,
+      current,
+      protected: Boolean(current || protectedName),
+      protectedReason: current ? "当前分支" : protectedName ? "主干/长期分支" : "",
+      occupied,
+      worktreePath: info.worktreePath || "",
+      upstream: info.upstream || "",
+      upstreamGone: Boolean(info.upstreamGone),
+      ahead: Number(info.ahead) || 0,
+      behind: Number(info.behind) || 0,
+      mergedIntoCurrent,
+      stale,
+      staleDays: ageDays,
+      lastCommit: meta.sha || "",
+      lastCommitShort: meta.short || "",
+      lastSubject: meta.subject || "",
+      lastUpdated: meta.updated || "",
+      lastUpdatedUnix: meta.updatedUnix || 0,
+      canDelete,
+      deleteBlockedReason,
+      recommended,
+      attention,
+      statusLabel,
+      reason: branchCleanupReason({ current, protectedName, occupied, mergedIntoCurrent, upstreamGone: info.upstreamGone, stale, ageDays, worktreePath: info.worktreePath }),
+    };
+  });
+}
+
+function branchCleanupStatus({ current, protectedName, occupied, mergedIntoCurrent, upstreamGone, stale }) {
+  if (current) return "当前";
+  if (protectedName) return "保护";
+  if (occupied) return "占用";
+  if (mergedIntoCurrent) return "已合并";
+  if (upstreamGone) return "上游丢失";
+  if (stale) return "长期未动";
+  return "活跃";
+}
+
+function branchCleanupReason({ current, protectedName, occupied, mergedIntoCurrent, upstreamGone, stale, ageDays, worktreePath }) {
+  if (current) return "当前所在分支不能删除";
+  if (protectedName) return "主干或长期分支默认保留";
+  if (occupied) return `其他 worktree 正在使用：${worktreePath || "未知路径"}`;
+  if (mergedIntoCurrent) return "已合并到当前 HEAD，可用安全删除清理";
+  if (upstreamGone) return "上游分支已经不存在，删除前先确认本地提交是否还需要";
+  if (stale) return `${ageDays} 天没有新提交，建议复查是否仍需要`;
+  return "近期仍在活动或尚未合并";
+}
+
 function parseTags(output) {
   return String(output || "")
     .split(/\r?\n/)
@@ -3434,6 +3571,59 @@ function sampleState() {
       remoteNames: ["origin", "upstream"],
     },
     branches: ["feature/visual-history", "main", "release/2.9", "fix/diff-pane-resize", "experiment/ai-summary", "chore/design-tokens"],
+    branchInfo: {
+      "feature/visual-history": { upstream: "origin/feature/visual-history", ahead: 2, behind: 1 },
+      "fix/diff-pane-resize": { upstream: "origin/fix/diff-pane-resize", ahead: 0, behind: 0 },
+      "experiment/ai-summary": { upstream: "origin/experiment/ai-summary", upstreamGone: true, ahead: 1, behind: 0 },
+    },
+    branchCleanup: [
+      {
+        branch: "feature/visual-history",
+        current: true,
+        protected: true,
+        protectedReason: "当前分支",
+        upstream: "origin/feature/visual-history",
+        ahead: 2,
+        behind: 1,
+        statusLabel: "当前",
+        reason: "当前所在分支不能删除",
+        lastCommitShort: "f83a9c2",
+        lastSubject: "打磨提交图连线动画",
+        lastUpdated: "12 分钟前",
+      },
+      {
+        branch: "fix/diff-pane-resize",
+        mergedIntoCurrent: true,
+        canDelete: true,
+        recommended: true,
+        statusLabel: "已合并",
+        reason: "已合并到当前 HEAD，可用安全删除清理",
+        lastCommitShort: "91b2a10",
+        lastSubject: "完善检查器空状态",
+        lastUpdated: "2 小时前",
+      },
+      {
+        branch: "experiment/ai-summary",
+        upstreamGone: true,
+        attention: true,
+        canDelete: true,
+        statusLabel: "上游丢失",
+        reason: "上游分支已经不存在，删除前先确认本地提交是否还需要",
+        lastCommitShort: "d41c2ab",
+        lastSubject: "添加语义化 Diff 分组",
+        lastUpdated: "38 分钟前",
+      },
+      {
+        branch: "main",
+        protected: true,
+        protectedReason: "主干/长期分支",
+        statusLabel: "保护",
+        reason: "主干或长期分支默认保留",
+        lastCommitShort: "fa51203",
+        lastSubject: "添加命令面板动作",
+        lastUpdated: "周一",
+      },
+    ],
     remotes: ["origin/main", "origin/feature/visual-history", "upstream/release/2.9"],
     sync: {
       branch: "feature/visual-history",
