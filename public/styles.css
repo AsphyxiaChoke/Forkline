@@ -255,11 +255,14 @@ button {
 }
 
 .path-open {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(84px, 132px) 34px auto;
   overflow: hidden;
   background: var(--field);
 }
 
 .path-open input,
+.path-open select,
 .search input,
 .commit-form > input,
 .commit-form textarea {
@@ -274,6 +277,37 @@ button {
 .path-open input {
   height: 100%;
   padding: 0 12px;
+}
+
+.path-open select {
+  height: 100%;
+  padding: 0 8px;
+  border-left: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.path-open select:disabled,
+.path-open .recent-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.path-open .recent-clear {
+  min-width: 34px;
+  height: 100%;
+  border-left: 1px solid var(--line-soft);
+  border-radius: 0;
+  color: var(--quiet);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.path-open .primary {
+  height: 100%;
+  border-radius: 0;
 }
 
 .search {
@@ -3112,7 +3146,12 @@ body.resizing .workbench-resizer-y::before {
   }
 
   .repo-bar {
-    grid-template-columns: 190px minmax(220px, 1fr) 260px;
+    grid-template-columns: minmax(170px, 220px) minmax(220px, 1fr);
+    grid-template-rows: 38px 38px;
+  }
+
+  .repo-bar .search {
+    grid-column: 1 / -1;
   }
 
   .workspace {

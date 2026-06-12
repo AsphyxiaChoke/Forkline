@@ -27,6 +27,10 @@
         </div>
         <div class="path-open">
           <input id="repoInput" autocomplete="off" spellcheck="false" placeholder="输入本机 Git 仓库路径，例如 D:\project\demo" />
+          <select id="recentRepoSelect" title="最近仓库">
+            <option value="">最近仓库</option>
+          </select>
+          <button id="clearRecentRepos" class="btn ghost recent-clear" type="button" title="清除最近仓库">×</button>
           <button id="openRepo" class="btn primary" type="button">打开</button>
         </div>
         <label class="search">

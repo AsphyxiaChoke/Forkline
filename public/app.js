@@ -44,6 +44,7 @@ const state = {
 
 const laneX = [28, 54, 80, 106, 118, 126, 128];
 const rowH = 62;
+const recentRepoStorageKey = "forkline-recent-repos";
 
 const els = {
   repoName: $("#repoName"),
@@ -51,6 +52,8 @@ const els = {
   sideRepoName: $("#sideRepoName"),
   sideRepoBranch: $("#sideRepoBranch"),
   repoInput: $("#repoInput"),
+  recentRepoSelect: $("#recentRepoSelect"),
+  clearRecentRepos: $("#clearRecentRepos"),
   openRepo: $("#openRepo"),
   searchInput: $("#searchInput"),
   branchList: $("#branchList"),
@@ -135,6 +138,7 @@ async function api(path, options = {}) {
 
 async function init() {
   try {
+    renderRecentRepos();
     const params = new URLSearchParams(window.location.search);
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
@@ -3524,8 +3528,86 @@ function applyFilter(value) {
   renderCommits();
 }
 
-async function openRepo() {
-  const repoPath = els.repoInput.value.trim();
+function recentRepos() {
+  try {
+    const data = JSON.parse(localStorage.getItem(recentRepoStorageKey) || "[]");
+    return Array.isArray(data) ? data.filter((item) => item?.path).slice(0, 12) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentRepo(repo) {
+  if (!repo?.path || repo.isSample) return;
+  const pathKey = normalizeRecentRepoPath(repo.path);
+  const records = recentRepos().filter((item) => normalizeRecentRepoPath(item.path) !== pathKey);
+  records.unshift({
+    path: repo.path,
+    name: repo.name || repo.path,
+    branch: repo.branch || "",
+    lastOpened: new Date().toISOString(),
+  });
+  try {
+    localStorage.setItem(recentRepoStorageKey, JSON.stringify(records.slice(0, 10)));
+  } catch {
+    return;
+  }
+  renderRecentRepos();
+}
+
+function renderRecentRepos() {
+  if (!els.recentRepoSelect) return;
+  const records = recentRepos();
+  els.recentRepoSelect.innerHTML = [
+    `<option value="">最近仓库</option>`,
+    ...records.map((repo) => `<option value="${escapeAttr(repo.path)}">${escapeHtml(recentRepoLabel(repo))}</option>`),
+  ].join("");
+  els.recentRepoSelect.disabled = !records.length;
+  if (els.clearRecentRepos) els.clearRecentRepos.disabled = !records.length;
+}
+
+function recentRepoLabel(repo) {
+  const branch = repo.branch ? ` · ${repo.branch}` : "";
+  const pathTail = recentRepoPathTail(repo.path);
+  const suffix = pathTail && pathTail !== repo.name ? ` · ${pathTail}` : "";
+  return `${repo.name || repo.path}${branch}${suffix}`;
+}
+
+function recentRepoPathTail(path) {
+  const parts = String(path || "")
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter(Boolean);
+  return parts.slice(-2).join("/");
+}
+
+function normalizeRecentRepoPath(value) {
+  return String(value || "").replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+}
+
+async function openRecentRepo() {
+  const path = els.recentRepoSelect.value;
+  if (!path) return;
+  els.repoInput.value = path;
+  await openRepo(path);
+  els.recentRepoSelect.value = "";
+}
+
+function clearRecentRepos() {
+  if (!recentRepos().length) return;
+  if (!confirm("确认清除最近仓库列表？\n\n这只会清除当前浏览器里的 Forkline 记录，不会删除任何本地仓库。")) return;
+  try {
+    localStorage.removeItem(recentRepoStorageKey);
+  } catch {
+    toast("浏览器阻止访问最近仓库记录");
+    return;
+  }
+  renderRecentRepos();
+  toast("最近仓库已清除");
+}
+
+async function openRepo(pathOverride = "") {
+  const repoPath = typeof pathOverride === "string" && pathOverride ? pathOverride.trim() : els.repoInput.value.trim();
   if (!repoPath) {
     toast("请输入仓库路径");
     return;
@@ -3546,6 +3628,7 @@ async function openRepo() {
       await loadCommit(state.selectedSha);
       renderInspector();
     }
+    saveRecentRepo(state.data.repo);
     toast(`已打开 ${state.data.repo.name}`);
     await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
@@ -4387,6 +4470,10 @@ els.openRepo.addEventListener("click", openRepo);
 els.repoInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") openRepo();
 });
+els.recentRepoSelect.addEventListener("change", () => {
+  openRecentRepo().catch((error) => toast(error.message));
+});
+els.clearRecentRepos.addEventListener("click", clearRecentRepos);
 els.searchInput.addEventListener("input", renderCommits);
 els.themeToggle.addEventListener("click", toggleTheme);
 els.newBranch.addEventListener("click", openBranchModal);

@@ -43,6 +43,7 @@
 - 右侧详情标签栏已改成横向可滚动：现在 7 个标签不会再被旧的 5 列网格挤到两行，窄侧栏下会保持单行、文本截断并允许横向滚动。
 - 右侧“日志”页已接入：后端会在 `/api/state` 暴露当前正在执行的 Forkline 操作，并在每次 `/api/action` 完成后记录最近 40 条 Git 操作，包含中文操作名、动作类型、成功/失败、耗时和输出摘要；失败响应也会带回最新日志，方便判断刚才哪个操作失败或卡住。
 - 常见 `pathspec ... did not match any files` 错误已转成中文提示：当文件已经删除、重命名或不在当前工作区中时，会提示“找不到文件 ...”，不再直接露出 Git 英文原文。
+- 顶部最近仓库快速打开已接入：成功打开真实仓库后会写入浏览器 localStorage，顶部下拉框可快速切回最近项目，清除按钮只删除浏览器记录，不会删除本地仓库；窄屏下顶栏会换成两行避免搜索框、路径输入和按钮挤压。
 
 ## 已验证
 
@@ -98,6 +99,7 @@
 - 操作日志 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，调用 `findCheckoutStash` 成功返回日志项“查找 123 的签出储藏 / success / 操作已完成”；调用不存在文件的 `stageFile` 返回中文“找不到文件 ...”，并在 `operationLog` 中记录失败项。
 - 恢复点批量清理 API 验证：在 GitTest 临时创建 3 条 `refs/forkline/recovery/...` 测试引用，其中 2 条分支为 `123`、1 条分支为 `other`；通过 `deleteRecoveryPoints` 删除分支 `123` 的筛选结果后只剩 `other`，随后清理剩余测试引用，最终恢复点数量为 0。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
+- 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。
 
 ## GitTest 测试数据
 
