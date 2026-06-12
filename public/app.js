@@ -187,7 +187,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "fileHistory", "fileBlame", "branches", "worktrees", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "fileHistory", "fileBlame", "branches", "worktrees", "submodules", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -1182,6 +1182,7 @@ function commandPaletteItems() {
     commandItem("tabFiles", "打开文件", "查看当前提交文件改动", "文件", "files diff", hasRepo, () => switchInspectorTab("files")),
     commandItem("tabBranches", "打开分支整理", "查看已合并、上游丢失和长期未动分支", "分支", "branch cleanup prune", hasRepo, () => switchInspectorTab("branches")),
     commandItem("tabWorktrees", "打开工作树", "查看和创建 Git worktree", "git worktree", "worktree workspace parallel checkout", hasRepo, () => switchInspectorTab("worktrees")),
+    commandItem("tabSubmodules", "打开子模块", "查看和更新 Git submodule", "git submodule", "submodule modules dependency update init sync", hasRepo, () => switchInspectorTab("submodules")),
     commandItem("tabSync", "打开同步", "查看 upstream、待拉取和待推送提交", "同步", "fetch pull push upstream", hasRepo, () => switchInspectorTab("sync")),
     commandItem("tabStashes", "打开储藏", "查看和恢复 Git stash", "储藏", "stash", hasRepo, () => switchInspectorTab("stashes")),
     commandItem("tabTags", "打开标签", "查看和管理 Tag", "标签", "tag release", hasRepo, () => switchInspectorTab("tags")),
@@ -2758,6 +2759,10 @@ function renderInspector() {
     renderWorktreesTab();
     return;
   }
+  if (state.selectedTab === "submodules") {
+    renderSubmodulesTab();
+    return;
+  }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
@@ -3758,6 +3763,155 @@ async function pruneWorktreeRecords(button) {
     state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderSubmodulesTab() {
+  const rows = state.data?.submodules || [];
+  const realRepo = Boolean(state.data && !state.data.repo.isSample);
+  const summary = submoduleSummary(rows);
+  els.detailNode.style.borderColor = summary.conflict || summary.changed ? "var(--amber)" : "var(--blue)";
+  els.detailTitle.textContent = "子模块";
+  els.detailSub.textContent = rows.length ? `${rows.length} 个 Git submodule` : "没有子模块";
+  setActiveDiff(null);
+  els.detailBody.innerHTML = `
+    <div class="submodule-dashboard">
+      <div class="submodule-summary">
+        <div><span>总数</span><strong>${rows.length}</strong></div>
+        <div><span>未初始化</span><strong>${summary.uninitialized}</strong></div>
+        <div><span>不一致</span><strong>${summary.changed}</strong></div>
+        <div><span>有改动</span><strong>${summary.dirty}</strong></div>
+      </div>
+      <div class="submodule-actions">
+        <button class="mini-btn" data-submodule-action="initAll" type="button" ${realRepo && rows.length ? "" : "disabled"}><span>初始化</span><span class="command-hint">update --init</span></button>
+        <button class="mini-btn" data-submodule-action="updateAll" type="button" ${realRepo && rows.length ? "" : "disabled"}><span>更新全部</span><span class="command-hint">submodule update</span></button>
+        <button class="mini-btn" data-submodule-action="syncAll" type="button" ${realRepo && rows.length ? "" : "disabled"}><span>同步 URL</span><span class="command-hint">submodule sync</span></button>
+        <button class="mini-btn" data-submodule-action="refresh" type="button"><span>刷新</span><span class="command-hint">git submodule</span></button>
+      </div>
+      <div class="submodule-list">
+        ${
+          rows.length
+            ? rows.map((row, index) => submoduleRowHtml(row, index, realRepo)).join("")
+            : `<div class="empty-panel compact"><span>当前仓库没有 .gitmodules 配置。添加子模块后会显示初始化和更新入口。</span></div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function submoduleSummary(rows) {
+  return (rows || []).reduce(
+    (acc, row) => {
+      if (!row.initialized || row.status === "uninitialized") acc.uninitialized += 1;
+      if (row.status === "changed") acc.changed += 1;
+      if (row.status === "conflict") acc.conflict += 1;
+      if (row.dirtyCount) acc.dirty += 1;
+      return acc;
+    },
+    { uninitialized: 0, changed: 0, conflict: 0, dirty: 0 }
+  );
+}
+
+function submoduleRowHtml(row, index, realRepo) {
+  const status = submoduleStatus(row);
+  const pathText = row.path || "";
+  const updateTitle = row.initialized ? `更新子模块 ${pathText}` : `初始化子模块 ${pathText}`;
+  return `
+    <article class="submodule-row ${status.className}">
+      <div class="submodule-row-head">
+        <strong title="${escapeAttr(row.name || pathText)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(row.name || pathText)}</span></strong>
+        <span class="submodule-status ${status.className}">${escapeHtml(status.label)}</span>
+      </div>
+      <div class="submodule-path" title="${escapeAttr(pathText)}">${escapeHtml(pathText)}</div>
+      <div class="submodule-url" title="${escapeAttr(row.url || "")}">${escapeHtml(row.url || "未配置 URL")}</div>
+      <div class="submodule-meta">
+        <span>${escapeHtml(row.shortSha || "无提交")}</span>
+        ${row.branch ? `<span title="${escapeAttr(row.branch)}">${escapeHtml(row.branch)}</span>` : ""}
+        ${row.worktreeBranch ? `<span title="${escapeAttr(row.worktreeBranch)}">${escapeHtml(row.worktreeBranch)}</span>` : ""}
+        ${row.summary ? `<span title="${escapeAttr(row.summary)}">${escapeHtml(row.summary)}</span>` : ""}
+        ${row.dirtyCount ? `<span>${escapeHtml(row.dirtyCount)} 个改动</span>` : ""}
+      </div>
+      <div class="submodule-row-actions">
+        <button class="mini-btn" data-submodule-action="update" data-submodule-path="${escapeAttr(pathText)}" type="button" ${realRepo ? "" : "disabled"} title="${escapeAttr(updateTitle)}"><span>${row.initialized ? "更新" : "初始化"}</span><span class="command-hint">update</span></button>
+        <button class="mini-btn" data-submodule-action="copyPath" data-submodule-path="${escapeAttr(pathText)}" type="button">复制路径</button>
+        <button class="mini-btn" data-submodule-action="copyUrl" data-submodule-url="${escapeAttr(row.url || "")}" type="button" ${row.url ? "" : "disabled"}>复制 URL</button>
+      </div>
+    </article>
+  `;
+}
+
+function submoduleStatus(row) {
+  if (row.status === "conflict") return { label: "冲突", className: "danger" };
+  if (!row.initialized || row.status === "uninitialized") return { label: "未初始化", className: "warn" };
+  if (row.status === "changed") return { label: "提交不一致", className: "warn" };
+  if (row.dirtyCount) return { label: `${row.dirtyCount} 个改动`, className: "warn" };
+  if (row.status === "ok") return { label: "已就绪", className: "ok" };
+  return { label: row.statusLabel || "已配置", className: "muted" };
+}
+
+async function runSubmoduleAction(action, button) {
+  if (!state.data) return;
+  const submodulePath = button?.dataset?.submodulePath || "";
+  if (action === "copyPath") {
+    await copyText(submodulePath);
+    toast("已复制子模块路径");
+    return;
+  }
+  if (action === "copyUrl") {
+    const url = button?.dataset?.submoduleUrl || "";
+    if (!url) return;
+    await copyText(url);
+    toast("已复制子模块 URL");
+    return;
+  }
+  if (action === "refresh") {
+    await refreshSubmodules(button);
+    return;
+  }
+  const payload = submoduleActionPayload(action, submodulePath);
+  if (!payload) return;
+  const message = submoduleConfirmMessage(action, submodulePath);
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    toast(result.output || "子模块操作完成");
+    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function submoduleActionPayload(action, submodulePath) {
+  if (action === "initAll") return { action: "initSubmodules" };
+  if (action === "updateAll") return { action: "updateSubmodules" };
+  if (action === "syncAll") return { action: "syncSubmodules" };
+  if (action === "update") return { action: "updateSubmodules", path: submodulePath };
+  return null;
+}
+
+function submoduleConfirmMessage(action, submodulePath) {
+  if (action === "syncAll") return "确认同步子模块 URL 配置？\n\n命令：git submodule sync --recursive\n这会根据 .gitmodules 更新本地子模块 URL 配置。";
+  if (action === "initAll") return "确认初始化并更新所有子模块？\n\n命令：git submodule update --init --recursive\n这可能需要访问子模块远端仓库。";
+  if (action === "updateAll") return "确认更新所有子模块？\n\n命令：git submodule update --init --recursive\n这会把子模块签出到父仓库记录的提交。";
+  return `确认更新子模块：${submodulePath}？\n\n命令：git submodule update --init --recursive -- ${submodulePath}`;
+}
+
+async function refreshSubmodules(button) {
+  if (button) button.disabled = true;
+  try {
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+    toast("子模块列表已刷新");
   } catch (error) {
     toast(error.message);
   } finally {
@@ -7346,6 +7500,14 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     if (!worktreeAction.disabled) {
       runWorktreeAction(worktreeAction.dataset.worktreeAction, worktreeAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const submoduleAction = event.target.closest("[data-submodule-action]");
+  if (submoduleAction) {
+    event.preventDefault();
+    if (!submoduleAction.disabled) {
+      runSubmoduleAction(submoduleAction.dataset.submoduleAction, submoduleAction).catch((error) => toast(error.message));
     }
     return;
   }

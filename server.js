@@ -115,7 +115,7 @@ async function readBranchDisplayName(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
     readBranchDisplayName(currentRepo),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
@@ -124,6 +124,8 @@ async function readState(ref = "") {
     git(currentRepo, ["remote"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
+    git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
@@ -159,6 +161,7 @@ async function readState(ref = "") {
 
   const worktrees = await enrichWorktreeList(parseWorktreeList(worktreeOutput, currentRepo));
   const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
+  const submodules = await enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput));
   const branchCleanup = buildBranchCleanup({
     branches,
     branchInfo,
@@ -181,6 +184,7 @@ async function readState(ref = "") {
     branchInfo,
     branchCleanup,
     worktrees,
+    submodules,
     remotes: remotes.slice(0, 32),
     sync,
     workingFiles: parseStatus(statusOutput),
@@ -717,6 +721,15 @@ async function runAction(body) {
   if (action === "pruneAllWorktrees") {
     return pruneAllWorktrees();
   }
+  if (action === "initSubmodules") {
+    return initSubmodules();
+  }
+  if (action === "updateSubmodules") {
+    return updateSubmodules(body);
+  }
+  if (action === "syncSubmodules") {
+    return syncSubmodules();
+  }
   if (action === "fetch") {
     return fetchRemotes();
   }
@@ -1006,6 +1019,9 @@ function actionLabel(body = {}) {
     createWorktree: body.targetPath ? `创建工作树 ${shortText(body.targetPath, 72)}` : "创建工作树",
     openWorktree: body.path ? `打开工作树 ${shortText(body.path, 72)}` : "打开工作树",
     pruneAllWorktrees: "清理失效工作树记录",
+    initSubmodules: "初始化子模块",
+    updateSubmodules: body.path ? `更新子模块 ${shortText(body.path, 72)}` : "更新子模块",
+    syncSubmodules: "同步子模块 URL",
     fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
     testRemote: body.name ? `检查远端 ${shortText(body.name, 72)}` : "检查远端连接",
     addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
@@ -1581,6 +1597,56 @@ async function pruneAllWorktrees() {
   return {
     ok: true,
     output: output.trim() || "已清理失效工作树记录",
+    state: await readState(),
+  };
+}
+
+async function initSubmodules() {
+  const submodules = parseSubmodules(
+    await git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
+  );
+  if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
+  const output = await git(currentRepo, ["submodule", "update", "--init", "--recursive"], { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
+  return {
+    ok: true,
+    output: output.trim() || "已初始化并更新所有子模块",
+    state: await readState(),
+  };
+}
+
+async function updateSubmodules(body) {
+  const submodules = parseSubmodules(
+    await git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
+  );
+  if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
+  const submodulePath = String(body.path || "").trim();
+  const args = ["submodule", "update", "--init", "--recursive"];
+  let label = "所有子模块";
+  if (submodulePath) {
+    const file = normalizeSubmodulePath(submodulePath, submodules);
+    args.push("--", file);
+    label = file;
+  }
+  const output = await git(currentRepo, args, { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
+  return {
+    ok: true,
+    output: output.trim() || `已更新${label}`,
+    state: await readState(),
+  };
+}
+
+async function syncSubmodules() {
+  const submodules = parseSubmodules(
+    await git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
+  );
+  if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
+  const output = await git(currentRepo, ["submodule", "sync", "--recursive"], { timeout: 120000, maxBuffer: 1024 * 1024 * 8 });
+  return {
+    ok: true,
+    output: output.trim() || "已同步子模块 URL 配置",
     state: await readState(),
   };
 }
@@ -3175,6 +3241,112 @@ async function enrichWorktreeList(rows) {
   }));
 }
 
+function parseSubmodules(configOutput, statusOutput) {
+  const byName = new Map();
+  for (const line of String(configOutput || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const match = line.match(/^submodule\.(.+)\.(path|url|branch)\s+(.+)$/);
+    if (!match) continue;
+    const [, rawName, key, rawValue] = match;
+    const name = rawName.trim();
+    const value = rawValue.trim();
+    if (!name || !value) continue;
+    const item = byName.get(name) || { name, path: "", url: "", branch: "" };
+    item[key] = value;
+    byName.set(name, item);
+  }
+
+  const byPath = new Map([...byName.values()].filter((item) => item.path).map((item) => [normalizePathKey(item.path), item]));
+  for (const line of String(statusOutput || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parsed = parseSubmoduleStatusLine(line);
+    if (!parsed.path) continue;
+    const key = normalizePathKey(parsed.path);
+    const item = byPath.get(key) || { name: parsed.path, path: parsed.path, url: "", branch: "" };
+    Object.assign(item, parsed);
+    byPath.set(key, item);
+  }
+
+  return [...byPath.values()]
+    .filter((item) => item.path)
+    .map((item) => ({
+      name: item.name || item.path,
+      path: normalizeRepoFile(item.path),
+      url: item.url || "",
+      branch: item.branch || "",
+      sha: item.sha || "",
+      shortSha: item.sha ? item.sha.slice(0, 7) : "",
+      status: item.status || "configured",
+      statusLabel: submoduleStatusLabel(item.status || "configured"),
+      summary: item.summary || "",
+      initialized: item.status ? item.status !== "uninitialized" : false,
+      dirtyCount: 0,
+      worktreeBranch: "",
+      worktreeHead: "",
+      exists: false,
+    }));
+}
+
+function parseSubmoduleStatusLine(line) {
+  const prefix = line[0] || " ";
+  const rest = line.slice(1).trim();
+  const parts = rest.split(/\s+/);
+  const sha = parts.shift() || "";
+  const subPath = parts.shift() || "";
+  const summary = parts.join(" ").replace(/^\((.*)\)$/, "$1");
+  const status = prefix === "-" ? "uninitialized" : prefix === "+" ? "changed" : prefix === "U" ? "conflict" : "ok";
+  return { sha, path: subPath, summary, status };
+}
+
+async function enrichSubmodules(submodules) {
+  return Promise.all((submodules || []).slice(0, 80).map(async (item) => {
+    const absolutePath = path.resolve(currentRepo, item.path);
+    if (!isPathInside(currentRepo, absolutePath) && !sameFsPath(currentRepo, absolutePath)) return item;
+    const exists = fs.existsSync(absolutePath);
+    if (!exists || item.status === "uninitialized") return { ...item, exists, initialized: false };
+    const [statusOutput, branchOutput, headOutput] = await Promise.all([
+      git(absolutePath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+      git(absolutePath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => ""),
+      git(absolutePath, ["rev-parse", "--short", "HEAD"]).catch(() => ""),
+    ]);
+    const dirtyCount = parseStatus(statusOutput).length;
+    return {
+      ...item,
+      exists,
+      initialized: true,
+      dirtyCount,
+      worktreeBranch: (branchOutput || "").trim(),
+      worktreeHead: (headOutput || "").trim(),
+      statusLabel: dirtyCount ? "有本地改动" : submoduleStatusLabel(item.status),
+    };
+  }));
+}
+
+function submoduleStatusLabel(status) {
+  if (status === "uninitialized") return "未初始化";
+  if (status === "changed") return "提交不一致";
+  if (status === "conflict") return "冲突";
+  if (status === "ok") return "已就绪";
+  return "已配置";
+}
+
+function normalizeSubmodulePath(value, submodules = []) {
+  const file = normalizeRepoFile(value);
+  if (!submodules.some((item) => normalizePathKey(item.path) === normalizePathKey(file))) {
+    throw new Error(`子模块不存在：${file}`);
+  }
+  return file;
+}
+
+function normalizePathKey(value) {
+  return String(value || "").replaceAll("\\", "/").replace(/^\/+|\/+$/g, "").toLowerCase();
+}
+
+function isPathInside(parent, child) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return Boolean(relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function parseBranchTracking(output) {
   const info = {};
   for (const line of String(output || "").split(/\r?\n/)) {
@@ -4165,6 +4337,37 @@ function sampleState() {
         prunable: true,
         pruneReason: "working tree path is missing",
         status: "missing",
+        dirtyCount: 0,
+      },
+    ],
+    submodules: [
+      {
+        name: "shared-ui",
+        path: "packages/shared-ui",
+        url: "git@github.com:example/shared-ui.git",
+        branch: "main",
+        sha: "6bb990ef4afd",
+        shortSha: "6bb990e",
+        status: "ok",
+        statusLabel: "已就绪",
+        summary: "heads/main",
+        initialized: true,
+        exists: true,
+        dirtyCount: 0,
+        worktreeBranch: "main",
+        worktreeHead: "6bb990e",
+      },
+      {
+        name: "legacy-theme",
+        path: "vendor/legacy-theme",
+        url: "https://github.com/example/legacy-theme.git",
+        branch: "",
+        sha: "4ab612e810db",
+        shortSha: "4ab612e",
+        status: "uninitialized",
+        statusLabel: "未初始化",
+        initialized: false,
+        exists: false,
         dirtyCount: 0,
       },
     ],

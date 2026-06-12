@@ -12,6 +12,7 @@
 - 本地分支、远端分支、工作区状态和未暂存更改查看；左侧分支列表可按分支名或 upstream 筛选，本地分支会显示 upstream、领先/落后数量和上游丢失状态。
 - 右侧“分支”页支持分支整理：汇总已合并、上游丢失和长期未动分支，标出当前分支、主干分支和 worktree 占用原因，并可安全删除单个分支或批量删除已合并分支。
 - 右侧“工作树”页支持 Git worktree 管理：显示每个工作树的路径、分支、HEAD、干净/有改动/失效状态；可从任意引用创建新工作树、打开已有工作树、复制路径并清理失效 worktree 记录。
+- 右侧“子模块”页支持 Git submodule 管理：显示 `.gitmodules` 中的子模块路径、URL、目标提交、初始化状态、提交不一致和本地改动数量，并可初始化、更新、同步 URL、复制路径或 URL。
 - 右侧“同步”页会显示当前分支 upstream、同步建议、待拉取提交、待推送提交和远端仓库配置，并提供抓取 / 拉取 / 变基拉取 / 推送 / 安全强推 / 添加远端 / 诊断连接 / 修改 URL / 删除远端入口；远端诊断结果会留在同步页，显示 URL、命令、中文原因、问题分类、排查步骤和可复制诊断命令。
 - 同步页内置认证助手：按远端 URL 判断 SSH / HTTPS / 本地路径，列出本机 `~/.ssh` 中可见的 SSH key 文件名，检测 `ssh-agent` 和 Git Credential Manager，并提供可复制诊断命令。
 - 同步页可为当前分支生成 Pull Request / Merge Request 创建链接，支持 GitHub、GitLab、Bitbucket 和常见 Gitea / Forgejo 网页远端；入口也在命令面板和当前分支右键菜单中，可直接打开或复制链接。
@@ -95,6 +96,8 @@ http://127.0.0.1:5177
 右侧“分支”页的整理列表会读取本地分支最后提交、upstream 状态和 `git branch --merged HEAD`。单个删除和“删除已合并”都执行安全删除 `git branch -d <分支>`；如果分支还没有完全合并，Git 会阻止删除。Forkline 默认保护当前分支和 `main` / `master` / `develop` / `dev` / `trunk` 这类主干分支，也会禁用被其他 worktree 占用的分支。
 
 右侧“工作树”页读取 `git worktree list --porcelain`，并对仍存在的工作树补充 `git status --short` 摘要。创建工作树会执行 `git worktree add <目标文件夹> <起点引用>`；填写新分支名时会执行 `git worktree add -b <新分支> <目标文件夹> <起点引用>`。目标必须是本机绝对路径，目标文件夹不存在或为空；Forkline 不会覆盖已有文件。清理失效记录执行 `git worktree prune --verbose`，只清理 Git 元数据，不删除仍存在的工作区文件。
+
+右侧“子模块”页读取 `.gitmodules` 和 `git submodule status --recursive`。初始化或更新会执行 `git submodule update --init --recursive`；单个子模块更新会追加 `-- <路径>`。这个命令会把子模块签出到父仓库当前记录的提交，不会自动切到子模块远端最新提交；如果要跟踪最新提交，需要先在子模块里更新并在父仓库提交新的 gitlink。同步 URL 会执行 `git submodule sync --recursive`，用于把 `.gitmodules` 中的 URL 写回本地子模块配置。
 
 文件历史会执行 `git log --follow --find-renames <引用> -- <文件>`，用于追踪单个文件的新增、修改、删除和重命名记录。Forkline 只接受仓库内相对路径，避免读取仓库外文件。
 
