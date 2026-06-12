@@ -199,6 +199,48 @@ async function readCommit(sha) {
   };
 }
 
+async function readFileHistory(filePath, refInput = "") {
+  const file = normalizeRepoFile(filePath);
+  if (!currentRepo) {
+    const sample = sampleState();
+    return {
+      ok: true,
+      file,
+      ref: refInput || "HEAD",
+      commits: sample.commits
+        .filter((commit) => (commit.files || []).some((item) => item.file === file))
+        .map((commit) => ({ ...commit, files: commit.files || [] }))
+        .slice(0, 20),
+      command: `git log --follow -- ${file}`,
+    };
+  }
+  const ref = refInput ? normalizeCompareRef(refInput, "文件历史引用") : "HEAD";
+  await resolveCommitRef(ref, "文件历史引用");
+  const output = await git(
+    currentRepo,
+    [
+      "log",
+      "--follow",
+      "--find-renames",
+      "--max-count=80",
+      "--date=relative",
+      "--format=%x1e%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P",
+      "--name-status",
+      ref,
+      "--",
+      file,
+    ],
+    { maxBuffer: 1024 * 1024 * 4 }
+  );
+  return {
+    ok: true,
+    file,
+    ref,
+    commits: parseFileHistoryLog(output, file),
+    command: `git log --follow ${ref} -- ${file}`,
+  };
+}
+
 async function readCompare(baseInput, headInput) {
   if (!currentRepo) {
     const sample = sampleState();
@@ -1501,6 +1543,64 @@ function parseBasicCommits(output) {
       };
     })
     .filter(Boolean);
+}
+
+function parseFileHistoryLog(output, trackedFile) {
+  return String(output || "")
+    .split("\x1e")
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      const lines = block.split(/\r?\n/).filter(Boolean);
+      const parts = (lines.shift() || "").split("\x1f");
+      if (parts.length < 6) return null;
+      const files = parseHistoryNameStatus(lines);
+      const primary = fileHistoryPrimaryChange(files, trackedFile);
+      return {
+        sha: parts[0],
+        short: parts[1],
+        author: parts[2] || "unknown",
+        time: parts[3] || "",
+        message: parts[4] || "(无提交信息)",
+        parents: parts[5] ? parts[5].split(" ").filter(Boolean) : [],
+        files,
+        change: primary?.state || "",
+        previousFile: primary?.previousFile || "",
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseHistoryNameStatus(lines) {
+  return (lines || [])
+    .map((line) => {
+      const parts = String(line || "").split("\t");
+      const status = parts[0] || "M";
+      const code = status.slice(0, 1);
+      const file = parts[parts.length - 1] || "";
+      if (!file) return null;
+      return {
+        state: code === "A" ? "A" : code === "D" ? "D" : code === "R" ? "R" : code === "C" ? "C" : "M",
+        file,
+        previousFile: parts.length > 2 ? parts[1] : "",
+        extra: status,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+function fileHistoryPrimaryChange(files, trackedFile) {
+  const normalized = normalizeHistoryPath(trackedFile);
+  return (
+    files.find((file) => normalizeHistoryPath(file.file) === normalized || normalizeHistoryPath(file.previousFile) === normalized) ||
+    files[0] ||
+    null
+  );
+}
+
+function normalizeHistoryPath(value) {
+  return String(value || "").replaceAll("\\", "/").toLowerCase();
 }
 
 function normalizeResetMode(value) {
@@ -2886,6 +2986,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/commit") {
       sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/file-history") {
+      sendJson(res, 200, await readFileHistory(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/compare") {

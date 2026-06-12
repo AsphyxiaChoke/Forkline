@@ -161,6 +161,7 @@
         <div class="tabs">
           <button class="tab active" data-tab="details" type="button">详情</button>
           <button class="tab" data-tab="files" type="button">文件</button>
+          <button class="tab" data-tab="fileHistory" type="button">历史</button>
           <button class="tab" data-tab="branches" type="button">分支</button>
           <button class="tab" data-tab="sync" type="button">同步</button>
           <button class="tab" data-tab="compare" type="button">比较</button>
@@ -212,6 +213,7 @@
   </div>
   <div id="fileContextMenu" class="context-menu" aria-hidden="true">
     <button data-file-action="diff" type="button">查看对照</button>
+    <button data-file-action="history" type="button"><span class="menu-label">查看文件历史</span><span class="command-hint">git log --follow</span></button>
     <button data-file-action="stash" type="button">储藏所选</button>
     <button data-file-action="stageFile" type="button">暂存</button>
     <button data-file-action="unstageFile" type="button">取消暂存</button>

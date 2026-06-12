@@ -1991,6 +1991,166 @@ body.resizing .workbench-resizer-y::before {
   height: auto;
 }
 
+.empty-state {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--muted);
+}
+
+.empty-state strong,
+.empty-state span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-state strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.empty-state span {
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.empty-state.danger {
+  border-color: rgba(240, 99, 99, 0.45);
+  color: var(--red);
+}
+
+.file-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.file-history-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-history-head strong,
+.file-history-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-head span {
+  color: var(--quiet);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-history-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.file-history-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.state-pill {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--badge-text);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.state-pill.modified {
+  background: var(--blue);
+}
+
+.state-pill.added {
+  background: var(--green);
+}
+
+.state-pill.deleted {
+  background: var(--red);
+}
+
+.state-pill.renamed {
+  background: var(--yellow);
+  color: #2a2614;
+}
+
+.file-history-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.file-history-main strong,
+.file-history-main span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-main strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.file-history-main span {
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-history-rename {
+  font-family: Consolas, "SFMono-Regular", monospace;
+}
+
+.file-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-history-actions .mini-btn {
+  min-height: 26px;
+  height: auto;
+}
+
 .logs-toolbar {
   display: flex;
   align-items: flex-start;
