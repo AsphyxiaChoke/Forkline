@@ -2122,6 +2122,52 @@ body.resizing .workbench-resizer-y::before {
   width: fit-content;
 }
 
+.mainline-options {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mainline-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  cursor: pointer;
+}
+
+.mainline-option:hover {
+  border-color: rgba(35, 199, 183, 0.65);
+  background: var(--panel-3);
+}
+
+.mainline-option span,
+.mainline-option strong,
+.mainline-option em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mainline-option strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.mainline-option em {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
 .branch-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

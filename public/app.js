@@ -15,6 +15,8 @@ const state = {
   branchModalMode: "create",
   branchRenameOld: "",
   tagTargetSha: "",
+  mainlineAction: "",
+  mainlineCommitSha: "",
   contextCommitSha: "",
   contextBranch: null,
   contextFile: null,
@@ -94,6 +96,13 @@ const els = {
   tagStartText: $("#tagStartText"),
   tagSubmit: $("#tagSubmit"),
   tagCancel: $("#tagCancel"),
+  mainlineModal: $("#mainlineModal"),
+  mainlineForm: $("#mainlineForm"),
+  mainlineOptions: $("#mainlineOptions"),
+  mainlineModalTitle: $("#mainlineModalTitle"),
+  mainlineStartText: $("#mainlineStartText"),
+  mainlineSubmit: $("#mainlineSubmit"),
+  mainlineCancel: $("#mainlineCancel"),
   toast: $("#toast"),
   themeToggle: $("#themeToggle"),
   graphModeLabel: $("#graphModeLabel"),
@@ -722,12 +731,12 @@ function showCommitContextMenu(event, commit) {
   const cherryPickButton = menu.querySelector('[data-commit-action="cherryPick"]');
   const revertButton = menu.querySelector('[data-commit-action="revert"]');
   if (cherryPickButton) {
-    cherryPickButton.disabled = isMergeCommit;
-    cherryPickButton.title = isMergeCommit ? "merge 提交需要选择主线，暂不支持一键挑选" : "git cherry-pick：把此提交复制到当前分支";
+    cherryPickButton.disabled = false;
+    cherryPickButton.title = isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支";
   }
   if (revertButton) {
-    revertButton.disabled = isMergeCommit;
-    revertButton.title = isMergeCommit ? "merge 提交需要选择主线，暂不支持一键还原" : "git revert：创建一个反向提交来抵消此提交";
+    revertButton.disabled = false;
+    revertButton.title = isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交";
   }
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
@@ -966,10 +975,18 @@ async function runCommitToolAction(action, sha) {
   const commit = state.data?.commits.find((item) => item.sha === sha || item.sha === state.selectedSha);
   if (!commit) return;
   if (action === "cherryPick") {
+    if (needsMainline(commit)) {
+      openMainlineModal(action, commit);
+      return;
+    }
     await cherryPickCommit(commit);
     return;
   }
   if (action === "revert") {
+    if (needsMainline(commit)) {
+      openMainlineModal(action, commit);
+      return;
+    }
     await revertCommit(commit);
     return;
   }
@@ -978,13 +995,14 @@ async function runCommitToolAction(action, sha) {
   }
 }
 
-async function cherryPickCommit(commit) {
+async function cherryPickCommit(commit, mainline = null) {
   if (!state.data || !commit) return;
-  if (!state.data.repo.isSample && !confirm(`确认挑选提交 ${commit.short} 到当前分支？\n\n这会在当前分支创建一个内容相同的新提交，不会移动原分支。\n提交信息：${commit.message}`)) return;
+  const mainlineText = mainline ? `\n主线：父提交 ${mainline}` : "";
+  if (!state.data.repo.isSample && !confirm(`确认挑选提交 ${commit.short} 到当前分支？\n\n这会在当前分支创建一个内容相同的新提交，不会移动原分支。${mainlineText}\n提交信息：${commit.message}`)) return;
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha }),
+      body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha, mainline }),
     });
     toast(result.output || `已挑选提交 ${commit.short}`);
     await reloadAfterHistoryAction();
@@ -994,18 +1012,83 @@ async function cherryPickCommit(commit) {
   }
 }
 
-async function revertCommit(commit) {
+async function revertCommit(commit, mainline = null) {
   if (!state.data || !commit) return;
-  if (!state.data.repo.isSample && !confirm(`确认还原提交 ${commit.short}？\n\n这会创建一个新的反向提交，不会删除历史提交。\n提交信息：${commit.message}`)) return;
+  const mainlineText = mainline ? `\n主线：父提交 ${mainline}` : "";
+  if (!state.data.repo.isSample && !confirm(`确认还原提交 ${commit.short}？\n\n这会创建一个新的反向提交，不会删除历史提交。${mainlineText}\n提交信息：${commit.message}`)) return;
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "revertCommit", sha: commit.sha }),
+      body: JSON.stringify({ action: "revertCommit", sha: commit.sha, mainline }),
     });
     toast(result.output || `已还原提交 ${commit.short}`);
     await reloadAfterHistoryAction();
   } catch (error) {
     toast(error.message);
+  }
+}
+
+function needsMainline(commit) {
+  return (commit?.parents || []).length > 1;
+}
+
+function openMainlineModal(action, commit) {
+  const parents = commit?.parents || [];
+  if (!commit || parents.length <= 1) return;
+  state.mainlineAction = action;
+  state.mainlineCommitSha = commit.sha;
+  const actionText = action === "cherryPick" ? "挑选" : "还原";
+  const command = action === "cherryPick" ? "git cherry-pick -m" : "git revert -m";
+  els.mainlineModalTitle.textContent = `${actionText} merge 提交`;
+  els.mainlineStartText.textContent = `提交 ${commit.short} 有 ${parents.length} 个父提交。选择主线后会执行 ${command}。`;
+  els.mainlineSubmit.textContent = `继续${actionText}`;
+  els.mainlineOptions.innerHTML = parents
+    .map((parentSha, index) => {
+      const mainline = index + 1;
+      const checked = index === 0 ? "checked" : "";
+      const hint = index === 0 ? "通常是执行合并时所在的分支方向" : "通常是被合并进来的分支方向";
+      return `
+        <label class="mainline-option">
+          <input type="radio" name="mainline" value="${mainline}" ${checked} />
+          <span>
+            <strong>父提交 ${mainline} · ${escapeHtml(parentSha.slice(0, 7))}</strong>
+            <em>${escapeHtml(hint)}</em>
+          </span>
+        </label>
+      `;
+    })
+    .join("");
+  els.mainlineModal.classList.add("show");
+  els.mainlineModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.mainlineOptions.querySelector("input[name='mainline']:checked")?.focus(), 0);
+}
+
+function closeMainlineModal() {
+  els.mainlineModal.classList.remove("show");
+  els.mainlineModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+  state.mainlineAction = "";
+  state.mainlineCommitSha = "";
+  els.mainlineOptions.innerHTML = "";
+}
+
+async function submitMainlineForm(event) {
+  event.preventDefault();
+  const commit = state.data?.commits.find((item) => item.sha === state.mainlineCommitSha);
+  const action = state.mainlineAction;
+  const selected = Number.parseInt(els.mainlineOptions.querySelector("input[name='mainline']:checked")?.value || "", 10);
+  if (!commit || !Number.isInteger(selected)) {
+    toast("请选择主线");
+    return;
+  }
+  closeMainlineModal();
+  if (action === "cherryPick") {
+    await cherryPickCommit(commit, selected);
+    return;
+  }
+  if (action === "revert") {
+    await revertCommit(commit, selected);
   }
 }
 
@@ -1375,8 +1458,8 @@ function renderDetailsTab(commit, detail) {
     </div>
     <div class="detail-section-title">提交操作</div>
     <div class="commit-tools">
-      <button class="mini-btn" data-commit-tool="cherryPick" data-sha="${escapeAttr(commit.sha)}" type="button" ${isMergeCommit ? "disabled" : ""} title="${isMergeCommit ? "merge 提交需要选择主线，暂不支持一键挑选" : "git cherry-pick：把此提交复制到当前分支"}"><span>挑选</span><span class="command-hint">git cherry-pick</span></button>
-      <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" ${isMergeCommit ? "disabled" : ""} title="${isMergeCommit ? "merge 提交需要选择主线，暂不支持一键还原" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">git revert</span></button>
+      <button class="mini-btn" data-commit-tool="cherryPick" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支"}"><span>挑选</span><span class="command-hint">${isMergeCommit ? "git cherry-pick -m" : "git cherry-pick"}</span></button>
+      <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">${isMergeCommit ? "git revert -m" : "git revert"}</span></button>
       <button class="mini-btn" data-commit-tool="resetSoft" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --soft：移动当前分支，改动保留在已暂存区"><span>软重置</span><span class="command-hint">git reset --soft</span></button>
       <button class="mini-btn" data-commit-tool="resetMixed" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --mixed：移动当前分支，改动保留在工作区"><span>混合重置</span><span class="command-hint">git reset --mixed</span></button>
       <button class="mini-btn danger" data-commit-tool="resetHard" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --hard：移动当前分支，并丢弃工作区改动"><span>硬重置</span><span class="command-hint">git reset --hard</span></button>
@@ -2679,6 +2762,13 @@ els.tagCancel.addEventListener("click", closeTagModal);
 els.tagModal.addEventListener("click", (event) => {
   if (event.target === els.tagModal) closeTagModal();
 });
+els.mainlineForm.addEventListener("submit", (event) => {
+  submitMainlineForm(event).catch((error) => toast(error.message));
+});
+els.mainlineCancel.addEventListener("click", closeMainlineModal);
+els.mainlineModal.addEventListener("click", (event) => {
+  if (event.target === els.mainlineModal) closeMainlineModal();
+});
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
 els.closeDiffModal.addEventListener("click", closeDiffModal);
@@ -2776,6 +2866,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
   if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
+  if (event.key === "Escape" && els.mainlineModal.classList.contains("show")) closeMainlineModal();
   if (event.key === "Escape" && els.commitContextMenu.classList.contains("show")) hideCommitContextMenu();
   if (event.key === "Escape" && els.branchContextMenu.classList.contains("show")) hideBranchContextMenu();
   if (event.key === "Escape" && els.fileContextMenu.classList.contains("show")) hideFileContextMenu();

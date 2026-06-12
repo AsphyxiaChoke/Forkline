@@ -671,8 +671,12 @@ async function revertCommit(body) {
   const target = await resolveCommit(body.sha);
   const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
   const parents = parentLine.split(/\s+/).slice(1);
-  if (parents.length > 1) throw new Error("暂不支持一键还原 merge 提交；需要指定主线后才能 revert");
-  await git(currentRepo, ["revert", "--no-edit", target], { timeout: 120000 });
+  const args = ["revert"];
+  if (parents.length > 1) {
+    args.push("-m", String(normalizeMainline(body.mainline, parents.length)));
+  }
+  args.push("--no-edit", target);
+  await git(currentRepo, args, { timeout: 120000 });
   const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
   return { ok: true, output: `已还原提交 ${target.slice(0, 7)}，新建反向提交 ${newHead}` };
 }
@@ -681,8 +685,12 @@ async function cherryPickCommit(body) {
   const target = await resolveCommit(body.sha);
   const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
   const parents = parentLine.split(/\s+/).slice(1);
-  if (parents.length > 1) throw new Error("暂不支持一键挑选 merge 提交；需要指定主线后才能 cherry-pick");
-  await git(currentRepo, ["cherry-pick", target], { timeout: 120000 });
+  const args = ["cherry-pick"];
+  if (parents.length > 1) {
+    args.push("-m", String(normalizeMainline(body.mainline, parents.length)));
+  }
+  args.push(target);
+  await git(currentRepo, args, { timeout: 120000 });
   const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
   return { ok: true, output: `已挑选提交 ${target.slice(0, 7)}，当前分支新建提交 ${newHead}` };
 }
@@ -767,6 +775,14 @@ function normalizeResetMode(value) {
   const mode = String(value || "mixed").trim().toLowerCase();
   if (["soft", "mixed", "hard"].includes(mode)) return mode;
   throw new Error("Reset 类型不合法");
+}
+
+function normalizeMainline(value, parentCount) {
+  const mainline = Number.parseInt(String(value || ""), 10);
+  if (!Number.isInteger(mainline) || mainline < 1 || mainline > parentCount) {
+    throw new Error(`请选择 merge 提交主线：1-${parentCount}`);
+  }
+  return mainline;
 }
 
 function normalizeSha(value) {

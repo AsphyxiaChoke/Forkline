@@ -278,6 +278,24 @@
       </div>
     </form>
   </div>
+  <div id="mainlineModal" class="checkout-modal" aria-hidden="true">
+    <form id="mainlineForm" class="checkout-dialog mainline-dialog" role="dialog" aria-modal="true" aria-labelledby="mainlineModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon branch-icon">M</div>
+        <div>
+          <strong id="mainlineModalTitle">选择主线</strong>
+          <span id="mainlineStartText">这个 merge 提交需要指定父提交主线。</span>
+        </div>
+      </div>
+      <div class="branch-form-body">
+        <div id="mainlineOptions" class="mainline-options"></div>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="mainlineSubmit" class="checkout-choice primary" type="submit">继续操作</button>
+        <button id="mainlineCancel" class="checkout-choice" type="button">取消</button>
+      </div>
+    </form>
+  </div>
   <div id="diffModal" class="diff-modal" aria-hidden="true">
     <div class="diff-modal-head">
       <div>
