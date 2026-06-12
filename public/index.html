@@ -44,6 +44,7 @@
       </div>
 
       <div class="actions">
+        <button id="openCommandPalette" class="icon-btn" title="打开命令面板" type="button">命令</button>
         <button id="themeToggle" class="icon-btn theme-toggle" title="切换浅色/深色" type="button">浅色</button>
         <button class="icon-btn" data-action="fetch" title="抓取" type="button">抓取</button>
         <button class="icon-btn" data-action="pull" title="拉取" type="button">拉取</button>
@@ -187,6 +188,24 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="commandPalette" class="checkout-modal command-modal" aria-hidden="true">
+    <div class="checkout-dialog command-dialog" role="dialog" aria-modal="true" aria-labelledby="commandPaletteTitle">
+      <div class="checkout-warning command-head">
+        <div class="checkout-icon branch-icon">K</div>
+        <div>
+          <strong id="commandPaletteTitle">命令面板</strong>
+          <span>搜索并执行常用仓库动作。</span>
+        </div>
+      </div>
+      <div class="command-body">
+        <input id="commandInput" autocomplete="off" spellcheck="false" placeholder="搜索命令、页面或操作" />
+        <div id="commandList" class="command-list" role="listbox"></div>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="commandClose" class="checkout-choice" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
   <div id="commitContextMenu" class="context-menu" aria-hidden="true">
     <button data-commit-action="details" type="button">查看详情</button>
     <button data-commit-action="branch" type="button">从此提交新建分支</button>

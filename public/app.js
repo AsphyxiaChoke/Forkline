@@ -48,6 +48,7 @@ const state = {
   selectedChanges: new Set(),
   lastChangeSelection: null,
   cloneTargetAuto: false,
+  commandPaletteIndex: 0,
 };
 
 const laneX = [28, 54, 80, 106, 118, 126, 128];
@@ -65,6 +66,7 @@ const els = {
   cloneRepo: $("#cloneRepo"),
   initRepo: $("#initRepo"),
   openRepo: $("#openRepo"),
+  openCommandPalette: $("#openCommandPalette"),
   searchInput: $("#searchInput"),
   searchCount: $("#searchCount"),
   clearSearch: $("#clearSearch"),
@@ -120,6 +122,10 @@ const els = {
   initOpenToggle: $("#initOpenToggle"),
   initSubmit: $("#initSubmit"),
   initCancel: $("#initCancel"),
+  commandPalette: $("#commandPalette"),
+  commandInput: $("#commandInput"),
+  commandList: $("#commandList"),
+  commandClose: $("#commandClose"),
   branchModal: $("#branchModal"),
   branchForm: $("#branchForm"),
   branchNameInput: $("#branchNameInput"),
@@ -873,6 +879,201 @@ function clearCommitSearch() {
   els.searchInput.value = "";
   renderCommits();
   els.searchInput.focus();
+}
+
+function openCommandPalette() {
+  if (otherModalOpen()) return;
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+  hideFileContextMenu();
+  hideTagContextMenu();
+  hideRemoteContextMenu();
+  state.commandPaletteIndex = 0;
+  els.commandInput.value = "";
+  renderCommandPalette();
+  els.commandPalette.classList.add("show");
+  els.commandPalette.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.commandInput.focus(), 0);
+}
+
+function otherModalOpen() {
+  return [
+    els.checkoutModal,
+    els.stashRestoreModal,
+    els.cloneModal,
+    els.initModal,
+    els.branchModal,
+    els.tagModal,
+    els.mainlineModal,
+    els.diffModal,
+  ].some((modal) => modal?.classList.contains("show"));
+}
+
+function closeCommandPalette() {
+  els.commandPalette.classList.remove("show");
+  els.commandPalette.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+  state.commandPaletteIndex = 0;
+}
+
+function renderCommandPalette() {
+  const items = filteredCommandItems();
+  normalizeCommandPaletteIndex(items);
+  if (!items.length) {
+    els.commandList.innerHTML = `<div class="command-empty">没有匹配的命令</div>`;
+    return;
+  }
+  els.commandList.innerHTML = items
+    .map((item, index) => {
+      const classes = ["command-row", index === state.commandPaletteIndex ? "active" : "", item.danger ? "danger" : ""].filter(Boolean).join(" ");
+      return `
+        <button class="${classes}" data-command-id="${escapeAttr(item.id)}" type="button" ${item.disabled ? "disabled" : ""} role="option" aria-selected="${index === state.commandPaletteIndex ? "true" : "false"}">
+          <span class="command-main">
+            <strong>${escapeHtml(item.title)}</strong>
+            <span>${escapeHtml(item.description || "")}</span>
+          </span>
+          <span class="command-hint-pill">${escapeHtml(item.hint || item.group || "")}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function normalizeCommandPaletteIndex(items) {
+  state.commandPaletteIndex = clamp(state.commandPaletteIndex, 0, Math.max(items.length - 1, 0));
+  if (!items.length || !items[state.commandPaletteIndex]?.disabled) return;
+  const enabledIndex = items.findIndex((item) => !item.disabled);
+  if (enabledIndex >= 0) state.commandPaletteIndex = enabledIndex;
+}
+
+function filteredCommandItems() {
+  const terms = els.commandInput.value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  const items = commandPaletteItems();
+  if (!terms.length) return items;
+  return items.filter((item) => {
+    const text = [item.title, item.description, item.hint, item.group, item.keywords]
+      .join(" ")
+      .toLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+function commandPaletteItems() {
+  const hasRepo = Boolean(state.data);
+  const realRepo = Boolean(state.data && !state.data.repo.isSample);
+  const workingFiles = state.data?.workingFiles || [];
+  const hasChanges = workingFiles.length > 0;
+  const commit = selectedCommandCommit();
+  const hasCommit = Boolean(commit);
+  const remoteCommit = hasCommit ? commitRemoteUrl(commit.sha) : "";
+  const branch = state.data?.repo?.branch || "当前分支";
+  return [
+    commandItem("focusSearch", "搜索提交", "聚焦顶部提交搜索框", "图谱", "commit author branch sha", hasRepo, () => {
+      els.searchInput.focus();
+      els.searchInput.select();
+    }),
+    commandItem("tabDetails", "打开详情", "查看当前提交详情", "详情", "details commit", hasRepo, () => switchInspectorTab("details")),
+    commandItem("tabFiles", "打开文件", "查看当前提交文件改动", "文件", "files diff", hasRepo, () => switchInspectorTab("files")),
+    commandItem("tabSync", "打开同步", "查看 upstream、待拉取和待推送提交", "同步", "fetch pull push upstream", hasRepo, () => switchInspectorTab("sync")),
+    commandItem("tabStashes", "打开储藏", "查看和恢复 Git stash", "储藏", "stash", hasRepo, () => switchInspectorTab("stashes")),
+    commandItem("tabTags", "打开标签", "查看和管理 Tag", "标签", "tag release", hasRepo, () => switchInspectorTab("tags")),
+    commandItem("tabRecovery", "打开恢复点", "查看历史编辑和重置前的恢复引用", "恢复点", "recovery reset", hasRepo, () => switchInspectorTab("recovery")),
+    commandItem("tabLogs", "打开日志", "查看最近 Git 操作和失败原因", "日志", "operation log", hasRepo, () => switchInspectorTab("logs")),
+    commandItem("refreshWorktree", "刷新工作区", "重新读取未提交修改", "git status", "worktree changes", realRepo, () => refreshWorktree(false)),
+    commandItem("stageAll", "暂存全部", "把所有工作区改动加入暂存区", "git add", "stage changes", realRepo && hasChanges, () => runAction("stageAll")),
+    commandItem("stashAll", "储藏工作区", "把当前未提交改动移入储藏列表", "git stash", "stash changes", realRepo && hasChanges, () => createStashFromSelection(null)),
+    commandItem("discardAll", "丢弃全部", "清空已暂存、未暂存和未跟踪改动", "危险", "discard clean reset", realRepo && hasChanges, () => runAction("discardAll"), true),
+    commandItem("fetch", "抓取", "从远端更新引用", "git fetch", "remote sync", realRepo, () => runAction("fetch")),
+    commandItem("pull", "拉取", `快进拉取 ${branch}`, "git pull", "remote sync", realRepo, () => runAction("pull")),
+    commandItem("pullRebase", "变基拉取", `把 ${branch} 的本地提交重放到远端之后`, "git pull --rebase", "remote rebase", realRepo, () => runAction("pullRebase")),
+    commandItem("push", "推送", `推送 ${branch}`, "git push", "remote sync", realRepo, () => runAction("push")),
+    commandItem("forcePushLease", "安全强推", "使用 force-with-lease 更新远端分支", "危险", "force push lease", realRepo, () => runAction("forcePushLease"), true),
+    commandItem("newBranch", "新建分支", "从当前 HEAD 创建本地分支", "git branch", "branch checkout", hasRepo, openBranchModal),
+    commandItem("createTag", "创建 Tag", "基于当前提交创建 Tag", "git tag", "release tag", hasCommit, () => openTagModal(commit)),
+    commandItem("copySha", "复制提交 SHA", "复制当前选中提交的完整 SHA", "复制", "clipboard commit sha", hasCommit, async () => {
+      await copyText(commit.sha);
+      toast("已复制提交 SHA");
+    }),
+    commandItem("openRemoteCommit", "在远端查看", "打开当前提交的网页远端地址", "web", "github gitlab bitbucket", Boolean(remoteCommit), () => openRemoteCommit(commit)),
+    commandItem("cloneRepo", "克隆仓库", "从远端 URL 或本地裸仓库创建工作区", "git clone", "clone repository", true, openCloneModal),
+    commandItem("initRepo", "初始化仓库", "把本机文件夹创建为 Git 仓库", "git init", "init repository", true, openInitModal),
+  ];
+}
+
+function commandItem(id, title, description, hint, keywords, enabled, run, danger = false) {
+  return {
+    id,
+    title,
+    description,
+    hint,
+    keywords,
+    disabled: !enabled,
+    danger,
+    run,
+  };
+}
+
+function selectedCommandCommit() {
+  return state.data?.commits.find((commit) => commit.sha === state.selectedSha) || state.data?.commits?.[0] || null;
+}
+
+function switchInspectorTab(tab) {
+  state.selectedTab = tab;
+  renderInspector();
+}
+
+function moveCommandPaletteSelection(delta) {
+  const items = filteredCommandItems();
+  if (!items.length) return;
+  let next = state.commandPaletteIndex;
+  for (let step = 0; step < items.length; step += 1) {
+    next = (next + delta + items.length) % items.length;
+    if (!items[next].disabled) break;
+  }
+  state.commandPaletteIndex = next;
+  renderCommandPalette();
+  els.commandList.querySelector(".command-row.active")?.scrollIntoView({ block: "nearest" });
+}
+
+async function executeCommandPaletteItem(id) {
+  const item = commandPaletteItems().find((candidate) => candidate.id === id);
+  if (!item) return;
+  if (item.disabled) {
+    toast("当前命令不可用");
+    renderCommandPalette();
+    return;
+  }
+  closeCommandPalette();
+  await item.run();
+}
+
+function handleCommandPaletteKeydown(event) {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveCommandPaletteSelection(1);
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveCommandPaletteSelection(-1);
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    const items = filteredCommandItems();
+    const item = items[state.commandPaletteIndex];
+    if (item) executeCommandPaletteItem(item.id).catch((error) => toast(error.message));
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCommandPalette();
+  }
 }
 
 async function selectCommit(sha) {
@@ -5851,6 +6052,7 @@ function toast(message) {
 els.openRepo.addEventListener("click", openRepo);
 els.cloneRepo.addEventListener("click", openCloneModal);
 els.initRepo.addEventListener("click", openInitModal);
+els.openCommandPalette.addEventListener("click", openCommandPalette);
 els.repoInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") openRepo();
 });
@@ -5866,6 +6068,20 @@ els.cloneTargetInput.addEventListener("input", () => {
 });
 els.initForm.addEventListener("submit", submitInitForm);
 els.initCancel.addEventListener("click", closeInitModal);
+els.commandClose.addEventListener("click", closeCommandPalette);
+els.commandPalette.addEventListener("click", (event) => {
+  if (event.target === els.commandPalette) closeCommandPalette();
+});
+els.commandInput.addEventListener("input", () => {
+  state.commandPaletteIndex = 0;
+  renderCommandPalette();
+});
+els.commandInput.addEventListener("keydown", handleCommandPaletteKeydown);
+els.commandList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-command-id]");
+  if (!button || button.disabled) return;
+  executeCommandPaletteItem(button.dataset.commandId).catch((error) => toast(error.message));
+});
 els.searchInput.addEventListener("input", renderCommits);
 els.clearSearch.addEventListener("click", clearCommitSearch);
 els.themeToggle.addEventListener("click", toggleTheme);
@@ -6234,6 +6450,15 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-open-diff-modal]")) openDiffModal();
 });
 document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openCommandPalette();
+    return;
+  }
+  if (event.key === "Escape" && els.commandPalette.classList.contains("show")) {
+    closeCommandPalette();
+    return;
+  }
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
   if (event.key === "Escape" && els.cloneModal.classList.contains("show")) closeCloneModal();
   if (event.key === "Escape" && els.initModal.classList.contains("show")) closeInitModal();
