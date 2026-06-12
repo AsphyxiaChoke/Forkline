@@ -973,8 +973,7 @@ function showFileContextMenu(event, filePath, scope = "") {
     markSelectedFile();
   }
   const menu = els.fileContextMenu;
-  const hasUnstaged = Boolean(fileInfo.unstaged || (!fileInfo.staged && fileInfo.unstaged !== false));
-  const hasStaged = Boolean(fileInfo.staged);
+  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
   menu.querySelector('[data-file-action="stageFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="discardWorktreeFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="unstageFile"]').disabled = !hasStaged;
@@ -2620,6 +2619,7 @@ function selectWorkingFile(filePath) {
   if (!filePath || filePath === state.selectedFile) return;
   state.selectedFile = filePath;
   markSelectedFile();
+  updateWorkDiffActions();
   loadWorkingDiff(filePath);
 }
 
@@ -2684,6 +2684,7 @@ function renderWorkDiffEmpty(message) {
   els.workDiffPath.textContent = "";
   els.workDiffView.className = "work-diff-view empty";
   els.workDiffView.textContent = message;
+  updateWorkDiffActions();
 }
 
 async function loadWorkingDiff(filePath) {
@@ -2696,6 +2697,7 @@ async function loadWorkingDiff(filePath) {
   els.workDiffPath.textContent = filePath;
   els.workDiffView.className = "work-diff-view loading";
   els.workDiffView.textContent = "正在读取差异...";
+  updateWorkDiffActions(filePath);
   try {
     const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}`);
     if (requestId !== state.diffRequestId) return;
@@ -2712,6 +2714,7 @@ function renderWorkDiff(filePath, diff) {
   setActiveDiff({ source: "worktree", title, path: filePath, diff, emptyText: "没有可显示的差异" });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = filePath;
+  updateWorkDiffActions(filePath);
   if (!diff.length) {
     els.workDiffView.className = "work-diff-view empty";
     els.workDiffView.textContent = "没有可显示的差异";
@@ -2731,11 +2734,64 @@ function renderHistoryDiffInWorkbench(commit, detail, filePath) {
   els.workDiffPath.textContent = path;
   els.workDiffView.className = "work-diff-view";
   els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的历史改动");
+  updateWorkDiffActions("");
 }
 
 function setActiveDiff(payload) {
   state.activeDiff = payload;
   if (els.maximizeDiff) els.maximizeDiff.disabled = !payload?.diff?.length;
+}
+
+function selectedWorkingFileInfo(filePath = state.selectedFile) {
+  if (!filePath) return null;
+  return (state.data?.workingFiles || []).find((file) => file.file === filePath) || null;
+}
+
+function fileChangeFlags(fileInfo) {
+  return {
+    hasUnstaged: Boolean(fileInfo?.unstaged || (!fileInfo?.staged && fileInfo?.unstaged !== false)),
+    hasStaged: Boolean(fileInfo?.staged),
+  };
+}
+
+function updateWorkDiffActions(filePath = state.selectedFile) {
+  const fileInfo = selectedWorkingFileInfo(filePath);
+  const hasWorktreeFile = Boolean(fileInfo);
+  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  document.querySelectorAll("[data-work-diff-action]").forEach((button) => {
+    const action = button.dataset.workDiffAction;
+    const enabled =
+      hasWorktreeFile &&
+      ((action === "stageFile" || action === "discardWorktreeFile") ? hasUnstaged : action === "unstageFile" || action === "discardStagedFile" ? hasStaged : false);
+    button.disabled = !enabled;
+    button.title = workDiffActionTitle(action, filePath, enabled);
+  });
+}
+
+function workDiffActionTitle(action, filePath, enabled) {
+  if (!filePath) return "先选择一个工作区文件";
+  if (!enabled) return "当前文件没有适用的改动";
+  const titles = {
+    stageFile: `暂存 ${filePath}`,
+    unstageFile: `取消暂存 ${filePath}`,
+    discardWorktreeFile: `丢弃工作区改动：${filePath}`,
+    discardStagedFile: `丢弃已暂存改动：${filePath}`,
+  };
+  return titles[action] || filePath;
+}
+
+async function runWorkDiffFileAction(action, button) {
+  const file = state.selectedFile;
+  if (!file) {
+    toast("请先选择一个工作区文件");
+    return;
+  }
+  if (button) button.disabled = true;
+  try {
+    await runSingleFileAction(action, file);
+  } finally {
+    updateWorkDiffActions();
+  }
 }
 
 function openDiffModal() {
@@ -3790,6 +3846,9 @@ els.mainlineModal.addEventListener("click", (event) => {
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
+document.querySelectorAll("[data-work-diff-action]").forEach((button) => {
+  button.addEventListener("click", () => runWorkDiffFileAction(button.dataset.workDiffAction, button));
+});
 els.closeDiffModal.addEventListener("click", closeDiffModal);
 els.diffModal.addEventListener("click", (event) => {
   if (event.target === els.diffModal) closeDiffModal();

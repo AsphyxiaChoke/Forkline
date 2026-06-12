@@ -113,7 +113,13 @@
                   <span id="workDiffTitle">变更对照</span>
                   <span id="workDiffPath" class="panel-subtitle">未选择文件</span>
                 </div>
-                <button id="maximizeDiff" class="mini-btn diff-max-btn" type="button" disabled>最大化</button>
+                <div class="panel-actions work-diff-actions">
+                  <button class="mini-btn" data-work-diff-action="stageFile" type="button" disabled>暂存</button>
+                  <button class="mini-btn" data-work-diff-action="unstageFile" type="button" disabled>取消</button>
+                  <button class="mini-btn danger" data-work-diff-action="discardWorktreeFile" type="button" disabled>丢弃</button>
+                  <button class="mini-btn danger" data-work-diff-action="discardStagedFile" type="button" disabled>丢已暂存</button>
+                  <button id="maximizeDiff" class="mini-btn diff-max-btn" type="button" disabled>最大化</button>
+                </div>
               </div>
               <div id="workDiffView" class="work-diff-view empty">未选择文件</div>
             </section>

@@ -1387,10 +1387,44 @@ button.file-row {
 
 .work-diff {
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--bg);
+}
+
+.work-diff > .panel-title {
+  min-height: 38px;
+  height: auto;
+  align-items: flex-start;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  row-gap: 5px;
+  flex-wrap: wrap;
+}
+
+.work-diff > .panel-title .panel-title-text {
+  flex: 1 1 180px;
+}
+
+.work-diff > .panel-title .panel-title-text > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-diff-actions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  max-width: 100%;
+  row-gap: 4px;
+}
+
+.work-diff-actions .mini-btn {
+  height: 26px;
+  min-width: 44px;
+  padding: 0 7px;
 }
 
 .workbench-resizer-y {
