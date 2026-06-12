@@ -235,6 +235,12 @@ async function runAction(body) {
   if (action === "abortCherryPick") {
     return commandResult(await git(currentRepo, ["cherry-pick", "--abort"], { timeout: 120000 }) || "已中止挑选，工作区已回到挑选前状态");
   }
+  if (action === "continueMerge") {
+    return continueMerge();
+  }
+  if (action === "abortMerge") {
+    return abortMerge();
+  }
   if (action === "checkoutBranch") {
     return checkoutBranch(body);
   }
@@ -356,6 +362,8 @@ function actionLabel(body = {}) {
     continueCherryPick: "继续挑选提交",
     skipCherryPick: "跳过挑选提交",
     abortCherryPick: "中止挑选提交",
+    continueMerge: "继续合并",
+    abortMerge: "中止合并",
     createBranch: branch ? `创建分支 ${branch}` : "创建分支",
     renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
     deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
@@ -721,6 +729,33 @@ async function continueCherryPick() {
   } finally {
     removeQuietly(editorFile);
   }
+}
+
+async function continueMerge() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "merge") {
+    return { ok: true, output: "当前没有正在进行的合并，工作区已经干净。" };
+  }
+  const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  try {
+    await git(currentRepo, ["merge", "--continue"], {
+      timeout: 120000,
+      env: { GIT_EDITOR: `"${process.execPath}" "${editorFile}"` },
+    });
+    const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+    return { ok: true, output: `已继续合并并创建合并提交 ${newHead}` };
+  } finally {
+    removeQuietly(editorFile);
+  }
+}
+
+async function abortMerge() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "merge") {
+    return { ok: true, output: "当前没有正在进行的合并，工作区已经干净。" };
+  }
+  await git(currentRepo, ["merge", "--abort"], { timeout: 120000 });
+  return { ok: true, output: "已中止合并，工作区已回到合并前状态" };
 }
 
 async function resolveCommit(value) {
@@ -1141,6 +1176,9 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("no cherry-pick or revert in progress")) {
     return operationKind === "cherryPick" ? "当前没有正在进行的挑选，工作区已经干净。" : "当前没有正在进行的还原，工作区已经干净。";
   }
+  if (lower.includes("no merge in progress") || lower.includes("merge_head missing")) {
+    return "当前没有正在进行的合并，工作区已经干净。";
+  }
   if (lower.includes("nothing to commit") && lower.includes("working tree clean")) {
     return operationKind === "cherryPick" ? "没有需要继续提交的挑选内容，工作区已经干净。" : "没有需要继续提交的还原内容，工作区已经干净。";
   }
@@ -1162,6 +1200,9 @@ function friendlyErrorMessage(error, context = {}) {
     if (operationKind === "cherryPick") {
       return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续挑选”；如果不想保留这次挑选，点“中止挑选”。`;
     }
+    if (operationKind === "merge") {
+      return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续合并”；如果不想保留这次合并，点“中止合并”。`;
+    }
     return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续还原”；如果不想保留这次还原，点“中止还原”。`;
   }
   if (lower.includes("cherry-pick") && (lower.includes("automatic merge failed") || lower.includes("conflict"))) {
@@ -1171,7 +1212,7 @@ function friendlyErrorMessage(error, context = {}) {
     return "还原提交时发生冲突。请在工作区查看冲突文件，手动解决后提交；不想继续时可以执行中止还原。";
   }
   if (lower.includes("automatic merge failed") || lower.includes("merge conflict") || lower.includes("conflict (")) {
-    return "合并发生冲突。请在工作区查看冲突文件，手动解决后提交；不想继续时可以执行中止合并。";
+    return "合并发生冲突。请在工作区查看冲突文件，手动解决并暂存后继续合并；不想继续时可以中止合并。";
   }
   if (lower.includes("merge_head exists") || lower.includes("not concluded your merge")) {
     return "上一次合并还没有结束。请先解决冲突并提交，或中止当前合并后再继续。";
@@ -1206,6 +1247,7 @@ function friendlyErrorMessage(error, context = {}) {
 function actionOperationKind(action) {
   if (String(action || "").toLowerCase().includes("cherrypick")) return "cherryPick";
   if (String(action || "").toLowerCase().includes("revert")) return "revert";
+  if (String(action || "").toLowerCase().includes("merge")) return "merge";
   return "";
 }
 
@@ -1267,7 +1309,7 @@ function detectRepoOperation(repoPath) {
     return { type: "cherryPick", label: "挑选提交未完成", canContinue: true, canAbort: true, canSkip: true };
   }
   if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
-    return { type: "merge", label: "合并未完成", canContinue: false, canAbort: false };
+    return { type: "merge", label: "合并未完成", canContinue: true, canAbort: true };
   }
   return null;
 }

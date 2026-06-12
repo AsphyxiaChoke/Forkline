@@ -548,11 +548,12 @@ function renderRepoOperationBanner(files) {
   if (!operation && !conflicts.length) return "";
   const isRevert = operation?.type === "revert";
   const isCherryPick = operation?.type === "cherryPick";
-  const actionName = isCherryPick ? "挑选" : isRevert ? "还原" : "操作";
-  const title = isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作";
+  const isMerge = operation?.type === "merge";
+  const actionName = isMerge ? "合并" : isCherryPick ? "挑选" : isRevert ? "还原" : "操作";
+  const title = isMerge ? "合并发生冲突" : isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作";
   const text = conflicts.length
     ? `${conflicts.length} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续${actionName}；不想保留这次${actionName}就中止。`
-    : "当前操作还没有结束。";
+    : `当前${actionName}已经没有冲突文件，确认解决结果后可以继续${actionName}。`;
   const actions = isRevert
     ? `
       <button class="mini-btn" data-repo-operation="continueRevert" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git revert --continue"}"><span>继续还原</span><span class="command-hint">git revert --continue</span></button>
@@ -563,6 +564,11 @@ function renderRepoOperationBanner(files) {
       <button class="mini-btn" data-repo-operation="continueCherryPick" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git cherry-pick --continue"}"><span>继续挑选</span><span class="command-hint">git cherry-pick --continue</span></button>
       <button class="mini-btn" data-repo-operation="skipCherryPick" type="button" title="git cherry-pick --skip"><span>跳过挑选</span><span class="command-hint">git cherry-pick --skip</span></button>
       <button class="mini-btn danger" data-repo-operation="abortCherryPick" type="button" title="git cherry-pick --abort"><span>中止挑选</span><span class="command-hint">git cherry-pick --abort</span></button>
+    `
+    : isMerge
+    ? `
+      <button class="mini-btn" data-repo-operation="continueMerge" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git merge --continue"}"><span>继续合并</span><span class="command-hint">git merge --continue</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortMerge" type="button" title="git merge --abort"><span>中止合并</span><span class="command-hint">git merge --abort</span></button>
     `
     : "";
   return `
@@ -2303,6 +2309,8 @@ async function runRepoOperation(action, button) {
     continueCherryPick: "确认继续挑选？请先确认所有冲突文件已经解决并暂存。",
     skipCherryPick: "确认跳过当前挑选提交？这会放弃当前这一个提交的挑选，继续处理后续状态。",
     abortCherryPick: "确认中止挑选？这会放弃当前这次 cherry-pick，并回到挑选前的状态。",
+    continueMerge: "确认继续合并？请先确认所有冲突文件已经解决并暂存。",
+    abortMerge: "确认中止合并？这会放弃当前这次合并，并回到合并前的状态。",
   };
   if (!state.data.repo.isSample && !confirm(messages[action] || "确认继续？")) return;
   if (button) button.disabled = true;
