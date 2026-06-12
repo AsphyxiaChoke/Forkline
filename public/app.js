@@ -1491,12 +1491,16 @@ function showFileContextMenu(event, filePath, scope = "") {
   const menu = els.fileContextMenu;
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
   const hasConflict = Boolean(fileInfo?.conflict);
+  const canIgnore = isUntrackedFile(fileInfo);
+  const canIgnoreDirectory = canIgnore && filePath.replaceAll("\\", "/").includes("/");
   menu.querySelector('[data-file-action="stageFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="discardWorktreeFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="unstageFile"]').disabled = !hasStaged;
   menu.querySelector('[data-file-action="discardStagedFile"]').disabled = !hasStaged;
   menu.querySelector('[data-file-action="resolveConflictOurs"]').disabled = !hasConflict;
   menu.querySelector('[data-file-action="resolveConflictTheirs"]').disabled = !hasConflict;
+  menu.querySelector('[data-file-action="ignoreFile"]').disabled = !canIgnore;
+  menu.querySelector('[data-file-action="ignoreDirectory"]').disabled = !canIgnoreDirectory;
   menu.querySelector('[data-file-action="stash"]').disabled = !selectedContextFiles().length;
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
@@ -1577,6 +1581,10 @@ async function runFileContextAction(action) {
   }
   if (action === "stash") {
     await createStashFromSelection(selectedContextFiles());
+    return;
+  }
+  if (action === "ignoreFile" || action === "ignoreDirectory") {
+    await ignoreWorktreePath(action, context.file);
     return;
   }
   if (["stageFile", "discardWorktreeFile", "resolveConflictOurs", "resolveConflictTheirs"].includes(action)) {
@@ -4757,6 +4765,10 @@ function fileChangeFlags(fileInfo) {
   };
 }
 
+function isUntrackedFile(fileInfo) {
+  return Boolean(fileInfo && fileInfo.indexStatus === "?" && fileInfo.worktreeStatus === "?");
+}
+
 function preferredWorkDiffScope(fileInfo) {
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
   if (hasUnstaged) return "unstaged";
@@ -5968,6 +5980,41 @@ async function createStashFromSelection(files = null) {
   } catch (error) {
     toast(error.message);
   }
+}
+
+async function ignoreWorktreePath(action, file) {
+  if (!state.data || !file) return;
+  const mode = action === "ignoreDirectory" ? "directory" : "file";
+  const target = mode === "directory" ? worktreeDirectoryForFile(file) : file;
+  if (!target) {
+    toast("根目录文件没有可忽略的所在目录");
+    return;
+  }
+  const command = mode === "directory" ? `/${target}/` : `/${file}`;
+  const message =
+    mode === "directory"
+      ? `确认把目录加入 .gitignore？\n\n目录：${target}/\n规则：${command}\n\n这个操作只写入 .gitignore，不会删除本地文件。`
+      : `确认把文件加入 .gitignore？\n\n文件：${file}\n规则：${command}\n\n这个操作只写入 .gitignore，不会删除本地文件。`;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "ignoreWorktreePath", file, mode }) });
+    toast(result.output || "已更新 .gitignore");
+    state.selectedChanges.delete(changeKey("unstaged", file));
+    state.selectedChanges.delete(changeKey("staged", file));
+    const data = await api("/api/worktree");
+    state.data.workingFiles = data.workingFiles || [];
+    state.data.repo.operation = data.operation || null;
+    renderWorkingFiles();
+    renderStage();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function worktreeDirectoryForFile(file) {
+  const normalized = String(file || "").replaceAll("\\", "/");
+  const index = normalized.lastIndexOf("/");
+  return index > 0 ? normalized.slice(0, index) : "";
 }
 
 async function runSingleFileAction(action, file) {

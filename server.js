@@ -846,6 +846,9 @@ async function runAction(body) {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["add", "--", file], { timeout: 60000 }));
   }
+  if (action === "ignoreWorktreePath") {
+    return commandResult(await ignoreWorktreePath(body));
+  }
   if (action === "unstageFile") {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["reset", "-q", "--", file], { timeout: 60000 }));
@@ -1015,6 +1018,7 @@ function actionLabel(body = {}) {
     deleteRecoveryPoints: Array.isArray(body.refs) ? `批量删除 ${body.refs.length} 个恢复点` : "批量删除恢复点",
     pruneRecoveryPoints: "按保留策略清理恢复点",
     stageFile: file ? `暂存文件 ${file}` : "暂存文件",
+    ignoreWorktreePath: file ? `加入 .gitignore ${file}` : "加入 .gitignore",
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
     resolveConflictFile: file ? `解决冲突文件 ${file}` : "解决冲突文件",
     stageHunk: file ? `暂存改动块 ${file}` : "暂存改动块",
@@ -1498,6 +1502,50 @@ async function branchFromStash(body) {
     output: [`已从 ${ref} 创建并切换到分支 ${branch}`, "储藏已应用到新分支，并从储藏列表移除。"].join("\n"),
     gitOutput: shortText(output, 2000),
   };
+}
+
+async function ignoreWorktreePath(body) {
+  const file = normalizeRepoFile(body.file);
+  const mode = normalizeIgnoreMode(body.mode);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  if (!target || target.indexStatus !== "?" || target.worktreeStatus !== "?") {
+    throw new Error("只能把未跟踪文件加入 .gitignore。已跟踪文件需要先从 Git 索引中移除后才能忽略。");
+  }
+
+  const patternPath = mode === "directory" ? repoDirectoryForIgnore(file) : file;
+  if (!patternPath) throw new Error("根目录文件没有可忽略的所在目录，请直接忽略这个文件。");
+  const pattern = gitignorePattern(patternPath, mode);
+  const gitignorePath = path.join(currentRepo, ".gitignore");
+  const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf8") : "";
+  const lines = existing.replace(/\r/g, "").split("\n");
+  if (lines.includes(pattern)) {
+    return `这个规则已经在 .gitignore 中：${pattern}`;
+  }
+
+  const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
+  fs.appendFileSync(gitignorePath, `${prefix}${pattern}\n`, "utf8");
+  return mode === "directory" ? `已加入 .gitignore：${pattern}\n该目录下的未跟踪文件会从工作区列表中隐藏。` : `已加入 .gitignore：${pattern}`;
+}
+
+function normalizeIgnoreMode(value) {
+  const mode = String(value || "file").trim().toLowerCase();
+  if (mode === "file" || mode === "directory") return mode;
+  throw new Error("忽略类型不合法，请刷新后再试。");
+}
+
+function repoDirectoryForIgnore(file) {
+  const dir = path.posix.dirname(file);
+  return dir && dir !== "." ? dir : "";
+}
+
+function gitignorePattern(patternPath, mode) {
+  const normalized = normalizeRepoFile(patternPath);
+  const escaped = normalized
+    .split("/")
+    .map((part) => part.replace(/[\\*?\[\]#!]/g, "\\$&"))
+    .join("/");
+  return mode === "directory" ? `/${escaped}/` : `/${escaped}`;
 }
 
 async function findForklineStash(branch, message = "") {

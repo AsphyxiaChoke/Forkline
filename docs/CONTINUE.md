@@ -53,6 +53,7 @@
 - 命令面板已接入：顶部新增“命令”入口，并支持键盘打开；面板会按关键词过滤常用页面跳转、同步、工作区、分支、Tag、克隆和初始化动作，禁用当前不可用命令，危险动作标红且继续复用原确认流程。
 - 左侧分支筛选已接入：仓库信息下方新增分支筛选框，可同时过滤本地分支和远端分支，匹配分支名、upstream、领先/落后/上游丢失状态，并显示命中数量；命令面板也新增“筛选分支”入口。
 - 工作区文件筛选已接入：左侧“工作区”新增筛选框，底部变更列表同步使用同一筛选结果，可匹配完整路径、文件名、Git 状态、中文状态、未暂存/已暂存状态，并显示命中数量；命令面板新增“筛选工作区文件”入口。
+- 未跟踪文件忽略已接入：工作区文件右键菜单新增“加入 .gitignore”和“忽略所在目录”，只对未跟踪文件启用；后端会确认目标仍是未跟踪文件，再向仓库根目录 `.gitignore` 追加 anchored 规则并避免重复追加。
 - 常见 `pathspec ... did not match any files` 错误已转成中文提示：当文件已经删除、重命名或不在当前工作区中时，会提示“找不到文件 ...”，不再直接露出 Git 英文原文。
 - 顶部最近仓库快速打开已接入：成功打开真实仓库后会写入浏览器 localStorage，顶部下拉框可快速切回最近项目，清除按钮只删除浏览器记录，不会删除本地仓库；窄屏下顶栏会换成两行避免搜索框、路径输入和按钮挤压。
 - 克隆仓库入口已接入：顶部新增“克隆”，弹窗填写来源 URL/本地裸仓库路径和目标文件夹；后端新增 `cloneRepository`，执行 `git clone <来源> <保存到>`，目标必须是本机绝对路径，且会拒绝覆盖非空目录；默认克隆后直接打开新仓库并写入最近仓库。
@@ -107,6 +108,7 @@
 - 工作区 Diff 快捷操作 UI 验证：浏览器服务 `http://127.0.0.1:5177` 打开 GitTest 后，创建临时未跟踪文件 `forkline-workdiff-actions-test.txt`；刷新工作区后底部 Diff 面板显示该文件，“暂存 / 丢弃”启用，“取消 / 丢已暂存”禁用；点击底部“暂存”后文件进入已暂存区且按钮切换为“取消 / 丢已暂存”启用；点击底部“取消”后回到未暂存状态。测试文件已删除，GitTest 已恢复 `123` 分支干净状态。
 - 工作区 Diff 按块操作 API 验证：临时服务 `http://127.0.0.1:5226` 打开 GitTest 临时分支 `forkline/hunk-actions-api-20260613035019`，创建 40 行测试文件并隔远修改第 5 行和第 35 行形成两个 hunk；调用 `stageHunk` 只暂存第 1 个 hunk，缓存区只含第 5 行改动；调用 `unstageHunk` 后缓存区清空且工作区保留两处改动；调用 `discardWorktreeHunk` 丢弃第 2 个 hunk 后第 35 行恢复、第 5 行改动保留。临时分支已删除，GitTest 已恢复 `123` 分支干净状态。
 - 工作区 Diff 视图切换 API 验证：临时服务 `http://127.0.0.1:5228` 打开 GitTest 临时分支 `forkline/workdiff-scope-api-20260613040156`，同一文件第 5 行为已暂存改动、第 35 行为未暂存改动；`/api/worktree-diff` 默认返回 `scope=unstaged` 且只含第 35 行，`scope=staged` 只含第 5 行；随后调用 `unstageHunk` 只取消已暂存 hunk，缓存区清空，两处改动均保留在工作区。临时分支已删除，GitTest 已恢复 `123` 分支干净状态。
+- 未跟踪文件忽略 API 验证：临时服务 `http://127.0.0.1:5238` 打开 GitTest 后，创建临时未跟踪文件 `forkline-fixtures/forkline-ignore-api-*.log` 和临时目录 `forkline-fixtures/forkline-ignore-dir-*`；调用 `ignoreWorktreePath` 的 file / directory 两种模式后，`.gitignore` 分别追加 `/forkline-fixtures/forkline-ignore-api-*.log` 和 `/forkline-fixtures/forkline-ignore-dir-*/`，刷新工作区后这两个未跟踪目标不再列出。验证后已恢复原 `.gitignore`，删除临时文件和目录，GitTest 回到 `123` 分支干净状态。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
