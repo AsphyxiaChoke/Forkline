@@ -1710,11 +1710,14 @@ async function openCompareBranch(head, base = currentCompareBaseRef()) {
 
 async function refreshCompare() {
   const current = state.compare || {};
-  if (!current.head) {
-    toast("请先从分支右键菜单选择比较目标");
+  const picker = comparePickerRefs();
+  const base = picker.base || current.base || currentCompareBaseRef();
+  const head = picker.head || current.head || "";
+  if (!head) {
+    toast("请选择要比较的目标引用");
     return;
   }
-  await openCompareBranch(current.head, current.base || currentCompareBaseRef());
+  await openCompareBranch(head, base);
 }
 
 async function runCommitContextAction(action) {
@@ -3647,22 +3650,23 @@ function syncCommitPreviewHtml(commit, detail, model) {
 function renderCompareTab() {
   const model = state.compare || {};
   const data = model.data;
+  const controls = comparePickerHtml(model);
   els.detailNode.style.borderColor = data ? "var(--blue)" : "var(--line)";
   els.detailTitle.textContent = "分支比较";
-  els.detailSub.textContent = model.head ? `${model.base || "HEAD"} ... ${model.head}` : "从分支右键菜单开始比较";
+  els.detailSub.textContent = model.head ? `${model.base || "HEAD"} ... ${model.head}` : "选择两个引用开始比较";
   if (model.loading) {
     setActiveDiff(null);
-    els.detailBody.innerHTML = `<div class="empty-panel"><strong>正在比较分支</strong><span>${escapeHtml(model.base || "HEAD")} ... ${escapeHtml(model.head || "")}</span></div>`;
+    els.detailBody.innerHTML = `${controls}<div class="empty-panel"><strong>正在比较引用</strong><span>${escapeHtml(model.base || "HEAD")} ... ${escapeHtml(model.head || "")}</span></div>`;
     return;
   }
   if (model.error) {
     setActiveDiff(null);
-    els.detailBody.innerHTML = `<div class="empty-panel"><strong>比较失败</strong><span>${escapeHtml(model.error)}</span></div>`;
+    els.detailBody.innerHTML = `${controls}<div class="empty-panel"><strong>比较失败</strong><span>${escapeHtml(model.error)}</span></div>`;
     return;
   }
   if (!data) {
     setActiveDiff(null);
-    els.detailBody.innerHTML = `<div class="empty-panel"><strong>选择一个分支比较</strong><span>在左侧本地分支或远端分支上右键，选择“与当前分支比较”。</span></div>`;
+    els.detailBody.innerHTML = `${controls}<div class="empty-panel"><strong>选择两个引用比较</strong><span>可以输入本地分支、远端分支、Tag 或提交 SHA，也可以继续从分支右键菜单进入。</span></div>`;
     return;
   }
   const files = data.files || [];
@@ -3683,6 +3687,7 @@ function renderCompareTab() {
     setActiveDiff(null);
   }
   els.detailBody.innerHTML = `
+    ${controls}
     <div class="compare-summary">
       <div class="sync-actions compare-actions">
         <button class="mini-btn" data-compare-refresh type="button"><span>刷新比较</span><span class="command-hint">git diff</span></button>
@@ -3700,8 +3705,8 @@ function renderCompareTab() {
       </div>
     </div>
     <div class="compare-commit-columns">
-      ${compareCommitListHtml("当前分支独有提交", data.baseOnlyCommits || [], "当前分支没有目标分支缺少的提交")}
-      ${compareCommitListHtml("目标分支独有提交", data.headOnlyCommits || [], "目标分支没有当前分支缺少的提交")}
+      ${compareCommitListHtml("基准引用独有提交", data.baseOnlyCommits || [], "基准引用没有目标引用缺少的提交")}
+      ${compareCommitListHtml("目标引用独有提交", data.headOnlyCommits || [], "目标引用没有基准引用缺少的提交")}
     </div>
     <div class="detail-section-title">目标分支带来的文件改动</div>
     <div class="commit-file-view compare-file-view">
@@ -3721,6 +3726,90 @@ function renderCompareTab() {
     </div>
   `;
   bindFileTree(els.detailBody, { mode: "compare" });
+}
+
+function comparePickerHtml(model = {}) {
+  const base = model.base || currentCompareBaseRef();
+  const head = model.head || "";
+  const sameRef = Boolean(base && head && base === head);
+  const refs = compareRefOptions([base, head]);
+  return `
+    <div class="compare-picker">
+      <datalist id="compareRefOptions">
+        ${refs.map((item) => `<option value="${escapeAttr(item.ref)}" label="${escapeAttr(item.label)}"></option>`).join("")}
+      </datalist>
+      <label>
+        <span>基准引用</span>
+        <input data-compare-ref="base" list="compareRefOptions" autocomplete="off" spellcheck="false" value="${escapeAttr(base)}" placeholder="main / HEAD / Tag / SHA" />
+      </label>
+      <label>
+        <span>目标引用</span>
+        <input data-compare-ref="head" list="compareRefOptions" autocomplete="off" spellcheck="false" value="${escapeAttr(head)}" placeholder="选择或输入要比较的引用" />
+      </label>
+      <div class="compare-picker-actions">
+        <button class="mini-btn" data-compare-run type="button" ${!base || !head || sameRef ? "disabled" : ""}><span>开始比较</span><span class="command-hint">git diff</span></button>
+        <button class="mini-btn" data-compare-swap type="button" ${!base || !head ? "disabled" : ""}>交换</button>
+      </div>
+    </div>
+  `;
+}
+
+function compareRefOptions(extraRefs = []) {
+  const seen = new Set();
+  const items = [];
+  const add = (ref, label) => {
+    const value = String(ref || "").trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    items.push({ ref: value, label });
+  };
+  add("HEAD", "当前 HEAD");
+  add(state.data?.repo?.branch, "当前分支");
+  (state.data?.branches || []).forEach((branch) => add(branch, "本地分支"));
+  (state.data?.remotes || []).forEach((branch) => add(branch, "远端分支"));
+  (state.data?.tags || []).forEach((tag) => add(tag.name, "Tag"));
+  extraRefs.forEach((ref) => add(ref, "当前输入"));
+  return items;
+}
+
+function comparePickerRefs() {
+  const base = els.detailBody.querySelector('[data-compare-ref="base"]')?.value.trim() || "";
+  const head = els.detailBody.querySelector('[data-compare-ref="head"]')?.value.trim() || "";
+  return { base, head };
+}
+
+function updateComparePickerState() {
+  const refs = comparePickerRefs();
+  state.compare = { ...(state.compare || {}), base: refs.base, head: refs.head };
+  const run = els.detailBody.querySelector("[data-compare-run]");
+  const swap = els.detailBody.querySelector("[data-compare-swap]");
+  const sameRef = Boolean(refs.base && refs.head && refs.base === refs.head);
+  if (run) run.disabled = !refs.base || !refs.head || sameRef;
+  if (swap) swap.disabled = !refs.base || !refs.head;
+}
+
+async function runCompareFromPicker() {
+  const { base, head } = comparePickerRefs();
+  if (!base || !head) {
+    toast("请先填写基准引用和目标引用");
+    return;
+  }
+  if (base === head) {
+    toast("基准引用和目标引用相同，不需要比较");
+    return;
+  }
+  await openCompareBranch(head, base);
+}
+
+async function swapCompareRefs() {
+  const { base, head } = comparePickerRefs();
+  if (!base || !head) return;
+  const baseInput = els.detailBody.querySelector('[data-compare-ref="base"]');
+  const headInput = els.detailBody.querySelector('[data-compare-ref="head"]');
+  if (baseInput) baseInput.value = head;
+  if (headInput) headInput.value = base;
+  updateComparePickerState();
+  if (base !== head) await openCompareBranch(base, head);
 }
 
 function compareCommitListHtml(title, commits, emptyText) {
@@ -6391,6 +6480,11 @@ els.detailBody.addEventListener("submit", (event) => {
   rewordSelectedCommit(form);
 });
 els.detailBody.addEventListener("input", (event) => {
+  const compareRef = event.target.closest("[data-compare-ref]");
+  if (compareRef && state.selectedTab === "compare") {
+    updateComparePickerState();
+    return;
+  }
   const historyQueueField = event.target.closest("[data-history-queue-field]");
   if (historyQueueField) {
     updateHistoryQueueField(historyQueueField);
@@ -6405,6 +6499,12 @@ els.detailBody.addEventListener("input", (event) => {
   if (policy && state.selectedTab === "recovery") {
     updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
   }
+});
+els.detailBody.addEventListener("keydown", (event) => {
+  const compareRef = event.target.closest("[data-compare-ref]");
+  if (!compareRef || state.selectedTab !== "compare" || event.key !== "Enter") return;
+  event.preventDefault();
+  runCompareFromPicker().catch((error) => toast(error.message));
 });
 els.detailBody.addEventListener("change", (event) => {
   const historyQueueMode = event.target.closest('select[data-history-queue-action="changeMode"]');
@@ -6424,6 +6524,18 @@ els.detailBody.addEventListener("change", (event) => {
   }
 });
 els.detailBody.addEventListener("click", (event) => {
+  const compareRun = event.target.closest("[data-compare-run]");
+  if (compareRun) {
+    event.preventDefault();
+    if (!compareRun.disabled) runCompareFromPicker().catch((error) => toast(error.message));
+    return;
+  }
+  const compareSwap = event.target.closest("[data-compare-swap]");
+  if (compareSwap) {
+    event.preventDefault();
+    if (!compareSwap.disabled) swapCompareRefs().catch((error) => toast(error.message));
+    return;
+  }
   const syncAction = event.target.closest("[data-sync-action]");
   if (syncAction) {
     event.preventDefault();

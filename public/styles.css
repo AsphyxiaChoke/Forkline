@@ -3399,6 +3399,58 @@ body.resizing .workbench-resizer-y::before {
   flex: 1 1 116px;
 }
 
+.compare-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.compare-picker label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.compare-picker label span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.compare-picker input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--field);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.compare-picker input:focus {
+  border-color: rgba(35, 199, 183, 0.55);
+}
+
+.compare-picker-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.compare-picker-actions .mini-btn {
+  flex: 1 1 96px;
+}
+
 .compare-counts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
