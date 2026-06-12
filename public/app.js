@@ -1199,7 +1199,7 @@ function commandPaletteItems() {
     commandItem("forcePushLease", "安全强推", "使用 force-with-lease 更新远端分支", "危险", "force push lease", realRepo, () => runAction("forcePushLease"), true),
     commandItem("openPullRequest", pullRequest.title || "创建 PR", `为 ${branch} 打开 ${pullRequest.platformLabel || "远端"} PR/MR 页面`, "web", "pull request merge request pr mr github gitlab", Boolean(pullRequest.available), () => runSyncPullRequestAction("open")),
     commandItem("copyPullRequest", "复制 PR 链接", "复制当前分支的 PR/MR 创建地址", "copy", "pull request merge request pr mr clipboard", Boolean(pullRequest.available), () => runSyncPullRequestAction("copy")),
-    commandItem("newBranch", "新建分支", "从当前 HEAD 创建本地分支", "git branch", "branch checkout", hasRepo, openBranchModal),
+    commandItem("newBranch", "新建分支", hasCommit ? `从选中提交 ${commit.short} 创建本地分支` : "从当前 HEAD 创建本地分支", "git branch", "branch checkout commit", hasRepo, openBranchModal),
     commandItem("createTag", "创建 Tag", "基于当前提交创建 Tag", "git tag", "release tag", hasCommit, () => openTagModal(commit)),
     commandItem("copySha", "复制提交 SHA", "复制当前选中提交的完整 SHA", "复制", "clipboard commit sha", hasCommit, async () => {
       await copyText(commit.sha);
@@ -1830,6 +1830,14 @@ async function runCommitToolAction(action, sha) {
   const queueMode = historyQueueModeFromAction(action);
   if (queueMode) {
     await addHistoryQueueItem(commit, queueMode);
+    return;
+  }
+  if (action === "branch") {
+    state.selectedSha = commit.sha;
+    renderCommits();
+    await loadCommit(commit.sha);
+    renderInspector();
+    openBranchModal();
     return;
   }
   if (action === "openRemote") {
@@ -2793,6 +2801,7 @@ function renderDetailsTab(commit, detail) {
     </div>
     <div class="detail-section-title">提交操作</div>
     <div class="commit-tools">
+      <button class="mini-btn" data-commit-tool="branch" data-sha="${escapeAttr(commit.sha)}" type="button" title="git branch：从此提交创建本地分支"><span>新建分支</span><span class="command-hint">git branch</span></button>
       <button class="mini-btn" data-commit-tool="openRemote" data-sha="${escapeAttr(commit.sha)}" type="button" ${remoteUrl ? "" : "disabled"} title="${remoteUrl ? `打开远端提交：${escapeAttr(remoteUrl)}` : "当前仓库没有可识别的网页远端 URL"}"><span>远端查看</span><span class="command-hint">web</span></button>
       <button class="mini-btn" data-commit-tool="cherryPick" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支"}"><span>挑选</span><span class="command-hint">${isMergeCommit ? "git cherry-pick -m" : "git cherry-pick"}</span></button>
       <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">${isMergeCommit ? "git revert -m" : "git revert"}</span></button>
