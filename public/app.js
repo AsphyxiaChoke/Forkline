@@ -1,4 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
+const recentRepoStorageKey = "forkline-recent-repos";
+const recoveryPolicyStorageKey = "forkline-recovery-policy";
 
 const state = {
   data: null,
@@ -39,7 +41,7 @@ const state = {
   selectedTag: "",
   selectedRecoveryRef: "",
   recoveryFilter: { query: "", branch: "", action: "" },
-  recoveryPolicy: { keepDays: "90", maxPerBranch: "50" },
+  recoveryPolicy: defaultRecoveryPolicy(),
   remoteCheck: null,
   historyPlan: null,
   historyQueue: { items: [], loading: false, preview: null, error: "" },
@@ -55,8 +57,6 @@ const state = {
 
 const laneX = [28, 54, 80, 106, 118, 126, 128];
 const rowH = 62;
-const recentRepoStorageKey = "forkline-recent-repos";
-
 const els = {
   repoName: $("#repoName"),
   repoPath: $("#repoPath"),
@@ -4157,7 +4157,37 @@ function recoveryRetentionHtml(points) {
           <span>${buttonText}</span><span class="command-hint">update-ref -d</span>
         </button>
       </div>
+      ${recoveryRetentionPreviewHtml(plan, active)}
     </section>
+  `;
+}
+
+function recoveryRetentionPreviewHtml(plan, active) {
+  if (!active || !plan.deleteCount) return "";
+  const preview = plan.deletePoints.slice(0, 6);
+  const extra = Math.max(0, plan.deleteCount - preview.length);
+  return `
+    <div class="recovery-retention-preview">
+      <div class="recovery-retention-preview-head">
+        <strong>将清理</strong>
+        <span>${escapeHtml(`${plan.deleteCount} 个候选`)}</span>
+      </div>
+      <div class="recovery-retention-preview-list">
+        ${preview.map(recoveryRetentionPreviewRow).join("")}
+      </div>
+      ${extra ? `<div class="recovery-retention-more">另有 ${escapeHtml(String(extra))} 个恢复点也会被清理</div>` : ""}
+    </div>
+  `;
+}
+
+function recoveryRetentionPreviewRow(point) {
+  return `
+    <div class="recovery-retention-preview-row">
+      <strong title="${escapeAttr(point.actionLabel || point.action || "恢复点")}">${escapeHtml(point.actionLabel || point.action || "恢复点")}</strong>
+      <span title="${escapeAttr(point.branch || "HEAD")}">${escapeHtml(point.branch || "HEAD")}</span>
+      <em title="${escapeAttr(point.shortRef || point.ref || "")}">${escapeHtml(point.short || point.sha?.slice(0, 7) || point.shortRef || "")}</em>
+      <small>${escapeHtml(point.time || "")}</small>
+    </div>
   `;
 }
 
@@ -4236,6 +4266,34 @@ function uniqueRecoveryActions(points) {
 
 function recoveryActionValue(point) {
   return point.action || point.actionLabel || "";
+}
+
+function defaultRecoveryPolicy() {
+  const fallback = { keepDays: "90", maxPerBranch: "50" };
+  try {
+    const stored = JSON.parse(localStorage.getItem(recoveryPolicyStorageKey) || "{}");
+    return {
+      keepDays: recoveryPolicyInputValue(stored.keepDays, fallback.keepDays),
+      maxPerBranch: recoveryPolicyInputValue(stored.maxPerBranch, fallback.maxPerBranch),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function recoveryPolicyInputValue(value, fallback = "") {
+  const raw = value ?? fallback ?? "";
+  return String(raw).replace(/[^\d]/g, "").slice(0, 4);
+}
+
+function saveRecoveryPolicyPreference() {
+  try {
+    localStorage.setItem(recoveryPolicyStorageKey, JSON.stringify({
+      keepDays: state.recoveryPolicy?.keepDays || "",
+      maxPerBranch: state.recoveryPolicy?.maxPerBranch || "",
+    }));
+  } catch {
+  }
 }
 
 function normalizedRecoveryPolicy() {
@@ -4459,8 +4517,9 @@ function resetRecoveryFilter() {
 
 function updateRecoveryPolicy(key, value, input) {
   if (!["keepDays", "maxPerBranch"].includes(key)) return;
-  const cleanValue = String(value || "").replace(/[^\d]/g, "").slice(0, 4);
+  const cleanValue = recoveryPolicyInputValue(value);
   state.recoveryPolicy = { ...(state.recoveryPolicy || {}), [key]: cleanValue };
+  saveRecoveryPolicyPreference();
   renderInspector();
   if (input) {
     const cursor = Math.min(input.selectionStart ?? cleanValue.length, cleanValue.length);

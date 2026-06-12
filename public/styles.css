@@ -3086,6 +3086,83 @@ body.resizing .workbench-resizer-y::before {
   height: auto;
 }
 
+.recovery-retention-preview {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(240, 99, 99, 0.24);
+  border-radius: 8px;
+  background: rgba(240, 99, 99, 0.06);
+}
+
+.recovery-retention-preview-head,
+.recovery-retention-preview-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.recovery-retention-preview-head strong {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.recovery-retention-preview-head span,
+.recovery-retention-more {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.recovery-retention-preview-list {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.recovery-retention-preview-row {
+  grid-template-columns: minmax(0, 1fr) minmax(44px, auto) auto auto;
+  padding: 5px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.recovery-retention-preview-row strong,
+.recovery-retention-preview-row span,
+.recovery-retention-preview-row em,
+.recovery-retention-preview-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recovery-retention-preview-row strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.recovery-retention-preview-row span,
+.recovery-retention-preview-row small {
+  color: var(--quiet);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.recovery-retention-preview-row em {
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .stash-row-top {
   display: flex;
   align-items: center;
