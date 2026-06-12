@@ -44,6 +44,7 @@
 - 右侧“日志”页已接入：后端会在 `/api/state` 暴露当前正在执行的 Forkline 操作，并在每次 `/api/action` 完成后记录最近 40 条 Git 操作，包含中文操作名、动作类型、成功/失败、耗时和输出摘要；失败响应也会带回最新日志，方便判断刚才哪个操作失败或卡住。
 - 常见 `pathspec ... did not match any files` 错误已转成中文提示：当文件已经删除、重命名或不在当前工作区中时，会提示“找不到文件 ...”，不再直接露出 Git 英文原文。
 - 顶部最近仓库快速打开已接入：成功打开真实仓库后会写入浏览器 localStorage，顶部下拉框可快速切回最近项目，清除按钮只删除浏览器记录，不会删除本地仓库；窄屏下顶栏会换成两行避免搜索框、路径输入和按钮挤压。
+- 克隆仓库入口已接入：顶部新增“克隆”，弹窗填写来源 URL/本地裸仓库路径和目标文件夹；后端新增 `cloneRepository`，执行 `git clone <来源> <保存到>`，目标必须是本机绝对路径，且会拒绝覆盖非空目录；默认克隆后直接打开新仓库并写入最近仓库。
 
 ## 已验证
 
@@ -100,6 +101,7 @@
 - 恢复点批量清理 API 验证：在 GitTest 临时创建 3 条 `refs/forkline/recovery/...` 测试引用，其中 2 条分支为 `123`、1 条分支为 `other`；通过 `deleteRecoveryPoints` 删除分支 `123` 的筛选结果后只剩 `other`，随后清理剩余测试引用，最终恢复点数量为 0。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 - 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。
+- 克隆仓库 API 验证：临时服务 `http://127.0.0.1:5202` 调用 `cloneRepository`，从 `D:\桌面\GitTestRemote.git` 克隆到 `C:\tmp\forkline-clone-api-20260613`，返回 `ok=true`、新仓库 `forkline-clone-api-20260613`、分支 `main`、工作区改动 0；再次克隆到同一非空目录会中文拒绝“目标文件夹不是空的”。测试克隆目录已删除，临时服务已关闭。
 
 ## GitTest 测试数据
 

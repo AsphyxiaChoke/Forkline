@@ -41,6 +41,30 @@ function git(repoPath, args, options = {}) {
   });
 }
 
+function gitStandalone(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      GIT_BIN,
+      ["-c", "core.quotepath=false", ...args],
+      {
+        windowsHide: true,
+        timeout: options.timeout || 15000,
+        maxBuffer: options.maxBuffer || 1024 * 1024 * 8,
+        encoding: "utf8",
+        env: options.env ? { ...process.env, ...options.env } : process.env,
+      },
+      (error, stdout, stderr) => {
+        const output = [stdout, stderr].filter(Boolean).join("\n");
+        if (error) {
+          reject(new Error(output.trim() || error.message));
+          return;
+        }
+        resolve(output);
+      }
+    );
+  });
+}
+
 function findGitExecutable() {
   const configured = process.env.GIT_BIN;
   if (configured && fs.existsSync(configured)) return configured;
@@ -387,10 +411,13 @@ async function readStash(ref) {
 }
 
 async function runAction(body) {
+  const action = body.action;
+  if (action === "cloneRepository") {
+    return cloneRepository(body);
+  }
   if (!currentRepo) {
     return { ok: true, sample: true, output: "示例模式不会执行真实 Git 命令" };
   }
-  const action = body.action;
   if (action === "fetch") {
     return fetchRemotes();
   }
@@ -648,6 +675,7 @@ function actionLabel(body = {}) {
     pullRebase: "变基拉取远端",
     push: "推送到远端",
     forcePushLease: "安全强推到远端",
+    cloneRepository: body.targetPath ? `克隆仓库到 ${shortText(body.targetPath, 72)}` : "克隆仓库",
     fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
     testRemote: body.name ? `检查远端 ${shortText(body.name, 72)}` : "检查远端连接",
     addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
@@ -936,6 +964,26 @@ async function pullRebaseCurrentBranch() {
   const output = await git(currentRepo, ["pull", "--rebase"], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return appendRecoveryLine(syncCommandResult("pullRebase", output, before, after), recovery);
+}
+
+async function cloneRepository(body) {
+  const source = normalizeRemoteUrl(body.url || body.source);
+  const targetPath = normalizeCloneTargetPath(body.targetPath || body.path);
+  const parent = path.dirname(targetPath);
+  if (!fs.existsSync(parent)) throw new Error(`目标文件夹的上级目录不存在：${parent}`);
+  if (!fs.statSync(parent).isDirectory()) throw new Error(`目标文件夹的上级路径不是目录：${parent}`);
+  if (fs.existsSync(targetPath)) {
+    if (!fs.statSync(targetPath).isDirectory()) throw new Error(`目标路径已存在但不是文件夹：${targetPath}`);
+    if (fs.readdirSync(targetPath).length) throw new Error(`目标文件夹不是空的：${targetPath}`);
+  }
+
+  const output = await gitStandalone(["clone", "--progress", "--", source, targetPath], { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
+  const lines = [`克隆完成`, `来源：${source}`, `位置：${targetPath}`];
+  const result = { ok: true, output: lines.join("\n"), clonedPath: targetPath, gitOutput: shortText(output, 2000) };
+  if (body.openAfter !== false) {
+    result.state = await openRepo(targetPath);
+  }
+  return result;
 }
 
 async function addRemote(body) {
@@ -1601,6 +1649,16 @@ function normalizeRemoteUrl(value) {
   const url = String(value || "").trim();
   if (!url || url.includes("\0") || /[\r\n]/.test(url)) throw new Error("远端 URL 不合法");
   return url;
+}
+
+function normalizeCloneTargetPath(value) {
+  const targetPath = String(value || "").trim();
+  if (!targetPath || targetPath.includes("\0") || /[\r\n]/.test(targetPath)) throw new Error("目标文件夹不合法");
+  const resolved = path.resolve(targetPath);
+  if (!path.isAbsolute(targetPath)) throw new Error("目标文件夹必须是本机绝对路径");
+  const parsed = path.parse(resolved);
+  if (resolved === parsed.root) throw new Error("目标文件夹不能是磁盘根目录");
+  return resolved;
 }
 
 function normalizeRemoteCheckoutBranch(remoteRef) {
@@ -2569,7 +2627,7 @@ function friendlyErrorMessage(error, context = {}) {
 function remoteFailureMessage(text, context = {}) {
   const lower = String(text || "").toLowerCase();
   const action = String(context.body?.action || "");
-  const isRemoteOperation = ["fetch", "pull", "pullRebase", "push", "forcePushLease", "fetchRemote", "testRemote", "setRemoteUrl", "addRemote"].includes(action);
+  const isRemoteOperation = ["fetch", "pull", "pullRebase", "push", "forcePushLease", "cloneRepository", "fetchRemote", "testRemote", "setRemoteUrl", "addRemote"].includes(action);
   const hasRemoteSignal =
     lower.includes("permission denied") ||
     lower.includes("authentication failed") ||
@@ -2583,7 +2641,7 @@ function remoteFailureMessage(text, context = {}) {
     lower.includes("ssl certificate") ||
     lower.includes("access denied");
   if (!isRemoteOperation && !hasRemoteSignal) return "";
-  const remote = context.body?.name ? `远端 ${context.body.name}` : "远端";
+  const remote = action === "cloneRepository" ? "克隆源" : context.body?.name ? `远端 ${context.body.name}` : "远端";
   if (lower.includes("permission denied (publickey)") || lower.includes("publickey")) {
     return `${remote} 的 SSH 认证失败。请确认 SSH key 已添加到 Git 托管平台，并且当前终端可以执行 ssh -T 对应主机；也可以在同步页把远端 URL 改成 HTTPS。`;
   }

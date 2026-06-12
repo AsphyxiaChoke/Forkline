@@ -31,6 +31,7 @@
             <option value="">最近仓库</option>
           </select>
           <button id="clearRecentRepos" class="btn ghost recent-clear" type="button" title="清除最近仓库">×</button>
+          <button id="cloneRepo" class="btn ghost clone-repo" type="button" title="克隆仓库">克隆</button>
           <button id="openRepo" class="btn primary" type="button">打开</button>
         </div>
         <label class="search">
@@ -265,6 +266,35 @@
         <button class="checkout-choice" data-stash-restore="keep" type="button">暂不恢复</button>
       </div>
     </div>
+  </div>
+  <div id="cloneModal" class="checkout-modal" aria-hidden="true">
+    <form id="cloneForm" class="checkout-dialog clone-dialog" role="dialog" aria-modal="true" aria-labelledby="cloneModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon branch-icon">C</div>
+        <div>
+          <strong id="cloneModalTitle">克隆仓库</strong>
+          <span>从远端 URL 或本地裸仓库创建工作区。</span>
+        </div>
+      </div>
+      <div class="branch-form-body">
+        <label class="edit-field">
+          <span>来源</span>
+          <input id="cloneUrlInput" autocomplete="off" spellcheck="false" placeholder="例如 git@github.com:org/repo.git" />
+        </label>
+        <label class="edit-field">
+          <span>保存到</span>
+          <input id="cloneTargetInput" autocomplete="off" spellcheck="false" placeholder="例如 D:\project\repo" />
+        </label>
+        <label class="amend-toggle branch-check-toggle">
+          <input id="cloneOpenToggle" type="checkbox" checked />
+          <span>克隆后打开</span>
+        </label>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="cloneSubmit" class="checkout-choice primary" type="submit">开始克隆</button>
+        <button id="cloneCancel" class="checkout-choice" type="button">取消</button>
+      </div>
+    </form>
   </div>
   <div id="branchModal" class="checkout-modal" aria-hidden="true">
     <form id="branchForm" class="checkout-dialog branch-dialog" role="dialog" aria-modal="true" aria-labelledby="branchModalTitle">

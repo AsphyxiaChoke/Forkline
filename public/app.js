@@ -40,6 +40,7 @@ const state = {
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
+  cloneTargetAuto: false,
 };
 
 const laneX = [28, 54, 80, 106, 118, 126, 128];
@@ -54,6 +55,7 @@ const els = {
   repoInput: $("#repoInput"),
   recentRepoSelect: $("#recentRepoSelect"),
   clearRecentRepos: $("#clearRecentRepos"),
+  cloneRepo: $("#cloneRepo"),
   openRepo: $("#openRepo"),
   searchInput: $("#searchInput"),
   branchList: $("#branchList"),
@@ -95,6 +97,13 @@ const els = {
   checkoutModalText: $("#checkoutModalText"),
   stashRestoreModal: $("#stashRestoreModal"),
   stashRestoreText: $("#stashRestoreText"),
+  cloneModal: $("#cloneModal"),
+  cloneForm: $("#cloneForm"),
+  cloneUrlInput: $("#cloneUrlInput"),
+  cloneTargetInput: $("#cloneTargetInput"),
+  cloneOpenToggle: $("#cloneOpenToggle"),
+  cloneSubmit: $("#cloneSubmit"),
+  cloneCancel: $("#cloneCancel"),
   branchModal: $("#branchModal"),
   branchForm: $("#branchForm"),
   branchNameInput: $("#branchNameInput"),
@@ -3606,6 +3615,125 @@ function clearRecentRepos() {
   toast("最近仓库已清除");
 }
 
+function openCloneModal() {
+  els.cloneUrlInput.value = "";
+  els.cloneTargetInput.value = "";
+  els.cloneOpenToggle.checked = true;
+  state.cloneTargetAuto = true;
+  els.cloneModal.classList.add("show");
+  els.cloneModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.cloneUrlInput.focus(), 0);
+}
+
+function closeCloneModal() {
+  els.cloneModal.classList.remove("show");
+  els.cloneModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+  state.cloneTargetAuto = false;
+}
+
+function syncCloneTargetSuggestion() {
+  const target = els.cloneTargetInput.value.trim();
+  if (target && !state.cloneTargetAuto) return;
+  if (!target) state.cloneTargetAuto = true;
+  const source = els.cloneUrlInput.value.trim();
+  const name = cloneNameFromSource(source);
+  const base = cloneBaseDirectory();
+  if (name && base) els.cloneTargetInput.value = joinLocalPath(base, name);
+}
+
+function cloneBaseDirectory() {
+  const repoPath = state.data?.repo && !state.data.repo.isSample ? state.data.repo.path : recentRepos()[0]?.path || "";
+  return repoParentPath(repoPath);
+}
+
+function repoParentPath(repoPath) {
+  const value = String(repoPath || "").trim();
+  const slash = Math.max(value.lastIndexOf("\\"), value.lastIndexOf("/"));
+  if (slash < 0) return "";
+  if (/^[A-Za-z]:[\\/]/.test(value) && slash === 2) return value.slice(0, 3);
+  return value.slice(0, slash);
+}
+
+function cloneNameFromSource(source) {
+  const clean = String(source || "")
+    .trim()
+    .split(/[?#]/)[0]
+    .replace(/[\\/]+$/, "");
+  if (!clean) return "";
+  const name = clean.split(/[\\/:]/).filter(Boolean).pop() || "";
+  return name.replace(/\.git$/i, "") || "repository";
+}
+
+function joinLocalPath(base, name) {
+  const root = String(base || "").replace(/[\\/]+$/, "");
+  const sep = root.includes("\\") || /^[A-Za-z]:/.test(root) ? "\\" : "/";
+  return `${root}${sep}${name}`;
+}
+
+async function submitCloneForm(event) {
+  event.preventDefault();
+  const source = els.cloneUrlInput.value.trim();
+  const targetPath = els.cloneTargetInput.value.trim();
+  if (!source) {
+    toast("请输入克隆来源");
+    els.cloneUrlInput.focus();
+    return;
+  }
+  if (!targetPath) {
+    toast("请输入保存位置");
+    els.cloneTargetInput.focus();
+    return;
+  }
+  const openAfter = els.cloneOpenToggle.checked;
+  const message = [
+    "确认克隆仓库？",
+    "",
+    `来源：${source}`,
+    `保存到：${targetPath}`,
+    "",
+    "命令：git clone <来源> <保存到>",
+  ].join("\n");
+  if (!confirm(message)) return;
+
+  els.cloneSubmit.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "cloneRepository", url: source, targetPath, openAfter }),
+    });
+    if (result.state) {
+      await applyOpenedRepoData(result.state);
+      saveRecentRepo(state.data.repo);
+      els.repoInput.value = state.data.repo.path;
+    }
+    closeCloneModal();
+    toast(result.output || "克隆完成");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    els.cloneSubmit.disabled = false;
+  }
+}
+
+async function applyOpenedRepoData(data) {
+  state.commitDetails.clear();
+  state.data = data;
+  state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
+  if (state.selectedRef) {
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+  }
+  state.selectedSha = state.data.commits[0]?.sha || "";
+  els.searchInput.value = "";
+  renderAll();
+  if (state.selectedSha) {
+    await loadCommit(state.selectedSha);
+    renderInspector();
+  }
+}
+
 async function openRepo(pathOverride = "") {
   const repoPath = typeof pathOverride === "string" && pathOverride ? pathOverride.trim() : els.repoInput.value.trim();
   if (!repoPath) {
@@ -3614,20 +3742,7 @@ async function openRepo(pathOverride = "") {
   }
   try {
     els.openRepo.disabled = true;
-    state.commitDetails.clear();
-    state.data = await api("/api/open", { method: "POST", body: JSON.stringify({ path: repoPath }) });
-    state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
-    if (state.selectedRef) {
-      state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
-      state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
-    }
-    state.selectedSha = state.data.commits[0]?.sha || "";
-    els.searchInput.value = "";
-    renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await applyOpenedRepoData(await api("/api/open", { method: "POST", body: JSON.stringify({ path: repoPath }) }));
     saveRecentRepo(state.data.repo);
     toast(`已打开 ${state.data.repo.name}`);
     await maybeRestoreCheckoutStash(state.data.repo.branch);
@@ -4467,6 +4582,7 @@ function toast(message) {
 }
 
 els.openRepo.addEventListener("click", openRepo);
+els.cloneRepo.addEventListener("click", openCloneModal);
 els.repoInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") openRepo();
 });
@@ -4474,6 +4590,12 @@ els.recentRepoSelect.addEventListener("change", () => {
   openRecentRepo().catch((error) => toast(error.message));
 });
 els.clearRecentRepos.addEventListener("click", clearRecentRepos);
+els.cloneForm.addEventListener("submit", submitCloneForm);
+els.cloneCancel.addEventListener("click", closeCloneModal);
+els.cloneUrlInput.addEventListener("input", syncCloneTargetSuggestion);
+els.cloneTargetInput.addEventListener("input", () => {
+  state.cloneTargetAuto = !els.cloneTargetInput.value.trim();
+});
 els.searchInput.addEventListener("input", renderCommits);
 els.themeToggle.addEventListener("click", toggleTheme);
 els.newBranch.addEventListener("click", openBranchModal);
@@ -4486,6 +4608,9 @@ els.tagForm.addEventListener("submit", createTagFromForm);
 els.tagCancel.addEventListener("click", closeTagModal);
 els.tagModal.addEventListener("click", (event) => {
   if (event.target === els.tagModal) closeTagModal();
+});
+els.cloneModal.addEventListener("click", (event) => {
+  if (event.target === els.cloneModal) closeCloneModal();
 });
 els.mainlineForm.addEventListener("submit", (event) => {
   submitMainlineForm(event).catch((error) => toast(error.message));
@@ -4749,6 +4874,7 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
+  if (event.key === "Escape" && els.cloneModal.classList.contains("show")) closeCloneModal();
   if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
   if (event.key === "Escape" && els.mainlineModal.classList.contains("show")) closeMainlineModal();
