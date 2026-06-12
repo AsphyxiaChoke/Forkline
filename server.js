@@ -335,6 +335,9 @@ async function runAction(body) {
   if (action === "fetchRemote") {
     return fetchRemote(body);
   }
+  if (action === "testRemote") {
+    return testRemote(body);
+  }
   if (action === "addRemote") {
     return addRemote(body);
   }
@@ -572,6 +575,7 @@ function actionLabel(body = {}) {
     push: "推送到远端",
     forcePushLease: "安全强推到远端",
     fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
+    testRemote: body.name ? `检查远端 ${shortText(body.name, 72)}` : "检查远端连接",
     addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
     setRemoteUrl: body.name ? `修改远端 ${shortText(body.name, 72)} URL` : "修改远端 URL",
     deleteRemote: body.name ? `删除远端 ${shortText(body.name, 72)}` : "删除远端",
@@ -816,6 +820,23 @@ async function fetchRemote(body) {
   const output = await git(currentRepo, ["fetch", remote, "--prune"], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return syncCommandResult("fetch", output || `已抓取远端 ${remote}`, before, after);
+}
+
+async function testRemote(body) {
+  const remote = await ensureRemoteName(body.name);
+  const details = (await readRemoteDetails()).find((item) => item.name === remote) || { name: remote, fetchUrl: "", pushUrl: "" };
+  const output = await git(currentRepo, ["ls-remote", "--heads", remote], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+  const heads = String(output || "")
+    .split(/\r?\n/)
+    .filter((line) => line.includes("\trefs/heads/"));
+  const lines = [
+    `远端 ${remote} 连接正常`,
+    `fetch URL：${details.fetchUrl || "未设置"}`,
+    `push URL：${details.pushUrl || details.fetchUrl || "未设置"}`,
+    `可读取分支：${heads.length} 个`,
+    `检查命令：git ls-remote --heads ${remote}`,
+  ];
+  return { ok: true, output: lines.join("\n"), remoteCheck: { remote, heads: heads.length, fetchUrl: details.fetchUrl, pushUrl: details.pushUrl || details.fetchUrl } };
 }
 
 async function pullCurrentBranch() {
@@ -2399,6 +2420,8 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("remote") && lower.includes("already exists")) {
     return "这个远端名已经存在。请换一个名称，或在同步页修改已有远端的 URL。";
   }
+  const remoteMessage = remoteFailureMessage(text, context);
+  if (remoteMessage) return remoteMessage;
   if (lower.includes("no such remote") || lower.includes("does not appear to be a git repository")) {
     return "远端不可用。请检查远端名称和 URL 是否正确，或先确认网络/本地路径可访问。";
   }
@@ -2454,12 +2477,6 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("cannot delete branch") && lower.includes("checked out")) {
     return "这个分支正在其他工作树中使用，不能删除。请先切换或清理对应工作树。";
   }
-  if (lower.includes("could not read from remote repository")) {
-    return "无法读取远端仓库。请检查网络、远端地址和账号权限。";
-  }
-  if (lower.includes("authentication failed")) {
-    return "远端认证失败。请检查 Git 账号、Token 或凭据管理器。";
-  }
   if (lower.includes("no configured push destination") || lower.includes("does not appear to be a git repository")) {
     return "当前仓库没有可用远端。请先添加远端地址后再推送或拉取。";
   }
@@ -2473,6 +2490,51 @@ function friendlyErrorMessage(error, context = {}) {
     return "远端分支不存在或已经被删除。请先抓取远端刷新列表。";
   }
   return text;
+}
+
+function remoteFailureMessage(text, context = {}) {
+  const lower = String(text || "").toLowerCase();
+  const action = String(context.body?.action || "");
+  const isRemoteOperation = ["fetch", "pull", "pullRebase", "push", "forcePushLease", "fetchRemote", "testRemote", "setRemoteUrl", "addRemote"].includes(action);
+  const hasRemoteSignal =
+    lower.includes("permission denied") ||
+    lower.includes("authentication failed") ||
+    lower.includes("could not read from remote repository") ||
+    lower.includes("repository not found") ||
+    lower.includes("could not resolve host") ||
+    lower.includes("failed to connect") ||
+    lower.includes("connection timed out") ||
+    lower.includes("network is unreachable") ||
+    lower.includes("unable to access") ||
+    lower.includes("ssl certificate") ||
+    lower.includes("access denied");
+  if (!isRemoteOperation && !hasRemoteSignal) return "";
+  const remote = context.body?.name ? `远端 ${context.body.name}` : "远端";
+  if (lower.includes("permission denied (publickey)") || lower.includes("publickey")) {
+    return `${remote} 的 SSH 认证失败。请确认 SSH key 已添加到 Git 托管平台，并且当前终端可以执行 ssh -T 对应主机；也可以在同步页把远端 URL 改成 HTTPS。`;
+  }
+  if (lower.includes("authentication failed") || lower.includes("could not read username") || lower.includes("access denied")) {
+    return `${remote} 的 HTTPS 认证失败。请确认用户名、Personal Access Token 或凭据管理器里的密码是否有效；GitHub 等平台通常不能再使用账号密码推送。`;
+  }
+  if (lower.includes("repository not found") || lower.includes("not found")) {
+    return `${remote} 指向的仓库不存在，或当前账号没有访问权限。请检查远端 URL、仓库名、组织权限和私有仓库授权。`;
+  }
+  if (lower.includes("could not resolve host")) {
+    return `${remote} 的主机名无法解析。请检查远端 URL 是否拼写正确，以及 DNS、代理或网络连接是否正常。`;
+  }
+  if (lower.includes("failed to connect") || lower.includes("connection timed out") || lower.includes("network is unreachable")) {
+    return `${remote} 连接超时或网络不可达。请检查网络、代理、VPN、防火墙，或稍后再试。`;
+  }
+  if (lower.includes("ssl certificate")) {
+    return `${remote} 的 HTTPS 证书校验失败。请检查系统时间、代理证书或公司网络的证书配置。`;
+  }
+  if (lower.includes("could not read from remote repository")) {
+    return `${remote} 无法读取。请确认远端 URL 正确、仓库存在，并且你拥有访问权限。`;
+  }
+  if (lower.includes("unable to access")) {
+    return `${remote} 无法访问。请检查远端 URL、网络连接、代理设置和认证凭据。`;
+  }
+  return "";
 }
 
 function actionOperationKind(action) {

@@ -6,7 +6,7 @@
 
 - GitKraken 风格提交图谱，全部分支模式下以 `main` / `master` 为主线。
 - 本地分支、远端分支、工作区状态和未暂存更改查看；本地分支会显示 upstream、领先/落后数量和上游丢失状态。
-- 右侧“同步”页会显示当前分支 upstream、同步建议、待拉取提交、待推送提交和远端仓库配置，并提供抓取 / 拉取 / 变基拉取 / 推送 / 安全强推 / 添加远端 / 修改 URL / 删除远端入口。
+- 右侧“同步”页会显示当前分支 upstream、同步建议、待拉取提交、待推送提交和远端仓库配置，并提供抓取 / 拉取 / 变基拉取 / 推送 / 安全强推 / 添加远端 / 检查连接 / 修改 URL / 删除远端入口。
 - 同步页的待拉取 / 待推送提交可直接点击预览文件列表和 Diff，并可最大化对照查看。
 - 右侧“日志”页会显示进行中的 Git 操作，并记录最近 Git 操作的成功/失败、耗时和 Git 输出摘要，便于排查哪个操作正在卡住或刚刚失败。
 - 支持当前分支 upstream 管理：同步页可从已抓取的远端分支中设置 upstream 或取消 upstream；远端分支右键菜单也可直接设为当前分支 upstream。
@@ -50,7 +50,7 @@ http://127.0.0.1:5177
 
 推送当前分支时，如果已经设置 upstream，Forkline 会执行普通 `git push`；如果没有 upstream，会选择 `origin` 或第一个可用远端执行 `git push -u <远端> <当前分支>`。删除远端分支会执行 `git push <远端> --delete <分支>`，只删除远端仓库中的分支，不会删除本地分支。
 
-同步页里的远端仓库管理对应 `git remote add`、`git remote set-url`、`git remote remove` 和 `git fetch <远端> --prune`。删除远端只会移除当前本地仓库的远端配置，不会删除 GitHub 或服务器上的仓库。
+同步页里的远端仓库管理对应 `git remote add`、`git remote set-url`、`git remote remove`、`git fetch <远端> --prune` 和 `git ls-remote --heads <远端>`。删除远端只会移除当前本地仓库的远端配置，不会删除 GitHub 或服务器上的仓库。“检查连接”只读取远端分支列表，用来确认远端 URL、网络和认证是否可用，不会写入本地引用。
 
 设置 upstream 会执行 `git branch --set-upstream-to=<远端分支> <当前分支>`；取消 upstream 会执行 `git branch --unset-upstream <当前分支>`。Forkline 只允许给当前本地分支设置已抓取到的远端分支，避免误把不存在的引用写进配置。
 

@@ -1027,6 +1027,7 @@ function showRemoteContextMenu(event, remote) {
   const hasRemote = Boolean(remote?.name);
   const hasFetch = Boolean(remote?.fetchUrl);
   const hasPush = Boolean(remote?.pushUrl || remote?.fetchUrl);
+  menu.querySelector('[data-remote-menu-action="test"]').disabled = !hasRemote;
   menu.querySelector('[data-remote-menu-action="fetch"]').disabled = !hasRemote;
   menu.querySelector('[data-remote-menu-action="edit"]').disabled = !hasRemote;
   menu.querySelector('[data-remote-menu-action="copyFetch"]').disabled = !hasFetch;
@@ -2387,6 +2388,7 @@ function remoteRowHtml(remote) {
         <span class="remote-url" title="${escapeAttr(pushUrl)}"><em>push</em><span>${escapeHtml(pushUrl)}</span></span>
       </div>
       <div class="remote-actions">
+        <button class="mini-btn" data-remote-action="test" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>检查</span><span class="command-hint">ls-remote</span></button>
         <button class="mini-btn" data-remote-action="fetch" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>抓取</span><span class="command-hint">git fetch</span></button>
         <button class="mini-btn" data-remote-action="edit" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>修改 URL</span><span class="command-hint">set-url</span></button>
         <button class="mini-btn danger" data-remote-action="delete" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>删除</span><span class="command-hint">remove</span></button>
@@ -3860,13 +3862,17 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     if (!remote?.name) return;
     payload = { action: "deleteRemote", name: remote.name };
     message = `确认删除远端：${remote.name}？\n\n命令：git remote remove ${remote.name}\n这个操作只会删除当前仓库里的远端配置，不会删除 GitHub 或服务器上的仓库。`;
+  } else if (action === "test") {
+    if (!remote?.name) return;
+    payload = { action: "testRemote", name: remote.name };
+    message = "";
   } else if (action === "fetch") {
     if (!remote?.name) return;
     payload = { action: "fetchRemote", name: remote.name };
     message = `确认抓取远端：${remote.name}？\n\n命令：git fetch ${remote.name} --prune`;
   }
   if (!payload) return;
-  if (!state.data.repo.isSample && !confirm(message)) return;
+  if (message && !state.data.repo.isSample && !confirm(message)) return;
   if (button) button.disabled = true;
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
@@ -3897,7 +3903,7 @@ async function runRemoteMenuAction(action) {
     toast(action === "copyFetch" ? "已复制 fetch URL" : "已复制 push URL");
     return;
   }
-  const mapped = action === "fetch" || action === "edit" || action === "delete" ? action : "";
+  const mapped = action === "test" || action === "fetch" || action === "edit" || action === "delete" ? action : "";
   if (mapped) await runRemoteAction(mapped, remote.name);
 }
 
