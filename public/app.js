@@ -1430,6 +1430,12 @@ async function refreshHistoryRewriteQueuePreview() {
   }
 }
 
+async function replaceHistoryQueueItems(items) {
+  state.historyQueue = { items, loading: Boolean(items.length), preview: null, error: "" };
+  renderInspector();
+  await refreshHistoryRewriteQueuePreview();
+}
+
 async function runHistoryRewriteQueue(action, button) {
   if (action === "clear") {
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
@@ -1443,9 +1449,27 @@ async function runHistoryRewriteQueue(action, button) {
   if (action === "remove") {
     const sha = button?.dataset.sha || "";
     const items = state.historyQueue.items.filter((item) => item.sha !== sha);
-    state.historyQueue = { items, loading: false, preview: null, error: "" };
-    renderInspector();
-    await refreshHistoryRewriteQueuePreview();
+    await replaceHistoryQueueItems(items);
+    return;
+  }
+  if (action === "moveUp" || action === "moveDown") {
+    const sha = button?.dataset.sha || "";
+    const currentIndex = state.historyQueue.items.findIndex((item) => item.sha === sha);
+    const offset = action === "moveUp" ? -1 : 1;
+    const nextIndex = currentIndex + offset;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= state.historyQueue.items.length) return;
+    const items = [...state.historyQueue.items];
+    [items[currentIndex], items[nextIndex]] = [items[nextIndex], items[currentIndex]];
+    await replaceHistoryQueueItems(items);
+    return;
+  }
+  if (action === "changeMode") {
+    const sha = button?.dataset.sha || "";
+    const mode = button?.dataset.mode || button?.value || "";
+    const config = historyRewriteConfig(mode);
+    if (!sha || !config) return;
+    const items = state.historyQueue.items.map((item) => (item.sha === sha ? { ...item, mode } : item));
+    await replaceHistoryQueueItems(items);
     return;
   }
   if (action !== "execute") return;
@@ -2249,7 +2273,7 @@ function renderHistoryRewriteQueue() {
       }
       ${
         affected.length
-          ? `<div class="history-plan-list">${affected.map(renderHistoryQueueAffectedCommit).join("")}</div>`
+          ? `<div class="history-queue-preview-title"><strong>实际执行顺序</strong><span>按当前分支历史生成</span></div><div class="history-plan-list">${affected.map(renderHistoryQueueAffectedCommit).join("")}</div>`
           : ""
       }
       <div class="history-plan-actions">
@@ -2266,12 +2290,29 @@ function renderHistoryRewriteQueue() {
 function renderHistoryQueueItem(item, index, detail) {
   const config = historyRewriteConfig(item.mode) || { title: "编辑历史", command: "git rebase -i" };
   const target = detail?.target || item;
+  const modeOptions = ["squash", "fixup", "drop"]
+    .map((mode) => {
+      const modeConfig = historyRewriteConfig(mode);
+      return `<option value="${escapeAttr(mode)}" ${mode === item.mode ? "selected" : ""}>${escapeHtml(modeConfig.title)}</option>`;
+    })
+    .join("");
   return `
     <div class="history-plan-commit history-queue-item ${item.mode === "drop" ? "danger" : ""}">
-      <span>${escapeHtml(config.title)}</span>
-      <strong>${escapeHtml(target.short || item.short || item.sha.slice(0, 7))} · ${escapeHtml(target.message || item.message || "")}</strong>
-      <em>${escapeHtml(config.command)}</em>
-      <button class="mini-btn" data-history-queue-action="remove" data-sha="${escapeAttr(item.sha)}" type="button" title="从历史编辑队列移除第 ${index + 1} 项">移除</button>
+      <div class="history-queue-mode-cell">
+        <span>第 ${index + 1} 项</span>
+        <select data-history-queue-action="changeMode" data-sha="${escapeAttr(item.sha)}" title="修改此队列项动作">
+          ${modeOptions}
+        </select>
+      </div>
+      <div class="history-queue-copy">
+        <strong>${escapeHtml(target.short || item.short || item.sha.slice(0, 7))} · ${escapeHtml(target.message || item.message || "")}</strong>
+        <em>${escapeHtml(config.command)}</em>
+      </div>
+      <div class="history-queue-buttons">
+        <button class="mini-btn" data-history-queue-action="moveUp" data-sha="${escapeAttr(item.sha)}" type="button" ${index === 0 ? "disabled" : ""} title="上移队列显示顺序">上移</button>
+        <button class="mini-btn" data-history-queue-action="moveDown" data-sha="${escapeAttr(item.sha)}" type="button" ${index >= state.historyQueue.items.length - 1 ? "disabled" : ""} title="下移队列显示顺序">下移</button>
+        <button class="mini-btn" data-history-queue-action="remove" data-sha="${escapeAttr(item.sha)}" type="button" title="从历史编辑队列移除第 ${index + 1} 项">移除</button>
+      </div>
     </div>
   `;
 }
@@ -5431,6 +5472,12 @@ els.detailBody.addEventListener("input", (event) => {
   }
 });
 els.detailBody.addEventListener("change", (event) => {
+  const historyQueueMode = event.target.closest('select[data-history-queue-action="changeMode"]');
+  if (historyQueueMode) {
+    event.preventDefault();
+    runHistoryRewriteQueue("changeMode", historyQueueMode).catch((error) => toast(error.message));
+    return;
+  }
   const filter = event.target.closest("[data-recovery-filter]");
   if (filter && state.selectedTab === "recovery") {
     updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
@@ -5586,6 +5633,7 @@ els.detailBody.addEventListener("click", (event) => {
   const historyQueueAction = event.target.closest("[data-history-queue-action]");
   if (historyQueueAction) {
     event.preventDefault();
+    if (historyQueueAction.tagName === "SELECT") return;
     if (!historyQueueAction.disabled) {
       runHistoryRewriteQueue(historyQueueAction.dataset.historyQueueAction, historyQueueAction).catch((error) => toast(error.message));
     }
