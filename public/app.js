@@ -5181,8 +5181,17 @@ function renderSideMetaRow(line, text, options = {}) {
 function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
   if (!Number.isInteger(hunkIndex)) return "";
   const fileInfo = selectedWorkingFileInfo(filePath);
-  if (!fileInfo || fileInfo.conflict || fileInfo.indexStatus === "?") return "";
-  const normalizedScope = scope === "staged" ? "staged" : scope === "unstaged" ? "unstaged" : "";
+  if (!fileInfo || fileInfo.conflict) return "";
+  const untracked = isUntrackedFile(fileInfo);
+  const normalizedScope = scope === "staged" ? "staged" : scope === "untracked" ? "untracked" : scope === "unstaged" ? "unstaged" : "";
+  if (normalizedScope === "untracked" && untracked && fileInfo.unstaged) {
+    return `
+      <span class="hunk-actions">
+        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="untracked" type="button" title="把这个未跟踪文件块加入暂存区">暂存此块</button>
+      </span>
+    `;
+  }
+  if (untracked) return "";
   if (normalizedScope === "unstaged" && fileInfo.unstaged) {
     return `
       <span class="hunk-actions">

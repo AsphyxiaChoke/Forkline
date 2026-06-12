@@ -9,6 +9,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const GIT_BIN = findGitExecutable();
 const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
 const WORKTREE_DIFF_CONTEXT = "8";
+const UNTRACKED_DIFF_HUNK_SIZE = 40;
 
 let currentRepo = null;
 let nextOperationId = 1;
@@ -1773,20 +1774,22 @@ async function resolveConflictFile(body) {
 
 async function applyWorktreeHunk(body, kind) {
   const file = normalizeRepoFile(body.file);
-  const scope = normalizeDiffScope(body.scope);
   const hunkIndex = normalizeHunkIndex(body.hunkIndex);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
   const target = parseStatus(statusOutput).find((item) => item.file === file);
   if (!target) throw new Error("这个文件当前没有可操作的改动。");
   if (target.conflict) throw new Error("冲突文件暂不支持按块操作，请先解决冲突。");
-  if (target.indexStatus === "?") throw new Error("未跟踪文件暂不支持按块操作，请先暂存整个文件。");
-  if (kind === "stage" && scope !== "unstaged") throw new Error("只能暂存未暂存的改动块。");
+  const isUntracked = target.indexStatus === "?";
+  const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
+  const scope = isUntracked && requestedScope === "untracked" ? "untracked" : normalizeDiffScope(requestedScope);
+  if (isUntracked && kind !== "stage") throw new Error("未跟踪文件只支持按块暂存；如果要删除内容，请在编辑器里修改文件。");
+  if (kind === "stage" && scope !== "unstaged" && scope !== "untracked") throw new Error("只能暂存未暂存的改动块。");
   if (kind === "discard" && scope !== "unstaged") throw new Error("只能丢弃工作区中的未暂存改动块。");
   if (kind === "unstage" && scope !== "staged") throw new Error("只能取消暂存已暂存的改动块。");
   if ((kind === "stage" || kind === "discard") && !target.unstaged) throw new Error("这个文件没有未暂存改动块。");
   if (kind === "unstage" && !target.staged) throw new Error("这个文件没有已暂存改动块。");
 
-  const diffOutput = await readWorktreeDiffOutput(file, scope);
+  const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, scope);
   const patch = extractSingleHunkPatch(diffOutput, hunkIndex);
   const patchFile = writeTempFile("forkline-hunk-", patch, ".patch");
   try {
@@ -1801,7 +1804,7 @@ async function applyWorktreeHunk(body, kind) {
   } finally {
     removeQuietly(patchFile);
   }
-  if (kind === "stage") return "已暂存此改动块";
+  if (kind === "stage") return isUntracked ? "已暂存此未跟踪文件改动块" : "已暂存此改动块";
   if (kind === "unstage") return "已取消暂存此改动块";
   return "工作区改动块已丢弃";
 }
@@ -3062,14 +3065,18 @@ function readNewFileDiff(file) {
   const buffer = fs.readFileSync(fullPath);
   if (buffer.includes(0)) return "";
   const lines = buffer.toString("utf8").replace(/\r\n/g, "\n").split("\n").slice(0, 420);
-  return [
+  const diffLines = [
     `diff --git a/${file} b/${file}`,
     "new file mode 100644",
     "--- /dev/null",
     `+++ b/${file}`,
-    `@@ -0,0 +1,${lines.length} @@`,
-    ...lines.map((line) => `+${line}`),
-  ].join("\n");
+  ];
+  for (let index = 0; index < lines.length; index += UNTRACKED_DIFF_HUNK_SIZE) {
+    const chunk = lines.slice(index, index + UNTRACKED_DIFF_HUNK_SIZE);
+    diffLines.push(`@@ -0,0 +${index + 1},${chunk.length} @@`);
+    diffLines.push(...chunk.map((line) => `+${line}`));
+  }
+  return diffLines.join("\n");
 }
 
 function commandResult(output) {
