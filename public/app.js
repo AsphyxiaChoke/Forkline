@@ -48,6 +48,7 @@ const state = {
   selectedChanges: new Set(),
   lastChangeSelection: null,
   branchFilter: "",
+  worktreeFilter: "",
   cloneTargetAuto: false,
   commandPaletteIndex: 0,
 };
@@ -78,6 +79,9 @@ const els = {
   newBranch: $("#newBranch"),
   remoteList: $("#remoteList"),
   worktreeList: $("#worktreeList"),
+  worktreeFilterInput: $("#worktreeFilterInput"),
+  worktreeFilterCount: $("#worktreeFilterCount"),
+  clearWorktreeFilter: $("#clearWorktreeFilter"),
   branchStrip: $("#branchStrip"),
   commitGraph: $("#commitGraph"),
   changeList: $("#changeList"),
@@ -689,18 +693,27 @@ async function renameBranchFromForm(nextBranch) {
 function renderWorkingFiles() {
   els.worktreeList.innerHTML = "";
   const files = state.data.workingFiles;
+  const terms = worktreeFilterTerms();
+  const visibleFiles = filterWorkingFiles(files, terms);
   state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
+  updateWorktreeFilterMeta(terms, visibleFiles.length, files.length);
   if (!files.length) {
     els.worktreeList.innerHTML = `<div class="file-row"><span></span><span class="file-name">工作区干净</span><span></span></div>`;
     return;
   }
-  els.worktreeList.innerHTML = fileTreeHtml(files);
+  if (!visibleFiles.length) {
+    els.worktreeList.innerHTML = `<div class="file-row empty-row"><span></span><span class="file-name">没有匹配的工作区文件</span><span></span></div>`;
+    return;
+  }
+  els.worktreeList.innerHTML = fileTreeHtml(visibleFiles);
   bindFileTree(els.worktreeList, { selectable: true });
 }
 
 function renderStage() {
   els.changeList.innerHTML = "";
   const files = state.data.workingFiles;
+  const terms = worktreeFilterTerms();
+  const visibleFiles = filterWorkingFiles(files, terms);
   state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
   const operationBanner = renderRepoOperationBanner(files);
   if (!files.length) {
@@ -709,36 +722,131 @@ function renderStage() {
     els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">没有未提交的更改</span><span></span></div>`;
     if (state.activeDiff?.source !== "history") renderWorkDiffEmpty("没有未提交的更改");
   } else {
-    const groups = changeGroups(files);
+    const groups = changeGroups(visibleFiles);
     pruneSelectedChanges(groups);
-    const visibleFiles = [...groups.unstaged, ...groups.staged];
-    const previousFile = state.selectedFile;
-    if (!visibleFiles.some((file) => file.file === state.selectedFile)) {
-      state.selectedFile = visibleFiles[0]?.file || "";
-    }
-    if (state.selectedFile !== previousFile) {
-      state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(state.selectedFile));
+    const visibleChangeFiles = [...groups.unstaged, ...groups.staged];
+    if (!visibleChangeFiles.length) {
+      state.selectedFile = "";
+      state.selectedChanges.clear();
+      els.changeList.innerHTML = `${operationBanner}<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? "没有匹配的更改" : "没有未提交的更改"}</span><span></span></div>`;
+      if (state.activeDiff?.source !== "history") renderWorkDiffEmpty(terms.length ? "没有匹配的更改" : "没有未提交的更改");
     } else {
-      state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
+      const previousFile = state.selectedFile;
+      if (!visibleChangeFiles.some((file) => file.file === state.selectedFile)) {
+        state.selectedFile = visibleChangeFiles[0]?.file || "";
+      }
+      if (state.selectedFile !== previousFile) {
+        state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(state.selectedFile));
+      } else {
+        state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
+      }
+      els.changeList.innerHTML = `
+        ${operationBanner}
+        ${renderChangeSection("unstaged", "未暂存", groups.unstaged, [
+          { action: "stageFile", label: "暂存", bulkLabel: "暂存所选" },
+          { action: "discardWorktreeFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
+        ])}
+        ${renderChangeSection("staged", "已暂存", groups.staged, [
+          { action: "unstageFile", label: "取消暂存", bulkLabel: "取消所选" },
+          { action: "discardStagedFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
+        ])}
+      `;
+      bindFileTree(els.changeList, { selectable: true });
+      markSelectedFile();
+      if (state.activeDiff?.source !== "history") loadWorkingDiff(state.selectedFile);
     }
-    els.changeList.innerHTML = `
-      ${operationBanner}
-      ${renderChangeSection("unstaged", "未暂存", groups.unstaged, [
-        { action: "stageFile", label: "暂存", bulkLabel: "暂存所选" },
-        { action: "discardWorktreeFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
-      ])}
-      ${renderChangeSection("staged", "已暂存", groups.staged, [
-        { action: "unstageFile", label: "取消暂存", bulkLabel: "取消所选" },
-        { action: "discardStagedFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
-      ])}
-    `;
-    bindFileTree(els.changeList, { selectable: true });
-    markSelectedFile();
-    if (state.activeDiff?.source !== "history") loadWorkingDiff(state.selectedFile);
   }
   const counts = countFiles(files);
   const groups = changeGroups(files);
-  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除`;
+  const filterText = terms.length ? ` · 筛选 ${visibleFiles.length}/${files.length}` : "";
+  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除${filterText}`;
+}
+
+function worktreeFilterTerms() {
+  return String(state.worktreeFilter || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function filterWorkingFiles(files, terms = worktreeFilterTerms()) {
+  if (!terms.length) return files;
+  return files.filter((file) => {
+    const text = worktreeFileSearchText(file);
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+function worktreeFileSearchText(file) {
+  const pathText = String(file.file || "");
+  const normalized = pathText.replaceAll("\\", "/");
+  const leaf = normalized.split("/").filter(Boolean).pop() || pathText;
+  return [
+    pathText,
+    normalized,
+    leaf,
+    file.state,
+    file.extra,
+    file.indexStatus,
+    file.worktreeStatus,
+    file.oldFile,
+    file.previousFile,
+    file.conflict ? "冲突 conflict unmerged" : "",
+    file.staged ? "已暂存 staged cached index" : "",
+    file.unstaged || (!file.staged && file.unstaged !== false) ? "未暂存 unstaged worktree working" : "",
+    worktreeStateLabel(file.state),
+    worktreeRawStatusLabel(file),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function worktreeStateLabel(stateCode) {
+  const labels = {
+    A: "新增 添加 未跟踪 added add new untracked",
+    C: "冲突 unmerged conflict",
+    D: "删除 deleted delete removed remove",
+    M: "修改 modified change changed",
+  };
+  return labels[stateCode] || "";
+}
+
+function worktreeRawStatusLabel(file) {
+  const raw = [file.extra, file.indexStatus, file.worktreeStatus].filter(Boolean).join("").toUpperCase();
+  const labels = [];
+  if (raw.includes("?")) labels.push("未跟踪 untracked new");
+  if (raw.includes("R")) labels.push("重命名 renamed rename moved move");
+  if (raw.includes("C")) labels.push("复制 copied copy");
+  if (raw.includes("U")) labels.push("冲突 unmerged conflict");
+  if (raw.includes("A")) labels.push("新增 添加 added add new");
+  if (raw.includes("D")) labels.push("删除 deleted delete removed remove");
+  if (raw.includes("M")) labels.push("修改 modified change changed");
+  return labels.join(" ");
+}
+
+function updateWorktreeFilterMeta(terms, visibleCount, totalCount) {
+  const active = terms.length > 0;
+  els.worktreeFilterCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
+  els.worktreeFilterCount.title = active ? `工作区筛选结果：${visibleCount} / ${totalCount}` : "";
+  els.worktreeFilterCount.hidden = !active;
+  els.clearWorktreeFilter.hidden = !active;
+}
+
+function updateWorktreeFilter(value) {
+  state.worktreeFilter = String(value || "");
+  renderWorkingFiles();
+  renderStage();
+}
+
+function clearWorktreeFilter() {
+  if (!state.worktreeFilter && !els.worktreeFilterInput.value) return;
+  state.worktreeFilter = "";
+  els.worktreeFilterInput.value = "";
+  renderWorkingFiles();
+  renderStage();
+  els.worktreeFilterInput.focus();
 }
 
 function renderRepoOperationBanner(files) {
@@ -1059,6 +1167,10 @@ function commandPaletteItems() {
     commandItem("focusBranchFilter", "筛选分支", "聚焦左侧本地和远端分支筛选", "分支", "branch remote upstream filter", hasRepo, () => {
       els.branchFilterInput.focus();
       els.branchFilterInput.select();
+    }),
+    commandItem("focusWorktreeFilter", "筛选工作区文件", "按路径或状态过滤未提交更改", "工作区", "worktree changes file status filter", hasRepo, () => {
+      els.worktreeFilterInput.focus();
+      els.worktreeFilterInput.select();
     }),
     commandItem("tabDetails", "打开详情", "查看当前提交详情", "详情", "details commit", hasRepo, () => switchInspectorTab("details")),
     commandItem("tabFiles", "打开文件", "查看当前提交文件改动", "文件", "files diff", hasRepo, () => switchInspectorTab("files")),
@@ -4456,7 +4568,7 @@ function selectChangeFile(filePath, scope, event) {
 function updateChangeSelection(scope, filePath, event = {}) {
   const key = changeKey(scope, filePath);
   const additive = Boolean(event.ctrlKey || event.metaKey);
-  const items = changeGroups(state.data?.workingFiles || [])[scope] || [];
+  const items = changeGroups(filterWorkingFiles(state.data?.workingFiles || []))[scope] || [];
 
   if (event.shiftKey && state.lastChangeSelection?.scope === scope) {
     const anchorIndex = items.findIndex((file) => changeKey(scope, file.file) === state.lastChangeSelection.key);
@@ -6167,6 +6279,8 @@ els.commandList.addEventListener("click", (event) => {
 });
 els.branchFilterInput.addEventListener("input", () => updateBranchFilter(els.branchFilterInput.value));
 els.clearBranchFilter.addEventListener("click", clearBranchFilter);
+els.worktreeFilterInput.addEventListener("input", () => updateWorktreeFilter(els.worktreeFilterInput.value));
+els.clearWorktreeFilter.addEventListener("click", clearWorktreeFilter);
 els.searchInput.addEventListener("input", renderCommits);
 els.clearSearch.addEventListener("click", clearCommitSearch);
 els.themeToggle.addEventListener("click", toggleTheme);

@@ -84,6 +84,11 @@
 
         <section class="worktree">
           <div class="side-title">工作区</div>
+          <label class="worktree-filter">
+            <input id="worktreeFilterInput" type="search" autocomplete="off" spellcheck="false" placeholder="筛选文件或状态" />
+            <output id="worktreeFilterCount" hidden></output>
+            <button id="clearWorktreeFilter" type="button" title="清空工作区筛选" aria-label="清空工作区筛选" hidden>×</button>
+          </label>
           <div id="worktreeList" class="file-stack"></div>
         </section>
       </aside>

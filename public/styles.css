@@ -539,21 +539,32 @@ body.resizing .workspace-resizer::before {
   background: var(--card);
 }
 
-.branch-filter {
+.branch-filter,
+.worktree-filter {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 34px;
-  margin: 0 10px 8px;
-  padding: 0 6px 0 10px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--field);
 }
 
-.branch-filter input {
+.branch-filter {
+  height: 34px;
+  margin: 0 10px 8px;
+  padding: 0 6px 0 10px;
+}
+
+.worktree-filter {
+  height: 32px;
+  margin: 0 0 4px;
+  padding: 0 6px 0 10px;
+}
+
+.branch-filter input,
+.worktree-filter input {
   width: 100%;
   min-width: 0;
   border: 0;
@@ -563,7 +574,8 @@ body.resizing .workspace-resizer::before {
   font-size: 12px;
 }
 
-.branch-filter output {
+.branch-filter output,
+.worktree-filter output {
   max-width: 58px;
   overflow: hidden;
   color: var(--quiet);
@@ -573,7 +585,8 @@ body.resizing .workspace-resizer::before {
   white-space: nowrap;
 }
 
-.branch-filter button {
+.branch-filter button,
+.worktree-filter button {
   display: grid;
   place-items: center;
   width: 22px;
@@ -586,13 +599,16 @@ body.resizing .workspace-resizer::before {
   font-weight: 900;
 }
 
-.branch-filter button:hover {
+.branch-filter button:hover,
+.worktree-filter button:hover {
   border-color: rgba(35, 199, 183, 0.55);
   color: var(--text);
 }
 
 .branch-filter output[hidden],
-.branch-filter button[hidden] {
+.branch-filter button[hidden],
+.worktree-filter output[hidden],
+.worktree-filter button[hidden] {
   display: none;
 }
 
@@ -615,6 +631,10 @@ body.resizing .workspace-resizer::before {
   min-height: 0;
   overflow: hidden;
   padding: 0 10px 10px;
+}
+
+.worktree {
+  grid-template-rows: 30px 32px minmax(0, 1fr);
 }
 
 .side-title {
