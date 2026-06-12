@@ -894,6 +894,8 @@ function showCommitContextMenu(event, commit) {
   const isMergeCommit = (commit.parents || []).length > 1;
   const canFold = !isMergeCommit && (commit.parents || []).length === 1;
   const canDrop = !isMergeCommit;
+  const remoteUrl = commitRemoteUrl(commit.sha);
+  const openRemoteButton = menu.querySelector('[data-commit-action="openRemote"]');
   const cherryPickButton = menu.querySelector('[data-commit-action="cherryPick"]');
   const revertButton = menu.querySelector('[data-commit-action="revert"]');
   const squashButton = menu.querySelector('[data-commit-action="squash"]');
@@ -903,6 +905,10 @@ function showCommitContextMenu(event, commit) {
   const queueFixupButton = menu.querySelector('[data-commit-action="queueFixup"]');
   const queueDropButton = menu.querySelector('[data-commit-action="queueDrop"]');
   const queueRewordButton = menu.querySelector('[data-commit-action="queueReword"]');
+  if (openRemoteButton) {
+    openRemoteButton.disabled = !remoteUrl;
+    openRemoteButton.title = remoteUrl ? `打开远端提交：${remoteUrl}` : "当前仓库没有可识别的网页远端 URL";
+  }
   if (cherryPickButton) {
     cherryPickButton.disabled = false;
     cherryPickButton.title = isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支";
@@ -1342,6 +1348,10 @@ async function runCommitContextAction(action) {
     toast("已复制提交信息");
     return;
   }
+  if (action === "openRemote") {
+    openRemoteCommit(commit);
+    return;
+  }
   if (action === "editMessage") {
     state.selectedTab = "details";
     await selectCommit(commit.sha);
@@ -1372,6 +1382,10 @@ async function runCommitToolAction(action, sha) {
   const queueMode = historyQueueModeFromAction(action);
   if (queueMode) {
     await addHistoryQueueItem(commit, queueMode);
+    return;
+  }
+  if (action === "openRemote") {
+    openRemoteCommit(commit);
     return;
   }
   if (action === "cherryPick") {
@@ -1883,6 +1897,76 @@ async function copyText(text) {
   textarea.remove();
 }
 
+function openRemoteCommit(commit) {
+  const url = commitRemoteUrl(commit?.sha);
+  if (!url) {
+    toast("当前仓库没有可识别的网页远端 URL");
+    return;
+  }
+  const opened = window.open(url, "_blank");
+  if (!opened) {
+    toast(`浏览器拦截了新窗口，可以复制地址手动打开：\n${url}`);
+    return;
+  }
+  opened.opener = null;
+  toast("已打开远端提交页面");
+}
+
+function commitRemoteUrl(sha) {
+  const webBase = preferredRemoteWebBase();
+  if (!webBase || !sha) return "";
+  return `${webBase}/${remoteCommitPathSegment(webBase)}/${encodeURIComponent(sha)}`;
+}
+
+function remoteCommitPathSegment(webBase) {
+  try {
+    const host = new URL(webBase).hostname.toLowerCase();
+    if (host === "bitbucket.org" || host.endsWith(".bitbucket.org")) return "commits";
+    if (host === "gitlab.com" || host.includes("gitlab")) return "-/commit";
+  } catch {
+  }
+  return "commit";
+}
+
+function preferredRemoteWebBase() {
+  const remotes = state.data?.sync?.remotes || [];
+  const ordered = [
+    ...remotes.filter((remote) => remote.name === "origin"),
+    ...remotes.filter((remote) => remote.name !== "origin"),
+  ];
+  for (const remote of ordered) {
+    const base = remoteWebBase(remote.pushUrl || remote.fetchUrl) || remoteWebBase(remote.fetchUrl);
+    if (base) return base;
+  }
+  return "";
+}
+
+function remoteWebBase(remoteUrl) {
+  const value = String(remoteUrl || "").trim();
+  if (!value) return "";
+  const scpLike = value.match(/^git@([^:]+):(.+)$/);
+  if (scpLike) return cleanRemoteWebPath(`https://${scpLike[1]}/${scpLike[2]}`);
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      url.username = "";
+      url.password = "";
+      return cleanRemoteWebPath(url.toString());
+    }
+    if (url.protocol === "ssh:" && url.hostname && url.pathname) {
+      return cleanRemoteWebPath(`https://${url.hostname}${url.pathname}`);
+    }
+  } catch {
+  }
+  return "";
+}
+
+function cleanRemoteWebPath(value) {
+  return String(value || "")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "");
+}
+
 function openTagModal(commit) {
   if (!commit) return;
   state.tagTargetSha = commit.sha;
@@ -2219,6 +2303,7 @@ function renderDetailsTab(commit, detail) {
   const isMergeCommit = (commit.parents || []).length > 1;
   const canFold = !isMergeCommit && (commit.parents || []).length === 1;
   const canDrop = !isMergeCommit;
+  const remoteUrl = commitRemoteUrl(commit.sha);
   els.detailBody.innerHTML = `
     <div class="meta-grid">
       <span>提交</span><div class="meta-value">${escapeHtml(commit.short)}</div>
@@ -2228,6 +2313,7 @@ function renderDetailsTab(commit, detail) {
     </div>
     <div class="detail-section-title">提交操作</div>
     <div class="commit-tools">
+      <button class="mini-btn" data-commit-tool="openRemote" data-sha="${escapeAttr(commit.sha)}" type="button" ${remoteUrl ? "" : "disabled"} title="${remoteUrl ? `打开远端提交：${escapeAttr(remoteUrl)}` : "当前仓库没有可识别的网页远端 URL"}"><span>远端查看</span><span class="command-hint">web</span></button>
       <button class="mini-btn" data-commit-tool="cherryPick" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支"}"><span>挑选</span><span class="command-hint">${isMergeCommit ? "git cherry-pick -m" : "git cherry-pick"}</span></button>
       <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">${isMergeCommit ? "git revert -m" : "git revert"}</span></button>
       <button class="mini-btn" data-commit-tool="resetSoft" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --soft：移动当前分支，改动保留在已暂存区"><span>软重置</span><span class="command-hint">git reset --soft</span></button>
