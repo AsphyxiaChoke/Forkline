@@ -497,7 +497,7 @@ body.resizing .workspace-resizer::before {
 
 .branch-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -515,8 +515,8 @@ body.resizing .workspace-resizer::before {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 30px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 5px 10px;
   text-align: left;
 }
 
@@ -548,6 +548,12 @@ body.resizing .workspace-resizer::before {
 
 .branch-merge {
   color: var(--teal);
+}
+
+.branch-merge,
+.branch-rename,
+.branch-delete {
+  display: none;
 }
 
 .branch-checkout.remote {
@@ -609,6 +615,69 @@ body.resizing .workspace-resizer::before {
   height: 9px;
   border-radius: 50%;
   background: var(--branch, var(--teal));
+}
+
+.nav-item .branch-copy:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.branch-name {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-meta {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.branch-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  height: 15px;
+  padding: 0 5px;
+  overflow: hidden;
+  border: 1px solid rgba(154, 166, 184, 0.2);
+  border-radius: 999px;
+  background: rgba(154, 166, 184, 0.1);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-badge.upstream {
+  color: var(--blue);
+}
+
+.branch-badge.ahead {
+  color: var(--green);
+}
+
+.branch-badge.behind {
+  color: var(--amber);
+}
+
+.branch-badge.danger {
+  color: var(--danger);
+}
+
+.branch-badge.muted {
+  color: var(--quiet);
 }
 
 .nav-item span:last-child,

@@ -183,6 +183,10 @@ function renderBranches() {
       occupied: Boolean(info.worktreePath),
       worktreePath: info.worktreePath,
       prunable: info.prunable,
+      upstream: info.upstream || "",
+      ahead: Number(info.ahead || 0),
+      behind: Number(info.behind || 0),
+      upstreamGone: Boolean(info.upstreamGone),
       merge: true,
       rename: true,
       delete: true,
@@ -201,7 +205,7 @@ function renderBranches() {
     els.branchStrip.appendChild(chip);
   });
   state.data.remotes.forEach((branch, index) => {
-    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef, { remote: true, remoteCheckout: true, merge: true }));
+    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef, { remote: true, remoteCheckout: true, merge: true, deleteRemote: true }));
   });
 }
 
@@ -216,7 +220,8 @@ function branchButton(branch, index, active, options = {}) {
   const button = document.createElement("button");
   button.className = `nav-item ${active ? "active" : ""}`;
   button.type = "button";
-  button.innerHTML = `<span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span>`;
+  button.title = branchTrackingTitle(branch, options);
+  button.innerHTML = `<span class="branch-dot" style="--branch:${laneColor(index)}"></span><span class="branch-copy"><span class="branch-name">${escapeHtml(branch)}</span>${branchTrackingHtml(options)}</span>`;
   button.addEventListener("click", () => selectRef(branch));
   row.appendChild(button);
   if (options.checkout) {
@@ -305,6 +310,28 @@ function branchButton(branch, index, active, options = {}) {
   return row;
 }
 
+function branchTrackingHtml(options = {}) {
+  if (!options.local) return "";
+  const badges = [];
+  if (options.upstream) badges.push(`<span class="branch-badge upstream">${escapeHtml(options.upstream)}</span>`);
+  else if (options.current) badges.push(`<span class="branch-badge muted">未设置 upstream</span>`);
+  if (options.upstreamGone) badges.push(`<span class="branch-badge danger">上游丢失</span>`);
+  if (options.ahead) badges.push(`<span class="branch-badge ahead">↑${Number(options.ahead)}</span>`);
+  if (options.behind) badges.push(`<span class="branch-badge behind">↓${Number(options.behind)}</span>`);
+  return badges.length ? `<span class="branch-meta">${badges.join("")}</span>` : "";
+}
+
+function branchTrackingTitle(branch, options = {}) {
+  if (!options.local) return branch;
+  const parts = [branch];
+  if (options.upstream) parts.push(`upstream：${options.upstream}`);
+  else if (options.current) parts.push("未设置 upstream，推送时会自动设置");
+  if (options.upstreamGone) parts.push("上游分支已不存在");
+  if (options.ahead) parts.push(`领先 ${options.ahead} 个提交`);
+  if (options.behind) parts.push(`落后 ${options.behind} 个提交`);
+  return parts.join("\n");
+}
+
 function branchCheckoutTitle(branch, options, blocked) {
   if (options.current) return "当前分支";
   if (!blocked) return `切换到 ${branch}`;
@@ -340,6 +367,34 @@ async function deleteBranch(branch, button) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+async function deleteRemoteBranch(remoteRef) {
+  if (!state.data || !remoteRef) return;
+  const command = remoteDeleteCommand(remoteRef);
+  if (!confirm(`确认删除远端分支：${remoteRef}？\n\n此操作会删除远端仓库中的分支，不会删除本地分支。\n命令：${command}`)) return;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef }) });
+    toast(result.output || `已删除远端分支 ${remoteRef}`);
+    state.commitDetails.clear();
+    if (state.selectedRef === remoteRef) state.selectedRef = state.data.repo.branch || "";
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function remoteDeleteCommand(remoteRef) {
+  const parts = String(remoteRef || "").split("/").filter(Boolean);
+  if (parts.length < 2) return "git push <远端> --delete <分支>";
+  return `git push ${parts[0]} --delete ${parts.slice(1).join("/")}`;
 }
 
 async function cleanupStaleWorktree(branch, button, options = {}) {
@@ -788,14 +843,29 @@ function showBranchContextMenu(event, branch, options = {}) {
       : occupied
         ? "分支被其他工作树占用"
         : "";
-  mergeButton.disabled = isCurrent;
-  mergeButton.title = isCurrent ? "不能把当前分支合并到自己" : `合并 ${branch} 到当前分支`;
+  mergeButton.disabled = isCurrent || (isRemote && !remoteLocalBranch);
+  mergeButton.title = isCurrent
+    ? "不能把当前分支合并到自己"
+    : isRemote && !remoteLocalBranch
+      ? "这个远端引用不能自动推导本地分支名"
+      : `合并 ${branch} 到当前分支`;
   cleanupButton.hidden = !prunable;
   cleanupButton.disabled = !prunable;
+  renameButton.textContent = isRemote ? "重命名分支" : "重命名本地分支";
   renameButton.disabled = !isLocal || (occupied && !isCurrent);
   renameButton.title = isRemote ? "远端分支不能在本地直接重命名" : occupied && !isCurrent ? "分支被其他工作树占用，不能重命名" : "";
-  deleteButton.disabled = !isLocal || isCurrent || occupied;
-  deleteButton.title = isRemote ? "远端分支删除暂未接入" : isCurrent ? "不能删除当前分支" : occupied ? "分支被其他工作树占用" : "";
+  deleteButton.textContent = isRemote ? "删除远端分支" : "删除本地分支";
+  deleteButton.classList.toggle("danger", true);
+  deleteButton.disabled = isRemote ? !remoteLocalBranch : !isLocal || isCurrent || occupied;
+  deleteButton.title = isRemote
+    ? remoteLocalBranch
+      ? `删除远端分支 ${branch}`
+      : "这个远端引用不能自动推导分支名"
+    : isCurrent
+      ? "不能删除当前分支"
+      : occupied
+        ? "分支被其他工作树占用"
+        : "";
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
   positionContextMenu(menu, event, 240);
@@ -917,8 +987,12 @@ async function runBranchContextAction(action) {
     return;
   }
   if (action === "delete") {
+    if (isRemote) {
+      await deleteRemoteBranch(branch);
+      return;
+    }
     if (!isLocal) {
-      toast("远端分支删除暂未接入");
+      toast("这个引用不能直接删除");
       return;
     }
     await deleteBranch(branch);
@@ -2444,6 +2518,14 @@ function updateAmendMode() {
 function actionConfirmMessage(action, name) {
   if (action === "amendCommit") return "确认追加到上一次提交？这会重写最新提交 SHA。";
   if (action === "discardAll") return "确认丢弃全部未提交更改？这会清空已暂存、未暂存和未跟踪文件，无法撤销。";
+  if (action === "push") {
+    const branch = state.data?.repo?.branch || "当前分支";
+    const info = state.data?.branchInfo?.[branch] || {};
+    if (info.upstream) {
+      return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n命令：git push`;
+    }
+    return `当前分支 ${branch} 没有 upstream。确认推送并自动设置 upstream？\n\n默认命令：git push -u origin ${branch}\n如果仓库没有 origin，会使用第一个远端。`;
+  }
   return `确认执行：${name}？`;
 }
 

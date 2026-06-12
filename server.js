@@ -77,9 +77,11 @@ async function openRepo(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, trackingOutput, remoteOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
     git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "detached HEAD"),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
+    git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
+    git(currentRepo, ["remote"]).catch(() => ""),
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
@@ -88,6 +90,7 @@ async function readState(ref = "") {
 
   const branches = [];
   const remotes = [];
+  const remoteNames = parseRemoteNames(remoteOutput);
   for (const raw of branchOutput.split(/\r?\n/)) {
     const refname = raw.trim();
     if (!refname) continue;
@@ -97,15 +100,18 @@ async function readState(ref = "") {
     }
     if (refname.startsWith("refs/remotes/")) {
       const remoteBranch = refname.replace(/^refs\/remotes\//, "");
-      if (remoteBranch && !remoteBranch.endsWith("/HEAD")) remotes.push(remoteBranch);
+      if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
       continue;
     }
     if (refname.endsWith("/HEAD") || refname === "origin" || refname === "upstream") continue;
-    if (refname.startsWith("remotes/")) remotes.push(refname.replace(/^remotes\//, ""));
-    else if (/^[^/]+\/.+/.test(refname)) remotes.push(refname);
+    if (refname.startsWith("remotes/")) {
+      const remoteBranch = refname.replace(/^remotes\//, "");
+      if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
+    } else if (/^[^/]+\/.+/.test(refname) && isKnownRemoteBranch(refname, remoteNames)) remotes.push(refname);
     else branches.push(refname);
   }
 
+  const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
   return {
     repo: {
       name: path.basename(currentRepo),
@@ -114,9 +120,10 @@ async function readState(ref = "") {
       selectedRef: ref,
       isSample: false,
       operation: detectRepoOperation(currentRepo),
+      remoteNames,
     },
     branches: branches.slice(0, 32),
-    branchInfo: parseWorktreeBranches(worktreeOutput, currentRepo),
+    branchInfo,
     remotes: remotes.slice(0, 32),
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
@@ -210,7 +217,7 @@ async function runAction(body) {
     return commandResult(await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 }));
   }
   if (action === "push") {
-    return commandResult(await git(currentRepo, ["push"], { timeout: 120000 }));
+    return pushCurrentBranch();
   }
   if (action === "stageAll") {
     return commandResult(await git(currentRepo, ["add", "-A"], { timeout: 60000 }));
@@ -255,6 +262,9 @@ async function runAction(body) {
   }
   if (action === "deleteBranch") {
     return deleteBranch(body);
+  }
+  if (action === "deleteRemoteBranch") {
+    return deleteRemoteBranch(body);
   }
   if (action === "mergeRef") {
     return mergeRef(body);
@@ -367,6 +377,7 @@ function actionLabel(body = {}) {
     createBranch: branch ? `创建分支 ${branch}` : "创建分支",
     renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
     deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
+    deleteRemoteBranch: body.ref ? `删除远端分支 ${shortText(body.ref, 72)}` : "删除远端分支",
     mergeRef: ref ? `合并分支 ${ref}` : "合并分支",
     createTag: body.name ? `创建 Tag ${shortText(body.name, 72)}` : "创建 Tag",
     pruneWorktrees: branch ? `清理 ${branch} 的 worktree 记录` : "清理 worktree 记录",
@@ -508,6 +519,37 @@ async function deleteBranch(body) {
   if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
   await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
   return { ok: true, output: `已删除本地分支 ${branch}` };
+}
+
+async function pushCurrentBranch() {
+  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+    throw new Error("当前处于游离 HEAD，不能直接推送分支。请先切换或创建本地分支。");
+  }
+  const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+  if (upstream) {
+    const output = await git(currentRepo, ["push"], { timeout: 120000 });
+    return commandResultWithSummary(`已推送当前分支到 ${upstream}`, output);
+  }
+  const remoteNames = await readRemoteNames();
+  const remote = remoteNames.includes("origin") ? "origin" : remoteNames[0];
+  if (!remote) throw new Error("当前仓库没有远端。请先添加远端仓库后再推送。");
+  const output = await git(currentRepo, ["push", "-u", remote, branch], { timeout: 120000 });
+  return commandResultWithSummary(`已推送并设置 upstream：${remote}/${branch}`, output);
+}
+
+async function deleteRemoteBranch(body) {
+  const remoteRef = normalizeRefName(body.ref || body.branch, "远端分支");
+  if (remoteRef.endsWith("/HEAD")) throw new Error("不能删除远端 HEAD 引用");
+  const remoteBranches = (await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]))
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter((item) => item && !item.endsWith("/HEAD"));
+  if (!remoteBranches.includes(remoteRef)) throw new Error("远端分支不存在，请先抓取远端后再试");
+  const parsed = splitRemoteBranchRef(remoteRef, await readRemoteNames());
+  const output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
+  await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
+  return commandResultWithSummary(`已删除远端分支 ${remoteRef}`, output);
 }
 
 async function renameBranch(body) {
@@ -878,6 +920,44 @@ function normalizeRemoteCheckoutBranch(remoteRef) {
   return normalizeBranchName(parts.slice(1).join("/"));
 }
 
+async function readRemoteNames() {
+  return parseRemoteNames(await git(currentRepo, ["remote"]).catch(() => ""));
+}
+
+function parseRemoteNames(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isKnownRemoteBranch(remoteRef, remoteNames = []) {
+  const ref = String(remoteRef || "").trim();
+  if (!ref || ref.endsWith("/HEAD")) return false;
+  return remoteNames.some((remote) => {
+    const prefix = `${remote}/`;
+    return ref.startsWith(prefix) && ref.length > prefix.length;
+  });
+}
+
+function splitRemoteBranchRef(remoteRef, remoteNames = []) {
+  const ref = normalizeRefName(remoteRef, "远端分支");
+  const remotes = [...remoteNames].sort((left, right) => right.length - left.length);
+  for (const remote of remotes) {
+    const prefix = `${remote}/`;
+    if (ref.startsWith(prefix)) {
+      const branch = normalizeBranchName(ref.slice(prefix.length));
+      return { remote, branch };
+    }
+  }
+  const slash = ref.indexOf("/");
+  if (slash <= 0 || slash === ref.length - 1) throw new Error("远端分支不合法");
+  return {
+    remote: normalizeRefName(ref.slice(0, slash), "远端名"),
+    branch: normalizeBranchName(ref.slice(slash + 1)),
+  };
+}
+
 function normalizeStashRef(value) {
   const ref = String(value || "").trim();
   if (/^stash@\{\d+\}$/.test(ref)) return ref;
@@ -936,6 +1016,43 @@ function parseWorktreeBranches(output, repoPath) {
   return info;
 }
 
+function parseBranchTracking(output) {
+  const info = {};
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const [branch, upstream = "", tracking = ""] = line.split("\t");
+    if (!branch) continue;
+    const track = parseAheadBehind(tracking);
+    info[branch] = {
+      upstream: upstream.trim(),
+      ahead: track.ahead,
+      behind: track.behind,
+      upstreamGone: track.gone,
+      trackingLabel: tracking.trim(),
+    };
+  }
+  return info;
+}
+
+function parseAheadBehind(value) {
+  const text = String(value || "").toLowerCase();
+  return {
+    ahead: Number(text.match(/ahead\s+(\d+)/)?.[1] || 0),
+    behind: Number(text.match(/behind\s+(\d+)/)?.[1] || 0),
+    gone: text.includes("gone"),
+  };
+}
+
+function mergeBranchInfo(...sources) {
+  const merged = {};
+  for (const source of sources) {
+    for (const [branch, info] of Object.entries(source || {})) {
+      merged[branch] = { ...(merged[branch] || {}), ...info };
+    }
+  }
+  return merged;
+}
+
 function sameFsPath(left, right) {
   if (!left || !right) return false;
   const normalize = (value) => path.resolve(String(value).replaceAll("/", path.sep)).replace(/[\\/]+/g, "\\").toLowerCase();
@@ -962,6 +1079,11 @@ function readNewFileDiff(file) {
 
 function commandResult(output) {
   return { ok: true, output: output || "命令已完成" };
+}
+
+function commandResultWithSummary(summary, output) {
+  const detail = String(output || "").trim();
+  return { ok: true, output: detail ? `${summary}\n${detail}` : summary };
 }
 
 function parseStatus(output) {
@@ -1256,6 +1378,15 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("authentication failed")) {
     return "远端认证失败。请检查 Git 账号、Token 或凭据管理器。";
+  }
+  if (lower.includes("no configured push destination") || lower.includes("does not appear to be a git repository")) {
+    return "当前仓库没有可用远端。请先添加远端地址后再推送或拉取。";
+  }
+  if (lower.includes("failed to push some refs") && (lower.includes("non-fast-forward") || lower.includes("fetch first") || lower.includes("rejected"))) {
+    return "推送被远端拒绝：远端可能有你本地没有的提交。请先抓取/拉取，处理差异后再推送。";
+  }
+  if ((lower.includes("remote ref does not exist") || lower.includes("unable to delete")) && lower.includes("remote")) {
+    return "远端分支不存在或已经被删除。请先抓取远端刷新列表。";
   }
   return text;
 }

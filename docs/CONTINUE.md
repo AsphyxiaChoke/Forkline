@@ -5,8 +5,11 @@
 - 远端 `origin/main` 已拉取并基于最新代码开发。
 - 已完成“远端分支 checkout”：远端分支列表现在有可见的“签出”按钮，右键菜单也支持“签出为本地分支”。
 - 签出规则：`origin/feature/a` 会创建或切换到本地 `feature/a`；如果本地分支已存在就直接切换；工作区有修改时继续使用“保留 / 储藏 / 强制”的中文确认流程。
-- 远端分支解析已改为读取 `refs/remotes/*`，不再只依赖 `origin` / `upstream` 这两个远端名。
-- `git-svn` 这类无法推导本地分支名的远端引用会显示在远端列表里，但“签出”会禁用，避免误点后报错。
+- 远端分支解析已改为读取 `refs/remotes/*`，并按 `git remote` 返回的真实远端名过滤；`git-svn` 这类松散 remote-tracking ref 不再混入“远端分支”列表。
+- 本地分支列表已显示 upstream、领先/落后数量和上游丢失状态；当前分支没有 upstream 时显示“未设置 upstream”。
+- 顶部“推送”已改为智能推送：已有 upstream 时执行 `git push`；没有 upstream 时优先执行 `git push -u origin <当前分支>`，没有 `origin` 则使用第一个远端。
+- 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
+- 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - “合并分支”已改为 `--no-ff --no-edit`，即使可以快进也会保留 merge commit，方便在“全部分支”图谱里看到分支回归主线的样式。
 - Stash 入口已补齐：工作区顶部有“储藏”按钮，文件右键菜单支持“储藏所选”，储藏列表继续支持查看 Diff、应用、弹出和删除。
 - Stash 体验已调整：储藏成功后会自动打开右侧“储藏”页，并提示“工作区更改已移到右侧储藏列表”；工作区顶部按钮文案改短并补 tooltip，避免按钮挤在一起。
@@ -41,14 +44,18 @@
 - Merge UI 验证：进入 `forkline/ui-merge-conflict-*` 冲突状态后，工作区横幅显示“合并发生冲突”，按钮状态为“继续合并”禁用、“中止合并”可用，并显示 `git merge --continue` / `git merge --abort` 指令提示。
 - Merge mainline API 验证：在 `forkline/mainline-*` 分支创建两父 merge commit `5b478cc`；调用 `revertCommit` 不传 `mainline` 会返回“请选择 merge 提交主线：1-2”；传 `mainline=1` 后 `revertCommit` 创建反向提交并移除合并引入的文件，`cherryPickCommit` 可把同一 merge 提交挑选到新分支并保留文件。
 - Merge mainline UI 验证：浏览器选择 merge commit `5b478cc` 后，提交详情“挑选 / 还原”按钮不再禁用，命令提示分别显示 `git cherry-pick -m` / `git revert -m`；点击“挑选”会弹出“挑选 merge 提交”主线弹窗，列出父提交 1、父提交 2 并默认选父提交 1。
+- 远端追踪 API 验证：在 GitTest 创建 `forkline/remote-workflow-20260612155930`，第一次通过 Forkline `push` 自动设置 upstream 为 `origin/forkline/remote-workflow-20260612155930`；再次空提交后 API 返回 `ahead = 1`；第二次 `push` 后远端更新成功。
+- 远端删除 API 验证：通过 Forkline `deleteRemoteBranch` 删除 `origin/forkline/remote-workflow-20260612155930`，远端分支列表已移除，保留的本地分支显示 `upstreamGone = true` / `[gone]`。
+- 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
 
 ## GitTest 测试数据
 
 `D:\桌面\GitTest` 是功能测试沙盒，可以继续随便改。当前故意保留：
 
-- 已暂存：`forkline-fixtures/staged-demo.txt`
-- 未暂存：`forkline-fixtures/worktree-demo.txt`
-- 未跟踪：`forkline-fixtures/untracked-demo.txt`
+- 当前分支：`123`
+- 当前工作区：干净。
+- 本地远端：`origin -> D:\桌面\GitTestRemote.git`
+- 上游丢失测试分支：`forkline/remote-workflow-20260612155930`，用于验证本地分支显示 `[gone]` / “上游丢失”。
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
 - 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*` 临时验证分支。
 - 测试 Tag：`forkline-v0.1.0`
@@ -58,5 +65,5 @@
 按原计划继续完善：
 
 1. Rebase / 历史编辑队列：把 reword 之外的 squash / fixup / drop 做成可视化队列，接近 GitKraken 的交互式 rebase 体验。
-2. 远端操作补强：删除远端分支、推送当前分支并设置 upstream、展示 ahead/behind 数量。
-3. 标签管理补强：显示 tag 列表，支持删除本地 tag、推送 tag、删除远端 tag。
+2. 标签管理补强：显示 tag 列表，支持删除本地 tag、推送 tag、删除远端 tag。
+3. 远端同步体验继续补：把 fetch / pull / push 的结果做成更清晰的同步摘要，后续再考虑 force-with-lease、远端 URL 管理和认证失败指引。
