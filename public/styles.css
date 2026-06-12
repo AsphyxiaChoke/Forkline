@@ -1467,9 +1467,33 @@ button.file-row {
 
 .work-diff-actions {
   flex: 0 1 auto;
+  align-items: center;
   flex-wrap: wrap;
   max-width: 100%;
   row-gap: 4px;
+}
+
+.work-diff-scope {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.work-diff-scope .mini-btn {
+  min-width: 52px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.work-diff-scope .mini-btn.active {
+  border-color: rgba(35, 199, 183, 0.55);
+  background: rgba(35, 199, 183, 0.16);
+  color: var(--text);
 }
 
 .work-diff-actions .mini-btn {

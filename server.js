@@ -642,23 +642,28 @@ async function readWorktree() {
   return { workingFiles: parseStatus(statusOutput), operation: detectRepoOperation(currentRepo) };
 }
 
-async function readWorkingDiff(filePath) {
+async function readWorkingDiff(filePath, rawScope = "auto") {
   if (!currentRepo) {
     const sample = sampleState();
-    return { file: filePath || sample.workingFiles[0]?.file || "", diff: sample.commits[0]?.diff || [] };
+    return { file: filePath || sample.workingFiles[0]?.file || "", scope: "unstaged", requestedScope: "auto", diff: sample.commits[0]?.diff || [] };
   }
   const file = normalizeRepoFile(filePath);
-  let scope = "unstaged";
+  const requestedScope = normalizeWorktreeDiffRequestScope(rawScope);
+  let scope = requestedScope === "auto" ? "unstaged" : requestedScope;
   let output = await readWorktreeDiffOutput(file, scope);
-  if (!output) {
+  if (!output && requestedScope === "auto") {
     scope = "staged";
     output = await readWorktreeDiffOutput(file, scope);
   }
   if (!output) {
-    scope = "untracked";
-    output = readNewFileDiff(file);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]).catch(() => "");
+    const target = parseStatus(statusOutput).find((item) => item.file === file);
+    if (target?.indexStatus === "?" && requestedScope !== "staged") {
+      scope = "untracked";
+      output = readNewFileDiff(file);
+    }
   }
-  return { file, scope, diff: parseDiff(output) };
+  return { file, scope, requestedScope, diff: parseDiff(output) };
 }
 
 async function readStash(ref) {
@@ -2239,6 +2244,12 @@ function normalizeDiffScope(value) {
   throw new Error("Diff 范围不合法，请刷新后再试。");
 }
 
+function normalizeWorktreeDiffRequestScope(value) {
+  const scope = String(value || "auto").trim().toLowerCase();
+  if (scope === "auto" || scope === "unstaged" || scope === "staged") return scope;
+  throw new Error("Diff 视图不合法，请刷新后再试。");
+}
+
 function normalizeHunkIndex(value) {
   const index = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isInteger(index) || index < 0 || index > 200) throw new Error("改动块序号不合法，请刷新后再试。");
@@ -3685,7 +3696,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree-diff") {
-      sendJson(res, 200, await readWorkingDiff(parsed.searchParams.get("file") || ""));
+      sendJson(res, 200, await readWorkingDiff(parsed.searchParams.get("file") || "", parsed.searchParams.get("scope") || "auto"));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/stash") {

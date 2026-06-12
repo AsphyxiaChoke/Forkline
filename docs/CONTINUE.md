@@ -44,7 +44,7 @@
 - 恢复点管理已增强：右侧“恢复点”页支持搜索、按分支筛选、按动作筛选、显示筛选数量，并支持删除当前筛选结果；后端新增 `deleteRecoveryPoints`，会先验证所有 ref 都在 `refs/forkline/recovery/...` 下再批量删除。
 - 恢复点保留策略已接入：右侧“恢复点”页新增“保留策略”，支持设置“保留最近 N 天”和“每个分支保留 N 个”；前端会预览将清理/保留数量，后端执行前重新读取真实 `refs/forkline/recovery/...` 并只删除 Forkline 管理范围内的恢复引用。
 - 工作区 Diff 面板已接入当前文件快捷操作：查看未提交文件对照时，面板标题右侧可直接执行“暂存 / 取消 / 丢弃 / 丢已暂存 / 最大化”，并会按未暂存、已暂存状态自动启用或禁用；标题区支持换行，右侧栏缩窄时不会挤压路径和按钮。
-- 工作区 Diff 按块操作已接入：底部工作区对照会在 hunk 头显示“暂存此块 / 丢弃此块”或“取消暂存此块”；后端新增 `stageHunk`、`unstageHunk`、`discardWorktreeHunk`，会重新读取真实 `git diff` / `git diff --cached` 并通过 `git apply` 只应用选中 hunk。未跟踪文件暂不支持按块操作，仍走整文件暂存。
+- 工作区 Diff 视图切换和按块操作已接入：底部工作区对照可在“未暂存 / 已暂存”之间切换，同一文件两边都有改动时也能查看对应 Diff；hunk 头会显示“暂存此块 / 丢弃此块”或“取消暂存此块”。后端新增 `stageHunk`、`unstageHunk`、`discardWorktreeHunk`，会重新读取真实 `git diff` / `git diff --cached` 并通过 `git apply` 只应用选中 hunk。未跟踪文件暂不支持按块操作，仍走整文件暂存。
 - 右侧详情标签栏已改成横向可滚动：现在 7 个标签不会再被旧的 5 列网格挤到两行，窄侧栏下会保持单行、文本截断并允许横向滚动。
 - 右侧“日志”页已接入：后端会在 `/api/state` 暴露当前正在执行的 Forkline 操作，并在每次 `/api/action` 完成后记录最近 40 条 Git 操作，包含中文操作名、动作类型、成功/失败、耗时和输出摘要；失败响应也会带回最新日志，方便判断刚才哪个操作失败或卡住。
 - 常见 `pathspec ... did not match any files` 错误已转成中文提示：当文件已经删除、重命名或不在当前工作区中时，会提示“找不到文件 ...”，不再直接露出 Git 英文原文。
@@ -99,6 +99,7 @@
 - 自动恢复点 API/UI 验证：浏览器服务 `http://127.0.0.1:5198` 打开 GitTest 后，在临时分支 `forkline/recovery-verify-20260612-01` 创建 base/tip 两次提交；调用 `resetToCommit` hard 到 base 后，API 返回“恢复点：.../reset-hard（b5cb268）”；调用 `restoreRecoveryPoint` 后 HEAD 回到 `b5cb268`，被 hard reset 移除的文件恢复，并自动创建 `restore-recovery` 恢复点。右侧“恢复点”页显示“硬重置前 / 恢复前”两条记录，恢复/删除按钮启用，无横向溢出，控制台无错误。临时本地分支和本次隐藏恢复点已清理。
 - 工作区 Diff 快捷操作 UI 验证：浏览器服务 `http://127.0.0.1:5177` 打开 GitTest 后，创建临时未跟踪文件 `forkline-workdiff-actions-test.txt`；刷新工作区后底部 Diff 面板显示该文件，“暂存 / 丢弃”启用，“取消 / 丢已暂存”禁用；点击底部“暂存”后文件进入已暂存区且按钮切换为“取消 / 丢已暂存”启用；点击底部“取消”后回到未暂存状态。测试文件已删除，GitTest 已恢复 `123` 分支干净状态。
 - 工作区 Diff 按块操作 API 验证：临时服务 `http://127.0.0.1:5226` 打开 GitTest 临时分支 `forkline/hunk-actions-api-20260613035019`，创建 40 行测试文件并隔远修改第 5 行和第 35 行形成两个 hunk；调用 `stageHunk` 只暂存第 1 个 hunk，缓存区只含第 5 行改动；调用 `unstageHunk` 后缓存区清空且工作区保留两处改动；调用 `discardWorktreeHunk` 丢弃第 2 个 hunk 后第 35 行恢复、第 5 行改动保留。临时分支已删除，GitTest 已恢复 `123` 分支干净状态。
+- 工作区 Diff 视图切换 API 验证：临时服务 `http://127.0.0.1:5228` 打开 GitTest 临时分支 `forkline/workdiff-scope-api-20260613040156`，同一文件第 5 行为已暂存改动、第 35 行为未暂存改动；`/api/worktree-diff` 默认返回 `scope=unstaged` 且只含第 35 行，`scope=staged` 只含第 5 行；随后调用 `unstageHunk` 只取消已暂存 hunk，缓存区清空，两处改动均保留在工作区。临时分支已删除，GitTest 已恢复 `123` 分支干净状态。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
@@ -137,6 +138,6 @@
 
 按原计划继续完善：
 
-1. 工作区精细提交继续增强：现在已有按块暂存/取消暂存/丢弃，后续可以补行级选择、未跟踪文件拆块暂存，以及按块操作后的更细粒度视觉反馈。
+1. 工作区精细提交继续增强：现在已有未暂存/已暂存 Diff 切换和按块暂存/取消暂存/丢弃，后续可以补行级选择、未跟踪文件拆块暂存，以及按块操作后的更细粒度视觉反馈。
 2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取、同步提交预览和持久远端诊断已完成，后续可继续做更完整的 SSH/PAT 凭据向导。
 3. 恢复点策略继续增强：现在已有手动策略清理，后续可以增加本地偏好记忆、清理前候选列表展开，以及危险操作完成后可选自动执行保留策略。

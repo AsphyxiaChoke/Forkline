@@ -8,6 +8,7 @@ const state = {
   selectedRef: "",
   theme: "dark",
   selectedFile: "",
+  workDiffScope: "unstaged",
   selectedCommitFile: "",
   selectedSyncSha: "",
   selectedSyncFile: "",
@@ -624,8 +625,14 @@ function renderStage() {
     const groups = changeGroups(files);
     pruneSelectedChanges(groups);
     const visibleFiles = [...groups.unstaged, ...groups.staged];
+    const previousFile = state.selectedFile;
     if (!visibleFiles.some((file) => file.file === state.selectedFile)) {
       state.selectedFile = visibleFiles[0]?.file || "";
+    }
+    if (state.selectedFile !== previousFile) {
+      state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(state.selectedFile));
+    } else {
+      state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
     }
     els.changeList.innerHTML = `
       ${operationBanner}
@@ -4062,6 +4069,7 @@ function clearSelectedScope(scope) {
 function selectWorkingFile(filePath) {
   if (!filePath || filePath === state.selectedFile) return;
   state.selectedFile = filePath;
+  state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(filePath));
   markSelectedFile();
   updateWorkDiffActions();
   loadWorkingDiff(filePath);
@@ -4148,6 +4156,9 @@ async function loadWorkingDiff(filePath) {
     renderWorkDiffEmpty("未选择文件");
     return;
   }
+  const fileInfo = selectedWorkingFileInfo(filePath);
+  const scope = normalizeWorkDiffScopeChoice(state.workDiffScope, fileInfo);
+  state.workDiffScope = scope;
   const requestId = ++state.diffRequestId;
   els.workDiffTitle.textContent = "变更对照";
   els.workDiffPath.textContent = filePath;
@@ -4155,7 +4166,7 @@ async function loadWorkingDiff(filePath) {
   els.workDiffView.textContent = "正在读取差异...";
   updateWorkDiffActions(filePath);
   try {
-    const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}`);
+    const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(scope)}`);
     if (requestId !== state.diffRequestId) return;
     renderWorkDiff(data.file || filePath, data.diff || [], data.scope || "unstaged");
   } catch (error) {
@@ -4168,6 +4179,7 @@ async function loadWorkingDiff(filePath) {
 function renderWorkDiff(filePath, diff, scope = "unstaged") {
   const scopeLabel = workDiffScopeLabel(scope);
   const title = `${shortFileName(filePath)} · ${scopeLabel}`;
+  state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
   setActiveDiff({ source: "worktree", title, path: filePath, diff, scope, emptyText: "没有可显示的差异" });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = filePath;
@@ -4211,10 +4223,32 @@ function fileChangeFlags(fileInfo) {
   };
 }
 
+function preferredWorkDiffScope(fileInfo) {
+  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  if (hasUnstaged) return "unstaged";
+  if (hasStaged) return "staged";
+  return "unstaged";
+}
+
+function normalizeWorkDiffScopeChoice(scope, fileInfo) {
+  const requested = scope === "staged" ? "staged" : "unstaged";
+  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  if (requested === "staged" && hasStaged) return "staged";
+  if (requested === "unstaged" && hasUnstaged) return "unstaged";
+  return preferredWorkDiffScope(fileInfo);
+}
+
 function updateWorkDiffActions(filePath = state.selectedFile) {
   const fileInfo = selectedWorkingFileInfo(filePath);
   const hasWorktreeFile = Boolean(fileInfo);
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  document.querySelectorAll("[data-work-diff-scope]").forEach((button) => {
+    const scope = button.dataset.workDiffScope;
+    const enabled = hasWorktreeFile && (scope === "unstaged" ? hasUnstaged : scope === "staged" ? hasStaged : false);
+    button.disabled = !enabled;
+    button.classList.toggle("active", enabled && state.workDiffScope === scope);
+    button.title = workDiffScopeTitle(scope, filePath, enabled);
+  });
   document.querySelectorAll("[data-work-diff-action]").forEach((button) => {
     const action = button.dataset.workDiffAction;
     const enabled =
@@ -4223,6 +4257,12 @@ function updateWorkDiffActions(filePath = state.selectedFile) {
     button.disabled = !enabled;
     button.title = workDiffActionTitle(action, filePath, enabled);
   });
+}
+
+function workDiffScopeTitle(scope, filePath, enabled) {
+  if (!filePath) return "先选择一个工作区文件";
+  if (!enabled) return scope === "staged" ? "当前文件没有已暂存改动" : "当前文件没有未暂存改动";
+  return scope === "staged" ? `查看已暂存改动：${filePath}` : `查看未暂存改动：${filePath}`;
 }
 
 function workDiffActionTitle(action, filePath, enabled) {
@@ -4251,6 +4291,13 @@ async function runWorkDiffFileAction(action, button) {
   }
 }
 
+async function switchWorkDiffScope(scope, button) {
+  if (!state.selectedFile || button?.disabled) return;
+  state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
+  updateWorkDiffActions();
+  await loadWorkingDiff(state.selectedFile);
+}
+
 async function runWorkDiffHunkAction(action, button) {
   const file = state.selectedFile;
   const hunkIndex = Number.parseInt(button?.dataset.hunkIndex || "", 10);
@@ -4271,7 +4318,10 @@ async function runWorkDiffHunkAction(action, button) {
     });
     toast(result.output || "改动块操作完成");
     await refreshWorktree(true);
-    if (state.selectedFile) await loadWorkingDiff(state.selectedFile);
+    if (state.selectedFile) {
+      state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
+      await loadWorkingDiff(state.selectedFile);
+    }
   } catch (error) {
     toast(error.message);
     await refreshWorktree(true);
@@ -5674,6 +5724,9 @@ els.mainlineModal.addEventListener("click", (event) => {
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
+document.querySelectorAll("[data-work-diff-scope]").forEach((button) => {
+  button.addEventListener("click", () => switchWorkDiffScope(button.dataset.workDiffScope, button).catch((error) => toast(error.message)));
+});
 els.workDiffView.addEventListener("click", (event) => {
   const button = event.target.closest("[data-hunk-action]");
   if (!button) return;
