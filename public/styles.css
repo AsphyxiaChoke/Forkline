@@ -1823,14 +1823,16 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .stash-layout,
-.tag-layout {
+.tag-layout,
+.recovery-layout {
   display: grid;
   gap: 12px;
   min-width: 0;
 }
 
 .stash-list,
-.tag-list {
+.tag-list,
+.recovery-list {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1845,7 +1847,8 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .stash-row,
-.tag-row {
+.tag-row,
+.recovery-row {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -1867,6 +1870,12 @@ body.resizing .workbench-resizer-y::before {
 .tag-row.active {
   border-color: rgba(92, 169, 255, 0.55);
   background: rgba(92, 169, 255, 0.08);
+}
+
+.recovery-row:hover,
+.recovery-row.active {
+  border-color: rgba(156, 124, 255, 0.55);
+  background: rgba(156, 124, 255, 0.08);
 }
 
 .stash-row-top {
@@ -1902,7 +1911,8 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .stash-detail,
-.tag-detail {
+.tag-detail,
+.recovery-detail {
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -1910,6 +1920,7 @@ body.resizing .workbench-resizer-y::before {
 
 .stash-actions,
 .tag-actions,
+.recovery-actions,
 .sync-actions {
   display: flex;
   flex-wrap: wrap;

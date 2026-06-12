@@ -7,6 +7,7 @@ const { execFile, execFileSync } = require("child_process");
 const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const GIT_BIN = findGitExecutable();
+const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
 
 let currentRepo = null;
 let nextOperationId = 1;
@@ -77,7 +78,7 @@ async function openRepo(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, trackingOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, trackingOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
     git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "detached HEAD"),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
@@ -86,6 +87,7 @@ async function readState(ref = "") {
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
+    git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
     git(currentRepo, logArgs(ref)),
   ]);
 
@@ -130,6 +132,7 @@ async function readState(ref = "") {
     sync,
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
+    recoveryPoints: parseRecoveryPoints(recoveryOutput),
     tags: parseTags(tagOutput),
     commits: parseLog(logOutput),
   };
@@ -345,6 +348,12 @@ async function runAction(body) {
     const ref = normalizeStashRef(body.ref);
     return commandResult(await git(currentRepo, ["stash", "drop", ref], { timeout: 120000 }));
   }
+  if (action === "restoreRecoveryPoint") {
+    return restoreRecoveryPoint(body);
+  }
+  if (action === "deleteRecoveryPoint") {
+    return deleteRecoveryPoint(body);
+  }
   if (action === "stageFile") {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["add", "--", file], { timeout: 60000 }));
@@ -378,7 +387,8 @@ async function runAction(body) {
       args.push("-m", summary);
       if (detail) args.push("-m", detail);
     }
-    return commandResult(await git(currentRepo, args, { timeout: 120000 }));
+    const recovery = await createRecoveryPoint("amend");
+    return appendRecoveryLine(commandResult(await git(currentRepo, args, { timeout: 120000 })), recovery);
   }
   if (action === "rewordCommit") {
     return commandResult(await rewordCommit(body));
@@ -454,6 +464,8 @@ function actionLabel(body = {}) {
     applyStash: ref ? `应用储藏 ${ref}` : "应用储藏",
     popStash: ref ? `弹出储藏 ${ref}` : "弹出储藏",
     dropStash: ref ? `删除储藏 ${ref}` : "删除储藏",
+    restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
+    deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",
     stageFile: file ? `暂存文件 ${file}` : "暂存文件",
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
     discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
@@ -682,9 +694,10 @@ async function pullRebaseCurrentBranch() {
   if (before.upstreamGone) {
     throw new Error(`当前分支的 upstream ${before.upstream} 已不存在，不能执行变基拉取。请先抓取远端并重新设置 upstream。`);
   }
+  const recovery = await createRecoveryPoint("pull-rebase");
   const output = await git(currentRepo, ["pull", "--rebase"], { timeout: 120000 });
   const after = await readCurrentSyncState();
-  return syncCommandResult("pullRebase", output, before, after);
+  return appendRecoveryLine(syncCommandResult("pullRebase", output, before, after), recovery);
 }
 
 async function addRemote(body) {
@@ -779,9 +792,10 @@ async function rebaseOntoRef(body) {
   const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
   if (dirty.trim()) throw new Error("当前有未提交修改。请先提交或储藏后再变基。");
   await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 });
+  const recovery = await createRecoveryPoint("rebase-onto");
   const output = await git(currentRepo, ["rebase", ref], { timeout: 120000 });
   const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
-  return commandResultWithSummary(`已将当前分支 ${currentBranch} 变基到 ${ref}，当前 HEAD 为 ${newHead}`, output);
+  return appendRecoveryLine(commandResultWithSummary(`已将当前分支 ${currentBranch} 变基到 ${ref}，当前 HEAD 为 ${newHead}`, output), recovery);
 }
 
 async function createTag(body) {
@@ -913,6 +927,7 @@ async function rewordCommit(body) {
   const parents = parentLine.split(/\s+/).slice(1);
   if (parents.length > 1) throw new Error("暂不支持自动修改 merge 提交信息");
   const messageFile = writeTempFile("forkline-message-", `${summary}${detail ? `\n\n${detail}` : ""}\n`);
+  const recovery = await createRecoveryPoint("reword");
   try {
     if ((await git(currentRepo, ["rev-parse", "HEAD"])).trim() === target) {
       await git(currentRepo, ["commit", "--amend", "-F", messageFile], { timeout: 120000 });
@@ -939,7 +954,7 @@ async function rewordCommit(body) {
   } finally {
     removeQuietly(messageFile);
   }
-  return "提交信息已修改，历史 SHA 已重写";
+  return ["提交信息已修改，历史 SHA 已重写", recoveryPointLine(recovery)].filter(Boolean).join("\n");
 }
 
 async function rewriteHistoryCommit(body) {
@@ -963,6 +978,7 @@ async function rewriteHistoryCommit(body) {
 
   const sequenceFile = writeTempFile("forkline-history-sequence-", sequenceEditorScript(target, mode), ".cjs");
   const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  const recovery = await createRecoveryPoint(`history-${mode}`);
   try {
     const output = await git(currentRepo, rebaseArgs, {
       timeout: 180000,
@@ -972,7 +988,7 @@ async function rewriteHistoryCommit(body) {
       },
     });
     const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
-    return commandResultWithSummary(`${historyRewriteResultLabel(mode)} ${target.slice(0, 7)}，当前分支 ${currentBranch} 的 HEAD 为 ${newHead}`, output);
+    return appendRecoveryLine(commandResultWithSummary(`${historyRewriteResultLabel(mode)} ${target.slice(0, 7)}，当前分支 ${currentBranch} 的 HEAD 为 ${newHead}`, output), recovery);
   } catch (error) {
     if (detectRepoOperation(currentRepo)?.type !== "rebase") {
       await git(currentRepo, ["rebase", "--abort"], { timeout: 60000 }).catch(() => "");
@@ -1016,8 +1032,9 @@ async function resetToCommit(body) {
   const target = await resolveCommit(body.sha);
   const mode = normalizeResetMode(body.mode);
   const args = mode === "mixed" ? ["reset", target] : ["reset", `--${mode}`, target];
+  const recovery = await createRecoveryPoint(`reset-${mode}`);
   await git(currentRepo, args, { timeout: 120000 });
-  return { ok: true, output: `已${resetModeLabel(mode)}到 ${target.slice(0, 7)}` };
+  return appendRecoveryLine({ ok: true, output: `已${resetModeLabel(mode)}到 ${target.slice(0, 7)}` }, recovery);
 }
 
 async function continueRevert() {
@@ -1310,6 +1327,132 @@ async function currentLocalBranch(actionText = "执行操作") {
     throw new Error(`当前处于游离 HEAD，不能${actionText}。请先切换到本地分支。`);
   }
   return branch;
+}
+
+async function createRecoveryPoint(actionKey) {
+  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD")).trim() || "HEAD";
+  const sha = (await git(currentRepo, ["rev-parse", "--verify", "HEAD"])).trim();
+  const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  const timestamp = recoveryTimestamp();
+  const ref = `${RECOVERY_REF_PREFIX}/${timestamp}/${recoverySlug(branch, "HEAD")}/${recoverySlug(actionKey, "operation")}`;
+  await git(currentRepo, ["check-ref-format", ref], { timeout: 60000 });
+  await git(currentRepo, ["update-ref", ref, sha], { timeout: 60000 });
+  return recoveryPointFromParts(ref, sha, short);
+}
+
+function appendRecoveryLine(result, recovery) {
+  if (!recovery) return result;
+  return {
+    ...result,
+    recovery,
+    output: [result.output, recoveryPointLine(recovery)].filter(Boolean).join("\n"),
+  };
+}
+
+function recoveryPointLine(recovery) {
+  if (!recovery) return "";
+  return `恢复点：${recovery.shortRef}（${recovery.short}）。可在右侧“恢复点”页恢复，或执行 git reset --hard ${recovery.ref}`;
+}
+
+async function restoreRecoveryPoint(body) {
+  const ref = await ensureRecoveryRef(body.ref);
+  await currentLocalBranch("恢复恢复点");
+  await ensureCleanWorktree("恢复到恢复点前，请先提交、储藏或还原当前工作区改动。");
+  const target = (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`])).trim();
+  const before = await createRecoveryPoint("restore-recovery");
+  await git(currentRepo, ["reset", "--hard", target], { timeout: 120000 });
+  const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  return appendRecoveryLine({ ok: true, output: `已恢复到 ${short}` }, before);
+}
+
+async function deleteRecoveryPoint(body) {
+  const ref = await ensureRecoveryRef(body.ref);
+  await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
+  return { ok: true, output: `已删除恢复点 ${shortRecoveryRef(ref)}` };
+}
+
+async function ensureRecoveryRef(value) {
+  const input = String(value || "").trim().replace(/^\/+/, "");
+  if (!input) throw new Error("请选择恢复点");
+  const ref = input.startsWith(`${RECOVERY_REF_PREFIX}/`) ? input : `${RECOVERY_REF_PREFIX}/${input}`;
+  normalizeRefName(ref, "恢复点");
+  if (!ref.startsWith(`${RECOVERY_REF_PREFIX}/`)) throw new Error("恢复点不属于 Forkline 管理范围");
+  await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => {
+    throw new Error("恢复点不存在或已经被删除");
+  });
+  return ref;
+}
+
+function parseRecoveryPoints(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .filter((line) => line.includes("\t"))
+    .map((line) => {
+      const [ref, sha, short, subject] = line.split("\t");
+      return recoveryPointFromParts(ref, sha, short, subject);
+    })
+    .filter(Boolean);
+}
+
+function recoveryPointFromParts(ref, sha, short, subject = "") {
+  if (!ref || !ref.startsWith(`${RECOVERY_REF_PREFIX}/`)) return null;
+  const shortRef = shortRecoveryRef(ref);
+  const parts = shortRef.split("/");
+  const timestamp = parts[0] || "";
+  const branch = parts[1] || "HEAD";
+  const action = parts[2] || "operation";
+  return {
+    ref,
+    shortRef,
+    sha,
+    short: short || String(sha || "").slice(0, 7),
+    subject: subject || "",
+    branch,
+    action,
+    actionLabel: recoveryActionLabel(action),
+    time: recoveryTimeLabel(timestamp),
+  };
+}
+
+function shortRecoveryRef(ref) {
+  return String(ref || "").replace(`${RECOVERY_REF_PREFIX}/`, "");
+}
+
+function recoveryTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function recoveryTimeLabel(timestamp) {
+  const match = String(timestamp || "").match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+  if (!match) return timestamp || "";
+  return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[6]}`;
+}
+
+function recoverySlug(value, fallback) {
+  const slug = String(value || "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^\.+|\.+$/g, "")
+    .replace(/_+/g, "_")
+    .slice(0, 64);
+  return slug || fallback;
+}
+
+function recoveryActionLabel(action) {
+  const labels = {
+    amend: "追加提交前",
+    reword: "修改提交信息前",
+    "pull-rebase": "变基拉取前",
+    "rebase-onto": "变基前",
+    "history-squash": "压缩提交前",
+    "history-fixup": "修补提交前",
+    "history-drop": "丢弃提交前",
+    "reset-soft": "软重置前",
+    "reset-mixed": "混合重置前",
+    "reset-hard": "硬重置前",
+    "restore-recovery": "恢复前",
+  };
+  return labels[action] || "危险操作前";
 }
 
 async function readRemoteBranchNames() {
@@ -1920,6 +2063,19 @@ function sampleState() {
     tags: [
       { name: "v2.9.0", object: "4ab612e", time: "昨天", subject: "发布候选版本构建", type: "commit" },
       { name: "ui-graph-beta", object: "d41c2ab", time: "38 分钟前", subject: "添加语义化 Diff 分组", type: "tag" },
+    ],
+    recoveryPoints: [
+      {
+        ref: "refs/forkline/recovery/20260612-213000/feature_visual-history/rebase-onto",
+        shortRef: "20260612-213000/feature_visual-history/rebase-onto",
+        sha: "f83a9c2b0177",
+        short: "f83a9c2",
+        subject: "打磨提交图连线动画",
+        branch: "feature_visual-history",
+        action: "rebase-onto",
+        actionLabel: "变基前",
+        time: "2026-06-12 21:30:00",
+      },
     ],
     workingFiles: files,
     commits: data.map(([sha, author, time, message, refs, lane, parents], index) => ({

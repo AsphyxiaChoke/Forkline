@@ -32,6 +32,7 @@ const state = {
   stashDetails: new Map(),
   selectedStash: "",
   selectedTag: "",
+  selectedRecoveryRef: "",
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
@@ -1716,6 +1717,10 @@ function renderInspector() {
     renderTagsTab();
     return;
   }
+  if (state.selectedTab === "recovery") {
+    renderRecoveryTab();
+    return;
+  }
   if (state.selectedTab === "sync") {
     renderSyncTab();
     return;
@@ -2301,6 +2306,113 @@ function selectTag(name) {
   if (!name || name === state.selectedTag) return;
   state.selectedTag = name;
   renderInspector();
+}
+
+function renderRecoveryTab() {
+  const points = state.data?.recoveryPoints || [];
+  if (state.selectedRecoveryRef && !points.some((point) => point.ref === state.selectedRecoveryRef)) {
+    state.selectedRecoveryRef = "";
+  }
+  if (!state.selectedRecoveryRef && points.length) state.selectedRecoveryRef = points[0].ref;
+  const selected = points.find((point) => point.ref === state.selectedRecoveryRef);
+  els.detailNode.style.borderColor = "var(--purple)";
+  els.detailTitle.textContent = "恢复点";
+  els.detailSub.textContent = points.length ? `${points.length} 个可恢复位置` : "没有恢复点";
+  setActiveDiff(null);
+  if (!points.length) {
+    els.detailBody.innerHTML = `
+      <div class="empty-panel">
+        <strong>没有恢复点</strong>
+        <span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点。</span>
+      </div>
+    `;
+    return;
+  }
+  els.detailBody.innerHTML = `
+    <div class="recovery-layout">
+      <div class="recovery-list">
+        ${points.map((point) => recoveryRowHtml(point, point.ref === state.selectedRecoveryRef)).join("")}
+      </div>
+      <div class="recovery-detail">
+        ${selected ? recoveryDetailHtml(selected) : ""}
+      </div>
+    </div>
+  `;
+}
+
+function recoveryRowHtml(point, active) {
+  return `
+    <button class="recovery-row ${active ? "active" : ""}" data-recovery-ref="${escapeAttr(point.ref)}" type="button">
+      <span class="stash-row-top">
+        <strong>${escapeHtml(point.actionLabel || "恢复点")}</strong>
+        <em>${escapeHtml(point.time || "")}</em>
+      </span>
+      <span class="stash-message" title="${escapeAttr(point.shortRef)}">${escapeHtml(point.shortRef)}</span>
+      <span class="stash-branch">${escapeHtml(`${point.short || ""} · ${point.branch || "HEAD"}`)}</span>
+    </button>
+  `;
+}
+
+function recoveryDetailHtml(point) {
+  return `
+    <div class="recovery-actions">
+      <button class="mini-btn" data-recovery-action="restore" data-recovery-ref="${escapeAttr(point.ref)}" type="button"><span>恢复到此处</span><span class="command-hint">reset --hard</span></button>
+      <button class="mini-btn danger" data-recovery-action="delete" data-recovery-ref="${escapeAttr(point.ref)}" type="button"><span>删除恢复点</span><span class="command-hint">update-ref -d</span></button>
+    </div>
+    <div class="meta-grid stash-meta">
+      <span>提交</span><div class="meta-value">${escapeHtml(point.short || point.sha || "未知")}</div>
+      <span>动作</span><div class="meta-value">${escapeHtml(point.actionLabel || point.action || "危险操作前")}</div>
+      <span>分支</span><div class="meta-value">${escapeHtml(point.branch || "HEAD")}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(point.time || "未知")}</div>
+      <span>引用</span><div class="meta-value" title="${escapeAttr(point.ref)}">${escapeHtml(point.shortRef || point.ref)}</div>
+    </div>
+    <div class="empty-panel compact">
+      <span>恢复会执行 git reset --hard 到这个恢复点。恢复前 Forkline 会再创建一个新的恢复点，方便撤回这次恢复。</span>
+    </div>
+  `;
+}
+
+function selectRecoveryPoint(ref) {
+  if (!ref || ref === state.selectedRecoveryRef) return;
+  state.selectedRecoveryRef = ref;
+  renderInspector();
+}
+
+async function runRecoveryAction(action, ref, button) {
+  if (!state.data || !ref) return;
+  const point = (state.data.recoveryPoints || []).find((item) => item.ref === ref);
+  if (!point) {
+    toast("恢复点已经不存在，请刷新后再试");
+    return;
+  }
+  const message =
+    action === "restore"
+      ? `确认恢复当前分支到这个恢复点？\n\n恢复点：${point.shortRef}\n提交：${point.short || point.sha}\n命令：git reset --hard ${point.ref}\n\n这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。`
+      : `确认删除这个恢复点？\n\n${point.shortRef}\n\n删除后不能再通过 Forkline 恢复到这个引用。`;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    if (button) button.disabled = true;
+    const apiAction = action === "restore" ? "restoreRecoveryPoint" : "deleteRecoveryPoint";
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref }) });
+    toast(result.output || "恢复点操作完成");
+    state.commitDetails.clear();
+    state.selectedChanges.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    if (!state.data.recoveryPoints?.some((item) => item.ref === state.selectedRecoveryRef)) {
+      state.selectedRecoveryRef = state.data.recoveryPoints?.[0]?.ref || "";
+    }
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha && state.selectedTab !== "recovery") {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function runTagAction(action, tagName, button) {
@@ -3727,6 +3839,20 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     const sha = syncCommit.dataset.syncCommit;
     selectSyncCommit(sha).catch((error) => toast(error.message));
+    return;
+  }
+  const recoveryAction = event.target.closest("[data-recovery-action]");
+  if (recoveryAction) {
+    event.preventDefault();
+    if (!recoveryAction.disabled) {
+      runRecoveryAction(recoveryAction.dataset.recoveryAction, recoveryAction.dataset.recoveryRef || state.selectedRecoveryRef || "", recoveryAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const recoveryRow = event.target.closest(".recovery-row[data-recovery-ref]");
+  if (recoveryRow) {
+    event.preventDefault();
+    selectRecoveryPoint(recoveryRow.dataset.recoveryRef || "");
     return;
   }
   const button = event.target.closest("[data-commit-tool]");

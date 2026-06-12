@@ -34,6 +34,7 @@
 - Rebase 分支工作流已接入：分支右键菜单新增“变基当前分支到此分支”，标注 `git rebase`；后端支持 `rebaseOntoRef`、`continueRebase`、`skipRebase`、`abortRebase`。遇到 `.git/rebase-merge` 或 `.git/rebase-apply` 时工作区显示“变基发生冲突”，冲突文件用红色标识，并提供“继续变基 / 跳过变基 / 中止变基”。
 - Rebase 风险提示已补齐：执行前会中文确认“会重写当前分支提交 SHA”，工作区不干净时阻止；冲突、没有正在变基、仍有未解决冲突等常见 Git 输出会转为中文提示。
 - 基础交互式历史编辑已接入：提交详情和提交右键菜单新增“压缩进父提交 / 修补进父提交 / 丢弃此提交”，分别标注 `git rebase -i squash`、`git rebase -i fixup`、`git rebase -i drop`；后端新增 `rewriteHistoryCommit`，会检查工作区干净、当前处于本地分支、目标提交属于当前分支历史，并拒绝自动处理 merge 提交或包含 merge 的历史段。
+- 自动恢复点已接入：追加提交、变基拉取、分支变基、修改提交信息、交互式历史编辑和 reset 前会自动创建 `refs/forkline/recovery/...` 隐藏引用；右侧新增“恢复点”页，可查看、恢复或删除恢复点。恢复动作会先再创建一个恢复前恢复点。
 
 ## 已验证
 
@@ -74,6 +75,7 @@
 - 变基拉取 API 验证：浏览器服务 `http://127.0.0.1:5196` 打开 GitTest 后，创建临时分叉分支 `forkline/pull-rebase-verify-20260612-01`，让本地相对 upstream 同时 `ahead = 1`、`behind = 1`；调用 Forkline `pullRebase` 后返回“变基拉取完成”，同步状态变为 `behind = 0`、`ahead = 1`，Git 日志顺序为本地重放提交 -> 远端提交 -> 基准提交。临时本地分支、远端分支和 `C:\\tmp` 临时克隆已清理。
 - 变基拉取 UI 验证：浏览器打开 `http://127.0.0.1:5196/?tab=sync`，同步页显示“变基拉取 pull --rebase”按钮；259px 右侧内容无横向溢出，控制台无 Forkline 错误。当前分支右键菜单显示“变基拉取当前分支 git pull --rebase”，按钮启用，菜单无横向溢出。
 - 同步提交预览 UI 验证：浏览器服务 `http://127.0.0.1:5197` 打开 GitTest 后，创建临时分叉分支 `forkline/sync-preview-verify-20260612-01`，远端和本地各新增一个真实文件提交；同步页点击待拉取提交后预览 `forkline-fixtures/sync-preview-remote.txt` 和 `remote preview line 1`，点击待推送提交后预览 `forkline-fixtures/sync-preview-local.txt` 和 `local preview line 1`；页面仍停留在“同步”页，无横向溢出，控制台无错误，最大化对照可打开当前同步提交 Diff。临时本地分支、远端分支和 `C:\\tmp` 临时克隆已清理。
+- 自动恢复点 API/UI 验证：浏览器服务 `http://127.0.0.1:5198` 打开 GitTest 后，在临时分支 `forkline/recovery-verify-20260612-01` 创建 base/tip 两次提交；调用 `resetToCommit` hard 到 base 后，API 返回“恢复点：.../reset-hard（b5cb268）”；调用 `restoreRecoveryPoint` 后 HEAD 回到 `b5cb268`，被 hard reset 移除的文件恢复，并自动创建 `restore-recovery` 恢复点。右侧“恢复点”页显示“硬重置前 / 恢复前”两条记录，恢复/删除按钮启用，无横向溢出，控制台无错误。临时本地分支和本次隐藏恢复点已清理。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
@@ -99,5 +101,5 @@
 按原计划继续完善：
 
 1. 交互式历史编辑队列增强：现在已有单提交 squash / fixup / drop，下一步可以做成可视化队列，支持一次调整多个提交、拖拽排序和执行前预览。
-2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护和变基拉取已完成，后续可继续做认证失败指引和远端提交预览。
-3. Rebase 保护增强：交互式 rebase 前备份当前分支位置，并在异常退出后提供更明显的恢复入口。
+2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取和同步提交预览已完成，后续可继续做认证失败指引。
+3. 恢复点体验增强：现在已有自动恢复点和恢复页，后续可以增加按分支/动作筛选、批量清理和保留策略。
