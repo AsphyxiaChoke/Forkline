@@ -8,6 +8,7 @@ const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const GIT_BIN = findGitExecutable();
 const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
+const WORKTREE_DIFF_CONTEXT = "8";
 
 let currentRepo = null;
 let nextOperationId = 1;
@@ -647,14 +648,17 @@ async function readWorkingDiff(filePath) {
     return { file: filePath || sample.workingFiles[0]?.file || "", diff: sample.commits[0]?.diff || [] };
   }
   const file = normalizeRepoFile(filePath);
-  let output = await git(currentRepo, ["diff", "--no-ext-diff", "--unified=80", "--", file], { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
+  let scope = "unstaged";
+  let output = await readWorktreeDiffOutput(file, scope);
   if (!output) {
-    output = await git(currentRepo, ["diff", "--cached", "--no-ext-diff", "--unified=80", "--", file], { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
+    scope = "staged";
+    output = await readWorktreeDiffOutput(file, scope);
   }
   if (!output) {
+    scope = "untracked";
     output = readNewFileDiff(file);
   }
-  return { file, diff: parseDiff(output) };
+  return { file, scope, diff: parseDiff(output) };
 }
 
 async function readStash(ref) {
@@ -841,6 +845,15 @@ async function runAction(body) {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["reset", "-q", "--", file], { timeout: 60000 }));
   }
+  if (action === "stageHunk") {
+    return commandResult(await applyWorktreeHunk(body, "stage"));
+  }
+  if (action === "unstageHunk") {
+    return commandResult(await applyWorktreeHunk(body, "unstage"));
+  }
+  if (action === "discardWorktreeHunk") {
+    return commandResult(await applyWorktreeHunk(body, "discard"));
+  }
   if (action === "discardWorktreeFile") {
     return commandResult(await discardWorktreeFile(body));
   }
@@ -995,6 +1008,9 @@ function actionLabel(body = {}) {
     pruneRecoveryPoints: "按保留策略清理恢复点",
     stageFile: file ? `暂存文件 ${file}` : "暂存文件",
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
+    stageHunk: file ? `暂存改动块 ${file}` : "暂存改动块",
+    unstageHunk: file ? `取消暂存改动块 ${file}` : "取消暂存改动块",
+    discardWorktreeHunk: file ? `丢弃改动块 ${file}` : "丢弃改动块",
     discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
     discardStagedFile: file ? `丢弃已暂存文件 ${file}` : "丢弃已暂存文件",
     commit: "创建提交",
@@ -1515,6 +1531,74 @@ async function discardStagedFile(body) {
     await git(currentRepo, ["restore", "--source=HEAD", "--staged", "--worktree", "--", file], { timeout: 60000 });
   }
   return "已暂存改动已丢弃";
+}
+
+async function applyWorktreeHunk(body, kind) {
+  const file = normalizeRepoFile(body.file);
+  const scope = normalizeDiffScope(body.scope);
+  const hunkIndex = normalizeHunkIndex(body.hunkIndex);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  if (!target) throw new Error("这个文件当前没有可操作的改动。");
+  if (target.conflict) throw new Error("冲突文件暂不支持按块操作，请先解决冲突。");
+  if (target.indexStatus === "?") throw new Error("未跟踪文件暂不支持按块操作，请先暂存整个文件。");
+  if (kind === "stage" && scope !== "unstaged") throw new Error("只能暂存未暂存的改动块。");
+  if (kind === "discard" && scope !== "unstaged") throw new Error("只能丢弃工作区中的未暂存改动块。");
+  if (kind === "unstage" && scope !== "staged") throw new Error("只能取消暂存已暂存的改动块。");
+  if ((kind === "stage" || kind === "discard") && !target.unstaged) throw new Error("这个文件没有未暂存改动块。");
+  if (kind === "unstage" && !target.staged) throw new Error("这个文件没有已暂存改动块。");
+
+  const diffOutput = await readWorktreeDiffOutput(file, scope);
+  const patch = extractSingleHunkPatch(diffOutput, hunkIndex);
+  const patchFile = writeTempFile("forkline-hunk-", patch, ".patch");
+  try {
+    const args = ["apply", "--whitespace=nowarn"];
+    if (kind === "stage") args.push("--cached");
+    if (kind === "unstage") args.push("--cached", "--reverse");
+    if (kind === "discard") args.push("--reverse");
+    args.push(patchFile);
+    await git(currentRepo, args, { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
+  } catch (error) {
+    throw new Error(`改动块操作失败：${friendlyErrorMessage(error, { body: { action: `${kind}Hunk` } })}`);
+  } finally {
+    removeQuietly(patchFile);
+  }
+  if (kind === "stage") return "已暂存此改动块";
+  if (kind === "unstage") return "已取消暂存此改动块";
+  return "工作区改动块已丢弃";
+}
+
+async function readWorktreeDiffOutput(file, scope) {
+  const diffScope = normalizeDiffScope(scope);
+  const args = diffScope === "staged"
+    ? ["diff", "--cached", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file]
+    : ["diff", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file];
+  return git(currentRepo, args, { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
+}
+
+function extractSingleHunkPatch(diffOutput, targetHunkIndex) {
+  const lines = String(diffOutput || "").replace(/\r\n/g, "\n").split("\n");
+  if (!lines.length || !String(diffOutput || "").trim()) throw new Error("没有可操作的 Diff 块。");
+  const header = [];
+  const hunk = [];
+  let currentHunk = -1;
+  let collecting = false;
+  for (const line of lines) {
+    if (line.startsWith("diff --git ") && currentHunk >= 0) break;
+    if (line.startsWith("@@ ")) {
+      currentHunk += 1;
+      collecting = currentHunk === targetHunkIndex;
+      if (collecting) hunk.push(line);
+      continue;
+    }
+    if (currentHunk < 0) {
+      if (line !== "") header.push(line);
+      continue;
+    }
+    if (collecting) hunk.push(line);
+  }
+  if (!hunk.length) throw new Error("找不到这个改动块，请刷新后再试。");
+  return [...header, ...hunk].join("\n").replace(/\n*$/, "\n");
 }
 
 async function rewordCommit(body) {
@@ -2147,6 +2231,18 @@ function normalizeRepoFile(filePath) {
   if (!value || value.includes("\0")) throw new Error("请选择要对照的文件");
   if (path.isAbsolute(value) || value.split("/").includes("..")) throw new Error("文件路径不合法");
   return value;
+}
+
+function normalizeDiffScope(value) {
+  const scope = String(value || "unstaged").trim().toLowerCase();
+  if (scope === "unstaged" || scope === "staged") return scope;
+  throw new Error("Diff 范围不合法，请刷新后再试。");
+}
+
+function normalizeHunkIndex(value) {
+  const index = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isInteger(index) || index < 0 || index > 200) throw new Error("改动块序号不合法，请刷新后再试。");
+  return index;
 }
 
 function normalizeBranchName(branchName) {
@@ -2949,15 +3045,18 @@ function parseNameStatus(output) {
 
 function parseDiff(output) {
   if (!String(output || "").trim()) return [];
+  let hunkIndex = -1;
   return output
     .split(/\r?\n/)
     .slice(0, 320)
     .map((line) => {
       let type = "ctx";
+      if (line.startsWith("diff --git ")) hunkIndex = -1;
       if (/^(diff --git|@@|\+\+\+|---)/.test(line)) type = "meta";
       else if (line.startsWith("+")) type = "add";
       else if (line.startsWith("-")) type = "del";
-      return { type, text: line.slice(0, 280) };
+      if (line.startsWith("@@ ")) hunkIndex += 1;
+      return { type, text: line.slice(0, 280), hunkIndex: hunkIndex >= 0 ? hunkIndex : null };
     });
 }
 

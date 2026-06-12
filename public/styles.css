@@ -1623,6 +1623,38 @@ body.resizing .workbench-resizer-y::before {
   white-space: nowrap;
 }
 
+.side-row.meta.has-actions .side-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.side-meta-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunk-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
+.hunk-actions .mini-btn {
+  min-height: 24px;
+  height: 24px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
 .side-cell {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);

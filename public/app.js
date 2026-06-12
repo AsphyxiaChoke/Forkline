@@ -4157,7 +4157,7 @@ async function loadWorkingDiff(filePath) {
   try {
     const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}`);
     if (requestId !== state.diffRequestId) return;
-    renderWorkDiff(data.file || filePath, data.diff || []);
+    renderWorkDiff(data.file || filePath, data.diff || [], data.scope || "unstaged");
   } catch (error) {
     if (requestId !== state.diffRequestId) return;
     els.workDiffView.className = "work-diff-view empty";
@@ -4165,9 +4165,10 @@ async function loadWorkingDiff(filePath) {
   }
 }
 
-function renderWorkDiff(filePath, diff) {
-  const title = shortFileName(filePath);
-  setActiveDiff({ source: "worktree", title, path: filePath, diff, emptyText: "没有可显示的差异" });
+function renderWorkDiff(filePath, diff, scope = "unstaged") {
+  const scopeLabel = workDiffScopeLabel(scope);
+  const title = `${shortFileName(filePath)} · ${scopeLabel}`;
+  setActiveDiff({ source: "worktree", title, path: filePath, diff, scope, emptyText: "没有可显示的差异" });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = filePath;
   updateWorkDiffActions(filePath);
@@ -4177,7 +4178,7 @@ function renderWorkDiff(filePath, diff) {
     return;
   }
   els.workDiffView.className = "work-diff-view";
-  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异");
+  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, filePath, scope });
 }
 
 function renderHistoryDiffInWorkbench(commit, detail, filePath) {
@@ -4250,6 +4251,37 @@ async function runWorkDiffFileAction(action, button) {
   }
 }
 
+async function runWorkDiffHunkAction(action, button) {
+  const file = state.selectedFile;
+  const hunkIndex = Number.parseInt(button?.dataset.hunkIndex || "", 10);
+  const scope = button?.dataset.hunkScope || state.activeDiff?.scope || "unstaged";
+  if (!file || !Number.isInteger(hunkIndex) || hunkIndex < 0) {
+    toast("请选择要操作的改动块");
+    return;
+  }
+  if (action === "discardWorktreeHunk" && !state.data?.repo?.isSample && !confirm(`确认丢弃这个改动块？\n\n文件：${file}\n此操作无法撤销。`)) return;
+  const buttons = els.workDiffView.querySelectorAll("[data-hunk-action]");
+  buttons.forEach((item) => {
+    item.disabled = true;
+  });
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action, file, scope, hunkIndex }),
+    });
+    toast(result.output || "改动块操作完成");
+    await refreshWorktree(true);
+    if (state.selectedFile) await loadWorkingDiff(state.selectedFile);
+  } catch (error) {
+    toast(error.message);
+    await refreshWorktree(true);
+  } finally {
+    buttons.forEach((item) => {
+      item.disabled = false;
+    });
+  }
+}
+
 function openDiffModal() {
   if (!state.activeDiff?.diff?.length) {
     toast("没有可最大化的对照内容");
@@ -4269,12 +4301,12 @@ function closeDiffModal() {
   document.body.classList.remove("modal-open");
 }
 
-function renderSideDiff(diff, emptyText) {
+function renderSideDiff(diff, emptyText, options = {}) {
   if (!diff?.length) return `<div class="diff-empty">${escapeHtml(emptyText)}</div>`;
   return `
     <div class="side-diff">
       <div class="side-diff-head"><span>旧版本</span><span>新版本</span></div>
-      ${sideBySideRows(diff)}
+      ${sideBySideRows(diff, options)}
     </div>
   `;
 }
@@ -4309,7 +4341,7 @@ function normalizeDiffPath(value) {
   return String(value || "").replaceAll("\\", "/").replace(/^"|"$/g, "");
 }
 
-function sideBySideRows(diff) {
+function sideBySideRows(diff, options = {}) {
   const rows = [];
   let oldLine = 0;
   let newLine = 0;
@@ -4322,7 +4354,7 @@ function sideBySideRows(diff) {
         oldLine = Number(hunk[1]) - 1;
         newLine = Number(hunk[2]) - 1;
       }
-      rows.push(`<div class="side-row meta"><div class="side-meta">${escapeHtml(text)}</div></div>`);
+      rows.push(renderSideMetaRow(line, text, options));
       continue;
     }
     if (line.type === "del" && diff[index + 1]?.type === "add") {
@@ -4347,6 +4379,47 @@ function sideBySideRows(diff) {
     rows.push(sideRow("ctx", oldLine, trimDiffPrefix(text), "", newLine, trimDiffPrefix(text), ""));
   }
   return rows.join("");
+}
+
+function renderSideMetaRow(line, text, options = {}) {
+  const actions = options.hunkActions ? workDiffHunkActionButtons(options.filePath, options.scope, line.hunkIndex) : "";
+  return `
+    <div class="side-row meta ${actions ? "has-actions" : ""}">
+      <div class="side-meta">
+        <span class="side-meta-text">${escapeHtml(text)}</span>
+        ${actions}
+      </div>
+    </div>
+  `;
+}
+
+function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
+  if (!Number.isInteger(hunkIndex)) return "";
+  const fileInfo = selectedWorkingFileInfo(filePath);
+  if (!fileInfo || fileInfo.conflict || fileInfo.indexStatus === "?") return "";
+  const normalizedScope = scope === "staged" ? "staged" : scope === "unstaged" ? "unstaged" : "";
+  if (normalizedScope === "unstaged" && fileInfo.unstaged) {
+    return `
+      <span class="hunk-actions">
+        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">暂存此块</button>
+        <button class="mini-btn danger" data-hunk-action="discardWorktreeHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">丢弃此块</button>
+      </span>
+    `;
+  }
+  if (normalizedScope === "staged" && fileInfo.staged) {
+    return `
+      <span class="hunk-actions">
+        <button class="mini-btn" data-hunk-action="unstageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="staged" type="button">取消暂存此块</button>
+      </span>
+    `;
+  }
+  return "";
+}
+
+function workDiffScopeLabel(scope) {
+  if (scope === "staged") return "已暂存";
+  if (scope === "untracked") return "未跟踪";
+  return "未暂存";
 }
 
 function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass) {
@@ -5601,6 +5674,12 @@ els.mainlineModal.addEventListener("click", (event) => {
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
+els.workDiffView.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-hunk-action]");
+  if (!button) return;
+  event.preventDefault();
+  if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
+});
 document.querySelectorAll("[data-work-diff-action]").forEach((button) => {
   button.addEventListener("click", () => runWorkDiffFileAction(button.dataset.workDiffAction, button));
 });
