@@ -461,6 +461,166 @@ async function readHistoryRewritePreview(sha, rawMode) {
   };
 }
 
+async function readHistoryRewriteQueuePreview(rawItems) {
+  const requested = normalizeHistoryRewriteQueueItems(rawItems);
+  if (!currentRepo) {
+    const sample = sampleState();
+    const actions = requested.map((item, index) => {
+      const target = sample.commits[index + 1] || sample.commits[index] || sample.commits[0];
+      return {
+        mode: item.mode,
+        modeLabel: historyRewritePreviewTitle(item.mode),
+        target,
+        parent: sample.commits.find((commit) => commit.sha === target?.parents?.[0]) || null,
+      };
+    });
+    return {
+      ok: true,
+      mode: "queue",
+      title: "历史编辑队列",
+      command: "git rebase -i / queue",
+      effect: "一次执行多条 squash / fixup / drop 历史编辑动作。",
+      branch: sample.repo.branch,
+      queueCount: actions.length,
+      actions,
+      affectedCount: sample.commits.length,
+      affectedPreview: sample.commits.map((commit, index) => ({ ...commit, queueAction: index ? requested[index - 1]?.mode || "pick" : "pick" })),
+      blockers: [],
+      warnings: ["示例模式不会执行真实 Git 命令"],
+      canRun: false,
+    };
+  }
+
+  const blockers = [];
+  const warnings = ["执行前会自动创建恢复点", "执行后队列影响范围内的 SHA 会改变"];
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) blockers.push(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
+
+  const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+  const dirtyCount = parseStatus(statusOutput).length;
+  if (statusOutput.trim()) blockers.push(`当前还有 ${dirtyCount || "未提交"} 个未提交改动。请先提交、储藏或丢弃后再编辑历史。`);
+
+  let branch = "";
+  try {
+    branch = await currentLocalBranchForRewrite();
+  } catch (error) {
+    blockers.push(error.message);
+  }
+
+  const resolved = [];
+  const seenTargets = new Set();
+  for (const item of requested) {
+    const targetSha = await resolveCommit(item.sha);
+    if (seenTargets.has(targetSha)) {
+      blockers.push(`提交 ${targetSha.slice(0, 7)} 在队列中重复出现。`);
+      continue;
+    }
+    seenTargets.add(targetSha);
+    try {
+      await ensureCommitInCurrentHistory(targetSha);
+    } catch (error) {
+      blockers.push(error.message);
+    }
+    const [target, parents] = await Promise.all([readBasicCommit(targetSha), commitParents(targetSha)]);
+    if (parents.length > 1) blockers.push(`提交 ${target.short} 是 merge 提交，暂不支持加入历史编辑队列。`);
+    if ((item.mode === "squash" || item.mode === "fixup") && parents.length === 0) {
+      blockers.push(`提交 ${target.short} 是根提交，不能压缩或修补进父提交。`);
+    }
+    resolved.push({
+      mode: item.mode,
+      modeLabel: historyRewritePreviewTitle(item.mode),
+      command: historyRewriteCommand(item.mode),
+      target,
+      parent: parents[0] ? await readBasicCommit(parents[0]).catch(() => null) : null,
+      parentSha: parents[0] || "",
+    });
+  }
+
+  const fullRange = await readRewriteRangeCommits("--root").catch(() => []);
+  const order = new Map(fullRange.map((commit, index) => [commit.sha, index]));
+  let earliestBase = "";
+  let earliestIndex = Number.POSITIVE_INFINITY;
+  for (const item of resolved) {
+    const base = item.mode === "drop" ? item.target.sha : item.parentSha;
+    if (!base) continue;
+    const index = order.get(base);
+    if (index === undefined) {
+      blockers.push(`提交 ${base.slice(0, 7)} 不在当前分支历史编辑范围中。`);
+      continue;
+    }
+    if (index < earliestIndex) {
+      earliestIndex = index;
+      earliestBase = base;
+    }
+  }
+
+  let upstream = "";
+  let rebaseStart = "";
+  let affected = [];
+  if (earliestBase) {
+    const baseParents = await commitParents(earliestBase).catch(() => []);
+    upstream = baseParents.length ? `${earliestBase}^` : "--root";
+    rebaseStart = upstream === "--root" ? "仓库根提交" : `${baseParents[0]?.slice(0, 7) || earliestBase.slice(0, 7)} 之后`;
+    affected = await readRewriteRangeCommits(upstream).catch(() => []);
+    const merges = affected.filter((commit) => commit.parents.length > 1);
+    if (merges.length) {
+      blockers.push(`这段历史里包含 merge 提交 ${merges[0].short}。为避免破坏分支拓扑，暂不自动执行历史编辑队列。`);
+    }
+    const affectedShas = new Set(affected.map((commit) => commit.sha));
+    for (const item of resolved) {
+      if (!affectedShas.has(item.target.sha)) {
+        blockers.push(`提交 ${item.target.short} 不在这次历史编辑序列中，请刷新后重试。`);
+      }
+    }
+  } else {
+    blockers.push("无法计算历史编辑队列的重放起点。");
+  }
+
+  const actionBySha = new Map(resolved.map((item) => [item.target.sha, item.mode]));
+  for (let index = 0; index < affected.length; index += 1) {
+    const commit = affected[index];
+    const action = actionBySha.get(commit.sha) || "pick";
+    if (action === "squash" || action === "fixup") {
+      const previous = affected[index - 1];
+      const previousAction = previous ? actionBySha.get(previous.sha) || "pick" : "";
+      if (!previous) {
+        blockers.push(`提交 ${commit.short} 是队列第一条，不能执行 ${historyRewritePreviewTitle(action)}。`);
+      } else if (previousAction === "drop") {
+        blockers.push(`提交 ${commit.short} 要${historyRewritePreviewTitle(action)}，但它前一条 ${previous.short} 会被丢弃。请调整队列。`);
+      }
+    }
+  }
+
+  if (resolved.some((item) => item.mode === "drop")) warnings.push("队列里包含丢弃提交，后续提交可能产生冲突");
+  const affectedPreview = affected.slice(0, 30).map((commit) => {
+    const queueAction = actionBySha.get(commit.sha) || "pick";
+    return {
+      ...commit,
+      queueAction,
+      queueActionLabel: queueAction === "pick" ? "保留" : historyRewritePreviewTitle(queueAction),
+      queueCommand: queueAction === "pick" ? "pick" : historyRewriteCommand(queueAction),
+    };
+  });
+  return {
+    ok: true,
+    mode: "queue",
+    title: "历史编辑队列",
+    command: "git rebase -i / queue",
+    effect: "一次执行多条 squash / fixup / drop 历史编辑动作，然后重新播放后续提交。",
+    branch,
+    upstream,
+    rebaseStart,
+    queueCount: resolved.length,
+    actions: resolved,
+    affectedCount: affected.length,
+    affectedPreview,
+    dirtyCount,
+    blockers: [...new Set(blockers.filter(Boolean))],
+    warnings,
+    canRun: blockers.length === 0,
+  };
+}
+
 async function readWorktree() {
   if (!currentRepo) {
     return { workingFiles: sampleState().workingFiles, operation: null };
@@ -697,6 +857,9 @@ async function runAction(body) {
   if (action === "rewriteHistoryCommit") {
     return rewriteHistoryCommit(body);
   }
+  if (action === "rewriteHistoryQueue") {
+    return rewriteHistoryQueue(body);
+  }
   if (action === "cherryPickCommit") {
     return cherryPickCommit(body);
   }
@@ -818,6 +981,7 @@ function actionLabel(body = {}) {
     amendCommit: "追加到上一次提交",
     rewordCommit: body.sha ? `修改提交信息 ${shortText(body.sha, 12)}` : "修改历史提交信息",
     rewriteHistoryCommit: body.sha ? `${historyRewriteActionLabel(body.mode)} ${shortText(body.sha, 12)}` : "编辑历史提交",
+    rewriteHistoryQueue: Array.isArray(body.items) ? `执行历史编辑队列 ${body.items.length} 项` : "执行历史编辑队列",
     cherryPickCommit: body.sha ? `挑选提交 ${shortText(body.sha, 12)}` : "挑选提交",
     revertCommit: body.sha ? `还原提交 ${shortText(body.sha, 12)}` : "还原提交",
     resetToCommit: body.sha ? `${resetModeLabel(body.mode)}到 ${shortText(body.sha, 12)}` : "重置到提交",
@@ -1403,6 +1567,38 @@ async function rewriteHistoryCommit(body) {
   }
 }
 
+async function rewriteHistoryQueue(body) {
+  const preview = await readHistoryRewriteQueuePreview(body.items);
+  if (!preview.canRun) {
+    throw new Error((preview.blockers || []).join("\n") || "历史编辑队列还不能执行。请重新预检后再试。");
+  }
+  const currentBranch = preview.branch || (await currentLocalBranchForRewrite());
+  const actions = (preview.actions || []).map((item) => ({ sha: item.target.sha, mode: item.mode }));
+  const rebaseArgs = preview.upstream === "--root" ? ["rebase", "-i", "--root"] : ["rebase", "-i", preview.upstream];
+  const sequenceFile = writeTempFile("forkline-history-queue-", sequenceEditorQueueScript(actions), ".cjs");
+  const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  const recovery = await createRecoveryPoint("history-queue");
+  try {
+    const output = await git(currentRepo, rebaseArgs, {
+      timeout: 240000,
+      env: {
+        GIT_SEQUENCE_EDITOR: `"${process.execPath}" "${sequenceFile}"`,
+        GIT_EDITOR: `"${process.execPath}" "${editorFile}"`,
+      },
+    });
+    const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+    return appendRecoveryLine(commandResultWithSummary(`已执行历史编辑队列 ${actions.length} 项，当前分支 ${currentBranch} 的 HEAD 为 ${newHead}`, output), recovery);
+  } catch (error) {
+    if (detectRepoOperation(currentRepo)?.type !== "rebase") {
+      await git(currentRepo, ["rebase", "--abort"], { timeout: 60000 }).catch(() => "");
+    }
+    throw error;
+  } finally {
+    removeQuietly(sequenceFile);
+    removeQuietly(editorFile);
+  }
+}
+
 async function revertCommit(body) {
   const target = await resolveCommit(body.sha);
   const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
@@ -1743,6 +1939,19 @@ function normalizeHistoryRewriteMode(value) {
   throw new Error("历史编辑类型不合法");
 }
 
+function normalizeHistoryRewriteQueueItems(value) {
+  const rawItems = Array.isArray(value) ? value : [];
+  if (!rawItems.length) throw new Error("请先把要编辑的提交加入历史编辑队列");
+  if (rawItems.length > 12) throw new Error("一次最多执行 12 条历史编辑动作，请拆成多次操作。");
+  const seen = new Set();
+  return rawItems.map((item) => {
+    const sha = normalizeSha(item?.sha);
+    if (seen.has(sha)) throw new Error(`提交 ${sha.slice(0, 7)} 在队列中重复出现。`);
+    seen.add(sha);
+    return { sha, mode: normalizeHistoryRewriteMode(item?.mode) };
+  });
+}
+
 function historyRewriteResultLabel(mode) {
   if (mode === "squash") return "已将提交压缩进父提交";
   if (mode === "fixup") return "已将提交修补进父提交";
@@ -1805,6 +2014,35 @@ const lines = text.split(/\\r?\\n/).map((line) => {
   const hash = trimmed.split(/\\s+/)[1] || "";
   return target.startsWith(hash) ? line.replace(/^(\\s*)pick(\\s+)/, "$1" + action + "$2") : line;
 });
+fs.writeFileSync(todoPath, lines.join("\\n"), "utf8");
+`;
+}
+
+function sequenceEditorQueueScript(actions) {
+  return `
+const fs = require("fs");
+const todoPath = process.argv[2];
+const actions = ${JSON.stringify(actions)};
+const text = fs.readFileSync(todoPath, "utf8");
+let changed = 0;
+function actionFor(hash) {
+  for (const item of actions) {
+    if (item.sha.startsWith(hash)) return item.mode;
+  }
+  return "";
+}
+const lines = text.split(/\\r?\\n/).map((line) => {
+  const trimmed = line.trimStart();
+  if (!trimmed.startsWith("pick ")) return line;
+  const hash = trimmed.split(/\\s+/)[1] || "";
+  const action = actionFor(hash);
+  if (!action) return line;
+  changed += 1;
+  return line.replace(/^(\\s*)pick(\\s+)/, "$1" + action + "$2");
+});
+if (changed !== actions.length) {
+  throw new Error("Forkline history queue expected " + actions.length + " actions, changed " + changed + " todo lines");
+}
 fs.writeFileSync(todoPath, lines.join("\\n"), "utf8");
 `;
 }
@@ -2056,6 +2294,7 @@ function recoveryActionLabel(action) {
     "history-squash": "压缩提交前",
     "history-fixup": "修补提交前",
     "history-drop": "丢弃提交前",
+    "history-queue": "历史编辑队列前",
     "reset-soft": "软重置前",
     "reset-mixed": "混合重置前",
     "reset-hard": "硬重置前",
@@ -2916,7 +3155,7 @@ function remoteFailureMessage(text, context = {}) {
 function actionOperationKind(action) {
   const value = String(action || "").toLowerCase();
   if (value.includes("cherrypick")) return "cherryPick";
-  if (value.includes("rewritehistorycommit") || value.includes("rewordcommit")) return "rebase";
+  if (value.includes("rewritehistorycommit") || value.includes("rewritehistoryqueue") || value.includes("rewordcommit")) return "rebase";
   if (value.includes("revert")) return "revert";
   if (value.includes("merge")) return "merge";
   if (value.includes("rebase")) return "rebase";
@@ -3146,6 +3385,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/history-rewrite-preview") {
       sendJson(res, 200, await readHistoryRewritePreview(parsed.searchParams.get("sha") || "", parsed.searchParams.get("mode") || ""));
+      return;
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/history-rewrite-queue-preview") {
+      const body = await readJson(req);
+      sendJson(res, 200, await readHistoryRewriteQueuePreview(body.items));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree") {

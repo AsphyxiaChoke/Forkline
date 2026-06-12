@@ -193,6 +193,10 @@
     <button data-commit-action="squash" type="button"><span class="menu-label">压缩进父提交</span><span class="command-hint">git rebase -i squash</span></button>
     <button data-commit-action="fixup" type="button"><span class="menu-label">修补进父提交</span><span class="command-hint">git rebase -i fixup</span></button>
     <button data-commit-action="drop" class="danger" type="button"><span class="menu-label">丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
+    <div class="context-separator" role="separator"></div>
+    <button data-commit-action="queueSquash" type="button"><span class="menu-label">加入队列：压缩</span><span class="command-hint">queue squash</span></button>
+    <button data-commit-action="queueFixup" type="button"><span class="menu-label">加入队列：修补</span><span class="command-hint">queue fixup</span></button>
+    <button data-commit-action="queueDrop" class="danger" type="button"><span class="menu-label">加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
     <button data-commit-action="resetSoft" type="button"><span class="menu-label">软重置到此提交</span><span class="command-hint">git reset --soft</span></button>
     <button data-commit-action="resetMixed" type="button"><span class="menu-label">混合重置到此提交</span><span class="command-hint">git reset --mixed</span></button>
     <button data-commit-action="resetHard" class="danger" type="button"><span class="menu-label">硬重置到此提交</span><span class="command-hint">git reset --hard</span></button>

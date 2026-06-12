@@ -1967,8 +1967,16 @@ body.resizing .workbench-resizer-y::before {
   border-color: rgba(35, 199, 183, 0.55);
 }
 
+.history-plan-commit.danger {
+  border-color: rgba(240, 99, 99, 0.45);
+}
+
 .history-plan-commit.target span {
   color: var(--teal);
+}
+
+.history-plan-commit.danger span {
+  color: var(--danger);
 }
 
 .history-plan-commit strong {
@@ -1994,6 +2002,26 @@ body.resizing .workbench-resizer-y::before {
 .history-plan-actions .mini-btn {
   min-height: 28px;
   height: auto;
+}
+
+.history-queue-empty {
+  padding: 8px 10px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.history-queue-item {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+}
+
+.history-queue-item .mini-btn {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 9px;
 }
 
 .empty-state {

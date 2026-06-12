@@ -39,6 +39,7 @@ const state = {
   selectedRecoveryRef: "",
   recoveryFilter: { query: "", branch: "", action: "" },
   historyPlan: null,
+  historyQueue: { items: [], loading: false, preview: null, error: "" },
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
@@ -839,6 +840,9 @@ function showCommitContextMenu(event, commit) {
   const squashButton = menu.querySelector('[data-commit-action="squash"]');
   const fixupButton = menu.querySelector('[data-commit-action="fixup"]');
   const dropButton = menu.querySelector('[data-commit-action="drop"]');
+  const queueSquashButton = menu.querySelector('[data-commit-action="queueSquash"]');
+  const queueFixupButton = menu.querySelector('[data-commit-action="queueFixup"]');
+  const queueDropButton = menu.querySelector('[data-commit-action="queueDrop"]');
   if (cherryPickButton) {
     cherryPickButton.disabled = false;
     cherryPickButton.title = isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支";
@@ -858,6 +862,18 @@ function showCommitContextMenu(event, commit) {
   if (dropButton) {
     dropButton.disabled = !canDrop;
     dropButton.title = isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交";
+  }
+  if (queueSquashButton) {
+    queueSquashButton.disabled = !canFold;
+    queueSquashButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : canFold ? "加入历史编辑队列：执行时用 squash 压缩进前一条提交" : "根提交没有父提交，不能压缩";
+  }
+  if (queueFixupButton) {
+    queueFixupButton.disabled = !canFold;
+    queueFixupButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : canFold ? "加入历史编辑队列：执行时用 fixup 修补进前一条提交" : "根提交没有父提交，不能修补";
+  }
+  if (queueDropButton) {
+    queueDropButton.disabled = !canDrop;
+    queueDropButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 drop 丢弃此提交";
   }
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
@@ -1265,7 +1281,19 @@ async function runCommitContextAction(action) {
     setTimeout(() => els.detailBody.querySelector("[data-reword-form] input")?.focus(), 0);
     return;
   }
-  if (action === "cherryPick" || action === "revert" || action === "squash" || action === "fixup" || action === "drop" || action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
+  if (
+    action === "cherryPick" ||
+    action === "revert" ||
+    action === "squash" ||
+    action === "fixup" ||
+    action === "drop" ||
+    action === "queueSquash" ||
+    action === "queueFixup" ||
+    action === "queueDrop" ||
+    action === "resetSoft" ||
+    action === "resetMixed" ||
+    action === "resetHard"
+  ) {
     await runCommitToolAction(action, commit.sha);
   }
 }
@@ -1273,6 +1301,11 @@ async function runCommitContextAction(action) {
 async function runCommitToolAction(action, sha) {
   const commit = state.data?.commits.find((item) => item.sha === sha || item.sha === state.selectedSha);
   if (!commit) return;
+  const queueMode = historyQueueModeFromAction(action);
+  if (queueMode) {
+    await addHistoryQueueItem(commit, queueMode);
+    return;
+  }
   if (action === "cherryPick") {
     if (needsMainline(commit)) {
       openMainlineModal(action, commit);
@@ -1319,6 +1352,137 @@ function historyRewriteConfig(mode) {
       needsParent: false,
     },
   }[mode];
+}
+
+function historyQueueModeFromAction(action) {
+  return {
+    queueSquash: "squash",
+    queueFixup: "fixup",
+    queueDrop: "drop",
+  }[action];
+}
+
+async function addHistoryQueueItem(commit, mode) {
+  if (!state.data || !commit) return;
+  const config = historyRewriteConfig(mode);
+  if (!config) return;
+  if (needsMainline(commit)) {
+    toast("merge 提交暂不支持加入历史编辑队列。");
+    return;
+  }
+  if (config.needsParent && !(commit.parents || []).length) {
+    toast("根提交没有父提交，不能压缩或修补。");
+    return;
+  }
+  const existing = state.historyQueue.items.find((item) => item.sha === commit.sha);
+  const nextItem = {
+    sha: commit.sha,
+    short: commit.short,
+    message: commit.message,
+    mode,
+    parents: commit.parents || [],
+  };
+  const items = existing
+    ? state.historyQueue.items.map((item) => (item.sha === commit.sha ? { ...item, ...nextItem } : item))
+    : [...state.historyQueue.items, nextItem];
+  if (items.length > 12) {
+    toast("历史编辑队列一次最多 12 条动作。");
+    return;
+  }
+  state.selectedTab = "details";
+  state.selectedSha = commit.sha;
+  state.historyPlan = null;
+  state.historyQueue = { items, loading: true, preview: state.historyQueue.preview, error: "" };
+  renderCommits();
+  await loadCommit(commit.sha);
+  renderInspector();
+  toast(existing ? `已更新队列：${commit.short} -> ${config.title}` : `已加入历史编辑队列：${commit.short} ${config.title}`);
+  await refreshHistoryRewriteQueuePreview();
+}
+
+function historyQueueSignature(items = state.historyQueue.items) {
+  return items.map((item) => `${item.sha}:${item.mode}`).join("|");
+}
+
+async function refreshHistoryRewriteQueuePreview() {
+  const items = state.historyQueue.items;
+  if (!items.length) {
+    state.historyQueue = { items: [], loading: false, preview: null, error: "" };
+    renderInspector();
+    return;
+  }
+  const signature = historyQueueSignature(items);
+  state.historyQueue = { ...state.historyQueue, loading: true, error: "" };
+  renderInspector();
+  try {
+    const preview = await api("/api/history-rewrite-queue-preview", {
+      method: "POST",
+      body: JSON.stringify({ items: items.map((item) => ({ sha: item.sha, mode: item.mode })) }),
+    });
+    if (signature !== historyQueueSignature()) return;
+    state.historyQueue = { ...state.historyQueue, loading: false, preview, error: "" };
+    renderInspector();
+  } catch (error) {
+    if (signature !== historyQueueSignature()) return;
+    state.historyQueue = { ...state.historyQueue, loading: false, preview: null, error: error.message };
+    renderInspector();
+  }
+}
+
+async function runHistoryRewriteQueue(action, button) {
+  if (action === "clear") {
+    state.historyQueue = { items: [], loading: false, preview: null, error: "" };
+    renderInspector();
+    return;
+  }
+  if (action === "refresh") {
+    await refreshHistoryRewriteQueuePreview();
+    return;
+  }
+  if (action === "remove") {
+    const sha = button?.dataset.sha || "";
+    const items = state.historyQueue.items.filter((item) => item.sha !== sha);
+    state.historyQueue = { items, loading: false, preview: null, error: "" };
+    renderInspector();
+    await refreshHistoryRewriteQueuePreview();
+    return;
+  }
+  if (action !== "execute") return;
+  const preview = state.historyQueue.preview;
+  if (!preview?.canRun) {
+    toast((preview?.blockers || [state.historyQueue.error || "历史编辑队列还不能执行"]).join("\n"));
+    return;
+  }
+  const message = [
+    `确认执行历史编辑队列 ${state.historyQueue.items.length} 项？`,
+    "",
+    `分支：${preview.branch || state.data?.repo?.branch || "当前分支"}`,
+    `影响提交：${preview.affectedCount || 0} 个`,
+    "命令：git rebase -i / queue",
+    "",
+    "这会重写队列影响范围内的历史 SHA。执行前会创建恢复点。",
+  ].join("\n");
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "rewriteHistoryQueue",
+        items: state.historyQueue.items.map((item) => ({ sha: item.sha, mode: item.mode })),
+      }),
+    });
+    state.historyQueue = { items: [], loading: false, preview: null, error: "" };
+    toast(result.output || "历史编辑队列已执行");
+    await reloadAfterHistoryAction();
+  } catch (error) {
+    toast(error.message);
+    state.historyQueue = { ...state.historyQueue, loading: false, error: error.message };
+    renderInspector();
+    await refreshWorktree(true);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function openHistoryRewritePlan(commit, mode) {
@@ -1377,6 +1541,7 @@ async function runHistoryRewritePlan(action, button) {
       body: JSON.stringify({ action: "rewriteHistoryCommit", sha: plan.sha, mode: plan.mode }),
     });
     state.historyPlan = null;
+    state.historyQueue = { items: [], loading: false, preview: null, error: "" };
     toast(result.output || `已${preview.title || "编辑历史"} ${preview.target?.short || ""}`);
     await reloadAfterHistoryAction();
   } catch (error) {
@@ -1930,6 +2095,13 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn danger" data-commit-tool="drop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交"}"><span>丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
     </div>
     ${renderHistoryRewritePlan(commit)}
+    <div class="detail-section-title">历史编辑队列</div>
+    <div class="commit-tools">
+      <button class="mini-btn" data-commit-tool="queueSquash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${canFold ? "加入历史编辑队列，执行时压缩进前一条提交" : "此提交不能加入压缩队列"}"><span>加入队列：压缩</span><span class="command-hint">queue squash</span></button>
+      <button class="mini-btn" data-commit-tool="queueFixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${canFold ? "加入历史编辑队列，执行时修补进前一条提交" : "此提交不能加入修补队列"}"><span>加入队列：修补</span><span class="command-hint">queue fixup</span></button>
+      <button class="mini-btn danger" data-commit-tool="queueDrop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${canDrop ? "加入历史编辑队列，执行时丢弃此提交" : "此提交不能加入丢弃队列"}"><span>加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
+    </div>
+    ${renderHistoryRewriteQueue()}
     <div class="detail-section-title">提交信息</div>
     <form class="reword-form" data-reword-form data-sha="${escapeAttr(commit.sha)}">
       <label class="edit-field">
@@ -2029,6 +2201,88 @@ function renderHistoryPlanCommit(commit, targetSha) {
       <span>${isTarget ? "目标" : "重放"}</span>
       <strong>${escapeHtml(commit.short)} · ${escapeHtml(commit.message)}</strong>
       <em>${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
+    </div>
+  `;
+}
+
+function renderHistoryRewriteQueue() {
+  const queue = state.historyQueue;
+  const items = queue.items || [];
+  if (!items.length) {
+    return `<div class="history-plan-empty history-queue-empty">队列为空。可以把多个提交加入队列后一次预检和执行。</div>`;
+  }
+  const preview = queue.preview || {};
+  const blockers = preview.blockers || [];
+  const warnings = preview.warnings || [];
+  const affected = preview.affectedPreview || [];
+  const actionDetails = new Map((preview.actions || []).map((item) => [item.target?.sha, item]));
+  return `
+    <section class="history-plan history-queue ${preview.canRun ? "" : "blocked"}">
+      <div class="history-plan-head">
+        <strong>历史编辑队列</strong>
+        <span>git rebase -i / queue</span>
+      </div>
+      <p class="history-plan-effect">把多个 squash / fixup / drop 动作排队，预检通过后一次重写当前分支历史。</p>
+      <div class="history-plan-grid">
+        <span>当前分支</span><strong>${escapeHtml(preview.branch || state.data?.repo?.branch || "未知")}</strong>
+        <span>队列动作</span><strong>${escapeHtml(String(preview.queueCount ?? items.length))} 项</strong>
+        <span>重放范围</span><strong>${escapeHtml(preview.rebaseStart || (queue.loading ? "正在计算" : "待预检"))}</strong>
+        <span>影响提交</span><strong>${escapeHtml(String(preview.affectedCount ?? affected.length))} 个</strong>
+      </div>
+      <div class="history-plan-list history-queue-list">
+        ${items.map((item, index) => renderHistoryQueueItem(item, index, actionDetails.get(item.sha))).join("")}
+      </div>
+      ${queue.loading ? `<div class="history-plan-empty">正在预检历史编辑队列...</div>` : ""}
+      ${queue.error ? `<div class="history-plan-alert"><span>${escapeHtml(queue.error)}</span></div>` : ""}
+      ${
+        blockers.length
+          ? `<div class="history-plan-alert">${blockers.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+          : !queue.loading && preview.canRun
+            ? `<div class="history-plan-ok">预检通过，可以执行队列。执行前会创建恢复点。</div>`
+            : ""
+      }
+      ${
+        warnings.length
+          ? `<div class="history-plan-warnings">${warnings.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+          : ""
+      }
+      ${
+        affected.length
+          ? `<div class="history-plan-list">${affected.map(renderHistoryQueueAffectedCommit).join("")}</div>`
+          : ""
+      }
+      <div class="history-plan-actions">
+        <button class="mini-btn" data-history-queue-action="refresh" type="button">重新预检</button>
+        <button class="mini-btn" data-history-queue-action="clear" type="button">清空队列</button>
+        <button class="mini-btn danger" data-history-queue-action="execute" type="button" ${preview.canRun && !queue.loading ? "" : "disabled"}>
+          <span>执行队列</span><span class="command-hint">git rebase -i</span>
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderHistoryQueueItem(item, index, detail) {
+  const config = historyRewriteConfig(item.mode) || { title: "编辑历史", command: "git rebase -i" };
+  const target = detail?.target || item;
+  return `
+    <div class="history-plan-commit history-queue-item ${item.mode === "drop" ? "danger" : ""}">
+      <span>${escapeHtml(config.title)}</span>
+      <strong>${escapeHtml(target.short || item.short || item.sha.slice(0, 7))} · ${escapeHtml(target.message || item.message || "")}</strong>
+      <em>${escapeHtml(config.command)}</em>
+      <button class="mini-btn" data-history-queue-action="remove" data-sha="${escapeAttr(item.sha)}" type="button" title="从历史编辑队列移除第 ${index + 1} 项">移除</button>
+    </div>
+  `;
+}
+
+function renderHistoryQueueAffectedCommit(commit) {
+  const action = commit.queueAction || "pick";
+  const isChanged = action !== "pick";
+  return `
+    <div class="history-plan-commit ${isChanged ? "target" : ""} ${action === "drop" ? "danger" : ""}">
+      <span>${escapeHtml(commit.queueActionLabel || (isChanged ? action : "保留"))}</span>
+      <strong>${escapeHtml(commit.short)} · ${escapeHtml(commit.message)}</strong>
+      <em>${escapeHtml(commit.queueCommand || "pick")} · ${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
     </div>
   `;
 }
@@ -4013,6 +4267,8 @@ async function applyOpenedRepoData(data) {
   state.commitDetails.clear();
   state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
   state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
+  state.historyPlan = null;
+  state.historyQueue = { items: [], loading: false, preview: null, error: "" };
   state.data = data;
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
   if (state.selectedRef) {
@@ -4709,6 +4965,8 @@ async function rewordSelectedCommit(form) {
     });
     toast(result.output || "提交信息已修改");
     state.commitDetails.clear();
+    state.historyPlan = null;
+    state.historyQueue = { items: [], loading: false, preview: null, error: "" };
     state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     const sameCommit = state.data.commits.find((item) => item.sha === sha);
@@ -5088,6 +5346,14 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     if (!historyPlanAction.disabled) {
       runHistoryRewritePlan(historyPlanAction.dataset.historyPlanAction, historyPlanAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const historyQueueAction = event.target.closest("[data-history-queue-action]");
+  if (historyQueueAction) {
+    event.preventDefault();
+    if (!historyQueueAction.disabled) {
+      runHistoryRewriteQueue(historyQueueAction.dataset.historyQueueAction, historyQueueAction).catch((error) => toast(error.message));
     }
     return;
   }

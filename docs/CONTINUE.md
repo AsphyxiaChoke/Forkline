@@ -37,6 +37,7 @@
 - Rebase 风险提示已补齐：执行前会中文确认“会重写当前分支提交 SHA”，工作区不干净时阻止；冲突、没有正在变基、仍有未解决冲突等常见 Git 输出会转为中文提示。
 - 基础交互式历史编辑已接入：提交详情和提交右键菜单新增“压缩进父提交 / 修补进父提交 / 丢弃此提交”，分别标注 `git rebase -i squash`、`git rebase -i fixup`、`git rebase -i drop`；后端新增 `rewriteHistoryCommit`，会检查工作区干净、当前处于本地分支、目标提交属于当前分支历史，并拒绝自动处理 merge 提交或包含 merge 的历史段。
 - 历史编辑计划预检已接入：点击“压缩进父提交 / 修补进父提交 / 丢弃此提交”不再立即弹原生确认框，而是在提交详情中展开计划卡片；后端 `/api/history-rewrite-preview` 返回当前分支、目标提交、父提交、重放范围、影响提交数量、前几条影响提交、阻塞原因和恢复点提示，只有预检通过时才启用“确认执行”。
+- 历史编辑队列已接入：提交详情和提交右键菜单新增“加入队列：压缩 / 修补 / 丢弃”；右侧详情会显示队列动作、统一预检、影响范围、阻塞原因和执行按钮；后端新增 `/api/history-rewrite-queue-preview` 与 `rewriteHistoryQueue`，一次执行多条 `squash` / `fixup` / `drop`，执行前创建 `history-queue` 恢复点，并拦截脏工作区、重复提交、merge 提交、包含 merge 的重放范围，以及前一条被 drop 但后一条还要 squash/fixup 的危险组合。
 - 自动恢复点已接入：追加提交、变基拉取、分支变基、修改提交信息、交互式历史编辑和 reset 前会自动创建 `refs/forkline/recovery/...` 隐藏引用；右侧新增“恢复点”页，可查看、恢复或删除恢复点。恢复动作会先再创建一个恢复前恢复点。
 - 恢复点管理已增强：右侧“恢复点”页支持搜索、按分支筛选、按动作筛选、显示筛选数量，并支持删除当前筛选结果；后端新增 `deleteRecoveryPoints`，会先验证所有 ref 都在 `refs/forkline/recovery/...` 下再批量删除。
 - 工作区 Diff 面板已接入当前文件快捷操作：查看未提交文件对照时，面板标题右侧可直接执行“暂存 / 取消 / 丢弃 / 丢已暂存 / 最大化”，并会按未暂存、已暂存状态自动启用或禁用；标题区支持换行，右侧栏缩窄时不会挤压路径和按钮。
@@ -99,6 +100,7 @@
 - 历史编辑 API 验证：浏览器服务 `http://127.0.0.1:5187` 打开 GitTest 后，通过 `/api/action` 验证 `rewriteHistoryCommit` 的 `squash`、`fixup`、`drop`。`squash` 和 `fixup` 都把两次提交压成 1 次并保留第二次提交的文件改动；`fixup` 保留父提交标题；`drop` 删除目标提交引入的第二行改动，最终工作区干净。
 - 历史编辑 UI 验证：浏览器打开 `http://127.0.0.1:5187`，GitTest 提交详情显示“压缩进父提交 / 修补进父提交 / 丢弃此提交”；提交右键菜单显示同样动作和 Git 指令提示。右键菜单与详情按钮无横向溢出，控制台无 Forkline 错误。
 - 历史编辑计划预检 API 验证：浏览器服务 `http://127.0.0.1:5199` 打开 GitTest 后，请求 `/api/history-rewrite-preview?sha=4fbce18&mode=fixup` 返回 `branch = 123`、`affectedCount = 2`、`canRun = true`、无阻塞项；临时创建未跟踪文件后再次请求同一预检返回 `canRun = false`、`dirtyCount = 1`，阻塞原因为“当前还有 1 个未提交改动。请先提交、储藏或丢弃后再编辑历史。”测试文件已删除，GitTest 已恢复 `123` 分支干净状态。
+- 历史编辑队列 API 验证：临时服务 `http://127.0.0.1:5207` 打开 GitTest 临时分支 `forkline/history-queue-api-20260613-0219`，创建 A/B/C/D 四个提交；预检队列 `B -> fixup`、`C -> drop` 返回 `canRun = true`、`queueCount = 2`、`affectedCount = 4`；执行 `rewriteHistoryQueue` 后分支从 4 个提交变为 2 个提交，`B line` 被合并进 A，C 文件被删除，D 文件保留，并创建 `history-queue` 恢复点。另验证 `A -> drop`、`D -> fixup` 的危险组合返回中文阻塞“前一条 ... 会被丢弃”。临时分支和本次恢复点已清理，GitTest 已恢复 `123` 分支干净状态。
 - 右侧标签栏静态验证：`public/styles.css` 中 `.tabs` 已从 `repeat(5, 1fr)` 改为 flex 横向滚动，`.tab` 设置 `flex: 1 0 56px`、固定高度和省略号；`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过。
 - 操作日志 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，调用 `findCheckoutStash` 成功返回日志项“查找 123 的签出储藏 / success / 操作已完成”；调用不存在文件的 `stageFile` 返回中文“找不到文件 ...”，并在 `operationLog` 中记录失败项。
 - 恢复点批量清理 API 验证：在 GitTest 临时创建 3 条 `refs/forkline/recovery/...` 测试引用，其中 2 条分支为 `123`、1 条分支为 `other`；通过 `deleteRecoveryPoints` 删除分支 `123` 的筛选结果后只剩 `other`，随后清理剩余测试引用，最终恢复点数量为 0。
@@ -125,6 +127,6 @@
 
 按原计划继续完善：
 
-1. 交互式历史编辑队列增强：现在已有单提交 squash / fixup / drop，下一步可以做成可视化队列，支持一次调整多个提交、拖拽排序和执行前预览。
+1. 历史编辑队列交互继续增强：现在已有多动作队列、统一预检和一次执行，后续可以补拖拽排序、队列项重排、批量改提交信息和更接近 GitKraken 的动效反馈。
 2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取和同步提交预览已完成，后续可继续做认证失败指引。
 3. 恢复点保留策略：现在已有搜索、按分支/动作筛选和批量清理，后续可以增加“保留最近 N 天 / 每个分支保留 N 个”的自动清理策略。
