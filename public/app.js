@@ -616,8 +616,9 @@ function renderRepoOperationBanner(files) {
   const isRevert = operation?.type === "revert";
   const isCherryPick = operation?.type === "cherryPick";
   const isMerge = operation?.type === "merge";
-  const actionName = isMerge ? "合并" : isCherryPick ? "挑选" : isRevert ? "还原" : "操作";
-  const title = isMerge ? "合并发生冲突" : isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作";
+  const isRebase = operation?.type === "rebase";
+  const actionName = isRebase ? "变基" : isMerge ? "合并" : isCherryPick ? "挑选" : isRevert ? "还原" : "操作";
+  const title = isRebase ? "变基发生冲突" : isMerge ? "合并发生冲突" : isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作";
   const text = conflicts.length
     ? `${conflicts.length} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续${actionName}；不想保留这次${actionName}就中止。`
     : `当前${actionName}已经没有冲突文件，确认解决结果后可以继续${actionName}。`;
@@ -636,6 +637,12 @@ function renderRepoOperationBanner(files) {
     ? `
       <button class="mini-btn" data-repo-operation="continueMerge" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git merge --continue"}"><span>继续合并</span><span class="command-hint">git merge --continue</span></button>
       <button class="mini-btn danger" data-repo-operation="abortMerge" type="button" title="git merge --abort"><span>中止合并</span><span class="command-hint">git merge --abort</span></button>
+    `
+    : isRebase
+    ? `
+      <button class="mini-btn" data-repo-operation="continueRebase" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git rebase --continue"}"><span>继续变基</span><span class="command-hint">git rebase --continue</span></button>
+      <button class="mini-btn" data-repo-operation="skipRebase" type="button" title="git rebase --skip"><span>跳过提交</span><span class="command-hint">git rebase --skip</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortRebase" type="button" title="git rebase --abort"><span>中止变基</span><span class="command-hint">git rebase --abort</span></button>
     `
     : "";
   return `
@@ -830,6 +837,7 @@ function showBranchContextMenu(event, branch, options = {}) {
   const prunable = Boolean(options.prunable);
   const checkoutButton = menu.querySelector('[data-branch-action="checkout"]');
   const mergeButton = menu.querySelector('[data-branch-action="merge"]');
+  const rebaseButton = menu.querySelector('[data-branch-action="rebase"]');
   const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
   const renameButton = menu.querySelector('[data-branch-action="rename"]');
   const deleteButton = menu.querySelector('[data-branch-action="delete"]');
@@ -854,6 +862,12 @@ function showBranchContextMenu(event, branch, options = {}) {
     : isRemote && !remoteLocalBranch
       ? "这个远端引用不能自动推导本地分支名"
       : `合并 ${branch} 到当前分支`;
+  rebaseButton.disabled = isCurrent || (isRemote && !remoteLocalBranch);
+  rebaseButton.title = isCurrent
+    ? "不能把当前分支变基到自己"
+    : isRemote && !remoteLocalBranch
+      ? "这个远端引用不能自动推导本地分支名"
+      : `把当前分支 ${state.data?.repo?.branch || ""} 变基到 ${branch}`;
   cleanupButton.hidden = !prunable;
   cleanupButton.disabled = !prunable;
   renameButton.textContent = isRemote ? "重命名分支" : "重命名本地分支";
@@ -990,6 +1004,10 @@ async function runBranchContextAction(action) {
   }
   if (action === "merge") {
     await mergeBranchRef(branch);
+    return;
+  }
+  if (action === "rebase") {
+    await rebaseOntoRef(branch);
     return;
   }
   if (action === "cleanup") {
@@ -2476,6 +2494,35 @@ async function mergeBranchRef(ref) {
   }
 }
 
+async function rebaseOntoRef(ref) {
+  if (!state.data || !ref) return;
+  const current = state.data.repo.branch || "当前分支";
+  if (ref === current) {
+    toast("不能把当前分支变基到自己");
+    return;
+  }
+  const dirtyCount = (state.data.workingFiles || []).length;
+  const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 会阻止变基。请先提交或储藏。` : "";
+  const message = `确认把当前分支 ${current} 变基到 ${ref}？\n\n命令：git rebase ${ref}\n这会重写当前分支尚未合入 ${ref} 的提交 SHA。${dirtyNote}`;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref }) });
+    toast(result.output || `已变基到 ${ref}`);
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+    await refreshWorktree(true);
+  }
+}
+
 function chooseCheckoutMode(branch, count) {
   els.checkoutModalText.textContent = `切换到 ${branch} 前，当前工作区有 ${count} 个未提交改动。`;
   els.checkoutModal.classList.add("show");
@@ -2622,6 +2669,9 @@ async function runRepoOperation(action, button) {
     abortCherryPick: "确认中止挑选？这会放弃当前这次 cherry-pick，并回到挑选前的状态。",
     continueMerge: "确认继续合并？请先确认所有冲突文件已经解决并暂存。",
     abortMerge: "确认中止合并？这会放弃当前这次合并，并回到合并前的状态。",
+    continueRebase: "确认继续变基？请先确认所有冲突文件已经解决并暂存。",
+    skipRebase: "确认跳过当前变基提交？这会放弃当前这一个提交的变基，继续处理后续提交。",
+    abortRebase: "确认中止变基？这会放弃当前这次 rebase，并回到变基前的状态。",
   };
   if (!state.data.repo.isSample && !confirm(messages[action] || "确认继续？")) return;
   if (button) button.disabled = true;

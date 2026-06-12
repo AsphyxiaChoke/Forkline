@@ -250,6 +250,15 @@ async function runAction(body) {
   if (action === "abortMerge") {
     return abortMerge();
   }
+  if (action === "continueRebase") {
+    return continueRebase();
+  }
+  if (action === "skipRebase") {
+    return skipRebase();
+  }
+  if (action === "abortRebase") {
+    return abortRebase();
+  }
   if (action === "checkoutBranch") {
     return checkoutBranch(body);
   }
@@ -270,6 +279,9 @@ async function runAction(body) {
   }
   if (action === "mergeRef") {
     return mergeRef(body);
+  }
+  if (action === "rebaseOntoRef") {
+    return rebaseOntoRef(body);
   }
   if (action === "createTag") {
     return createTag(body);
@@ -385,11 +397,15 @@ function actionLabel(body = {}) {
     abortCherryPick: "中止挑选提交",
     continueMerge: "继续合并",
     abortMerge: "中止合并",
+    continueRebase: "继续变基",
+    skipRebase: "跳过变基提交",
+    abortRebase: "中止变基",
     createBranch: branch ? `创建分支 ${branch}` : "创建分支",
     renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
     deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
     deleteRemoteBranch: body.ref ? `删除远端分支 ${shortText(body.ref, 72)}` : "删除远端分支",
     mergeRef: ref ? `合并分支 ${ref}` : "合并分支",
+    rebaseOntoRef: ref ? `变基到 ${ref}` : "变基当前分支",
     createTag: body.name ? `创建 Tag ${shortText(body.name, 72)}` : "创建 Tag",
     deleteTag: body.name ? `删除本地 Tag ${shortText(body.name, 72)}` : "删除本地 Tag",
     pushTag: body.name ? `推送 Tag ${shortText(body.name, 72)}` : "推送 Tag",
@@ -585,6 +601,23 @@ async function mergeRef(body) {
   if (ref === currentBranch) throw new Error("不能把当前分支合并到自己");
   const output = await git(currentRepo, ["merge", "--no-ff", "--no-edit", ref], { timeout: 120000 });
   return commandResult(output || `已合并 ${ref}`);
+}
+
+async function rebaseOntoRef(body) {
+  const ref = normalizeRefName(body.ref, "变基目标");
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再变基。`);
+  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!currentBranch || currentBranch === "HEAD" || currentBranch === "detached HEAD") {
+    throw new Error("当前处于游离 HEAD，不能直接变基。请先切换到本地分支。");
+  }
+  if (ref === currentBranch) throw new Error("不能把当前分支变基到自己");
+  const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+  if (dirty.trim()) throw new Error("当前有未提交修改。请先提交或储藏后再变基。");
+  await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 });
+  const output = await git(currentRepo, ["rebase", ref], { timeout: 120000 });
+  const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  return commandResultWithSummary(`已将当前分支 ${currentBranch} 变基到 ${ref}，当前 HEAD 为 ${newHead}`, output);
 }
 
 async function createTag(body) {
@@ -842,6 +875,42 @@ async function abortMerge() {
   }
   await git(currentRepo, ["merge", "--abort"], { timeout: 120000 });
   return { ok: true, output: "已中止合并，工作区已回到合并前状态" };
+}
+
+async function continueRebase() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "rebase") {
+    return { ok: true, output: "当前没有正在进行的变基，工作区已经干净。" };
+  }
+  const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  try {
+    await git(currentRepo, ["rebase", "--continue"], {
+      timeout: 120000,
+      env: { GIT_EDITOR: `"${process.execPath}" "${editorFile}"` },
+    });
+    const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+    return { ok: true, output: `已继续变基，当前 HEAD 为 ${newHead}` };
+  } finally {
+    removeQuietly(editorFile);
+  }
+}
+
+async function skipRebase() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "rebase") {
+    return { ok: true, output: "当前没有正在进行的变基，工作区已经干净。" };
+  }
+  const output = await git(currentRepo, ["rebase", "--skip"], { timeout: 120000 });
+  return commandResultWithSummary("已跳过当前变基提交", output);
+}
+
+async function abortRebase() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "rebase") {
+    return { ok: true, output: "当前没有正在进行的变基，工作区已经干净。" };
+  }
+  await git(currentRepo, ["rebase", "--abort"], { timeout: 120000 });
+  return { ok: true, output: "已中止变基，工作区已回到变基前状态" };
 }
 
 async function resolveCommit(value) {
@@ -1418,7 +1487,16 @@ function friendlyErrorMessage(error, context = {}) {
     if (operationKind === "merge") {
       return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续合并”；如果不想保留这次合并，点“中止合并”。`;
     }
+    if (operationKind === "rebase") {
+      return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续变基”；如果不想保留这次变基，点“中止变基”。`;
+    }
     return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续还原”；如果不想保留这次还原，点“中止还原”。`;
+  }
+  if (lower.includes("no rebase in progress")) {
+    return "当前没有正在进行的变基，工作区已经干净。";
+  }
+  if ((operationKind === "rebase" || lower.includes("rebase")) && (lower.includes("conflict") || lower.includes("could not apply") || lower.includes("resolve all conflicts"))) {
+    return "变基时发生冲突。请在工作区查看冲突文件，手动解决并暂存后继续变基；不想继续时可以中止变基。";
   }
   if (lower.includes("cherry-pick") && (lower.includes("automatic merge failed") || lower.includes("conflict"))) {
     return "挑选提交时发生冲突。请在工作区查看冲突文件，手动解决并暂存后继续挑选；不想继续时可以中止挑选。";
@@ -1433,7 +1511,9 @@ function friendlyErrorMessage(error, context = {}) {
     return "上一次合并还没有结束。请先解决冲突并提交，或中止当前合并后再继续。";
   }
   if (lower.includes("unmerged files") || lower.includes("needs merge")) {
-    return "当前还有未解决的合并冲突文件。请先处理这些文件后再继续操作。";
+    return operationKind === "rebase"
+      ? "当前还有未解决的变基冲突文件。请先处理并暂存这些文件后再继续变基。"
+      : "当前还有未解决的合并冲突文件。请先处理这些文件后再继续操作。";
   }
   if (lower.includes("not a git repository")) {
     return "这个路径不是 Git 仓库，请打开包含 .git 的项目目录。";
@@ -1472,6 +1552,7 @@ function actionOperationKind(action) {
   if (String(action || "").toLowerCase().includes("cherrypick")) return "cherryPick";
   if (String(action || "").toLowerCase().includes("revert")) return "revert";
   if (String(action || "").toLowerCase().includes("merge")) return "merge";
+  if (String(action || "").toLowerCase().includes("rebase")) return "rebase";
   return "";
 }
 
@@ -1534,6 +1615,9 @@ function detectRepoOperation(repoPath) {
   }
   if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
     return { type: "merge", label: "合并未完成", canContinue: true, canAbort: true };
+  }
+  if (fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"))) {
+    return { type: "rebase", label: "变基未完成", canContinue: true, canAbort: true, canSkip: true };
   }
   return null;
 }

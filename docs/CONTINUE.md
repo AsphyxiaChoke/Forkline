@@ -22,6 +22,8 @@
 - Cherry-pick 已接入：提交右键菜单和提交详情面板都有“挑选此提交 / 挑选”入口，并标注 `git cherry-pick`；后端支持 `cherryPickCommit`、`continueCherryPick`、`skipCherryPick`、`abortCherryPick`。遇到 `CHERRY_PICK_HEAD` 时工作区显示“挑选提交发生冲突”，冲突文件用红色标识，并提供“继续挑选 / 跳过挑选 / 中止挑选”。
 - Merge 冲突工作流已接入：遇到 `MERGE_HEAD` 时工作区显示“合并发生冲突”，冲突文件用红色标识，并提供“继续合并 (git merge --continue)”和“中止合并 (git merge --abort)”入口；继续合并使用无交互编辑器，避免 Git 打开编辑器卡住。
 - Merge commit 主线选择已接入：对 merge 提交执行 cherry-pick / revert 时不再禁用，而是弹出“选择主线”弹窗，显示父提交 1、父提交 2 的短 SHA，并把选择传给后端 `mainline` 参数，对应 `git cherry-pick -m` / `git revert -m`。
+- Rebase 分支工作流已接入：分支右键菜单新增“变基当前分支到此分支”，标注 `git rebase`；后端支持 `rebaseOntoRef`、`continueRebase`、`skipRebase`、`abortRebase`。遇到 `.git/rebase-merge` 或 `.git/rebase-apply` 时工作区显示“变基发生冲突”，冲突文件用红色标识，并提供“继续变基 / 跳过变基 / 中止变基”。
+- Rebase 风险提示已补齐：执行前会中文确认“会重写当前分支提交 SHA”，工作区不干净时阻止；冲突、没有正在变基、仍有未解决冲突等常见 Git 输出会转为中文提示。
 
 ## 已验证
 
@@ -50,6 +52,9 @@
 - 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
+- Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
+- Rebase 冲突流程验证：在 GitTest 上分别验证 `abortRebase` 可恢复干净状态，手动解决并暂存后 `continueRebase` 可继续并让 topic 父提交等于目标 HEAD，`skipRebase` 可跳过当前冲突提交并结束变基。
+- Rebase UI 验证：浏览器打开 `http://127.0.0.1:5186`，GitTest 分支右键菜单显示“变基当前分支到此分支 git rebase”；进入变基冲突后，工作区横幅显示“变基发生冲突”，未解决冲突时“继续变基”禁用，“跳过变基”和“中止变基”可用，控制台无错误。
 
 ## GitTest 测试数据
 
@@ -60,13 +65,13 @@
 - 本地远端：`origin -> D:\桌面\GitTestRemote.git`
 - 上游丢失测试分支：`forkline/remote-workflow-20260612155930`，用于验证本地分支显示 `[gone]` / “上游丢失”。
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
-- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*` 临时验证分支。
+- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*` 临时验证分支。
 - 测试 Tag：`forkline-v0.1.0`
 
 ## 下一步建议
 
 按原计划继续完善：
 
-1. Rebase / 历史编辑队列：把 reword 之外的 squash / fixup / drop 做成可视化队列，接近 GitKraken 的交互式 rebase 体验。
+1. 交互式历史编辑队列：把 reword 之外的 squash / fixup / drop 做成可视化队列，接近 GitKraken 的交互式 rebase 体验。
 2. 远端同步体验继续补：把 fetch / pull / push 的结果做成更清晰的同步摘要，后续再考虑 force-with-lease、远端 URL 管理和认证失败指引。
-3. Rebase 安全护栏：交互式 rebase 前检查工作区、备份当前分支位置，并提供中止 / 继续提示，避免历史编辑失败后用户不知道卡在哪里。
+3. Rebase 保护增强：交互式 rebase 前备份当前分支位置，并在异常退出后提供更明显的恢复入口。
