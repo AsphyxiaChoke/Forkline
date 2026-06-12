@@ -1921,6 +1921,10 @@ body.resizing .workbench-resizer-y::before {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  flex: 1 1 126px;
+  max-width: 100%;
+  min-height: 30px;
+  height: auto;
   min-width: 0;
 }
 

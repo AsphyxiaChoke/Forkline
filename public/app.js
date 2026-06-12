@@ -859,6 +859,7 @@ function showBranchContextMenu(event, branch, options = {}) {
   const checkoutButton = menu.querySelector('[data-branch-action="checkout"]');
   const mergeButton = menu.querySelector('[data-branch-action="merge"]');
   const rebaseButton = menu.querySelector('[data-branch-action="rebase"]');
+  const pullRebaseButton = menu.querySelector('[data-branch-action="pullRebase"]');
   const forcePushButton = menu.querySelector('[data-branch-action="forcePush"]');
   const setUpstreamButton = menu.querySelector('[data-branch-action="setUpstream"]');
   const unsetUpstreamButton = menu.querySelector('[data-branch-action="unsetUpstream"]');
@@ -895,6 +896,14 @@ function showBranchContextMenu(event, branch, options = {}) {
     : isRemote && !remoteLocalBranch
       ? "这个远端引用不能自动推导本地分支名"
       : `把当前分支 ${state.data?.repo?.branch || ""} 变基到 ${branch}`;
+  pullRebaseButton.disabled = !isLocal || !isCurrent || !currentInfo.upstream || currentInfo.upstreamGone;
+  pullRebaseButton.title = !isLocal || !isCurrent
+    ? "只能对当前本地分支执行变基拉取"
+    : !currentInfo.upstream
+      ? "当前分支没有 upstream，请先设置 upstream"
+      : currentInfo.upstreamGone
+        ? "当前分支的 upstream 已不存在，请先抓取并重新设置"
+        : `从 ${currentInfo.upstream} 执行 git pull --rebase`;
   forcePushButton.disabled = !isLocal || !isCurrent;
   forcePushButton.title = !isLocal
     ? "只能对当前本地分支执行安全强推"
@@ -1077,6 +1086,10 @@ async function runBranchContextAction(action) {
   }
   if (action === "rebase") {
     await rebaseOntoRef(branch);
+    return;
+  }
+  if (action === "pullRebase") {
+    await runAction("pullRebase");
     return;
   }
   if (action === "forcePush") {
@@ -1976,6 +1989,7 @@ function renderSyncTab() {
     <div class="sync-actions">
       <button class="mini-btn" data-sync-action="fetch" type="button"><span>抓取</span><span class="command-hint">git fetch</span></button>
       <button class="mini-btn" data-sync-action="pull" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"}><span>拉取</span><span class="command-hint">git pull</span></button>
+      <button class="mini-btn" data-sync-action="pullRebase" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"} title="git pull --rebase"><span>变基拉取</span><span class="command-hint">pull --rebase</span></button>
       <button class="mini-btn" data-sync-action="push" type="button" ${pushGuard.blocked ? "disabled" : ""} title="${escapeAttr(pushGuard.title || "git push")}"><span>推送</span><span class="command-hint">git push</span></button>
       <button class="mini-btn danger" data-sync-action="forcePushLease" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"}><span>安全强推</span><span class="command-hint">--force-with-lease</span></button>
     </div>
@@ -2017,8 +2031,8 @@ function syncAdviceText(sync) {
   if (sync.upstreamGone) return "普通推送已保护。请先抓取远端，确认是否需要重新设置或取消 upstream。";
   const ahead = sync.ahead || 0;
   const behind = sync.behind || 0;
-  if (ahead && behind) return "普通推送已保护。请先查看待拉取提交并拉取/变基；如果是改写历史后的预期分叉，可使用安全强推。";
-  if (behind) return "普通推送已保护。请先查看待拉取提交并拉取或变基。";
+  if (ahead && behind) return "普通推送已保护。请先查看待拉取提交；想保持线性历史时点“变基拉取”，确认要覆盖远端历史时再用安全强推。";
+  if (behind) return "普通推送已保护。请先查看待拉取提交；可点“拉取”快进，或点“变基拉取”保持线性历史。";
   if (ahead) return "可以推送；如果改写过远端历史，请使用安全强推。";
   return "不需要同步操作。";
 }
@@ -2042,7 +2056,7 @@ function syncPushGuard(sync) {
     return {
       blocked: true,
       title: `${stateText}，普通推送已保护`,
-      text: `推送保护：${stateText}。请先拉取/变基并检查待拉取提交；如果这是改写历史后的预期结果，请使用安全强推。`,
+      text: `推送保护：${stateText}。请先检查待拉取提交；通常使用“变基拉取”把本地提交移到远端之后，如果确认要改写远端历史，再使用安全强推。`,
     };
   }
   return { blocked: false, title: "", text: "" };
@@ -2972,6 +2986,7 @@ async function runAction(action) {
   const names = {
     fetch: "抓取",
     pull: "拉取",
+    pullRebase: "变基拉取",
     push: "推送",
     forcePushLease: "安全强推",
     stageAll: "暂存全部",
@@ -3069,13 +3084,20 @@ function updateAmendMode() {
 function actionConfirmMessage(action, name) {
   if (action === "amendCommit") return "确认追加到上一次提交？这会重写最新提交 SHA。";
   if (action === "discardAll") return "确认丢弃全部未提交更改？这会清空已暂存、未暂存和未跟踪文件，无法撤销。";
+  if (action === "pullRebase") {
+    const sync = state.data?.sync || {};
+    const branch = sync.branch || state.data?.repo?.branch || "当前分支";
+    const upstream = sync.upstream || "未设置 upstream";
+    const stateText = `领先 ${sync.ahead || 0}，落后 ${sync.behind || 0}${sync.upstreamGone ? "，上游丢失" : ""}`;
+    return `确认变基拉取当前分支：${branch}？\n\n目标：${upstream}\n当前状态：${stateText}\n命令：git pull --rebase\n\n这会先拉取远端提交，再把本地未推送提交重新应用到远端之后；本地这些提交的 SHA 可能会改变。遇到冲突时，工作区会显示“继续变基 / 跳过变基 / 中止变基”。`;
+  }
   if (action === "push") {
     const branch = state.data?.repo?.branch || "当前分支";
     const info = state.data?.branchInfo?.[branch] || {};
     const sync = state.data?.sync || {};
     const guard = syncPushGuard(sync);
     if (guard.blocked) {
-      return `${guard.text}\n\nForkline 会阻止这次普通推送。请先拉取/变基，或在确认改写远端历史时使用“安全强推”。`;
+      return `${guard.text}\n\nForkline 会阻止这次普通推送。通常请先使用“变基拉取”；只有确认要改写远端历史时，再使用“安全强推”。`;
     }
     if (info.upstream) {
       return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}\n命令：git push`;

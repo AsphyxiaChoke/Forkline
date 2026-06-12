@@ -220,6 +220,9 @@ async function runAction(body) {
   if (action === "pull") {
     return pullCurrentBranch();
   }
+  if (action === "pullRebase") {
+    return pullRebaseCurrentBranch();
+  }
   if (action === "push") {
     return pushCurrentBranch();
   }
@@ -413,6 +416,7 @@ function actionLabel(body = {}) {
   const labels = {
     fetch: "抓取远端",
     pull: "拉取远端",
+    pullRebase: "变基拉取远端",
     push: "推送到远端",
     forcePushLease: "安全强推到远端",
     fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
@@ -664,6 +668,23 @@ async function pullCurrentBranch() {
   const output = await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return syncCommandResult("pull", output, before, after);
+}
+
+async function pullRebaseCurrentBranch() {
+  await currentLocalBranch("变基拉取");
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再变基拉取。`);
+  await ensureCleanWorktree("当前有未提交修改。请先提交或储藏后再执行变基拉取。");
+  const before = await readCurrentSyncState();
+  if (!before.upstream) {
+    throw new Error("当前分支没有 upstream，不能执行变基拉取。请先在同步页设置 upstream。");
+  }
+  if (before.upstreamGone) {
+    throw new Error(`当前分支的 upstream ${before.upstream} 已不存在，不能执行变基拉取。请先抓取远端并重新设置 upstream。`);
+  }
+  const output = await git(currentRepo, ["pull", "--rebase"], { timeout: 120000 });
+  const after = await readCurrentSyncState();
+  return syncCommandResult("pullRebase", output, before, after);
 }
 
 async function addRemote(body) {
@@ -1578,6 +1599,7 @@ function syncCommandResult(action, output, before, after) {
 function syncTitle(action) {
   if (action === "fetch") return "抓取完成";
   if (action === "pull") return "拉取完成";
+  if (action === "pullRebase") return "变基拉取完成";
   if (action === "push") return "推送完成";
   if (action === "forcePush") return "安全强推完成";
   return "同步完成";
