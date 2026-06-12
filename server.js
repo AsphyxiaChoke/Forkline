@@ -157,6 +157,7 @@ async function readState(ref = "") {
     branches.unshift(currentBranch);
   }
 
+  const worktrees = await enrichWorktreeList(parseWorktreeList(worktreeOutput, currentRepo));
   const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
   const branchCleanup = buildBranchCleanup({
     branches,
@@ -179,6 +180,7 @@ async function readState(ref = "") {
     branches: branches.slice(0, 32),
     branchInfo,
     branchCleanup,
+    worktrees,
     remotes: remotes.slice(0, 32),
     sync,
     workingFiles: parseStatus(statusOutput),
@@ -706,6 +708,15 @@ async function runAction(body) {
   if (!currentRepo) {
     return { ok: true, sample: true, output: "示例模式不会执行真实 Git 命令" };
   }
+  if (action === "createWorktree") {
+    return createWorktree(body);
+  }
+  if (action === "openWorktree") {
+    return openWorktree(body);
+  }
+  if (action === "pruneAllWorktrees") {
+    return pruneAllWorktrees();
+  }
   if (action === "fetch") {
     return fetchRemotes();
   }
@@ -992,6 +1003,9 @@ function actionLabel(body = {}) {
     forcePushLease: "安全强推到远端",
     cloneRepository: body.targetPath ? `克隆仓库到 ${shortText(body.targetPath, 72)}` : "克隆仓库",
     initRepository: body.targetPath ? `初始化仓库到 ${shortText(body.targetPath, 72)}` : "初始化仓库",
+    createWorktree: body.targetPath ? `创建工作树 ${shortText(body.targetPath, 72)}` : "创建工作树",
+    openWorktree: body.path ? `打开工作树 ${shortText(body.path, 72)}` : "打开工作树",
+    pruneAllWorktrees: "清理失效工作树记录",
     fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
     testRemote: body.name ? `检查远端 ${shortText(body.name, 72)}` : "检查远端连接",
     addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
@@ -1525,6 +1539,50 @@ async function initRepository(body) {
     result.state = await openRepo(targetPath);
   }
   return result;
+}
+
+async function createWorktree(body) {
+  const targetPath = normalizeWorktreeTargetPath(body.targetPath || body.path);
+  const ref = normalizeRefName(body.ref || "HEAD", "工作树起点");
+  const branch = String(body.branch || "").trim() ? normalizeBranchName(body.branch) : "";
+  const parent = path.dirname(targetPath);
+  if (!fs.existsSync(parent)) throw new Error(`工作树上级目录不存在：${parent}`);
+  if (!fs.statSync(parent).isDirectory()) throw new Error(`工作树上级路径不是目录：${parent}`);
+  if (fs.existsSync(targetPath)) {
+    if (!fs.statSync(targetPath).isDirectory()) throw new Error(`目标路径已存在但不是文件夹：${targetPath}`);
+    if (fs.readdirSync(targetPath).length) throw new Error(`目标工作树文件夹不是空的：${targetPath}`);
+  }
+
+  const args = branch ? ["worktree", "add", "-b", branch, targetPath, ref] : ["worktree", "add", targetPath, ref];
+  const output = await git(currentRepo, args, { timeout: 120000, maxBuffer: 1024 * 1024 * 8 });
+  return {
+    ok: true,
+    output: [`已创建工作树`, `位置：${targetPath}`, branch ? `新分支：${branch}` : `起点：${ref}`].join("\n"),
+    targetPath,
+    branch,
+    ref,
+    gitOutput: shortText(output, 2000),
+    state: await readState(),
+  };
+}
+
+async function openWorktree(body) {
+  const targetPath = normalizeExistingWorktreePath(body.path || body.targetPath);
+  const state = await openRepo(targetPath);
+  return {
+    ok: true,
+    output: `已打开工作树：${state.repo.path}`,
+    state,
+  };
+}
+
+async function pruneAllWorktrees() {
+  const output = await git(currentRepo, ["worktree", "prune", "--verbose"], { timeout: 60000 });
+  return {
+    ok: true,
+    output: output.trim() || "已清理失效工作树记录",
+    state: await readState(),
+  };
 }
 
 async function addRemote(body) {
@@ -2607,6 +2665,27 @@ function normalizeInitTargetPath(value) {
   return resolved;
 }
 
+function normalizeWorktreeTargetPath(value) {
+  const targetPath = String(value || "").trim();
+  if (!targetPath || targetPath.includes("\0") || /[\r\n]/.test(targetPath)) throw new Error("工作树文件夹不合法");
+  const resolved = path.resolve(targetPath);
+  if (!path.isAbsolute(targetPath)) throw new Error("工作树文件夹必须是本机绝对路径");
+  const parsed = path.parse(resolved);
+  if (resolved === parsed.root) throw new Error("工作树文件夹不能是磁盘根目录");
+  if (sameFsPath(resolved, currentRepo)) throw new Error("新工作树不能和当前仓库路径相同");
+  return resolved;
+}
+
+function normalizeExistingWorktreePath(value) {
+  const targetPath = String(value || "").trim();
+  if (!targetPath || targetPath.includes("\0") || /[\r\n]/.test(targetPath)) throw new Error("工作树路径不合法");
+  const resolved = path.resolve(targetPath);
+  if (!path.isAbsolute(targetPath)) throw new Error("工作树路径必须是本机绝对路径");
+  if (!fs.existsSync(resolved)) throw new Error(`工作树路径不存在：${resolved}`);
+  if (!fs.statSync(resolved).isDirectory()) throw new Error(`工作树路径不是文件夹：${resolved}`);
+  return resolved;
+}
+
 function normalizeRemoteCheckoutBranch(remoteRef) {
   const parts = String(remoteRef || "").split("/").filter(Boolean);
   if (parts.length < 2) throw new Error("远端分支不合法");
@@ -3028,6 +3107,72 @@ function parseWorktreeBranches(output, repoPath) {
   }
   flush();
   return info;
+}
+
+function parseWorktreeList(output, repoPath) {
+  const rows = [];
+  let entry = {};
+  const flush = () => {
+    if (!entry.worktree) return;
+    const branch = entry.branch ? entry.branch.replace(/^refs\/heads\//, "") : "";
+    const current = sameFsPath(entry.worktree, repoPath);
+    const exists = fs.existsSync(entry.worktree);
+    rows.push({
+      path: entry.worktree,
+      head: entry.head || "",
+      shortHead: entry.head ? entry.head.slice(0, 7) : "",
+      branch,
+      label: branch || (entry.detached ? "detached HEAD" : entry.bare ? "bare" : "未知引用"),
+      detached: Boolean(entry.detached || (!branch && !entry.bare)),
+      bare: Boolean(entry.bare),
+      current,
+      locked: Boolean(entry.locked),
+      lockReason: typeof entry.locked === "string" ? entry.locked : "",
+      prunable: Boolean(entry.prunable),
+      pruneReason: typeof entry.prunable === "string" ? entry.prunable : "",
+      exists,
+      status: exists ? "unknown" : "missing",
+      dirtyCount: 0,
+      operation: null,
+    });
+  };
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) {
+      flush();
+      entry = {};
+      continue;
+    }
+    const space = line.indexOf(" ");
+    const key = space === -1 ? line : line.slice(0, space);
+    const value = space === -1 ? "" : line.slice(space + 1);
+    if (key === "worktree") entry.worktree = value;
+    if (key === "HEAD") entry.head = value;
+    if (key === "branch") entry.branch = value;
+    if (key === "detached") entry.detached = true;
+    if (key === "bare") entry.bare = true;
+    if (key === "locked") entry.locked = value || true;
+    if (key === "prunable") entry.prunable = value || true;
+  }
+  flush();
+  return rows;
+}
+
+async function enrichWorktreeList(rows) {
+  const limited = (rows || []).slice(0, 24);
+  return Promise.all(limited.map(async (row) => {
+    if (!row.exists || row.prunable || row.bare) return row;
+    const [statusOutput, operation] = await Promise.all([
+      git(row.path, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+      Promise.resolve().then(() => detectRepoOperation(row.path)).catch(() => null),
+    ]);
+    const files = parseStatus(statusOutput);
+    return {
+      ...row,
+      status: files.length ? "dirty" : "clean",
+      dirtyCount: files.length,
+      operation,
+    };
+  }));
 }
 
 function parseBranchTracking(output) {
@@ -3986,6 +4131,43 @@ function sampleState() {
         lastUpdated: "周一",
       },
     ],
+    worktrees: [
+      {
+        path: "示例仓库",
+        head: "f83a9c2b0177",
+        shortHead: "f83a9c",
+        branch: "feature/visual-history",
+        label: "feature/visual-history",
+        current: true,
+        exists: true,
+        status: "dirty",
+        dirtyCount: 5,
+      },
+      {
+        path: "D:\\开发\\atlas-dashboard-main",
+        head: "fa51203b0921",
+        shortHead: "fa51203",
+        branch: "main",
+        label: "main",
+        current: false,
+        exists: true,
+        status: "clean",
+        dirtyCount: 0,
+      },
+      {
+        path: "D:\\开发\\atlas-dashboard-old-review",
+        head: "91b2a10552dd",
+        shortHead: "91b2a10",
+        branch: "old/review",
+        label: "old/review",
+        current: false,
+        exists: false,
+        prunable: true,
+        pruneReason: "working tree path is missing",
+        status: "missing",
+        dirtyCount: 0,
+      },
+    ],
     remotes: ["origin/main", "origin/feature/visual-history", "upstream/release/2.9"],
     sync: {
       branch: "feature/visual-history",
@@ -4152,6 +4334,9 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("your local changes") && lower.includes("would be overwritten")) {
     return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
+  }
+  if (lower.includes("is already checked out at")) {
+    return "这个分支已经在另一个工作树中签出。请换一个起点或填写新的分支名来创建工作树。";
   }
   if (lower.includes("pathspec") && lower.includes("did not match any files")) {
     const file = text.match(/pathspec ['"]([^'"]+)['"] did not match any files/i)?.[1] || "";

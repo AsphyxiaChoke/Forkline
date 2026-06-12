@@ -187,7 +187,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "fileHistory", "fileBlame", "branches", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "fileHistory", "fileBlame", "branches", "worktrees", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -1181,6 +1181,7 @@ function commandPaletteItems() {
     commandItem("tabDetails", "打开详情", "查看当前提交详情", "详情", "details commit", hasRepo, () => switchInspectorTab("details")),
     commandItem("tabFiles", "打开文件", "查看当前提交文件改动", "文件", "files diff", hasRepo, () => switchInspectorTab("files")),
     commandItem("tabBranches", "打开分支整理", "查看已合并、上游丢失和长期未动分支", "分支", "branch cleanup prune", hasRepo, () => switchInspectorTab("branches")),
+    commandItem("tabWorktrees", "打开工作树", "查看和创建 Git worktree", "git worktree", "worktree workspace parallel checkout", hasRepo, () => switchInspectorTab("worktrees")),
     commandItem("tabSync", "打开同步", "查看 upstream、待拉取和待推送提交", "同步", "fetch pull push upstream", hasRepo, () => switchInspectorTab("sync")),
     commandItem("tabStashes", "打开储藏", "查看和恢复 Git stash", "储藏", "stash", hasRepo, () => switchInspectorTab("stashes")),
     commandItem("tabTags", "打开标签", "查看和管理 Tag", "标签", "tag release", hasRepo, () => switchInspectorTab("tags")),
@@ -2753,6 +2754,10 @@ function renderInspector() {
     renderBranchesTab(branchCommit);
     return;
   }
+  if (state.selectedTab === "worktrees") {
+    renderWorktreesTab();
+    return;
+  }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
@@ -3515,6 +3520,249 @@ function branchCleanupContextOptions(branch) {
     ahead: Number(row.ahead) || 0,
     behind: Number(row.behind) || 0,
   };
+}
+
+function renderWorktreesTab() {
+  const rows = state.data?.worktrees || [];
+  const realRepo = Boolean(state.data && !state.data.repo.isSample);
+  const summary = worktreeSummary(rows);
+  els.detailNode.style.borderColor = summary.dirty || summary.prunable ? "var(--amber)" : "var(--blue)";
+  els.detailTitle.textContent = "工作树";
+  els.detailSub.textContent = rows.length ? `${rows.length} 个 Git worktree · 当前 ${state.data?.repo?.branch || "HEAD"}` : "没有工作树";
+  setActiveDiff(null);
+  els.detailBody.innerHTML = `
+    <div class="worktree-dashboard">
+      <div class="worktree-summary">
+        <div><span>总数</span><strong>${rows.length}</strong></div>
+        <div><span>干净</span><strong>${summary.clean}</strong></div>
+        <div><span>有改动</span><strong>${summary.dirty}</strong></div>
+        <div><span>失效</span><strong>${summary.prunable}</strong></div>
+      </div>
+      ${worktreeCreateHtml(realRepo)}
+      <div class="worktree-actions">
+        <button class="mini-btn" data-worktree-action="refresh" type="button"><span>刷新</span><span class="command-hint">git worktree</span></button>
+        <button class="mini-btn" data-worktree-action="pruneAll" type="button" ${realRepo && summary.prunable ? "" : "disabled"}><span>清理失效</span><span class="command-hint">prune</span></button>
+      </div>
+      <div class="worktree-list">
+        ${
+          rows.length
+            ? rows.map((row, index) => worktreeRowHtml(row, index, realRepo)).join("")
+            : `<div class="empty-panel compact"><span>当前仓库还没有额外工作树。</span></div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function worktreeSummary(rows) {
+  return (rows || []).reduce(
+    (acc, row) => {
+      if (row.prunable || !row.exists) acc.prunable += 1;
+      else if (row.status === "dirty") acc.dirty += 1;
+      else if (row.status === "clean") acc.clean += 1;
+      return acc;
+    },
+    { clean: 0, dirty: 0, prunable: 0 }
+  );
+}
+
+function worktreeCreateHtml(realRepo) {
+  const defaultRef = worktreeDefaultRef();
+  const refs = compareRefOptions([defaultRef]);
+  const target = worktreeTargetSuggestion(defaultRef);
+  return `
+    <form class="worktree-create" data-worktree-form>
+      <datalist id="worktreeRefOptions">
+        ${refs.map((item) => `<option value="${escapeAttr(item.ref)}" label="${escapeAttr(item.label)}"></option>`).join("")}
+      </datalist>
+      <label>
+        <span>目标文件夹</span>
+        <input data-worktree-field="targetPath" autocomplete="off" spellcheck="false" value="${escapeAttr(target)}" placeholder="D:\\项目\\repo-feature" ${realRepo ? "" : "disabled"} />
+      </label>
+      <label>
+        <span>起点引用</span>
+        <input data-worktree-field="ref" list="worktreeRefOptions" autocomplete="off" spellcheck="false" value="${escapeAttr(defaultRef)}" placeholder="HEAD / main / origin/feature" ${realRepo ? "" : "disabled"} />
+      </label>
+      <label>
+        <span>新分支名</span>
+        <input data-worktree-field="branch" autocomplete="off" spellcheck="false" placeholder="可选，不填则直接签出起点" ${realRepo ? "" : "disabled"} />
+      </label>
+      <button class="mini-btn" type="submit" ${realRepo ? "" : "disabled"}><span>创建工作树</span><span class="command-hint">git worktree add</span></button>
+    </form>
+  `;
+}
+
+function worktreeDefaultRef() {
+  return state.selectedRef || state.data?.repo?.branch || "HEAD";
+}
+
+function worktreeTargetSuggestion(ref) {
+  const repo = state.data?.repo || {};
+  const base = repoParentPath(repo.path || "");
+  if (!base) return "";
+  const repoName = worktreePathSlug(repo.name || "repo");
+  const refName = worktreePathSlug(ref || "worktree");
+  return joinLocalPath(base, `${repoName}-${refName}`);
+}
+
+function worktreePathSlug(value) {
+  return String(value || "worktree")
+    .replace(/^[A-Za-z]:/, "")
+    .replace(/[<>:"|?*]/g, "-")
+    .replace(/[\\/\s]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 56) || "worktree";
+}
+
+function worktreeRowHtml(row, index, realRepo) {
+  const status = worktreeStatus(row);
+  const branch = row.label || row.branch || "detached HEAD";
+  const openDisabled = !realRepo || row.current || !row.exists || row.prunable;
+  const pruneDisabled = !realRepo || !row.prunable;
+  return `
+    <article class="worktree-row ${row.current ? "current" : ""} ${row.prunable || !row.exists ? "prunable" : ""}">
+      <div class="worktree-row-head">
+        <strong title="${escapeAttr(branch)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span></strong>
+        <span class="worktree-status ${status.className}">${escapeHtml(status.label)}</span>
+      </div>
+      <div class="worktree-path" title="${escapeAttr(row.path || "")}">${escapeHtml(row.path || "未知路径")}</div>
+      <div class="worktree-meta">
+        <span>${escapeHtml(row.shortHead || "无 HEAD")}</span>
+        ${row.detached ? `<span>游离 HEAD</span>` : ""}
+        ${row.locked ? `<span title="${escapeAttr(row.lockReason || "locked")}">已锁定</span>` : ""}
+        ${row.operation?.label ? `<span title="${escapeAttr(row.operation.label)}">操作中</span>` : ""}
+        ${row.prunable && row.pruneReason ? `<span title="${escapeAttr(row.pruneReason)}">可清理</span>` : ""}
+      </div>
+      <div class="worktree-row-actions">
+        <button class="mini-btn" data-worktree-action="open" data-worktree-path="${escapeAttr(row.path || "")}" type="button" ${openDisabled ? "disabled" : ""}>打开</button>
+        <button class="mini-btn" data-worktree-action="copyPath" data-worktree-path="${escapeAttr(row.path || "")}" type="button">复制路径</button>
+        <button class="mini-btn danger" data-worktree-action="pruneAll" type="button" ${pruneDisabled ? "disabled" : ""}><span>清理</span><span class="command-hint">prune</span></button>
+      </div>
+    </article>
+  `;
+}
+
+function worktreeStatus(row) {
+  if (row.prunable || !row.exists) return { label: "失效", className: "danger" };
+  if (row.operation?.label) return { label: "操作中", className: "warn" };
+  if (row.status === "dirty") return { label: `${row.dirtyCount || 0} 个改动`, className: "warn" };
+  if (row.status === "clean") return { label: "干净", className: "ok" };
+  return { label: "未知", className: "muted" };
+}
+
+async function submitWorktreeForm(form) {
+  if (!state.data) return;
+  const targetPath = form.querySelector('[data-worktree-field="targetPath"]')?.value.trim() || "";
+  const ref = form.querySelector('[data-worktree-field="ref"]')?.value.trim() || "HEAD";
+  const branch = form.querySelector('[data-worktree-field="branch"]')?.value.trim() || "";
+  if (!targetPath) {
+    toast("请输入工作树目标文件夹");
+    return;
+  }
+  if (!ref) {
+    toast("请输入工作树起点引用");
+    return;
+  }
+  const command = branch ? `git worktree add -b ${branch} ${targetPath} ${ref}` : `git worktree add ${targetPath} ${ref}`;
+  if (!state.data.repo.isSample && !confirm(`确认创建工作树？\n\n位置：${targetPath}\n起点：${ref}${branch ? `\n新分支：${branch}` : ""}\n命令：${command}`)) return;
+  const submit = form.querySelector('button[type="submit"]');
+  if (submit) submit.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch }),
+    });
+    toast(result.output || "已创建工作树");
+    state.commitDetails.clear();
+    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (submit) submit.disabled = false;
+  }
+}
+
+async function runWorktreeAction(action, button) {
+  if (!state.data) return;
+  const worktreePath = button?.dataset?.worktreePath || "";
+  if (action === "copyPath") {
+    await copyText(worktreePath);
+    toast("已复制工作树路径");
+    return;
+  }
+  if (action === "refresh") {
+    await refreshWorktreeDashboard(button);
+    return;
+  }
+  if (action === "open") {
+    await openWorktreePath(worktreePath, button);
+    return;
+  }
+  if (action === "pruneAll") {
+    await pruneWorktreeRecords(button);
+  }
+}
+
+async function refreshWorktreeDashboard(button) {
+  if (button) button.disabled = true;
+  try {
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+    toast("工作树列表已刷新");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function openWorktreePath(worktreePath, button) {
+  if (!worktreePath) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "openWorktree", path: worktreePath }),
+    });
+    toast(result.output || "已打开工作树");
+    state.commitDetails.clear();
+    state.selectedRef = "";
+    state.data = result.state;
+    state.selectedSha = state.data.commits[0]?.sha || "";
+    saveRecentRepo(state.data.repo);
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function pruneWorktreeRecords(button) {
+  if (!state.data?.repo?.isSample && !confirm("确认清理失效工作树记录？\n\n命令：git worktree prune --verbose\n这只清理 Git 中已经失效的 worktree 元数据，不会删除仍存在的工作区文件。")) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "pruneAllWorktrees" }),
+    });
+    toast(result.output || "已清理失效工作树记录");
+    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function renderStashesTab() {
@@ -7029,6 +7277,12 @@ els.commitForm.addEventListener("submit", (event) => {
   runAction(els.amendToggle.checked ? "amendCommit" : "commit");
 });
 els.detailBody.addEventListener("submit", (event) => {
+  const worktreeForm = event.target.closest("[data-worktree-form]");
+  if (worktreeForm) {
+    event.preventDefault();
+    submitWorktreeForm(worktreeForm).catch((error) => toast(error.message));
+    return;
+  }
   const form = event.target.closest("[data-reword-form]");
   if (!form) return;
   event.preventDefault();
@@ -7084,6 +7338,14 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     if (!branchCleanupAction.disabled) {
       runBranchCleanupAction(branchCleanupAction.dataset.branchCleanupAction, branchCleanupAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const worktreeAction = event.target.closest("[data-worktree-action]");
+  if (worktreeAction) {
+    event.preventDefault();
+    if (!worktreeAction.disabled) {
+      runWorktreeAction(worktreeAction.dataset.worktreeAction, worktreeAction).catch((error) => toast(error.message));
     }
     return;
   }
