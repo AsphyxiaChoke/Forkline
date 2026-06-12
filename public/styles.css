@@ -1660,7 +1660,7 @@ body.resizing .workbench-resizer-y::before {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -1811,13 +1811,15 @@ body.resizing .workbench-resizer-y::before {
   padding: 10px;
 }
 
-.stash-layout {
+.stash-layout,
+.tag-layout {
   display: grid;
   gap: 12px;
   min-width: 0;
 }
 
-.stash-list {
+.stash-list,
+.tag-list {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1831,7 +1833,8 @@ body.resizing .workbench-resizer-y::before {
   scrollbar-width: thin;
 }
 
-.stash-row {
+.stash-row,
+.tag-row {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -1847,6 +1850,12 @@ body.resizing .workbench-resizer-y::before {
 .stash-row.active {
   border-color: rgba(240, 184, 91, 0.55);
   background: rgba(240, 184, 91, 0.08);
+}
+
+.tag-row:hover,
+.tag-row.active {
+  border-color: rgba(92, 169, 255, 0.55);
+  background: rgba(92, 169, 255, 0.08);
 }
 
 .stash-row-top {
@@ -1881,13 +1890,15 @@ body.resizing .workbench-resizer-y::before {
   font-weight: 800;
 }
 
-.stash-detail {
+.stash-detail,
+.tag-detail {
   display: grid;
   gap: 12px;
   min-width: 0;
 }
 
-.stash-actions {
+.stash-actions,
+.tag-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

@@ -77,11 +77,12 @@ async function openRepo(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, trackingOutput, remoteOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, trackingOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
     git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "detached HEAD"),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
     git(currentRepo, ["remote"]).catch(() => ""),
+    git(currentRepo, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
@@ -127,6 +128,7 @@ async function readState(ref = "") {
     remotes: remotes.slice(0, 32),
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
+    tags: parseTags(tagOutput),
     commits: parseLog(logOutput),
   };
 }
@@ -272,6 +274,15 @@ async function runAction(body) {
   if (action === "createTag") {
     return createTag(body);
   }
+  if (action === "deleteTag") {
+    return deleteTag(body);
+  }
+  if (action === "pushTag") {
+    return pushTag(body);
+  }
+  if (action === "deleteRemoteTag") {
+    return deleteRemoteTag(body);
+  }
   if (action === "pruneWorktrees") {
     return pruneWorktrees(body);
   }
@@ -380,6 +391,9 @@ function actionLabel(body = {}) {
     deleteRemoteBranch: body.ref ? `删除远端分支 ${shortText(body.ref, 72)}` : "删除远端分支",
     mergeRef: ref ? `合并分支 ${ref}` : "合并分支",
     createTag: body.name ? `创建 Tag ${shortText(body.name, 72)}` : "创建 Tag",
+    deleteTag: body.name ? `删除本地 Tag ${shortText(body.name, 72)}` : "删除本地 Tag",
+    pushTag: body.name ? `推送 Tag ${shortText(body.name, 72)}` : "推送 Tag",
+    deleteRemoteTag: body.name ? `删除远端 Tag ${shortText(body.name, 72)}` : "删除远端 Tag",
     pruneWorktrees: branch ? `清理 ${branch} 的 worktree 记录` : "清理 worktree 记录",
     findCheckoutStash: branch ? `查找 ${branch} 的签出储藏` : "查找签出储藏",
     restoreCheckoutStash: branch ? `恢复 ${branch} 的签出储藏` : "恢复签出储藏",
@@ -584,6 +598,28 @@ async function createTag(body) {
   const args = annotated ? ["tag", "-a", name, target, "-m", message] : ["tag", name, target];
   await git(currentRepo, args, { timeout: 60000 });
   return { ok: true, tag: name, output: `已创建 Tag ${name}` };
+}
+
+async function deleteTag(body) {
+  const name = normalizeTagName(body.name);
+  await ensureLocalTag(name);
+  const output = await git(currentRepo, ["tag", "-d", name], { timeout: 60000 });
+  return commandResultWithSummary(`已删除本地 Tag ${name}`, output);
+}
+
+async function pushTag(body) {
+  const name = normalizeTagName(body.name);
+  await ensureLocalTag(name);
+  const remote = await defaultRemoteName(body.remote);
+  const output = await git(currentRepo, ["push", remote, `refs/tags/${name}:refs/tags/${name}`], { timeout: 120000 });
+  return commandResultWithSummary(`已推送 Tag ${name} 到 ${remote}`, output);
+}
+
+async function deleteRemoteTag(body) {
+  const name = normalizeTagName(body.name);
+  const remote = await defaultRemoteName(body.remote);
+  const output = await git(currentRepo, ["push", remote, `:refs/tags/${name}`], { timeout: 120000 });
+  return commandResultWithSummary(`已删除远端 Tag ${name}`, output);
 }
 
 async function pruneWorktrees(body) {
@@ -924,6 +960,19 @@ async function readRemoteNames() {
   return parseRemoteNames(await git(currentRepo, ["remote"]).catch(() => ""));
 }
 
+async function defaultRemoteName(value = "") {
+  const requested = String(value || "").trim();
+  const remoteNames = await readRemoteNames();
+  if (requested) {
+    const remote = normalizeRefName(requested, "远端名");
+    if (!remoteNames.includes(remote)) throw new Error(`远端 ${remote} 不存在`);
+    return remote;
+  }
+  const remote = remoteNames.includes("origin") ? "origin" : remoteNames[0];
+  if (!remote) throw new Error("当前仓库没有远端。请先添加远端仓库后再操作。");
+  return remote;
+}
+
 function parseRemoteNames(output) {
   return String(output || "")
     .split(/\r?\n/)
@@ -1051,6 +1100,30 @@ function mergeBranchInfo(...sources) {
     }
   }
   return merged;
+}
+
+function parseTags(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(0, 160)
+    .map((line) => {
+      const [name = "", object = "", time = "", subject = "", type = ""] = line.split("\t");
+      return {
+        name: name.trim(),
+        object: object.trim(),
+        time: time.trim(),
+        subject: subject.trim(),
+        type: type.trim() || "commit",
+      };
+    })
+    .filter((tag) => tag.name);
+}
+
+async function ensureLocalTag(name) {
+  await git(currentRepo, ["rev-parse", "-q", "--verify", `refs/tags/${name}`], { timeout: 60000 }).catch(() => {
+    throw new Error(`本地 Tag ${name} 不存在`);
+  });
 }
 
 function sameFsPath(left, right) {
@@ -1269,6 +1342,10 @@ function sampleState() {
     },
     branches: ["feature/visual-history", "main", "release/2.9", "fix/diff-pane-resize", "experiment/ai-summary", "chore/design-tokens"],
     remotes: ["origin/main", "origin/feature/visual-history", "upstream/release/2.9"],
+    tags: [
+      { name: "v2.9.0", object: "4ab612e", time: "昨天", subject: "发布候选版本构建", type: "commit" },
+      { name: "ui-graph-beta", object: "d41c2ab", time: "38 分钟前", subject: "添加语义化 Diff 分组", type: "tag" },
+    ],
     workingFiles: files,
     commits: data.map(([sha, author, time, message, refs, lane, parents], index) => ({
       sha,

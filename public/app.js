@@ -20,12 +20,14 @@ const state = {
   contextCommitSha: "",
   contextBranch: null,
   contextFile: null,
+  contextTag: null,
   diffRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
   commitDetails: new Map(),
   stashDetails: new Map(),
   selectedStash: "",
+  selectedTag: "",
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
@@ -71,6 +73,7 @@ const els = {
   commitContextMenu: $("#commitContextMenu"),
   branchContextMenu: $("#branchContextMenu"),
   fileContextMenu: $("#fileContextMenu"),
+  tagContextMenu: $("#tagContextMenu"),
   detailNode: $("#detailNode"),
   detailTitle: $("#detailTitle"),
   detailSub: $("#detailSub"),
@@ -124,7 +127,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "branches", "stashes"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "branches", "stashes", "tags"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -780,6 +783,7 @@ async function selectCommit(sha) {
 function showCommitContextMenu(event, commit) {
   hideBranchContextMenu();
   hideFileContextMenu();
+  hideTagContextMenu();
   state.contextCommitSha = commit.sha;
   const menu = els.commitContextMenu;
   const isMergeCommit = (commit.parents || []).length > 1;
@@ -816,6 +820,7 @@ function hideCommitContextMenu() {
 function showBranchContextMenu(event, branch, options = {}) {
   hideCommitContextMenu();
   hideFileContextMenu();
+  hideTagContextMenu();
   state.contextBranch = { name: branch, ...options };
   const menu = els.branchContextMenu;
   const isLocal = Boolean(options.local || options.checkout || options.rename || options.delete);
@@ -880,6 +885,7 @@ function hideBranchContextMenu() {
 function showFileContextMenu(event, filePath, scope = "") {
   hideCommitContextMenu();
   hideBranchContextMenu();
+  hideTagContextMenu();
   const fileInfo = state.data?.workingFiles?.find((file) => file.file === filePath);
   if (!fileInfo) return;
   const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
@@ -914,6 +920,27 @@ function hideFileContextMenu() {
   els.fileContextMenu.classList.remove("show");
   els.fileContextMenu.setAttribute("aria-hidden", "true");
   state.contextFile = null;
+}
+
+function showTagContextMenu(event, tag) {
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+  hideFileContextMenu();
+  state.contextTag = tag || null;
+  const menu = els.tagContextMenu;
+  const hasTag = Boolean(tag?.name);
+  menu.querySelectorAll("[data-tag-action]").forEach((button) => {
+    button.disabled = !hasTag;
+  });
+  menu.classList.add("show");
+  menu.setAttribute("aria-hidden", "false");
+  positionContextMenu(menu, event, 230);
+}
+
+function hideTagContextMenu() {
+  els.tagContextMenu.classList.remove("show");
+  els.tagContextMenu.setAttribute("aria-hidden", "true");
+  state.contextTag = null;
 }
 
 async function runFileContextAction(action) {
@@ -1269,6 +1296,7 @@ async function createTagFromForm(event) {
     });
     toast(result.output || `已创建 Tag ${name}`);
     closeTagModal();
+    state.selectedTag = result.tag || name;
     state.commitDetails.clear();
     state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
@@ -1502,6 +1530,10 @@ function renderInspector() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.selectedTab));
   if (state.selectedTab === "stashes") {
     renderStashesTab();
+    return;
+  }
+  if (state.selectedTab === "tags") {
+    renderTagsTab();
     return;
   }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
@@ -1753,6 +1785,128 @@ function stashActionConfirmMessage(action, ref) {
   if (action === "pop") return `确认弹出 ${ref}？成功后这条储藏会从列表删除。`;
   if (action === "drop") return `确认删除 ${ref}？这个操作不能撤销。`;
   return `确认操作 ${ref}？`;
+}
+
+function renderTagsTab() {
+  const tags = state.data?.tags || [];
+  if (state.selectedTag && !tags.some((tag) => tag.name === state.selectedTag)) {
+    state.selectedTag = "";
+  }
+  if (!state.selectedTag && tags.length) state.selectedTag = tags[0].name;
+  const selected = tags.find((tag) => tag.name === state.selectedTag);
+  els.detailNode.style.borderColor = "var(--blue)";
+  els.detailTitle.textContent = "标签列表";
+  els.detailSub.textContent = tags.length ? `${tags.length} 个 Tag` : "没有 Tag";
+  setActiveDiff(null);
+  if (!tags.length) {
+    els.detailBody.innerHTML = `
+      <div class="empty-panel">
+        <strong>没有 Tag</strong>
+        <span>在提交右键菜单中选择“创建 Tag”后会显示在这里。</span>
+      </div>
+    `;
+    return;
+  }
+  els.detailBody.innerHTML = `
+    <div class="tag-layout">
+      <div class="tag-list">
+        ${tags.map((tag) => tagRowHtml(tag, tag.name === state.selectedTag)).join("")}
+      </div>
+      <div class="tag-detail">
+        ${selected ? tagDetailHtml(selected) : ""}
+      </div>
+    </div>
+  `;
+}
+
+function tagRowHtml(tag, active) {
+  return `
+    <button class="tag-row ${active ? "active" : ""}" data-tag-name="${escapeAttr(tag.name)}" type="button">
+      <span class="stash-row-top">
+        <strong>${escapeHtml(tag.name)}</strong>
+        <em>${escapeHtml(tag.time || "")}</em>
+      </span>
+      <span class="stash-message" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || "无说明")}</span>
+      <span class="stash-branch">${escapeHtml(tag.object ? `${tag.object} · ${tag.type || "commit"}` : tag.type || "commit")}</span>
+    </button>
+  `;
+}
+
+function tagDetailHtml(tag) {
+  return `
+    <div class="tag-actions">
+      <button class="mini-btn" data-tag-action="view" data-tag-name="${escapeAttr(tag.name)}" type="button">查看提交</button>
+      <button class="mini-btn" data-tag-action="copy" data-tag-name="${escapeAttr(tag.name)}" type="button">复制名称</button>
+      <button class="mini-btn" data-tag-action="push" data-tag-name="${escapeAttr(tag.name)}" type="button" title="git push <远端> refs/tags/${escapeAttr(tag.name)}:refs/tags/${escapeAttr(tag.name)}">推送 Tag</button>
+      <button class="mini-btn danger" data-tag-action="deleteLocal" data-tag-name="${escapeAttr(tag.name)}" type="button" title="git tag -d ${escapeAttr(tag.name)}">删除本地</button>
+      <button class="mini-btn danger" data-tag-action="deleteRemote" data-tag-name="${escapeAttr(tag.name)}" type="button" title="git push <远端> :refs/tags/${escapeAttr(tag.name)}">删除远端</button>
+    </div>
+    <div class="meta-grid stash-meta">
+      <span>名称</span><div class="meta-value">${escapeHtml(tag.name)}</div>
+      <span>对象</span><div class="meta-value">${escapeHtml(tag.object || "未知")}</div>
+      <span>类型</span><div class="meta-value">${escapeHtml(tag.type || "commit")}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(tag.time || "未知")}</div>
+      <span>说明</span><div class="meta-value" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || "无说明")}</div>
+    </div>
+    <div class="empty-panel compact">
+      <span>推送 Tag 会把这个本地标签发布到远端；删除远端 Tag 不会删除本地 Tag。</span>
+    </div>
+  `;
+}
+
+function selectTag(name) {
+  if (!name || name === state.selectedTag) return;
+  state.selectedTag = name;
+  renderInspector();
+}
+
+async function runTagAction(action, tagName, button) {
+  if (!state.data || !tagName) return;
+  const tag = (state.data.tags || []).find((item) => item.name === tagName) || { name: tagName };
+  if (action === "view") {
+    state.selectedTab = "details";
+    await selectRef(tag.name);
+    return;
+  }
+  if (action === "copy") {
+    await copyText(tag.name);
+    toast("已复制 Tag 名称");
+    return;
+  }
+  const message = tagActionConfirmMessage(action, tag.name);
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  const actionMap = {
+    push: "pushTag",
+    deleteLocal: "deleteTag",
+    deleteRemote: "deleteRemoteTag",
+  };
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: actionMap[action], name: tag.name }) });
+    toast(result.output || "Tag 操作完成");
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    if (!state.data.tags?.some((item) => item.name === state.selectedTag)) {
+      state.selectedTag = state.data.tags?.[0]?.name || "";
+    }
+    renderAll();
+    if (state.selectedSha && state.selectedTab !== "tags") {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function tagActionConfirmMessage(action, name) {
+  if (action === "push") return `确认推送 Tag：${name}？\n\n命令：git push <远端> refs/tags/${name}:refs/tags/${name}`;
+  if (action === "deleteLocal") return `确认删除本地 Tag：${name}？\n\n命令：git tag -d ${name}\n此操作不会删除远端 Tag。`;
+  if (action === "deleteRemote") return `确认删除远端 Tag：${name}？\n\n命令：git push <远端> :refs/tags/${name}\n此操作不会删除本地 Tag。`;
+  return `确认操作 Tag：${name}？`;
 }
 
 function renderDiff(diff) {
@@ -2881,6 +3035,18 @@ els.detailBody.addEventListener("click", (event) => {
   if (button.disabled) return;
   runCommitToolAction(button.dataset.commitTool, button.dataset.sha).catch((error) => toast(error.message));
 });
+els.detailBody.addEventListener("contextmenu", (event) => {
+  const tagRow = event.target.closest(".tag-row[data-tag-name]");
+  if (!tagRow) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const tag = (state.data?.tags || []).find((item) => item.name === tagRow.dataset.tagName);
+  if (tag) {
+    state.selectedTag = tag.name;
+    renderInspector();
+    showTagContextMenu(event, tag);
+  }
+});
 document.querySelectorAll("[data-action]").forEach((button) => {
   button.addEventListener("click", () => runAction(button.dataset.action));
 });
@@ -2915,9 +3081,20 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  const tagMenuAction = event.target.closest("#tagContextMenu [data-tag-action]");
+  if (tagMenuAction) {
+    event.stopPropagation();
+    const tagName = state.contextTag?.name || "";
+    hideTagContextMenu();
+    if (!tagMenuAction.disabled) {
+      runTagAction(tagMenuAction.dataset.tagAction, tagName, tagMenuAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
   if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
   if (!event.target.closest("#fileContextMenu")) hideFileContextMenu();
+  if (!event.target.closest("#tagContextMenu")) hideTagContextMenu();
   const stashAction = event.target.closest("[data-stash-action]");
   if (stashAction) {
     event.stopPropagation();
@@ -2928,6 +3105,18 @@ document.addEventListener("click", (event) => {
   if (stashRow && stashRow.classList.contains("stash-row")) {
     event.stopPropagation();
     selectStash(stashRow.dataset.stashRef || "");
+    return;
+  }
+  const tagAction = event.target.closest("[data-tag-action]");
+  if (tagAction) {
+    event.stopPropagation();
+    runTagAction(tagAction.dataset.tagAction, tagAction.dataset.tagName || state.selectedTag || "", tagAction).catch((error) => toast(error.message));
+    return;
+  }
+  const tagRow = event.target.closest("[data-tag-name]");
+  if (tagRow && tagRow.classList.contains("tag-row")) {
+    event.stopPropagation();
+    selectTag(tagRow.dataset.tagName || "");
     return;
   }
   const bulkAction = event.target.closest("[data-bulk-file-action]");
@@ -2952,16 +3141,19 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.commitContextMenu.classList.contains("show")) hideCommitContextMenu();
   if (event.key === "Escape" && els.branchContextMenu.classList.contains("show")) hideBranchContextMenu();
   if (event.key === "Escape" && els.fileContextMenu.classList.contains("show")) hideFileContextMenu();
+  if (event.key === "Escape" && els.tagContextMenu.classList.contains("show")) hideTagContextMenu();
 });
 document.addEventListener("scroll", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
+  hideTagContextMenu();
 }, true);
 window.addEventListener("resize", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
+  hideTagContextMenu();
 });
 
 initTheme();

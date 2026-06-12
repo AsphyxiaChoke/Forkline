@@ -10,6 +10,7 @@
 - 顶部“推送”已改为智能推送：已有 upstream 时执行 `git push`；没有 upstream 时优先执行 `git push -u origin <当前分支>`，没有 `origin` 则使用第一个远端。
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
+- Tag 管理已接入：右侧新增“标签”页，显示本地 Tag 列表和详情，支持查看 Tag 提交、复制名称、推送 Tag、删除本地 Tag、删除远端 Tag；Tag 行右键菜单也提供同样的相关动作和 Git 指令提示。
 - “合并分支”已改为 `--no-ff --no-edit`，即使可以快进也会保留 merge commit，方便在“全部分支”图谱里看到分支回归主线的样式。
 - Stash 入口已补齐：工作区顶部有“储藏”按钮，文件右键菜单支持“储藏所选”，储藏列表继续支持查看 Diff、应用、弹出和删除。
 - Stash 体验已调整：储藏成功后会自动打开右侧“储藏”页，并提示“工作区更改已移到右侧储藏列表”；工作区顶部按钮文案改短并补 tooltip，避免按钮挤在一起。
@@ -47,6 +48,8 @@
 - 远端追踪 API 验证：在 GitTest 创建 `forkline/remote-workflow-20260612155930`，第一次通过 Forkline `push` 自动设置 upstream 为 `origin/forkline/remote-workflow-20260612155930`；再次空提交后 API 返回 `ahead = 1`；第二次 `push` 后远端更新成功。
 - 远端删除 API 验证：通过 Forkline `deleteRemoteBranch` 删除 `origin/forkline/remote-workflow-20260612155930`，远端分支列表已移除，保留的本地分支显示 `upstreamGone = true` / `[gone]`。
 - 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
+- Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
+- Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 
 ## GitTest 测试数据
 
@@ -65,5 +68,5 @@
 按原计划继续完善：
 
 1. Rebase / 历史编辑队列：把 reword 之外的 squash / fixup / drop 做成可视化队列，接近 GitKraken 的交互式 rebase 体验。
-2. 标签管理补强：显示 tag 列表，支持删除本地 tag、推送 tag、删除远端 tag。
-3. 远端同步体验继续补：把 fetch / pull / push 的结果做成更清晰的同步摘要，后续再考虑 force-with-lease、远端 URL 管理和认证失败指引。
+2. 远端同步体验继续补：把 fetch / pull / push 的结果做成更清晰的同步摘要，后续再考虑 force-with-lease、远端 URL 管理和认证失败指引。
+3. Rebase 安全护栏：交互式 rebase 前检查工作区、备份当前分支位置，并提供中止 / 继续提示，避免历史编辑失败后用户不知道卡在哪里。
