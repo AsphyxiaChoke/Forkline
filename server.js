@@ -247,6 +247,9 @@ async function runAction(body) {
   if (action === "restoreCheckoutStash") {
     return commandResult(await restoreCheckoutStash(body));
   }
+  if (action === "createStash") {
+    return createStash(body);
+  }
   if (action === "applyStash") {
     const ref = normalizeStashRef(body.ref);
     return commandResult(await git(currentRepo, ["stash", "apply", ref], { timeout: 120000 }));
@@ -466,6 +469,17 @@ async function restoreCheckoutStash(body) {
   return "已恢复储藏的本地更改";
 }
 
+async function createStash(body) {
+  const message = normalizeStashMessage(body.message);
+  const files = normalizeStashFiles(body.files);
+  const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+  if (!dirty.trim()) throw new Error("没有可储藏的未提交更改");
+  const args = ["stash", "push", "-u", "-m", message];
+  if (files.length) args.push("--", ...files);
+  const output = await git(currentRepo, args, { timeout: 120000 });
+  return commandResult(output || `已创建储藏：${message}`);
+}
+
 async function findForklineStash(branch, message = "") {
   const output = await git(currentRepo, ["stash", "list", "--format=%gd%x1f%s"]).catch(() => "");
   const rows = output
@@ -649,6 +663,16 @@ function normalizeStashRef(value) {
   const ref = String(value || "").trim();
   if (/^stash@\{\d+\}$/.test(ref)) return ref;
   throw new Error("储藏引用不合法");
+}
+
+function normalizeStashMessage(value) {
+  const message = String(value || "").replace(/\0/g, "").trim();
+  return message || `Forkline: 手动储藏 ${new Date().toISOString().replace("T", " ").slice(0, 19)}`;
+}
+
+function normalizeStashFiles(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((file) => normalizeRepoFile(file)))].slice(0, 120);
 }
 
 function normalizeTagName(value) {

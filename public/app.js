@@ -17,6 +17,7 @@ const state = {
   tagTargetSha: "",
   contextCommitSha: "",
   contextBranch: null,
+  contextFile: null,
   diffRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
@@ -47,6 +48,7 @@ const els = {
   commitGraph: $("#commitGraph"),
   changeList: $("#changeList"),
   stageAll: $("#stageAll"),
+  stashChanges: $("#stashChanges"),
   discardAll: $("#discardAll"),
   commitForm: $("#commitForm"),
   commitSummary: $("#commitSummary"),
@@ -66,6 +68,7 @@ const els = {
   closeDiffModal: $("#closeDiffModal"),
   commitContextMenu: $("#commitContextMenu"),
   branchContextMenu: $("#branchContextMenu"),
+  fileContextMenu: $("#fileContextMenu"),
   detailNode: $("#detailNode"),
   detailTitle: $("#detailTitle"),
   detailSub: $("#detailSub"),
@@ -670,6 +673,7 @@ async function selectCommit(sha) {
 
 function showCommitContextMenu(event, commit) {
   hideBranchContextMenu();
+  hideFileContextMenu();
   state.contextCommitSha = commit.sha;
   const menu = els.commitContextMenu;
   menu.classList.add("show");
@@ -694,6 +698,7 @@ function hideCommitContextMenu() {
 
 function showBranchContextMenu(event, branch, options = {}) {
   hideCommitContextMenu();
+  hideFileContextMenu();
   state.contextBranch = { name: branch, ...options };
   const menu = els.branchContextMenu;
   const isLocal = Boolean(options.local || options.checkout || options.rename || options.delete);
@@ -738,6 +743,67 @@ function hideBranchContextMenu() {
   els.branchContextMenu.classList.remove("show");
   els.branchContextMenu.setAttribute("aria-hidden", "true");
   state.contextBranch = null;
+}
+
+function showFileContextMenu(event, filePath, scope = "") {
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+  const fileInfo = state.data?.workingFiles?.find((file) => file.file === filePath);
+  if (!fileInfo) return;
+  const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
+  state.contextFile = { file: filePath, scope: resolvedScope };
+  if (resolvedScope) {
+    const key = changeKey(resolvedScope, filePath);
+    if (!state.selectedChanges.has(key)) {
+      state.selectedChanges.clear();
+      state.selectedChanges.add(key);
+      state.lastChangeSelection = { scope: resolvedScope, key };
+      state.selectedFile = filePath;
+      renderStage();
+    }
+  } else {
+    state.selectedFile = filePath;
+    markSelectedFile();
+  }
+  const menu = els.fileContextMenu;
+  const hasUnstaged = Boolean(fileInfo.unstaged || (!fileInfo.staged && fileInfo.unstaged !== false));
+  const hasStaged = Boolean(fileInfo.staged);
+  menu.querySelector('[data-file-action="stageFile"]').disabled = !hasUnstaged;
+  menu.querySelector('[data-file-action="discardWorktreeFile"]').disabled = !hasUnstaged;
+  menu.querySelector('[data-file-action="unstageFile"]').disabled = !hasStaged;
+  menu.querySelector('[data-file-action="discardStagedFile"]').disabled = !hasStaged;
+  menu.querySelector('[data-file-action="stash"]').disabled = !selectedContextFiles().length;
+  menu.classList.add("show");
+  menu.setAttribute("aria-hidden", "false");
+  positionContextMenu(menu, event, 230);
+}
+
+function hideFileContextMenu() {
+  els.fileContextMenu.classList.remove("show");
+  els.fileContextMenu.setAttribute("aria-hidden", "true");
+  state.contextFile = null;
+}
+
+async function runFileContextAction(action) {
+  const context = state.contextFile;
+  hideFileContextMenu();
+  if (!context?.file) return;
+  if (action === "diff") {
+    state.selectedFile = context.file;
+    loadWorkingDiff(context.file);
+    return;
+  }
+  if (action === "stash") {
+    await createStashFromSelection(selectedContextFiles());
+    return;
+  }
+  if (["stageFile", "discardWorktreeFile"].includes(action)) {
+    await runSingleFileAction(action, context.file);
+    return;
+  }
+  if (["unstageFile", "discardStagedFile"].includes(action)) {
+    await runSingleFileAction(action, context.file);
+  }
 }
 
 async function runBranchContextAction(action) {
@@ -1356,7 +1422,7 @@ async function runStashAction(action, ref, button) {
   const message = stashActionConfirmMessage(action, ref);
   if (!state.data.repo.isSample && !confirm(message)) return;
   try {
-    button.disabled = true;
+    if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref }) });
     toast(result.output || `${names[action] || "储藏操作"}完成`);
     state.stashDetails.clear();
@@ -1373,7 +1439,7 @@ async function runStashAction(action, ref, button) {
   } catch (error) {
     toast(error.message);
   } finally {
-    button.disabled = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -1469,6 +1535,11 @@ function bindFileTree(root, options = {}) {
         } else {
           selectWorkingFile(filePath);
         }
+      });
+      row.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showFileContextMenu(event, row.dataset.file || "", row.dataset.scope || "");
       });
     });
     markSelectedFile();
@@ -2105,6 +2176,76 @@ function actionConfirmMessage(action, name) {
   return `确认执行：${name}？`;
 }
 
+function selectedContextFiles() {
+  const files = state.data?.workingFiles || [];
+  const selected = new Set();
+  for (const key of state.selectedChanges) {
+    const [, ...pathParts] = key.split(":");
+    const filePath = pathParts.join(":");
+    if (filePath && files.some((file) => file.file === filePath)) selected.add(filePath);
+  }
+  if (!selected.size && state.contextFile?.file) selected.add(state.contextFile.file);
+  return [...selected];
+}
+
+async function createStashFromSelection(files = null) {
+  if (!state.data) return;
+  const selectedOnly = Array.isArray(files);
+  const stashFiles = selectedOnly ? files : [];
+  const allFiles = state.data.workingFiles || [];
+  if (!allFiles.length) {
+    toast("没有可储藏的未提交更改");
+    return;
+  }
+  if (selectedOnly && !stashFiles.length) {
+    toast("没有选中的文件可储藏");
+    return;
+  }
+  const targetText = selectedOnly ? `${stashFiles.length} 个所选文件` : "全部未提交更改";
+  const defaultMessage = `Forkline: 手动储藏 ${new Date().toISOString().replace("T", " ").slice(0, 19)}`;
+  const message = state.data.repo.isSample ? defaultMessage : prompt(`为${targetText}填写储藏说明：`, defaultMessage);
+  if (message === null) return;
+  const trimmedMessage = String(message || "").trim() || defaultMessage;
+  if (!state.data.repo.isSample && !confirm(`确认储藏${targetText}？\n\n说明：${trimmedMessage}`)) return;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "createStash", message: trimmedMessage, files: selectedOnly ? stashFiles : [] }),
+    });
+    toast(result.output || "已创建储藏");
+    state.stashDetails.clear();
+    state.selectedChanges.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedStash = state.data.stashes?.[0]?.ref || state.selectedStash;
+    renderAll();
+    if (state.selectedTab !== "stashes" && state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function runSingleFileAction(action, file) {
+  if (!state.data || !file) return;
+  const names = { stageFile: "暂存", unstageFile: "取消暂存", discardWorktreeFile: "丢弃", discardStagedFile: "丢弃" };
+  if (isDiscardAction(action) && !state.data.repo.isSample && !confirm(discardConfirmMessage(action, [file]))) return;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action, file }) });
+    toast(result.output || `${names[action] || "操作"}完成`);
+    state.selectedChanges.delete(changeKey("unstaged", file));
+    state.selectedChanges.delete(changeKey("staged", file));
+    const data = await api("/api/worktree");
+    state.data.workingFiles = data.workingFiles || [];
+    renderWorkingFiles();
+    renderStage();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 async function runFileBatchAction(action, scope, button) {
   if (!state.data) return;
   const groups = changeGroups(state.data.workingFiles || []);
@@ -2357,6 +2498,7 @@ els.closeDiffModal.addEventListener("click", closeDiffModal);
 els.diffModal.addEventListener("click", (event) => {
   if (event.target === els.diffModal) closeDiffModal();
 });
+els.stashChanges.addEventListener("click", () => createStashFromSelection(null));
 els.stageAll.addEventListener("click", () => runAction("stageAll"));
 els.discardAll.addEventListener("click", () => runAction("discardAll"));
 els.amendToggle.addEventListener("change", () => {
@@ -2397,8 +2539,17 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  const fileMenuAction = event.target.closest("[data-file-action]");
+  if (fileMenuAction) {
+    event.stopPropagation();
+    if (!fileMenuAction.disabled) {
+      runFileContextAction(fileMenuAction.dataset.fileAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
   if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
+  if (!event.target.closest("#fileContextMenu")) hideFileContextMenu();
   const stashAction = event.target.closest("[data-stash-action]");
   if (stashAction) {
     event.stopPropagation();
@@ -2425,14 +2576,17 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
   if (event.key === "Escape" && els.commitContextMenu.classList.contains("show")) hideCommitContextMenu();
   if (event.key === "Escape" && els.branchContextMenu.classList.contains("show")) hideBranchContextMenu();
+  if (event.key === "Escape" && els.fileContextMenu.classList.contains("show")) hideFileContextMenu();
 });
 document.addEventListener("scroll", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
+  hideFileContextMenu();
 }, true);
 window.addEventListener("resize", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
+  hideFileContextMenu();
 });
 
 initTheme();

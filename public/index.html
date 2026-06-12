@@ -97,6 +97,7 @@
               <span>未暂存的更改</span>
               <div class="panel-actions">
                 <button id="refreshChanges" class="mini-btn" type="button">刷新</button>
+                <button id="stashChanges" class="mini-btn" type="button">储藏</button>
                 <button id="stageAll" class="mini-btn" type="button">暂存全部</button>
                 <button id="discardAll" class="mini-btn danger" type="button">丢弃全部</button>
               </div>
@@ -175,6 +176,14 @@
     <button data-branch-action="copy" type="button">复制分支名</button>
     <button data-branch-action="rename" type="button">重命名分支</button>
     <button data-branch-action="delete" type="button">删除分支</button>
+  </div>
+  <div id="fileContextMenu" class="context-menu" aria-hidden="true">
+    <button data-file-action="diff" type="button">查看对照</button>
+    <button data-file-action="stash" type="button">储藏所选</button>
+    <button data-file-action="stageFile" type="button">暂存</button>
+    <button data-file-action="unstageFile" type="button">取消暂存</button>
+    <button data-file-action="discardWorktreeFile" type="button">丢弃工作区改动</button>
+    <button data-file-action="discardStagedFile" type="button">丢弃已暂存改动</button>
   </div>
   <div id="checkoutModal" class="checkout-modal" aria-hidden="true">
     <div class="checkout-dialog" role="dialog" aria-modal="true" aria-labelledby="checkoutModalTitle">
