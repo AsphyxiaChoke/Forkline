@@ -135,6 +135,7 @@ async function readState(ref = "") {
     stashes: parseStashList(stashOutput),
     recoveryPoints: parseRecoveryPoints(recoveryOutput),
     tags: parseTags(tagOutput),
+    runningOperations: listRunningOperations(),
     operationLog,
     commits: parseLog(logOutput),
   };
@@ -510,6 +511,7 @@ async function runAction(body) {
 function beginOperation(body = {}) {
   const operation = {
     id: nextOperationId++,
+    action: String(body.action || ""),
     label: actionLabel(body),
     startedAt: Date.now(),
   };
@@ -537,6 +539,22 @@ function actionOutputSummary(result) {
   if (typeof result === "string") return result;
   if (!result || typeof result !== "object") return "";
   return result.output || result.message || result.error || "";
+}
+
+function listRunningOperations(excludeId) {
+  const now = Date.now();
+  return [...activeOperations.values()]
+    .filter((operation) => operation.id !== excludeId)
+    .slice(0, 8)
+    .map((operation) => ({
+      id: String(operation.id),
+      action: operation.action || "",
+      label: operation.label,
+      startedAt: operation.startedAt,
+      startedTime: formatLocalTime(new Date(operation.startedAt)),
+      durationMs: Math.max(0, now - operation.startedAt),
+      elapsed: formatDuration(now - operation.startedAt),
+    }));
 }
 
 function actionLabel(body = {}) {
@@ -2259,6 +2277,17 @@ function sampleState() {
         time: "2026-06-12 21:30:00",
       },
     ],
+    runningOperations: [
+      {
+        id: "sample-running",
+        action: "fetch",
+        label: "抓取远端",
+        startedAt: Date.now() - 2400,
+        startedTime: "2026-06-12 21:34:01",
+        durationMs: 2400,
+        elapsed: "2 秒",
+      },
+    ],
     operationLog: [
       {
         id: "sample-2",
@@ -2313,7 +2342,7 @@ function sendJson(res, status, data) {
 }
 
 function sendError(res, error, context = {}) {
-  sendJson(res, 400, { error: friendlyErrorMessage(error, context), operationLog });
+  sendJson(res, 400, { error: friendlyErrorMessage(error, context), operationLog, runningOperations: listRunningOperations(context.operation?.id) });
 }
 
 function friendlyErrorMessage(error, context = {}) {
@@ -2516,10 +2545,9 @@ function describeLockFile(lockPath) {
 }
 
 function describeActiveOperations(excludeId) {
-  return [...activeOperations.values()]
-    .filter((operation) => operation.id !== excludeId)
+  return listRunningOperations(excludeId)
     .slice(0, 4)
-    .map((operation) => `${operation.label}，已运行 ${formatDuration(Date.now() - operation.startedAt)}`);
+    .map((operation) => `${operation.label}，已运行 ${operation.elapsed}`);
 }
 
 function describeGitProcesses(repoPath) {
@@ -2670,7 +2698,8 @@ const server = http.createServer(async (req, res) => {
       try {
         const result = await runAction(body);
         recordOperation(operation, body, "success", actionOutputSummary(result) || "操作已完成");
-        sendJson(res, 200, result && typeof result === "object" ? { ...result, operationLog } : { ok: true, output: String(result || ""), operationLog });
+        const runningOperations = listRunningOperations(operation.id);
+        sendJson(res, 200, result && typeof result === "object" ? { ...result, operationLog, runningOperations } : { ok: true, output: String(result || ""), operationLog, runningOperations });
       } catch (error) {
         recordOperation(operation, body, "error", friendlyErrorMessage(error, { body, operation }));
         sendError(res, error, { body, operation });

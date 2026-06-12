@@ -125,6 +125,7 @@ async function api(path, options = {}) {
   });
   const data = await response.json();
   if (data.operationLog && state.data) state.data.operationLog = data.operationLog;
+  if (data.runningOperations && state.data) state.data.runningOperations = data.runningOperations;
   if (!response.ok || data.error) throw new Error(data.error || "请求失败");
   return data;
 }
@@ -2532,9 +2533,14 @@ function recoveryDetailHtml(point) {
 
 function renderLogsTab() {
   const logs = state.data?.operationLog || [];
+  const running = state.data?.runningOperations || [];
   els.detailTitle.textContent = "操作日志";
-  els.detailSub.textContent = logs.length ? `最近 ${logs.length} 条 Git 操作` : "还没有执行过 Git 操作";
-  els.detailNode.style.borderColor = logs.some((item) => item.status === "error") ? "var(--amber)" : "var(--teal)";
+  els.detailSub.textContent = running.length
+    ? `${running.length} 个 Git 操作正在执行`
+    : logs.length
+      ? `最近 ${logs.length} 条 Git 操作`
+      : "还没有执行过 Git 操作";
+  els.detailNode.style.borderColor = running.length || logs.some((item) => item.status === "error") ? "var(--amber)" : "var(--teal)";
   setActiveDiff(null);
   els.detailBody.innerHTML = `
     <div class="logs-toolbar">
@@ -2544,6 +2550,14 @@ function renderLogsTab() {
       </div>
       <button class="mini-btn" data-log-refresh type="button">刷新</button>
     </div>
+    ${
+      running.length
+        ? `<section class="running-log-section">
+            <div class="running-log-title">进行中</div>
+            <div class="operation-log-list">${running.map(renderRunningOperationItem).join("")}</div>
+          </section>`
+        : ""
+    }
     <div class="operation-log-list">
       ${
         logs.length
@@ -2551,6 +2565,24 @@ function renderLogsTab() {
           : `<div class="log-empty">执行抓取、提交、切换、合并、储藏等操作后，会在这里显示结果。</div>`
       }
     </div>
+  `;
+}
+
+function renderRunningOperationItem(item) {
+  const duration = item.elapsed || formatDurationText(item.durationMs);
+  return `
+    <article class="operation-log-item running">
+      <div class="operation-log-head">
+        <span class="log-status">进行中</span>
+        <strong title="${escapeAttr(item.label || "")}">${escapeHtml(item.label || "Git 操作")}</strong>
+        <em>${escapeHtml(duration)}</em>
+      </div>
+      <div class="operation-log-meta">
+        <span>${escapeHtml(item.startedTime || "")}</span>
+        <code>${escapeHtml(item.action || "")}</code>
+      </div>
+      <pre>这个操作还在执行。若长时间没有结束，请检查认证窗口、网络状态、index.lock 或其他 Git 进程。</pre>
+    </article>
   `;
 }
 
