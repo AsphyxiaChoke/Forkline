@@ -1967,6 +1967,7 @@ function renderSyncTab() {
   const incoming = sync.incoming || [];
   const outgoing = sync.outgoing || [];
   const remotes = sync.remotes || [];
+  const pushGuard = syncPushGuard(sync);
   els.detailNode.style.borderColor = upstreamGone ? "var(--danger)" : hasUpstream ? "var(--teal)" : "var(--yellow)";
   els.detailTitle.textContent = "同步详情";
   els.detailSub.textContent = sync.branch ? `${sync.branch}${sync.upstream ? ` -> ${sync.upstream}` : " · 未设置 upstream"}` : "当前分支";
@@ -1975,7 +1976,7 @@ function renderSyncTab() {
     <div class="sync-actions">
       <button class="mini-btn" data-sync-action="fetch" type="button"><span>抓取</span><span class="command-hint">git fetch</span></button>
       <button class="mini-btn" data-sync-action="pull" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"}><span>拉取</span><span class="command-hint">git pull</span></button>
-      <button class="mini-btn" data-sync-action="push" type="button"><span>推送</span><span class="command-hint">git push</span></button>
+      <button class="mini-btn" data-sync-action="push" type="button" ${pushGuard.blocked ? "disabled" : ""} title="${escapeAttr(pushGuard.title || "git push")}"><span>推送</span><span class="command-hint">git push</span></button>
       <button class="mini-btn danger" data-sync-action="forcePushLease" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"}><span>安全强推</span><span class="command-hint">--force-with-lease</span></button>
     </div>
     <div class="meta-grid sync-meta">
@@ -1984,6 +1985,7 @@ function renderSyncTab() {
       <span>同步状态</span><div class="meta-value">${escapeHtml(syncStatusText(sync))}</div>
       <span>建议</span><div class="meta-value">${escapeHtml(syncAdviceText(sync))}</div>
     </div>
+    ${syncPushGuardHtml(pushGuard)}
     <div class="detail-section-title">上游分支</div>
     ${upstreamControlHtml(sync)}
     <div class="sync-section-head">
@@ -2010,14 +2012,50 @@ function syncStatusText(sync) {
 }
 
 function syncAdviceText(sync) {
+  if (sync?.detached) return "当前处于游离 HEAD，请先切换或创建本地分支。";
   if (!sync?.upstream) return "可以普通推送一次来建立 upstream。";
-  if (sync.upstreamGone) return "请先抓取远端，确认是否需要重新设置 upstream。";
+  if (sync.upstreamGone) return "普通推送已保护。请先抓取远端，确认是否需要重新设置或取消 upstream。";
   const ahead = sync.ahead || 0;
   const behind = sync.behind || 0;
-  if (ahead && behind) return "先查看待拉取提交；如果是改写历史后的预期分叉，可使用安全强推。";
-  if (behind) return "拉取前可以先查看待拉取提交。";
+  if (ahead && behind) return "普通推送已保护。请先查看待拉取提交并拉取/变基；如果是改写历史后的预期分叉，可使用安全强推。";
+  if (behind) return "普通推送已保护。请先查看待拉取提交并拉取或变基。";
   if (ahead) return "可以推送；如果改写过远端历史，请使用安全强推。";
   return "不需要同步操作。";
+}
+
+function syncPushGuard(sync) {
+  if (sync?.detached) {
+    return { blocked: true, title: "当前处于游离 HEAD，不能直接推送分支", text: "推送保护：当前处于游离 HEAD，请先切换或创建本地分支。" };
+  }
+  if (sync?.upstreamGone) {
+    const upstream = sync.upstream || "upstream";
+    return {
+      blocked: true,
+      title: `upstream ${upstream} 已不存在`,
+      text: `推送保护：${upstream} 已不存在。请抓取远端后重新设置 upstream；如果要重新创建远端分支，先取消 upstream 再推送。`,
+    };
+  }
+  const behind = sync?.behind || 0;
+  const ahead = sync?.ahead || 0;
+  if (behind > 0) {
+    const stateText = ahead ? `本地领先 ${ahead}，同时落后 ${behind}` : `本地落后 ${behind}`;
+    return {
+      blocked: true,
+      title: `${stateText}，普通推送已保护`,
+      text: `推送保护：${stateText}。请先拉取/变基并检查待拉取提交；如果这是改写历史后的预期结果，请使用安全强推。`,
+    };
+  }
+  return { blocked: false, title: "", text: "" };
+}
+
+function syncPushGuardHtml(guard) {
+  if (!guard?.blocked) return "";
+  return `
+    <div class="sync-warning">
+      <strong>普通推送已保护</strong>
+      <span>${escapeHtml(guard.text)}</span>
+    </div>
+  `;
 }
 
 function upstreamControlHtml(sync) {
@@ -3034,8 +3072,13 @@ function actionConfirmMessage(action, name) {
   if (action === "push") {
     const branch = state.data?.repo?.branch || "当前分支";
     const info = state.data?.branchInfo?.[branch] || {};
+    const sync = state.data?.sync || {};
+    const guard = syncPushGuard(sync);
+    if (guard.blocked) {
+      return `${guard.text}\n\nForkline 会阻止这次普通推送。请先拉取/变基，或在确认改写远端历史时使用“安全强推”。`;
+    }
     if (info.upstream) {
-      return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n命令：git push`;
+      return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}\n命令：git push`;
     }
     return `当前分支 ${branch} 没有 upstream。确认推送并自动设置 upstream？\n\n默认命令：git push -u origin ${branch}\n如果仓库没有 origin，会使用第一个远端。`;
   }

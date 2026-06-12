@@ -1945,6 +1945,30 @@ body.resizing .workbench-resizer-y::before {
   min-width: 0;
 }
 
+.sync-warning {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: -4px 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(240, 99, 99, 0.45);
+  border-radius: 8px;
+  background: rgba(240, 99, 99, 0.08);
+}
+
+.sync-warning strong {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sync-warning span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .upstream-panel {
   display: grid;
   gap: 8px;

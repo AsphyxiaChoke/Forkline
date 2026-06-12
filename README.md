@@ -8,6 +8,7 @@
 - 本地分支、远端分支、工作区状态和未暂存更改查看；本地分支会显示 upstream、领先/落后数量和上游丢失状态。
 - 右侧“同步”页会显示当前分支 upstream、同步建议、待拉取提交、待推送提交和远端仓库配置，并提供抓取 / 拉取 / 推送 / 安全强推 / 添加远端 / 修改 URL / 删除远端入口。
 - 支持当前分支 upstream 管理：同步页可从已抓取的远端分支中设置 upstream 或取消 upstream；远端分支右键菜单也可直接设为当前分支 upstream。
+- 支持普通推送保护：当前分支落后 upstream 或与 upstream 分叉时，Forkline 会阻止普通 `git push`，同步页显示中文保护原因，并引导先拉取/变基或在确认改写历史时使用安全强推。
 - 文件路径树状归纳，支持同层级聚合与滚动查看。
 - 工作区 Diff、历史提交 Diff、小窗口预览和最大化对照。
 - 可拖拽左侧栏、右侧栏、底部变更面板、文件列表宽度和提交框高度。
@@ -51,6 +52,8 @@ http://127.0.0.1:5177
 设置 upstream 会执行 `git branch --set-upstream-to=<远端分支> <当前分支>`；取消 upstream 会执行 `git branch --unset-upstream <当前分支>`。Forkline 只允许给当前本地分支设置已抓取到的远端分支，避免误把不存在的引用写进配置。
 
 安全强推会执行 `git push --force-with-lease <远端> HEAD:<分支>`，用于 rebase、squash、amend 等改写历史之后更新远端分支。它不会使用裸 `--force`；如果远端分支在你上次抓取后又变化，Git 会拒绝这次强推。
+
+普通推送前，Forkline 会检查当前分支与 upstream 的领先/落后关系。如果本地落后远端，或本地领先同时落后形成分叉，普通推送会被保护拦截，避免非快进推送失败或误覆盖协作历史。同步页会显示待拉取/待推送提交，方便先判断应该拉取、变基还是安全强推。
 
 推送 Tag 会执行 `git push <远端> refs/tags/<tag>:refs/tags/<tag>`；删除远端 Tag 会执行 `git push <远端> :refs/tags/<tag>`，不会删除本地 Tag。本地删除 Tag 使用 `git tag -d <tag>`，不会影响远端 Tag。
 

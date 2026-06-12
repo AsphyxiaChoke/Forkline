@@ -601,6 +601,7 @@ async function pushCurrentBranch() {
   const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
   let output = "";
   if (upstream) {
+    ensurePushIsSafe(before);
     output = await git(currentRepo, ["push"], { timeout: 120000 });
   } else {
     const remoteNames = await readRemoteNames();
@@ -610,6 +611,18 @@ async function pushCurrentBranch() {
   }
   const after = await readCurrentSyncState();
   return syncCommandResult("push", output, before, after);
+}
+
+function ensurePushIsSafe(state) {
+  if (!state?.upstream) return;
+  if (state.upstreamGone) {
+    throw new Error(`推送被保护：当前分支的 upstream ${state.upstream} 已不存在。请先抓取远端，并重新设置 upstream；如果要重新创建远端分支，请先取消 upstream 后再推送。`);
+  }
+  if (state.behind > 0) {
+    const diverged = state.ahead > 0;
+    const stateText = diverged ? `本地领先 ${state.ahead} 个提交，同时落后 ${state.behind} 个提交` : `本地落后 ${state.behind} 个提交`;
+    throw new Error(`推送被保护：当前分支 ${state.branch} ${stateText}。普通 git push 会被远端拒绝，或覆盖团队协作风险过高。请先拉取/变基并检查待拉取提交；如果这是改写历史后的预期结果，请使用“安全强推”。`);
+  }
 }
 
 async function forcePushCurrentBranchWithLease() {
