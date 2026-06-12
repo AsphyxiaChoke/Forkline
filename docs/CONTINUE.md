@@ -8,6 +8,7 @@
 - 远端分支解析已改为读取 `refs/remotes/*`，并按 `git remote` 返回的真实远端名过滤；`git-svn` 这类松散 remote-tracking ref 不再混入“远端分支”列表。
 - 本地分支列表已显示 upstream、领先/落后数量和上游丢失状态；当前分支没有 upstream 时显示“未设置 upstream”。
 - 顶部“推送”已改为智能推送：已有 upstream 时执行 `git push`；没有 upstream 时优先执行 `git push -u origin <当前分支>`，没有 `origin` 则使用第一个远端。
+- Fetch / Pull / Push 同步摘要已接入：操作完成后会显示当前分支 upstream、同步状态、领先/落后变化，以及远端新增/更新/删除引用；无 upstream 智能推送会显示“跟踪变化：未设置 -> origin/... ”。
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - Tag 管理已接入：右侧新增“标签”页，显示本地 Tag 列表和详情，支持查看 Tag 提交、复制名称、推送 Tag、删除本地 Tag、删除远端 Tag；Tag 行右键菜单也提供同样的相关动作和 Git 指令提示。
@@ -51,6 +52,7 @@
 - 远端追踪 API 验证：在 GitTest 创建 `forkline/remote-workflow-20260612155930`，第一次通过 Forkline `push` 自动设置 upstream 为 `origin/forkline/remote-workflow-20260612155930`；再次空提交后 API 返回 `ahead = 1`；第二次 `push` 后远端更新成功。
 - 远端删除 API 验证：通过 Forkline `deleteRemoteBranch` 删除 `origin/forkline/remote-workflow-20260612155930`，远端分支列表已移除，保留的本地分支显示 `upstreamGone = true` / `[gone]`。
 - 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
+- 同步摘要 API 验证：浏览器服务 `http://127.0.0.1:5188` 打开 GitTest 后，验证 `fetch` 能显示“新增远端分支 origin/forkline/sync-fetch-*”；验证远端领先时 `fetch` 显示“落后 0 -> 1”，随后 `pull` 显示“落后 1 -> 0”；验证本地领先时 `push` 显示“领先 1 -> 0”；验证无 upstream 分支 `push` 会设置 upstream，并显示“跟踪变化：未设置 -> origin/...”。测试后 GitTest 已切回 `123` 且工作区干净。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
@@ -68,7 +70,7 @@
 - 本地远端：`origin -> D:\桌面\GitTestRemote.git`
 - 上游丢失测试分支：`forkline/remote-workflow-20260612155930`，用于验证本地分支显示 `[gone]` / “上游丢失”。
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
-- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*`、`forkline/history-*` 临时验证分支。
+- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*`、`forkline/history-*`、`forkline/sync-*` 临时验证分支。
 - 测试 Tag：`forkline-v0.1.0`
 
 ## 下一步建议
@@ -76,5 +78,5 @@
 按原计划继续完善：
 
 1. 交互式历史编辑队列增强：现在已有单提交 squash / fixup / drop，下一步可以做成可视化队列，支持一次调整多个提交、拖拽排序和执行前预览。
-2. 远端同步体验继续补：把 fetch / pull / push 的结果做成更清晰的同步摘要，后续再考虑 force-with-lease、远端 URL 管理和认证失败指引。
+2. 远端同步体验继续补：同步摘要已完成，后续可继续做 force-with-lease、远端 URL 管理、认证失败指引和推送前分叉保护。
 3. Rebase 保护增强：交互式 rebase 前备份当前分支位置，并在异常退出后提供更明显的恢复入口。

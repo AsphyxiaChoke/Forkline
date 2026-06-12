@@ -213,10 +213,10 @@ async function runAction(body) {
   }
   const action = body.action;
   if (action === "fetch") {
-    return commandResult(await git(currentRepo, ["fetch", "--all", "--prune"], { timeout: 120000 }));
+    return fetchRemotes();
   }
   if (action === "pull") {
-    return commandResult(await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 }));
+    return pullCurrentBranch();
   }
   if (action === "push") {
     return pushCurrentBranch();
@@ -567,16 +567,33 @@ async function pushCurrentBranch() {
   if (!branch || branch === "HEAD" || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能直接推送分支。请先切换或创建本地分支。");
   }
+  const before = await readCurrentSyncState();
   const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+  let output = "";
   if (upstream) {
-    const output = await git(currentRepo, ["push"], { timeout: 120000 });
-    return commandResultWithSummary(`已推送当前分支到 ${upstream}`, output);
+    output = await git(currentRepo, ["push"], { timeout: 120000 });
+  } else {
+    const remoteNames = await readRemoteNames();
+    const remote = remoteNames.includes("origin") ? "origin" : remoteNames[0];
+    if (!remote) throw new Error("当前仓库没有远端。请先添加远端仓库后再推送。");
+    output = await git(currentRepo, ["push", "-u", remote, branch], { timeout: 120000 });
   }
-  const remoteNames = await readRemoteNames();
-  const remote = remoteNames.includes("origin") ? "origin" : remoteNames[0];
-  if (!remote) throw new Error("当前仓库没有远端。请先添加远端仓库后再推送。");
-  const output = await git(currentRepo, ["push", "-u", remote, branch], { timeout: 120000 });
-  return commandResultWithSummary(`已推送并设置 upstream：${remote}/${branch}`, output);
+  const after = await readCurrentSyncState();
+  return syncCommandResult("push", output, before, after);
+}
+
+async function fetchRemotes() {
+  const before = await readCurrentSyncState();
+  const output = await git(currentRepo, ["fetch", "--all", "--prune"], { timeout: 120000 });
+  const after = await readCurrentSyncState();
+  return syncCommandResult("fetch", output, before, after);
+}
+
+async function pullCurrentBranch() {
+  const before = await readCurrentSyncState();
+  const output = await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 });
+  const after = await readCurrentSyncState();
+  return syncCommandResult("pull", output, before, after);
 }
 
 async function deleteRemoteBranch(body) {
@@ -1329,6 +1346,116 @@ function commandResult(output) {
 function commandResultWithSummary(summary, output) {
   const detail = String(output || "").trim();
   return { ok: true, output: detail ? `${summary}\n${detail}` : summary };
+}
+
+async function readCurrentSyncState() {
+  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+    return { branch: "HEAD", detached: true, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
+  }
+  const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+  if (!upstream) {
+    return { branch, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
+  }
+  const upstreamSha = (await git(currentRepo, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
+  if (!upstreamSha) {
+    return { branch, upstream, upstreamGone: true, ahead: 0, behind: 0 };
+  }
+  const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${upstream}...HEAD`]).catch(() => "0\t0")).trim().split(/\s+/);
+  return {
+    branch,
+    upstream,
+    upstreamGone: false,
+    behind: Number(counts[0] || 0),
+    ahead: Number(counts[1] || 0),
+  };
+}
+
+function syncCommandResult(action, output, before, after) {
+  const lines = [syncTitle(action)];
+  lines.push(syncTrackingLine(after, before));
+  const stateLine = syncStateLine(after);
+  if (stateLine) lines.push(stateLine);
+  const changeLine = syncChangeLine(before, after);
+  if (changeLine) lines.push(changeLine);
+  const remoteChanges = parseRemoteSyncChanges(output);
+  if (remoteChanges.length) {
+    lines.push(`远端更新：${remoteChanges.slice(0, 5).join("；")}${remoteChanges.length > 5 ? `；另有 ${remoteChanges.length - 5} 项` : ""}`);
+  } else if (action === "fetch") {
+    lines.push("远端更新：没有发现新的远端变化");
+  }
+  const detail = conciseGitOutput(output);
+  if (detail) lines.push(`Git 输出：${detail}`);
+  return { ok: true, output: lines.filter(Boolean).join("\n"), sync: { action, before, after, remoteChanges } };
+}
+
+function syncTitle(action) {
+  if (action === "fetch") return "抓取完成";
+  if (action === "pull") return "拉取完成";
+  if (action === "push") return "推送完成";
+  return "同步完成";
+}
+
+function syncTrackingLine(after, before) {
+  const branch = after?.branch || before?.branch || "当前分支";
+  if (after?.detached || before?.detached) return "当前处于游离 HEAD，无法计算分支同步状态";
+  if (after?.upstream) return `当前分支：${branch} -> ${after.upstream}`;
+  if (before?.upstream) return `当前分支：${branch}，上游 ${before.upstream} 现在不可用`;
+  return `当前分支：${branch}，未设置 upstream`;
+}
+
+function syncStateLine(state) {
+  if (!state || state.detached) return "";
+  if (!state.upstream) return "同步状态：未设置 upstream，无法判断领先/落后";
+  if (state.upstreamGone) return "同步状态：上游分支已不存在，请抓取远端后确认是否需要重新设置 upstream";
+  if (!state.ahead && !state.behind) return "同步状态：本地与上游一致";
+  if (state.ahead && state.behind) return `同步状态：本地领先 ${state.ahead} 个提交，同时落后 ${state.behind} 个提交，需要先处理分叉`;
+  if (state.ahead) return `同步状态：本地还有 ${state.ahead} 个提交未推送`;
+  return `同步状态：远端还有 ${state.behind} 个提交未拉取`;
+}
+
+function syncChangeLine(before, after) {
+  if (!before || !after || before.detached || after.detached || !after.upstream || after.upstreamGone) return "";
+  if (before.upstream !== after.upstream) {
+    return `跟踪变化：${before.upstream || "未设置"} -> ${after.upstream}`;
+  }
+  if (before.ahead === after.ahead && before.behind === after.behind) return "";
+  return `领先/落后变化：领先 ${before.ahead} -> ${after.ahead}，落后 ${before.behind} -> ${after.behind}`;
+}
+
+function parseRemoteSyncChanges(output) {
+  const changes = [];
+  for (const rawLine of String(output || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("From ") || line.startsWith("To ")) continue;
+    const arrow = line.match(/(.+?)\s+->\s+(.+)$/);
+    if (!arrow) continue;
+    const left = arrow[1].trim();
+    const right = arrow[2].trim();
+    if (left.includes("[new branch]")) {
+      changes.push(`新增远端分支 ${right}`);
+    } else if (left.includes("[new tag]")) {
+      changes.push(`新增远端 Tag ${right}`);
+    } else if (left.includes("[deleted]")) {
+      changes.push(`删除远端引用 ${right}`);
+    } else if (left.includes("[forced update]")) {
+      changes.push(`强制更新 ${right}`);
+    } else if (right) {
+      changes.push(`更新 ${right}`);
+    }
+  }
+  return [...new Set(changes)];
+}
+
+function conciseGitOutput(output) {
+  const lines = String(output || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.startsWith("From ") && !line.startsWith("To "))
+    .filter((line) => !/\s+->\s+/.test(line))
+    .slice(0, 4);
+  return lines.join("；");
 }
 
 function parseStatus(output) {
