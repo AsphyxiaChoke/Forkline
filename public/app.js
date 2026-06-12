@@ -546,14 +546,23 @@ function renderRepoOperationBanner(files) {
   const operation = state.data?.repo?.operation;
   const conflicts = (files || []).filter((file) => file.conflict);
   if (!operation && !conflicts.length) return "";
-  const title = operation?.type === "revert" ? "还原提交发生冲突" : operation?.label || "仓库有未完成操作";
+  const isRevert = operation?.type === "revert";
+  const isCherryPick = operation?.type === "cherryPick";
+  const actionName = isCherryPick ? "挑选" : isRevert ? "还原" : "操作";
+  const title = isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作";
   const text = conflicts.length
-    ? `${conflicts.length} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续操作；不想保留这次还原就中止。`
+    ? `${conflicts.length} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续${actionName}；不想保留这次${actionName}就中止。`
     : "当前操作还没有结束。";
-  const actions = operation?.type === "revert"
+  const actions = isRevert
     ? `
       <button class="mini-btn" data-repo-operation="continueRevert" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git revert --continue"}"><span>继续还原</span><span class="command-hint">git revert --continue</span></button>
       <button class="mini-btn danger" data-repo-operation="abortRevert" type="button" title="git revert --abort"><span>中止还原</span><span class="command-hint">git revert --abort</span></button>
+    `
+    : isCherryPick
+    ? `
+      <button class="mini-btn" data-repo-operation="continueCherryPick" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git cherry-pick --continue"}"><span>继续挑选</span><span class="command-hint">git cherry-pick --continue</span></button>
+      <button class="mini-btn" data-repo-operation="skipCherryPick" type="button" title="git cherry-pick --skip"><span>跳过挑选</span><span class="command-hint">git cherry-pick --skip</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortCherryPick" type="button" title="git cherry-pick --abort"><span>中止挑选</span><span class="command-hint">git cherry-pick --abort</span></button>
     `
     : "";
   return `
@@ -703,9 +712,20 @@ function showCommitContextMenu(event, commit) {
   hideFileContextMenu();
   state.contextCommitSha = commit.sha;
   const menu = els.commitContextMenu;
+  const isMergeCommit = (commit.parents || []).length > 1;
+  const cherryPickButton = menu.querySelector('[data-commit-action="cherryPick"]');
+  const revertButton = menu.querySelector('[data-commit-action="revert"]');
+  if (cherryPickButton) {
+    cherryPickButton.disabled = isMergeCommit;
+    cherryPickButton.title = isMergeCommit ? "merge 提交需要选择主线，暂不支持一键挑选" : "git cherry-pick：把此提交复制到当前分支";
+  }
+  if (revertButton) {
+    revertButton.disabled = isMergeCommit;
+    revertButton.title = isMergeCommit ? "merge 提交需要选择主线，暂不支持一键还原" : "git revert：创建一个反向提交来抵消此提交";
+  }
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
-  positionContextMenu(menu, event, 220);
+  positionContextMenu(menu, event, 260);
 }
 
 function positionContextMenu(menu, event, fallbackHeight = 220) {
@@ -931,7 +951,7 @@ async function runCommitContextAction(action) {
     setTimeout(() => els.detailBody.querySelector("[data-reword-form] input")?.focus(), 0);
     return;
   }
-  if (action === "revert" || action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
+  if (action === "cherryPick" || action === "revert" || action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
     await runCommitToolAction(action, commit.sha);
   }
 }
@@ -939,12 +959,32 @@ async function runCommitContextAction(action) {
 async function runCommitToolAction(action, sha) {
   const commit = state.data?.commits.find((item) => item.sha === sha || item.sha === state.selectedSha);
   if (!commit) return;
+  if (action === "cherryPick") {
+    await cherryPickCommit(commit);
+    return;
+  }
   if (action === "revert") {
     await revertCommit(commit);
     return;
   }
   if (action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
     await resetToCommit(commit, action.replace(/^reset/, "").toLowerCase());
+  }
+}
+
+async function cherryPickCommit(commit) {
+  if (!state.data || !commit) return;
+  if (!state.data.repo.isSample && !confirm(`确认挑选提交 ${commit.short} 到当前分支？\n\n这会在当前分支创建一个内容相同的新提交，不会移动原分支。\n提交信息：${commit.message}`)) return;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha }),
+    });
+    toast(result.output || `已挑选提交 ${commit.short}`);
+    await reloadAfterHistoryAction();
+  } catch (error) {
+    toast(error.message);
+    await refreshWorktree(false);
   }
 }
 
@@ -1329,6 +1369,7 @@ function renderDetailsTab(commit, detail) {
     </div>
     <div class="detail-section-title">提交操作</div>
     <div class="commit-tools">
+      <button class="mini-btn" data-commit-tool="cherryPick" data-sha="${escapeAttr(commit.sha)}" type="button" ${isMergeCommit ? "disabled" : ""} title="${isMergeCommit ? "merge 提交需要选择主线，暂不支持一键挑选" : "git cherry-pick：把此提交复制到当前分支"}"><span>挑选</span><span class="command-hint">git cherry-pick</span></button>
       <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" ${isMergeCommit ? "disabled" : ""} title="${isMergeCommit ? "merge 提交需要选择主线，暂不支持一键还原" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">git revert</span></button>
       <button class="mini-btn" data-commit-tool="resetSoft" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --soft：移动当前分支，改动保留在已暂存区"><span>软重置</span><span class="command-hint">git reset --soft</span></button>
       <button class="mini-btn" data-commit-tool="resetMixed" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --mixed：移动当前分支，改动保留在工作区"><span>混合重置</span><span class="command-hint">git reset --mixed</span></button>
@@ -2259,6 +2300,9 @@ async function runRepoOperation(action, button) {
   const messages = {
     continueRevert: "确认继续还原？请先确认所有冲突文件已经解决并暂存。",
     abortRevert: "确认中止还原？这会放弃当前这次还原，并回到还原前的状态。",
+    continueCherryPick: "确认继续挑选？请先确认所有冲突文件已经解决并暂存。",
+    skipCherryPick: "确认跳过当前挑选提交？这会放弃当前这一个提交的挑选，继续处理后续状态。",
+    abortCherryPick: "确认中止挑选？这会放弃当前这次 cherry-pick，并回到挑选前的状态。",
   };
   if (!state.data.repo.isSample && !confirm(messages[action] || "确认继续？")) return;
   if (button) button.disabled = true;
@@ -2654,6 +2698,7 @@ els.detailBody.addEventListener("click", (event) => {
   const button = event.target.closest("[data-commit-tool]");
   if (!button) return;
   event.preventDefault();
+  if (button.disabled) return;
   runCommitToolAction(button.dataset.commitTool, button.dataset.sha).catch((error) => toast(error.message));
 });
 document.querySelectorAll("[data-action]").forEach((button) => {
@@ -2669,7 +2714,9 @@ document.addEventListener("click", (event) => {
   const commitMenuAction = event.target.closest("[data-commit-action]");
   if (commitMenuAction) {
     event.stopPropagation();
-    runCommitContextAction(commitMenuAction.dataset.commitAction).catch((error) => toast(error.message));
+    if (!commitMenuAction.disabled) {
+      runCommitContextAction(commitMenuAction.dataset.commitAction).catch((error) => toast(error.message));
+    }
     return;
   }
   const branchMenuAction = event.target.closest("[data-branch-action]");

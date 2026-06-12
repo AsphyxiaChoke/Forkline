@@ -1037,6 +1037,10 @@ body.resizing .stage-split-resizer::before {
   text-align: left;
 }
 
+.operation-actions .command-hint {
+  max-width: 150px;
+}
+
 .change-section-title {
   display: flex;
   align-items: center;

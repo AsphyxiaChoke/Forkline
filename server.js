@@ -226,6 +226,15 @@ async function runAction(body) {
   if (action === "abortRevert") {
     return commandResult(await git(currentRepo, ["revert", "--abort"], { timeout: 120000 }) || "已中止还原，工作区已回到还原前状态");
   }
+  if (action === "continueCherryPick") {
+    return continueCherryPick();
+  }
+  if (action === "skipCherryPick") {
+    return commandResult(await git(currentRepo, ["cherry-pick", "--skip"], { timeout: 120000 }) || "已跳过当前挑选提交");
+  }
+  if (action === "abortCherryPick") {
+    return commandResult(await git(currentRepo, ["cherry-pick", "--abort"], { timeout: 120000 }) || "已中止挑选，工作区已回到挑选前状态");
+  }
   if (action === "checkoutBranch") {
     return checkoutBranch(body);
   }
@@ -309,6 +318,9 @@ async function runAction(body) {
   if (action === "rewordCommit") {
     return commandResult(await rewordCommit(body));
   }
+  if (action === "cherryPickCommit") {
+    return cherryPickCommit(body);
+  }
   if (action === "revertCommit") {
     return revertCommit(body);
   }
@@ -341,6 +353,9 @@ function actionLabel(body = {}) {
     discardAll: "丢弃全部未提交更改",
     continueRevert: "继续还原",
     abortRevert: "中止还原",
+    continueCherryPick: "继续挑选提交",
+    skipCherryPick: "跳过挑选提交",
+    abortCherryPick: "中止挑选提交",
     createBranch: branch ? `创建分支 ${branch}` : "创建分支",
     renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
     deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
@@ -360,6 +375,7 @@ function actionLabel(body = {}) {
     commit: "创建提交",
     amendCommit: "追加到上一次提交",
     rewordCommit: body.sha ? `修改提交信息 ${shortText(body.sha, 12)}` : "修改历史提交信息",
+    cherryPickCommit: body.sha ? `挑选提交 ${shortText(body.sha, 12)}` : "挑选提交",
     revertCommit: body.sha ? `还原提交 ${shortText(body.sha, 12)}` : "还原提交",
     resetToCommit: body.sha ? `${resetModeLabel(body.mode)}到 ${shortText(body.sha, 12)}` : "重置到提交",
     checkoutBranch: branch ? `切换分支 ${branch}${checkoutModeText(body.mode)}` : "切换分支",
@@ -653,6 +669,16 @@ async function revertCommit(body) {
   return { ok: true, output: `已还原提交 ${target.slice(0, 7)}，新建反向提交 ${newHead}` };
 }
 
+async function cherryPickCommit(body) {
+  const target = await resolveCommit(body.sha);
+  const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
+  const parents = parentLine.split(/\s+/).slice(1);
+  if (parents.length > 1) throw new Error("暂不支持一键挑选 merge 提交；需要指定主线后才能 cherry-pick");
+  await git(currentRepo, ["cherry-pick", target], { timeout: 120000 });
+  const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  return { ok: true, output: `已挑选提交 ${target.slice(0, 7)}，当前分支新建提交 ${newHead}` };
+}
+
 async function resetToCommit(body) {
   const target = await resolveCommit(body.sha);
   const mode = normalizeResetMode(body.mode);
@@ -668,11 +694,30 @@ async function continueRevert() {
   }
   const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
   try {
-    const output = await git(currentRepo, ["revert", "--continue"], {
+    await git(currentRepo, ["revert", "--continue"], {
       timeout: 120000,
       env: { GIT_EDITOR: `"${process.execPath}" "${editorFile}"` },
     });
-    return commandResult(output || "已继续还原并创建反向提交");
+    const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+    return { ok: true, output: `已继续还原并创建反向提交 ${newHead}` };
+  } finally {
+    removeQuietly(editorFile);
+  }
+}
+
+async function continueCherryPick() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "cherryPick") {
+    return { ok: true, output: "当前没有正在进行的挑选，工作区已经干净。" };
+  }
+  const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  try {
+    await git(currentRepo, ["cherry-pick", "--continue"], {
+      timeout: 120000,
+      env: { GIT_EDITOR: `"${process.execPath}" "${editorFile}"` },
+    });
+    const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+    return { ok: true, output: `已继续挑选并创建提交 ${newHead}` };
   } finally {
     removeQuietly(editorFile);
   }
@@ -1092,11 +1137,15 @@ function friendlyErrorMessage(error, context = {}) {
   const raw = String(error?.message || error || "").trim();
   const text = raw || "操作失败";
   const lower = text.toLowerCase();
+  const operationKind = actionOperationKind(context.body?.action);
   if (lower.includes("no cherry-pick or revert in progress")) {
-    return "当前没有正在进行的还原，工作区已经干净。";
+    return operationKind === "cherryPick" ? "当前没有正在进行的挑选，工作区已经干净。" : "当前没有正在进行的还原，工作区已经干净。";
   }
   if (lower.includes("nothing to commit") && lower.includes("working tree clean")) {
-    return "没有需要继续提交的还原内容，工作区已经干净。";
+    return operationKind === "cherryPick" ? "没有需要继续提交的挑选内容，工作区已经干净。" : "没有需要继续提交的还原内容，工作区已经干净。";
+  }
+  if (lower.includes("previous cherry-pick is now empty") || lower.includes("the previous cherry-pick is now empty")) {
+    return "这次挑选解决冲突后没有留下新的改动。可以跳过挑选，或中止这次挑选。";
   }
   if (lower.includes("index.lock") && (lower.includes("unable to create") || lower.includes("file exists"))) {
     return indexLockMessage(text, context);
@@ -1110,7 +1159,13 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes(" is unmerged")) {
     const file = text.match(/path ['"]([^'"]+)['"] is unmerged/i)?.[1] || "";
     const target = file ? `文件 ${file} ` : "";
+    if (operationKind === "cherryPick") {
+      return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续挑选”；如果不想保留这次挑选，点“中止挑选”。`;
+    }
     return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续还原”；如果不想保留这次还原，点“中止还原”。`;
+  }
+  if (lower.includes("cherry-pick") && (lower.includes("automatic merge failed") || lower.includes("conflict"))) {
+    return "挑选提交时发生冲突。请在工作区查看冲突文件，手动解决并暂存后继续挑选；不想继续时可以中止挑选。";
   }
   if (lower.includes("revert") && (lower.includes("automatic merge failed") || lower.includes("conflict"))) {
     return "还原提交时发生冲突。请在工作区查看冲突文件，手动解决后提交；不想继续时可以执行中止还原。";
@@ -1146,6 +1201,12 @@ function friendlyErrorMessage(error, context = {}) {
     return "远端认证失败。请检查 Git 账号、Token 或凭据管理器。";
   }
   return text;
+}
+
+function actionOperationKind(action) {
+  if (String(action || "").toLowerCase().includes("cherrypick")) return "cherryPick";
+  if (String(action || "").toLowerCase().includes("revert")) return "revert";
+  return "";
 }
 
 function indexLockMessage(text, context = {}) {
@@ -1203,7 +1264,7 @@ function detectRepoOperation(repoPath) {
     return { type: "revert", label: "还原提交未完成", canContinue: true, canAbort: true };
   }
   if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
-    return { type: "cherryPick", label: "挑选提交未完成", canContinue: false, canAbort: false };
+    return { type: "cherryPick", label: "挑选提交未完成", canContinue: true, canAbort: true, canSkip: true };
   }
   if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
     return { type: "merge", label: "合并未完成", canContinue: false, canAbort: false };

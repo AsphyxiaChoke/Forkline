@@ -15,6 +15,7 @@
 - GitKraken 风格学习方向：图谱保持主视觉区域，左栏承载仓库/分支/工作区导航，右栏承载所选提交的上下文详情；右键菜单按动作类别分组，左侧中文动作、右侧灰色等宽 Git 指令提示，危险动作明确标红。
 - 还原冲突体验已补强：`path 'xxx' is unmerged` 会翻译为中文冲突提示；工作区会识别 `REVERT_HEAD` 并显示“还原提交发生冲突”，冲突文件用红色标识，提供“继续还原 (git revert --continue)”和“中止还原 (git revert --abort)”入口。
 - “继续还原”现在会先检查是否仍存在 `REVERT_HEAD`；没有正在进行的还原时返回中文提示，不再显示 Git 原始的 `nothing to commit, working tree clean`。
+- Cherry-pick 已接入：提交右键菜单和提交详情面板都有“挑选此提交 / 挑选”入口，并标注 `git cherry-pick`；后端支持 `cherryPickCommit`、`continueCherryPick`、`skipCherryPick`、`abortCherryPick`。遇到 `CHERRY_PICK_HEAD` 时工作区显示“挑选提交发生冲突”，冲突文件用红色标识，并提供“继续挑选 / 跳过挑选 / 中止挑选”。
 
 ## 已验证
 
@@ -30,6 +31,9 @@
 - Stash 说明：储藏会把改动从工作区移到 Git stash，所以工作区改动消失是正常行为；用户可在右侧“储藏”页恢复。
 - `index.lock` 验证：在 `D:\桌面\GitTest\.git\index.lock` 临时创建测试锁后调用 `stageAll`，API 返回“刚才的‘暂存全部更改’没有执行成功”，并显示锁文件路径、锁文件时间和 Git 进程检测说明；测试锁随后已删除。
 - Revert / Reset 验证：在 GitTest 临时分支 `forkline/revert-reset-api-20260612134014` 上创建两个测试提交，API 调用 `revertCommit` 生成 `Revert "Forkline revert target ..."` 提交；随后分别验证 `resetToCommit` 的 soft、mixed、hard 模式可移动 HEAD，最终测试分支工作区干净。
+- Cherry-pick API 验证：在 GitTest 临时分支 `forkline/cherry-source-*` / `forkline/cherry-target-*` 验证普通挑选成功；在 `forkline/cherry-conflict-*` 验证冲突后返回中文提示、`operation.type = cherryPick`、冲突文件可识别，并验证 `abortCherryPick` 可恢复干净。
+- Cherry-pick 流程验证：在 `forkline/cherry-skip-*` 验证冲突后 `skipCherryPick` 会移除 `CHERRY_PICK_HEAD` 并恢复干净；在 `forkline/cherry-continue-*` 验证手动解决并暂存冲突后 `continueCherryPick` 返回中文“已继续挑选并创建提交 <sha>”。
+- UI 验证：浏览器打开 `http://127.0.0.1:5177`，GitTest 提交右键菜单显示“挑选此提交 git cherry-pick”；进入 `forkline/ui-cherry-conflict-*` 冲突状态后，工作区横幅显示“挑选提交发生冲突”，按钮状态为“继续挑选”禁用、“跳过挑选”和“中止挑选”可用。
 
 ## GitTest 测试数据
 
@@ -39,12 +43,13 @@
 - 未暂存：`forkline-fixtures/worktree-demo.txt`
 - 未跟踪：`forkline-fixtures/untracked-demo.txt`
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
-- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`
+- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*` / `forkline/ui-cherry-*` 临时验证分支。
 - 测试 Tag：`forkline-v0.1.0`
 
 ## 下一步建议
 
 按原计划继续完善：
 
-1. Cherry-pick：提交右键新增“挑选此提交”，冲突时给中文提示并在工作区展示冲突状态。
-2. Revert / Reset 后续增强：增加“中止还原 / 继续还原”状态入口，并为 merge commit revert 提供主线选择。
+1. Merge 冲突工作流：识别 `MERGE_HEAD` 后提供“继续合并 / 中止合并”入口，并把冲突文案从通用提示改成合并专属下一步。
+2. Merge commit 主线选择：为 cherry-pick / revert merge commit 增加主线选择弹窗，对应 `-m <parent-number>`。
+3. Rebase / 历史编辑队列：把 reword 之外的 squash / fixup / drop 做成可视化队列，接近 GitKraken 的交互式 rebase 体验。
