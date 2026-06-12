@@ -12,6 +12,7 @@
 - 本地分支、远端分支、工作区状态和未暂存更改查看；左侧分支列表可按分支名或 upstream 筛选，本地分支会显示 upstream、领先/落后数量和上游丢失状态。
 - 右侧“分支”页支持分支整理：汇总已合并、上游丢失和长期未动分支，标出当前分支、主干分支和 worktree 占用原因，并可安全删除单个分支或批量删除已合并分支。
 - 右侧“同步”页会显示当前分支 upstream、同步建议、待拉取提交、待推送提交和远端仓库配置，并提供抓取 / 拉取 / 变基拉取 / 推送 / 安全强推 / 添加远端 / 诊断连接 / 修改 URL / 删除远端入口；远端诊断结果会留在同步页，显示 URL、命令、中文原因、问题分类、排查步骤和可复制诊断命令。
+- 同步页内置认证助手：按远端 URL 判断 SSH / HTTPS / 本地路径，列出本机 `~/.ssh` 中可见的 SSH key 文件名，检测 `ssh-agent` 和 Git Credential Manager，并提供可复制诊断命令。
 - 同步页的待拉取 / 待推送提交可直接点击预览文件列表和 Diff，并可最大化对照查看。
 - 提交详情和提交右键菜单支持在 GitHub / GitLab / Bitbucket / Gitea 等网页远端中打开当前提交。
 - 右侧“日志”页会显示进行中的 Git 操作，并记录最近 Git 操作的成功/失败、耗时和 Git 输出摘要，便于排查哪个操作正在卡住或刚刚失败。
@@ -66,6 +67,8 @@ http://127.0.0.1:5177
 推送当前分支时，如果已经设置 upstream，Forkline 会执行普通 `git push`；如果没有 upstream，会选择 `origin` 或第一个可用远端执行 `git push -u <远端> <当前分支>`。删除远端分支会执行 `git push <远端> --delete <分支>`，只删除远端仓库中的分支，不会删除本地分支。
 
 同步页里的远端仓库管理对应 `git remote add`、`git remote set-url`、`git remote remove`、`git fetch <远端> --prune` 和 `git ls-remote --heads <远端>`。删除远端只会移除当前本地仓库的远端配置，不会删除 GitHub 或服务器上的仓库。“诊断连接”只读取远端分支列表，用来确认远端 URL、网络和认证是否可用，不会写入本地引用；诊断结果会在同步页保留，失败时会按 SSH key、HTTPS token、仓库权限、DNS/代理、证书或 URL/本地路径分类，给出中文排查步骤和可复制命令。
+
+同步页的认证助手只读取认证环境摘要，不读取或显示私钥内容。SSH key 清单只展示文件名、是否有公钥/私钥配对和更新时间；`ssh-agent` 检测执行 `ssh-add -l`，HTTPS 凭据检测会尝试 `git credential-manager version` / `git credential-manager-core --version`。这些检查用于判断环境是否具备认证条件，真正的远端权限仍以“诊断连接”的 `git ls-remote --heads <远端>` 结果为准。
 
 设置 upstream 会执行 `git branch --set-upstream-to=<远端分支> <当前分支>`；取消 upstream 会执行 `git branch --unset-upstream <当前分支>`。Forkline 只允许给当前本地分支设置已抓取到的远端分支，避免误把不存在的引用写进配置。
 

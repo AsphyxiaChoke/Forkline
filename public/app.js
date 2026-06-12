@@ -3719,6 +3719,7 @@ function renderSyncTab() {
     </div>
     ${remoteListHtml(remotes)}
     ${remoteCheckHtml(remotes)}
+    ${syncAuthHtml(sync.auth, remotes)}
     <div class="detail-section-title">待拉取提交</div>
     ${syncCommitListHtml(incoming, "远端没有本地缺少的提交")}
     <div class="detail-section-title">待推送提交</div>
@@ -4139,6 +4140,77 @@ function remoteCheckHtml(remotes) {
       ${output ? `<pre>${escapeHtml(output)}</pre>` : ""}
     </section>
   `;
+}
+
+function syncAuthHtml(auth, remotes = []) {
+  if (!auth && !remotes.length) return "";
+  const model = auth || {};
+  const level = model.level || "info";
+  const remoteRows = Array.isArray(model.remotes) ? model.remotes : [];
+  const ssh = model.ssh || {};
+  const agent = model.agent || {};
+  const credential = model.credentialManager || {};
+  const keys = Array.isArray(ssh.keys) ? ssh.keys : [];
+  const commands = Array.isArray(model.commands) ? model.commands.filter(Boolean) : ["git remote -v"];
+  return `
+    <section class="auth-card auth-card-${escapeAttr(level)}">
+      <div class="auth-card-head">
+        <div>
+          <strong>认证助手</strong>
+          <span>${escapeHtml(model.summary || "检查 SSH key、ssh-agent 和 HTTPS 凭据管理器")}</span>
+        </div>
+        <span class="auth-status">${escapeHtml(authLevelLabel(level))}</span>
+      </div>
+      ${model.advice ? `<p class="auth-advice">${escapeHtml(model.advice)}</p>` : ""}
+      <div class="auth-remote-list">
+        ${
+          remoteRows.length
+            ? remoteRows.map((remote) => authRemotePillHtml(remote)).join("")
+            : `<span class="auth-pill muted">没有远端</span>`
+        }
+      </div>
+      <div class="auth-grid">
+        <div class="auth-box">
+          <strong>SSH key</strong>
+          <span>${escapeHtml(ssh.message || (ssh.exists ? "已读取 ~/.ssh" : "没有读取到 ~/.ssh"))}</span>
+          <div class="auth-key-list">
+            ${
+              keys.length
+                ? keys.map((key) => authKeyHtml(key)).join("")
+                : `<em>未发现常见 key 文件</em>`
+            }
+          </div>
+        </div>
+        <div class="auth-box">
+          <strong>认证工具</strong>
+          <span>${escapeHtml(agent.message || "ssh-agent 未检测")}</span>
+          <span>${escapeHtml(credential.message || "Git Credential Manager 未检测")}</span>
+          <span>${escapeHtml(ssh.configExists ? "存在 SSH config" : "未发现 SSH config")} · ${escapeHtml(ssh.knownHostsExists ? "存在 known_hosts" : "未发现 known_hosts")}</span>
+        </div>
+      </div>
+      <div class="remote-diagnosis-commands auth-commands">
+        ${commands.map((cmd) => `<button class="remote-command-copy" data-copy-remote-command="${escapeAttr(cmd)}" type="button" title="复制命令"><span>${escapeHtml(cmd)}</span><em>复制</em></button>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function authLevelLabel(level) {
+  if (level === "ok") return "正常";
+  if (level === "warn") return "注意";
+  return "提示";
+}
+
+function authRemotePillHtml(remote) {
+  const kind = remote.kind || "missing";
+  const title = [remote.name, remote.url, remote.host].filter(Boolean).join(" · ");
+  return `<span class="auth-pill auth-${escapeAttr(kind)}" title="${escapeAttr(title)}"><strong>${escapeHtml(remote.name || "remote")}</strong><em>${escapeHtml(remote.kindLabel || kind)}</em>${remote.host ? `<small>${escapeHtml(remote.host)}</small>` : ""}</span>`;
+}
+
+function authKeyHtml(key) {
+  const status = key.privateKey && key.publicKey ? "完整" : key.privateKey ? "缺 .pub" : "仅公钥";
+  const file = key.privateFile || key.publicFile || key.name || "";
+  return `<span class="auth-key" title="${escapeAttr([key.privateFile, key.publicFile, key.updated].filter(Boolean).join(" · "))}"><code>${escapeHtml(file)}</code><em>${escapeHtml(status)}</em></span>`;
 }
 
 function remoteDiagnosisHtml(diagnosis) {

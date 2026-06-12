@@ -3482,9 +3482,20 @@ function parseLog(output) {
 
 async function readCurrentSyncDetails() {
   const [state, remotes] = await Promise.all([readCurrentSyncState(), readRemoteDetails()]);
+  const auth = await readAuthDiagnostics(remotes).catch((error) => ({
+    summary: "认证助手读取失败",
+    level: "warn",
+    advice: `无法读取本机认证信息：${String(error?.message || error || "未知错误")}`,
+    remotes: remotes.map((remote) => remoteAuthSummary(remote)),
+    ssh: { directory: "~/.ssh", exists: false, keys: [], configExists: false, knownHostsExists: false },
+    agent: { available: false, loaded: false, keyCount: 0, message: "未检测" },
+    credentialManager: { available: false, name: "Git Credential Manager", version: "", message: "未检测" },
+    commands: ["git remote -v"],
+  }));
   const details = {
     ...state,
     remotes,
+    auth,
     incoming: [],
     outgoing: [],
   };
@@ -3526,6 +3537,232 @@ function parseSyncCommits(output) {
       };
     })
     .filter((commit) => commit.sha);
+}
+
+async function readAuthDiagnostics(remotes = []) {
+  const [ssh, agent, credentialManager] = await Promise.all([
+    readSshKeyInventory(),
+    readSshAgentStatus(),
+    readCredentialManagerStatus(),
+  ]);
+  const remoteSummaries = remotes.map((remote) => remoteAuthSummary(remote));
+  const hasSshRemote = remoteSummaries.some((remote) => remote.kind === "ssh");
+  const hasHttpsRemote = remoteSummaries.some((remote) => remote.kind === "https");
+  const commands = buildAuthDiagnosticCommands(remoteSummaries);
+  const adviceParts = [];
+  let level = "ok";
+
+  if (!remoteSummaries.length) {
+    level = "info";
+    adviceParts.push("当前仓库还没有远端，添加远端后再检查认证状态。");
+  }
+  if (hasSshRemote) {
+    if (!ssh.exists || !ssh.keys.length) {
+      level = "warn";
+      adviceParts.push("远端使用 SSH，但没有在 ~/.ssh 里发现常见 key 文件。需要先创建 SSH key 并添加到 Git 平台。");
+    } else if (!agent.loaded) {
+      level = level === "warn" ? "warn" : "info";
+      adviceParts.push("远端使用 SSH，已发现 key 文件；ssh-agent 没有报告已加载 key，推送失败时请执行 ssh-add。");
+    } else {
+      adviceParts.push(`SSH key 和 ssh-agent 都可见，agent 当前报告 ${agent.keyCount} 个 key。`);
+    }
+  }
+  if (hasHttpsRemote) {
+    if (!credentialManager.available) {
+      level = level === "warn" ? "warn" : "info";
+      adviceParts.push("远端使用 HTTPS，但没有检测到 Git Credential Manager。推送时可能需要手动输入 Token。");
+    } else {
+      adviceParts.push(`HTTPS 凭据管理器可用：${credentialManager.version || credentialManager.name}。`);
+    }
+  }
+  if (!adviceParts.length) {
+    adviceParts.push("当前远端认证配置没有明显风险；如果抓取或推送失败，请先点远端行的“诊断”。");
+  }
+
+  return {
+    summary: authSummaryText(remoteSummaries, ssh, agent, credentialManager),
+    level,
+    advice: adviceParts.join(" "),
+    remotes: remoteSummaries,
+    ssh,
+    agent,
+    credentialManager,
+    commands,
+  };
+}
+
+function remoteAuthSummary(remote = {}) {
+  const url = remote.pushUrl || remote.fetchUrl || "";
+  const kind = remoteAuthKind(url);
+  const host = extractRemoteHost(url);
+  return {
+    name: remote.name || "",
+    url,
+    kind,
+    kindLabel: remoteAuthKindLabel(kind),
+    host,
+  };
+}
+
+function remoteAuthKind(url) {
+  const text = String(url || "").trim();
+  if (!text) return "missing";
+  if (/^https?:\/\//i.test(text)) return "https";
+  if (/^ssh:\/\//i.test(text) || /^[^@\s]+@[^:\s]+:.+/.test(text)) return "ssh";
+  return "local";
+}
+
+function remoteAuthKindLabel(kind) {
+  if (kind === "ssh") return "SSH";
+  if (kind === "https") return "HTTPS";
+  if (kind === "local") return "本地路径";
+  return "未设置";
+}
+
+async function readSshKeyInventory() {
+  const dir = path.join(os.homedir(), ".ssh");
+  const result = {
+    directory: "~/.ssh",
+    exists: false,
+    keys: [],
+    configExists: false,
+    knownHostsExists: false,
+    message: "",
+  };
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    result.exists = true;
+  } catch (error) {
+    result.message = "没有找到 ~/.ssh 目录，或当前进程没有权限读取。";
+    return result;
+  }
+
+  const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  result.configExists = files.includes("config");
+  result.knownHostsExists = files.some((file) => file === "known_hosts" || file.startsWith("known_hosts."));
+  const candidates = new Map();
+  const ensure = (base) => {
+    if (!candidates.has(base)) candidates.set(base, { name: base, publicKey: false, privateKey: false, publicFile: "", privateFile: "", updated: "" });
+    return candidates.get(base);
+  };
+
+  for (const file of files) {
+    if (file.endsWith(".pub") && !file.startsWith("known_hosts")) {
+      const base = file.slice(0, -4);
+      const item = ensure(base);
+      item.publicKey = true;
+      item.publicFile = file;
+      item.updated = await sshFileUpdated(dir, file);
+      continue;
+    }
+    if (/^id_[A-Za-z0-9_-]+$/.test(file) || ["identity"].includes(file)) {
+      const item = ensure(file);
+      item.privateKey = true;
+      item.privateFile = file;
+      item.updated = await sshFileUpdated(dir, file);
+    }
+  }
+
+  result.keys = [...candidates.values()]
+    .sort((left, right) => Number(right.privateKey) - Number(left.privateKey) || left.name.localeCompare(right.name))
+    .slice(0, 12);
+  result.message = result.keys.length ? `发现 ${result.keys.length} 组 SSH key 文件` : "没有发现常见 SSH key 文件";
+  return result;
+}
+
+async function sshFileUpdated(dir, file) {
+  try {
+    const stat = await fs.promises.stat(path.join(dir, file));
+    return formatLocalTime(stat.mtime);
+  } catch {
+    return "";
+  }
+}
+
+async function readSshAgentStatus() {
+  const probe = await runProbe("ssh-add", ["-l"], { timeout: 5000 });
+  const text = `${probe.stdout || ""}\n${probe.stderr || ""}`.trim();
+  if (!probe.ok) {
+    const lower = text.toLowerCase();
+    if (lower.includes("no identities")) {
+      return { available: true, loaded: false, keyCount: 0, message: "ssh-agent 可用，但没有加载 key。", output: text };
+    }
+    return { available: false, loaded: false, keyCount: 0, message: text || "无法调用 ssh-add -l，可能没有安装 OpenSSH 或 ssh-agent 未启动。", output: text };
+  }
+  const keyCount = text ? text.split(/\r?\n/).filter(Boolean).length : 0;
+  return {
+    available: true,
+    loaded: keyCount > 0,
+    keyCount,
+    message: keyCount ? `ssh-agent 已加载 ${keyCount} 个 key。` : "ssh-agent 可用，但没有返回 key。",
+    output: text,
+  };
+}
+
+async function readCredentialManagerStatus() {
+  const probes = [
+    { args: ["credential-manager", "version"], name: "Git Credential Manager" },
+    { args: ["credential-manager-core", "--version"], name: "Git Credential Manager Core" },
+  ];
+  for (const probe of probes) {
+    try {
+      const output = await gitStandalone(probe.args, { timeout: 5000, maxBuffer: 1024 * 256 });
+      const version = String(output || "").trim().split(/\r?\n/).filter(Boolean)[0] || probe.name;
+      return { available: true, name: probe.name, version, message: `${probe.name} 可用。` };
+    } catch {
+      // Try the next credential manager command.
+    }
+  }
+  return { available: false, name: "Git Credential Manager", version: "", message: "没有检测到 Git Credential Manager 命令。" };
+}
+
+function runProbe(file, args = [], options = {}) {
+  return new Promise((resolve) => {
+    execFile(
+      file,
+      args,
+      {
+        windowsHide: true,
+        timeout: options.timeout || 5000,
+        maxBuffer: options.maxBuffer || 1024 * 256,
+        encoding: "utf8",
+      },
+      (error, stdout, stderr) => {
+        resolve({ ok: !error, stdout: stdout || "", stderr: stderr || "", message: error?.message || "" });
+      }
+    );
+  });
+}
+
+function buildAuthDiagnosticCommands(remotes) {
+  const commands = ["git remote -v"];
+  const sshHosts = [...new Set(remotes.filter((remote) => remote.kind === "ssh" && remote.host).map((remote) => remote.host))];
+  const httpsRemotes = remotes.filter((remote) => remote.kind === "https");
+  if (sshHosts.length) {
+    commands.push("ssh-add -l");
+    sshHosts.slice(0, 3).forEach((host) => commands.push(`ssh -T git@${host}`));
+  }
+  if (httpsRemotes.length) {
+    commands.push("git credential-manager version");
+    commands.push("git credential-manager diagnose");
+  }
+  return [...new Set(commands)].slice(0, 8);
+}
+
+function authSummaryText(remotes, ssh, agent, credentialManager) {
+  const sshCount = remotes.filter((remote) => remote.kind === "ssh").length;
+  const httpsCount = remotes.filter((remote) => remote.kind === "https").length;
+  const localCount = remotes.filter((remote) => remote.kind === "local").length;
+  const parts = [];
+  if (sshCount) parts.push(`${sshCount} 个 SSH 远端`);
+  if (httpsCount) parts.push(`${httpsCount} 个 HTTPS 远端`);
+  if (localCount) parts.push(`${localCount} 个本地远端`);
+  const remoteText = parts.length ? parts.join("，") : "没有远端";
+  const sshText = ssh.exists ? `${ssh.keys.length} 组 SSH key` : "未发现 ~/.ssh";
+  const agentText = agent.loaded ? `agent ${agent.keyCount} 个 key` : "agent 未加载 key";
+  const gcmText = credentialManager.available ? "GCM 可用" : "GCM 未检测到";
+  return `${remoteText}；${sshText}；${agentText}；${gcmText}`;
 }
 
 function sampleState() {
@@ -3635,6 +3872,29 @@ function sampleState() {
         { name: "origin", fetchUrl: "git@github.com:example/atlas-dashboard.git", pushUrl: "git@github.com:example/atlas-dashboard.git" },
         { name: "upstream", fetchUrl: "https://github.com/example/base-dashboard.git", pushUrl: "https://github.com/example/base-dashboard.git" },
       ],
+      auth: {
+        summary: "1 个 SSH 远端，1 个 HTTPS 远端；2 组 SSH key；agent 1 个 key；GCM 可用",
+        level: "ok",
+        advice: "SSH key 和 ssh-agent 都可见，HTTPS 凭据管理器可用；如果某个远端仍失败，请点远端行的“诊断”。",
+        remotes: [
+          { name: "origin", url: "git@github.com:example/atlas-dashboard.git", kind: "ssh", kindLabel: "SSH", host: "github.com" },
+          { name: "upstream", url: "https://github.com/example/base-dashboard.git", kind: "https", kindLabel: "HTTPS", host: "github.com" },
+        ],
+        ssh: {
+          directory: "~/.ssh",
+          exists: true,
+          keys: [
+            { name: "id_ed25519", publicKey: true, privateKey: true, publicFile: "id_ed25519.pub", privateFile: "id_ed25519", updated: "2026-06-12 20:18:00" },
+            { name: "id_rsa_work", publicKey: true, privateKey: true, publicFile: "id_rsa_work.pub", privateFile: "id_rsa_work", updated: "2026-06-08 09:42:00" },
+          ],
+          configExists: true,
+          knownHostsExists: true,
+          message: "发现 2 组 SSH key 文件",
+        },
+        agent: { available: true, loaded: true, keyCount: 1, message: "ssh-agent 已加载 1 个 key。" },
+        credentialManager: { available: true, name: "Git Credential Manager", version: "Git Credential Manager 2.x", message: "Git Credential Manager 可用。" },
+        commands: ["git remote -v", "ssh-add -l", "ssh -T git@github.com", "git credential-manager version", "git credential-manager diagnose"],
+      },
       incoming: [
         { sha: "b91a4d3c22aa", short: "b91a4d3", author: "Nora", time: "18 分钟前", message: "远端补充发布说明", refs: "origin/feature/visual-history", parents: [] },
       ],
