@@ -2510,6 +2510,61 @@ body.resizing .workbench-resizer-y::before {
   min-width: 0;
 }
 
+.compare-summary,
+.compare-commit-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.compare-actions .mini-btn {
+  flex: 1 1 116px;
+}
+
+.compare-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.compare-counts > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.compare-counts span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.compare-counts strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.compare-commit-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.compare-commit-list .sync-commit-row {
+  min-height: 50px;
+}
+
+.compare-file-view {
+  margin-top: 0;
+}
+
 .sync-commit-row {
   display: grid;
   gap: 4px;

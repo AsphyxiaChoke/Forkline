@@ -11,6 +11,8 @@ const state = {
   selectedCommitFile: "",
   selectedSyncSha: "",
   selectedSyncFile: "",
+  selectedCompareFile: "",
+  compare: { base: "", head: "", data: null, loading: false, error: "" },
   activeDiff: null,
   openDiffOnInit: false,
   branchStartSha: "",
@@ -137,7 +139,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "branches", "sync", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "branches", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -875,12 +877,15 @@ function showBranchContextMenu(event, branch, options = {}) {
   const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
   const renameButton = menu.querySelector('[data-branch-action="rename"]');
   const deleteButton = menu.querySelector('[data-branch-action="delete"]');
+  const compareButton = menu.querySelector('[data-branch-action="compare"]');
   const remoteLocalBranch = isRemote ? remoteCheckoutBranch(branch) : "";
   const remoteIsCurrent = Boolean(remoteLocalBranch && remoteLocalBranch === state.data?.repo?.branch);
   const currentBranch = state.data?.repo?.branch || "";
   const currentInfo = state.data?.branchInfo?.[currentBranch] || {};
   const canSetUpstream = Boolean(isRemote && currentBranch && currentBranch !== "detached HEAD" && !branch.endsWith("/HEAD"));
   checkoutButton.textContent = isRemote ? "签出为本地分支" : "切换到此分支";
+  compareButton.disabled = !branch || (isLocal && isCurrent);
+  compareButton.title = isLocal && isCurrent ? "不能把当前分支和自己比较" : `比较当前分支与 ${branch}`;
   checkoutButton.disabled = isRemote ? !remoteLocalBranch || remoteIsCurrent : !isLocal || isCurrent || occupied;
   checkoutButton.title = isRemote
     ? !remoteLocalBranch
@@ -1077,6 +1082,10 @@ async function runBranchContextAction(action) {
     await selectRef(branch);
     return;
   }
+  if (action === "compare") {
+    await openCompareBranch(branch);
+    return;
+  }
   if (action === "checkout") {
     if (isRemote) {
       await checkoutRemoteBranch(branch);
@@ -1149,6 +1158,38 @@ async function runBranchContextAction(action) {
     }
     await deleteBranch(branch);
   }
+}
+
+function currentCompareBaseRef() {
+  const branch = state.data?.repo?.branch || "HEAD";
+  return branch && branch !== "detached HEAD" ? branch : "HEAD";
+}
+
+async function openCompareBranch(head, base = currentCompareBaseRef()) {
+  if (!head) return;
+  state.compare = { base, head, data: null, loading: true, error: "" };
+  state.selectedCompareFile = "";
+  state.selectedTab = "compare";
+  renderInspector();
+  try {
+    const data = await api(`/api/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`);
+    state.compare = { base: data.base || base, head: data.head || head, data, loading: false, error: "" };
+    state.selectedCompareFile = data.files?.[0]?.file || "";
+    renderInspector();
+  } catch (error) {
+    state.compare = { base, head, data: null, loading: false, error: error.message };
+    state.selectedCompareFile = "";
+    renderInspector();
+  }
+}
+
+async function refreshCompare() {
+  const current = state.compare || {};
+  if (!current.head) {
+    toast("请先从分支右键菜单选择比较目标");
+    return;
+  }
+  await openCompareBranch(current.head, current.base || currentCompareBaseRef());
 }
 
 async function runCommitContextAction(action) {
@@ -1802,6 +1843,10 @@ function renderInspector() {
     renderSyncTab();
     return;
   }
+  if (state.selectedTab === "compare") {
+    renderCompareTab();
+    return;
+  }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
@@ -2363,6 +2408,107 @@ function syncCommitPreviewHtml(commit, detail, model) {
         </div>
       </div>
     </div>
+  `;
+}
+
+function renderCompareTab() {
+  const model = state.compare || {};
+  const data = model.data;
+  els.detailNode.style.borderColor = data ? "var(--blue)" : "var(--line)";
+  els.detailTitle.textContent = "分支比较";
+  els.detailSub.textContent = model.head ? `${model.base || "HEAD"} ... ${model.head}` : "从分支右键菜单开始比较";
+  if (model.loading) {
+    setActiveDiff(null);
+    els.detailBody.innerHTML = `<div class="empty-panel"><strong>正在比较分支</strong><span>${escapeHtml(model.base || "HEAD")} ... ${escapeHtml(model.head || "")}</span></div>`;
+    return;
+  }
+  if (model.error) {
+    setActiveDiff(null);
+    els.detailBody.innerHTML = `<div class="empty-panel"><strong>比较失败</strong><span>${escapeHtml(model.error)}</span></div>`;
+    return;
+  }
+  if (!data) {
+    setActiveDiff(null);
+    els.detailBody.innerHTML = `<div class="empty-panel"><strong>选择一个分支比较</strong><span>在左侧本地分支或远端分支上右键，选择“与当前分支比较”。</span></div>`;
+    return;
+  }
+  const files = data.files || [];
+  if (state.selectedCompareFile && !files.some((file) => file.file === state.selectedCompareFile)) {
+    state.selectedCompareFile = "";
+  }
+  if (!state.selectedCompareFile && files.length) state.selectedCompareFile = files[0].file;
+  const selectedDiff = state.selectedCompareFile ? diffForFile(data.diff || [], state.selectedCompareFile) : data.diff || [];
+  if (selectedDiff.length) {
+    setActiveDiff({
+      source: "compare",
+      title: `${data.base} ... ${data.head}`,
+      path: state.selectedCompareFile || `${data.baseShort || ""} -> ${data.headShort || ""}`,
+      diff: selectedDiff,
+      emptyText: "没有可显示的比较改动",
+    });
+  } else {
+    setActiveDiff(null);
+  }
+  els.detailBody.innerHTML = `
+    <div class="compare-summary">
+      <div class="sync-actions compare-actions">
+        <button class="mini-btn" data-compare-refresh type="button"><span>刷新比较</span><span class="command-hint">git diff</span></button>
+        <button class="mini-btn" data-compare-view-target type="button"><span>查看目标</span><span class="command-hint">${escapeHtml(data.head)}</span></button>
+      </div>
+      <div class="meta-grid sync-meta">
+        <span>当前分支</span><div class="meta-value">${escapeHtml(data.base)} (${escapeHtml(data.baseShort || "")})</div>
+        <span>目标分支</span><div class="meta-value">${escapeHtml(data.head)} (${escapeHtml(data.headShort || "")})</div>
+        <span>共同祖先</span><div class="meta-value">${escapeHtml(data.mergeBaseShort || "未找到")}</div>
+        <span>文件变化</span><div class="meta-value">${escapeHtml(`${files.length} 个文件`)}</div>
+      </div>
+      <div class="compare-counts">
+        <div><span>当前独有</span><strong>${escapeHtml(data.baseOnlyCount || 0)}</strong></div>
+        <div><span>目标独有</span><strong>${escapeHtml(data.headOnlyCount || 0)}</strong></div>
+      </div>
+    </div>
+    <div class="compare-commit-columns">
+      ${compareCommitListHtml("当前分支独有提交", data.baseOnlyCommits || [], "当前分支没有目标分支缺少的提交")}
+      ${compareCommitListHtml("目标分支独有提交", data.headOnlyCommits || [], "目标分支没有当前分支缺少的提交")}
+    </div>
+    <div class="detail-section-title">目标分支带来的文件改动</div>
+    <div class="commit-file-view compare-file-view">
+      <div class="commit-file-tree sync-preview-files">
+        ${files.length ? fileTreeHtml(files) : `<div class="file-row"><span></span><span class="file-name">没有文件变化</span><span></span></div>`}
+      </div>
+      <div class="commit-file-diff sync-preview-diff">
+        <div class="panel-title compact">
+          <div class="panel-title-text">
+            <span>${escapeHtml(state.selectedCompareFile ? shortFileName(state.selectedCompareFile) : data.head)}</span>
+            <span class="panel-subtitle">${escapeHtml(state.selectedCompareFile || data.command || "")}</span>
+          </div>
+          <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${selectedDiff.length ? "" : "disabled"}>最大化</button>
+        </div>
+        ${renderSideDiff(selectedDiff, "没有可显示的比较改动")}
+      </div>
+    </div>
+  `;
+  bindFileTree(els.detailBody, { mode: "compare" });
+}
+
+function compareCommitListHtml(title, commits, emptyText) {
+  return `
+    <section class="compare-commit-list">
+      <div class="detail-section-title">${escapeHtml(title)}</div>
+      ${
+        commits.length
+          ? commits.map((commit) => compareCommitRowHtml(commit)).join("")
+          : `<div class="empty-panel compact"><span>${escapeHtml(emptyText)}</span></div>`
+      }
+    </section>
+  `;
+}
+
+function compareCommitRowHtml(commit) {
+  return `
+    <button class="sync-commit-row" data-compare-commit="${escapeAttr(commit.sha)}" type="button">
+      <span class="sync-commit-message" title="${escapeAttr(commit.message)}">${escapeHtml(commit.message)}</span>
+      <span class="sync-commit-meta">${escapeHtml(commit.short || commit.sha?.slice(0, 7) || "")} · ${escapeHtml(commit.author || "unknown")} · ${escapeHtml(commit.time || "")}</span>
+    </button>
   `;
 }
 
@@ -2966,6 +3112,12 @@ function bindFileTree(root, options = {}) {
     });
     markSyncPreviewFile();
   }
+  if (options.mode === "compare") {
+    root.querySelectorAll("[data-select-file]").forEach((row) => {
+      row.addEventListener("click", () => selectCompareFile(row.dataset.file || ""));
+    });
+    markCompareFile();
+  }
 }
 
 function selectChangeFile(filePath, scope, event) {
@@ -3059,6 +3211,18 @@ function selectSyncPreviewFile(filePath) {
   if (!filePath || filePath === state.selectedSyncFile) return;
   state.selectedSyncFile = filePath;
   renderInspector();
+}
+
+function selectCompareFile(filePath) {
+  if (!filePath || filePath === state.selectedCompareFile) return;
+  state.selectedCompareFile = filePath;
+  renderInspector();
+}
+
+function markCompareFile() {
+  els.detailBody.querySelectorAll("[data-select-file]").forEach((row) => {
+    row.classList.toggle("selected", row.dataset.file === state.selectedCompareFile);
+  });
 }
 
 function markCommitFile() {
@@ -4307,6 +4471,32 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     const sha = syncCommit.dataset.syncCommit;
     selectSyncCommit(sha).catch((error) => toast(error.message));
+    return;
+  }
+  const compareRefresh = event.target.closest("[data-compare-refresh]");
+  if (compareRefresh) {
+    event.preventDefault();
+    refreshCompare().catch((error) => toast(error.message));
+    return;
+  }
+  const compareTarget = event.target.closest("[data-compare-view-target]");
+  if (compareTarget) {
+    event.preventDefault();
+    const head = state.compare?.data?.head || state.compare?.head || "";
+    if (head) {
+      state.selectedTab = "details";
+      selectRef(head).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const compareCommit = event.target.closest("[data-compare-commit]");
+  if (compareCommit) {
+    event.preventDefault();
+    const sha = compareCommit.dataset.compareCommit || "";
+    if (sha) {
+      state.selectedTab = "details";
+      selectCommit(sha).catch((error) => toast(error.message));
+    }
     return;
   }
   const recoveryAction = event.target.closest("[data-recovery-action]");

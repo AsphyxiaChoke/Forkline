@@ -175,6 +175,80 @@ async function readCommit(sha) {
   };
 }
 
+async function readCompare(baseInput, headInput) {
+  if (!currentRepo) {
+    const sample = sampleState();
+    const base = baseInput || sample.repo.branch || "HEAD";
+    const head = headInput || sample.branches[0] || "main";
+    return {
+      ok: true,
+      base,
+      head,
+      baseShort: "f83a9c2",
+      headShort: "d41c2ab",
+      mergeBaseShort: "4ab612e",
+      baseOnlyCount: 1,
+      headOnlyCount: 2,
+      baseOnlyCommits: sample.commits.slice(0, 1),
+      headOnlyCommits: sample.commits.slice(1, 3),
+      files: sample.commits[0]?.files || [],
+      diff: sample.commits[0]?.diff || [],
+      command: `git diff ${base}...${head}`,
+    };
+  }
+  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD")).trim() || "HEAD";
+  const base = normalizeCompareRef(baseInput || (currentBranch === "detached HEAD" ? "HEAD" : currentBranch), "比较基准");
+  const head = normalizeCompareRef(headInput, "比较目标");
+  const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准"), resolveCommitRef(head, "比较目标")]);
+  const mergeBase = (await git(currentRepo, ["merge-base", base, head]).catch(() => "")).trim();
+  const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);
+  const baseOnlyCount = Number(counts[0] || 0);
+  const headOnlyCount = Number(counts[1] || 0);
+  const [baseOnlyOutput, headOnlyOutput, filesOutput, diffOutput] = await Promise.all([
+    baseOnlyCount ? git(currentRepo, compareLogArgs(`${head}..${base}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
+    headOnlyCount ? git(currentRepo, compareLogArgs(`${base}..${head}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
+    git(currentRepo, ["diff", "--name-status", "--find-renames", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
+    git(currentRepo, ["diff", "--unified=8", "--no-ext-diff", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 8 }).catch(() => ""),
+  ]);
+  return {
+    ok: true,
+    base,
+    head,
+    baseSha,
+    headSha,
+    baseShort: baseSha.slice(0, 7),
+    headShort: headSha.slice(0, 7),
+    mergeBase,
+    mergeBaseShort: mergeBase ? mergeBase.slice(0, 7) : "",
+    baseOnlyCount,
+    headOnlyCount,
+    baseOnlyCommits: parseBasicCommits(baseOnlyOutput).slice(0, 40),
+    headOnlyCommits: parseBasicCommits(headOnlyOutput).slice(0, 40),
+    files: parseNameStatus(filesOutput),
+    diff: parseDiff(diffOutput),
+    command: `git diff ${compareDiffRange(base, head, mergeBase)}`,
+  };
+}
+
+function normalizeCompareRef(value, label) {
+  const ref = normalizeRefName(value, label);
+  return ref === "detached" || ref === "detached HEAD" ? "HEAD" : ref;
+}
+
+async function resolveCommitRef(ref, label) {
+  return (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => {
+    throw new Error(`${label} ${ref} 不是有效提交引用。请刷新分支列表后再试。`);
+  })).trim();
+}
+
+function compareLogArgs(range) {
+  return ["log", "--max-count=40", "--date=relative", "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P", range];
+}
+
+function compareDiffRange(base, head, mergeBase) {
+  return mergeBase ? `${base}...${head}` : `${base}..${head}`;
+}
+
 async function readHistoryRewritePreview(sha, rawMode) {
   const mode = normalizeHistoryRewriteMode(rawMode);
   if (!currentRepo) {
@@ -2754,6 +2828,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/commit") {
       sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/compare") {
+      sendJson(res, 200, await readCompare(parsed.searchParams.get("base") || "", parsed.searchParams.get("head") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/history-rewrite-preview") {

@@ -20,6 +20,7 @@
 - 本地静态资源响应已加 `Cache-Control: no-store`，避免开发验证时浏览器继续使用旧版 `app.js` / `styles.css`。
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
+- 分支比较已接入：本地/远端分支右键菜单新增“与当前分支比较”，右侧新增“比较”页；后端 `/api/compare` 返回两边独有提交数量、最多 40 条独有提交、目标分支相对共同祖先的文件列表和 Diff，并复用最大化对照。
 - Tag 管理已接入：右侧新增“标签”页，显示本地 Tag 列表和详情，支持查看 Tag 提交、复制名称、推送 Tag、删除本地 Tag、删除远端 Tag；Tag 行右键菜单也提供同样的相关动作和 Git 指令提示。
 - “合并分支”已改为 `--no-ff --no-edit`，即使可以快进也会保留 merge commit，方便在“全部分支”图谱里看到分支回归主线的样式。
 - Stash 入口已补齐：工作区顶部有“储藏”按钮，文件右键菜单支持“储藏所选”，储藏列表继续支持查看 Diff、应用、弹出和删除。
@@ -96,6 +97,7 @@
 - 右侧标签栏静态验证：`public/styles.css` 中 `.tabs` 已从 `repeat(5, 1fr)` 改为 flex 横向滚动，`.tab` 设置 `flex: 1 0 56px`、固定高度和省略号；`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过。
 - 操作日志 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，调用 `findCheckoutStash` 成功返回日志项“查找 123 的签出储藏 / success / 操作已完成”；调用不存在文件的 `stageFile` 返回中文“找不到文件 ...”，并在 `operationLog` 中记录失败项。
 - 恢复点批量清理 API 验证：在 GitTest 临时创建 3 条 `refs/forkline/recovery/...` 测试引用，其中 2 条分支为 `123`、1 条分支为 `other`；通过 `deleteRecoveryPoints` 删除分支 `123` 的筛选结果后只剩 `other`，随后清理剩余测试引用，最终恢复点数量为 0。
+- 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 
 ## GitTest 测试数据
 
