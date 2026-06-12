@@ -2468,7 +2468,7 @@ function toast(message) {
   els.toast.textContent = text;
   els.toast.classList.add("show");
   clearTimeout(toast.timer);
-  const duration = clamp(2200 + text.length * 45, 2600, 7600);
+  const duration = clamp(2200 + text.length * 45, 2600, text.includes("\n") ? 16000 : 7600);
   toast.timer = setTimeout(() => els.toast.classList.remove("show"), duration);
 }
 

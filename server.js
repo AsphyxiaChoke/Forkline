@@ -2,13 +2,15 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFile } = require("child_process");
+const { execFile, execFileSync } = require("child_process");
 
 const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const GIT_BIN = findGitExecutable();
 
 let currentRepo = null;
+let nextOperationId = 1;
+const activeOperations = new Map();
 
 const laneColors = ["#23c7b7", "#ff7a67", "#f0b85b", "#5ca9ff", "#9c7cff", "#6bd58c", "#f071b8"];
 
@@ -301,6 +303,58 @@ async function runAction(body) {
     return commandResult(await rewordCommit(body));
   }
   throw new Error("未知操作");
+}
+
+function beginOperation(body = {}) {
+  const operation = {
+    id: nextOperationId++,
+    label: actionLabel(body),
+    startedAt: Date.now(),
+  };
+  activeOperations.set(operation.id, operation);
+  return operation;
+}
+
+function actionLabel(body = {}) {
+  const action = String(body.action || "");
+  const file = body.file ? shortText(body.file, 72) : "";
+  const ref = body.ref ? shortText(body.ref, 72) : "";
+  const branch = body.branch ? shortText(body.branch, 72) : "";
+  const labels = {
+    fetch: "抓取远端",
+    pull: "拉取远端",
+    push: "推送到远端",
+    stageAll: "暂存全部更改",
+    discardAll: "丢弃全部未提交更改",
+    createBranch: branch ? `创建分支 ${branch}` : "创建分支",
+    renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
+    deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
+    mergeRef: ref ? `合并分支 ${ref}` : "合并分支",
+    createTag: body.name ? `创建 Tag ${shortText(body.name, 72)}` : "创建 Tag",
+    pruneWorktrees: branch ? `清理 ${branch} 的 worktree 记录` : "清理 worktree 记录",
+    findCheckoutStash: branch ? `查找 ${branch} 的签出储藏` : "查找签出储藏",
+    restoreCheckoutStash: branch ? `恢复 ${branch} 的签出储藏` : "恢复签出储藏",
+    createStash: "创建储藏",
+    applyStash: ref ? `应用储藏 ${ref}` : "应用储藏",
+    popStash: ref ? `弹出储藏 ${ref}` : "弹出储藏",
+    dropStash: ref ? `删除储藏 ${ref}` : "删除储藏",
+    stageFile: file ? `暂存文件 ${file}` : "暂存文件",
+    unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
+    discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
+    discardStagedFile: file ? `丢弃已暂存文件 ${file}` : "丢弃已暂存文件",
+    commit: "创建提交",
+    amendCommit: "追加到上一次提交",
+    rewordCommit: body.sha ? `修改提交信息 ${shortText(body.sha, 12)}` : "修改历史提交信息",
+    checkoutBranch: branch ? `切换分支 ${branch}${checkoutModeText(body.mode)}` : "切换分支",
+    checkoutRemoteBranch: ref ? `签出远端分支 ${ref}${checkoutModeText(body.mode)}` : "签出远端分支",
+  };
+  return labels[action] || `Git 操作 ${action || "未知"}`;
+}
+
+function checkoutModeText(mode) {
+  if (mode === "stash") return "（储藏并签出）";
+  if (mode === "force") return "（强制签出）";
+  return "";
 }
 
 async function checkoutBranch(body) {
@@ -959,18 +1013,16 @@ function sendJson(res, status, data) {
   res.end(body);
 }
 
-function sendError(res, error) {
-  sendJson(res, 400, { error: friendlyErrorMessage(error) });
+function sendError(res, error, context = {}) {
+  sendJson(res, 400, { error: friendlyErrorMessage(error, context) });
 }
 
-function friendlyErrorMessage(error) {
+function friendlyErrorMessage(error, context = {}) {
   const raw = String(error?.message || error || "").trim();
   const text = raw || "操作失败";
   const lower = text.toLowerCase();
   if (lower.includes("index.lock") && (lower.includes("unable to create") || lower.includes("file exists"))) {
-    const lockPath = text.match(/['"]([^'"]*index\.lock)['"]/)?.[1] || "";
-    const suffix = lockPath ? ` 锁文件：${lockPath}` : "";
-    return `Git 仓库正在被另一个操作占用，暂时不能继续。请等几秒再试，或关闭正在操作这个仓库的 Git/编辑器；如果确认没有 Git 操作在运行，再删除 index.lock 后重试。${suffix}`;
+    return indexLockMessage(text, context);
   }
   if (lower.includes("your local changes") && lower.includes("would be overwritten")) {
     return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
@@ -1009,6 +1061,151 @@ function friendlyErrorMessage(error) {
     return "远端认证失败。请检查 Git 账号、Token 或凭据管理器。";
   }
   return text;
+}
+
+function indexLockMessage(text, context = {}) {
+  const attempted = context.operation?.label || actionLabel(context.body || {});
+  const lockPath = findIndexLockPath(text);
+  const lockInfo = lockPath ? describeLockFile(lockPath) : "";
+  const otherOperations = describeActiveOperations(context.operation?.id);
+  const gitProcesses = describeGitProcesses(currentRepo);
+  const lines = [
+    `Git 索引被锁住，刚才的“${attempted}”没有执行成功。`,
+  ];
+  if (otherOperations.length) {
+    lines.push(`Forkline 还在执行：${otherOperations.join("；")}`);
+  }
+  if (gitProcesses.length) {
+    lines.push(`系统里检测到 Git 进程：${gitProcesses.join("；")}`);
+  } else {
+    lines.push("系统里暂时没有检测到正在运行的 Git 进程；如果没有其它 Git/编辑器在操作仓库，这可能是上一次异常退出留下的锁。");
+  }
+  if (lockInfo) lines.push(lockInfo);
+  lines.push("说明：index.lock 本身不会记录具体命令，所以这里只能根据刚才的 Forkline 操作、活跃进程和锁文件时间判断。确认没有 Git 操作在运行后，再删除这个 lock 文件重试。");
+  return lines.join("\n");
+}
+
+function findIndexLockPath(text) {
+  const fromGit = String(text || "").match(/['"]([^'"]*index\.lock)['"]/)?.[1] || "";
+  if (fromGit) return path.normalize(fromGit);
+  const gitDir = resolveGitDirSync(currentRepo);
+  return gitDir ? path.join(gitDir, "index.lock") : "";
+}
+
+function resolveGitDirSync(repoPath) {
+  if (!repoPath) return "";
+  const dotGit = path.join(repoPath, ".git");
+  try {
+    const stat = fs.statSync(dotGit);
+    if (stat.isDirectory()) return dotGit;
+    if (stat.isFile()) {
+      const text = fs.readFileSync(dotGit, "utf8");
+      const match = text.match(/^gitdir:\s*(.+)\s*$/i);
+      if (!match) return "";
+      const gitDir = match[1].trim();
+      return path.resolve(repoPath, gitDir);
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function describeLockFile(lockPath) {
+  try {
+    const stat = fs.statSync(lockPath);
+    const time = stat.mtime || stat.birthtime;
+    const age = Math.max(0, Date.now() - time.getTime());
+    return `锁文件：${lockPath}\n锁文件时间：${formatLocalTime(time)}（约 ${formatDuration(age)} 前）`;
+  } catch {
+    return `锁文件：${lockPath}`;
+  }
+}
+
+function describeActiveOperations(excludeId) {
+  return [...activeOperations.values()]
+    .filter((operation) => operation.id !== excludeId)
+    .slice(0, 4)
+    .map((operation) => `${operation.label}，已运行 ${formatDuration(Date.now() - operation.startedAt)}`);
+}
+
+function describeGitProcesses(repoPath) {
+  try {
+    const processes = process.platform === "win32" ? listWindowsGitProcesses(repoPath) : listPosixGitProcesses(repoPath);
+    return processes.slice(0, 5).map((item) => {
+      const command = item.command ? `：${shortText(item.command, 140)}` : "";
+      return `PID ${item.pid} ${item.name || "git"}${command}`;
+    });
+  } catch {
+    return [];
+  }
+}
+
+function listWindowsGitProcesses(repoPath) {
+  const script = `
+$repo = $env:FORKLINE_REPO_PATH
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.Name -in @('git.exe','git.cmd','git.bat') -or
+    (($_.CommandLine) -and ($_.CommandLine -match '(^|[\\\\/\\s])git(\\.exe|\\.cmd|\\.bat)?(\\s|$)'))
+  } |
+  Where-Object {
+    -not $repo -or
+    ($_.Name -in @('git.exe','git.cmd','git.bat')) -or
+    (($_.CommandLine) -and ($_.CommandLine.Contains($repo)))
+  } |
+  Select-Object -First 5 ProcessId,Name,CommandLine |
+  ConvertTo-Json -Compress
+`;
+  const output = execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
+    encoding: "utf8",
+    timeout: 1500,
+    windowsHide: true,
+    env: { ...process.env, FORKLINE_REPO_PATH: repoPath || "" },
+  }).trim();
+  if (!output) return [];
+  const parsed = JSON.parse(output);
+  const rows = Array.isArray(parsed) ? parsed : [parsed];
+  return rows
+    .filter(Boolean)
+    .map((row) => ({ pid: row.ProcessId, name: row.Name, command: row.CommandLine || "" }))
+    .filter((row) => row.pid);
+}
+
+function listPosixGitProcesses(repoPath) {
+  const output = execFileSync("ps", ["-eo", "pid=,comm=,args="], { encoding: "utf8", timeout: 1500 }).trim();
+  if (!output) return [];
+  return output
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = line.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/);
+      if (!match) return null;
+      return { pid: match[1], name: path.basename(match[2]), command: match[3] || "" };
+    })
+    .filter((row) => row && /(^|[\/\s])git(\s|$)/i.test(`${row.name} ${row.command}`))
+    .filter((row) => !repoPath || row.command.includes(repoPath) || /^git$/i.test(row.name))
+    .slice(0, 5);
+}
+
+function formatLocalTime(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function formatDuration(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} 小时`;
+  return `${Math.round(hours / 24)} 天`;
+}
+
+function shortText(value, maxLength = 120) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 function serveStatic(req, res) {
@@ -1072,7 +1269,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && parsed.pathname === "/api/action") {
       const body = await readJson(req);
-      sendJson(res, 200, await runAction(body));
+      const operation = beginOperation(body);
+      try {
+        sendJson(res, 200, await runAction(body));
+      } catch (error) {
+        sendError(res, error, { body, operation });
+      } finally {
+        activeOperations.delete(operation.id);
+      }
       return;
     }
     serveStatic(req, res);
