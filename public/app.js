@@ -58,6 +58,7 @@ const els = {
   recentRepoSelect: $("#recentRepoSelect"),
   clearRecentRepos: $("#clearRecentRepos"),
   cloneRepo: $("#cloneRepo"),
+  initRepo: $("#initRepo"),
   openRepo: $("#openRepo"),
   searchInput: $("#searchInput"),
   branchList: $("#branchList"),
@@ -106,6 +107,12 @@ const els = {
   cloneOpenToggle: $("#cloneOpenToggle"),
   cloneSubmit: $("#cloneSubmit"),
   cloneCancel: $("#cloneCancel"),
+  initModal: $("#initModal"),
+  initForm: $("#initForm"),
+  initPathInput: $("#initPathInput"),
+  initOpenToggle: $("#initOpenToggle"),
+  initSubmit: $("#initSubmit"),
+  initCancel: $("#initCancel"),
   branchModal: $("#branchModal"),
   branchForm: $("#branchForm"),
   branchNameInput: $("#branchNameInput"),
@@ -766,9 +773,11 @@ function renderCommits() {
   els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef);
 
   if (!state.filtered.length) {
+    const emptyTitle = term ? "没有匹配的提交" : "还没有提交";
+    const emptySub = term ? "换一个关键词试试" : "暂存文件后创建第一次提交";
     els.commitGraph.insertAdjacentHTML(
       "beforeend",
-      `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>没有匹配的提交</strong><span>换一个关键词试试</span></div></div>`
+      `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>${emptyTitle}</strong><span>${emptySub}</span></div></div>`
     );
     renderInspector();
     return;
@@ -3945,6 +3954,61 @@ async function submitCloneForm(event) {
   }
 }
 
+function openInitModal() {
+  const typedPath = els.repoInput.value.trim();
+  const hasRealRepo = Boolean(state.data?.repo && !state.data.repo.isSample);
+  els.initPathInput.value = hasRealRepo ? "" : typedPath;
+  els.initOpenToggle.checked = true;
+  els.initModal.classList.add("show");
+  els.initModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.initPathInput.focus(), 0);
+}
+
+function closeInitModal() {
+  els.initModal.classList.remove("show");
+  els.initModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+}
+
+async function submitInitForm(event) {
+  event.preventDefault();
+  const targetPath = els.initPathInput.value.trim();
+  if (!targetPath) {
+    toast("请输入要初始化的文件夹");
+    els.initPathInput.focus();
+    return;
+  }
+  const openAfter = els.initOpenToggle.checked;
+  const message = [
+    "确认初始化 Git 仓库？",
+    "",
+    `位置：${targetPath}`,
+    "",
+    "命令：git init <文件夹>",
+  ].join("\n");
+  if (!confirm(message)) return;
+
+  els.initSubmit.disabled = true;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "initRepository", targetPath, openAfter }),
+    });
+    if (result.state) {
+      await applyOpenedRepoData(result.state);
+      saveRecentRepo(state.data.repo);
+      els.repoInput.value = state.data.repo.path;
+    }
+    closeInitModal();
+    toast(result.output || "初始化仓库完成");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    els.initSubmit.disabled = false;
+  }
+}
+
 async function applyOpenedRepoData(data) {
   state.commitDetails.clear();
   state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
@@ -4813,6 +4877,7 @@ function toast(message) {
 
 els.openRepo.addEventListener("click", openRepo);
 els.cloneRepo.addEventListener("click", openCloneModal);
+els.initRepo.addEventListener("click", openInitModal);
 els.repoInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") openRepo();
 });
@@ -4826,6 +4891,8 @@ els.cloneUrlInput.addEventListener("input", syncCloneTargetSuggestion);
 els.cloneTargetInput.addEventListener("input", () => {
   state.cloneTargetAuto = !els.cloneTargetInput.value.trim();
 });
+els.initForm.addEventListener("submit", submitInitForm);
+els.initCancel.addEventListener("click", closeInitModal);
 els.searchInput.addEventListener("input", renderCommits);
 els.themeToggle.addEventListener("click", toggleTheme);
 els.newBranch.addEventListener("click", openBranchModal);
@@ -4841,6 +4908,9 @@ els.tagModal.addEventListener("click", (event) => {
 });
 els.cloneModal.addEventListener("click", (event) => {
   if (event.target === els.cloneModal) closeCloneModal();
+});
+els.initModal.addEventListener("click", (event) => {
+  if (event.target === els.initModal) closeInitModal();
 });
 els.mainlineForm.addEventListener("submit", (event) => {
   submitMainlineForm(event).catch((error) => toast(error.message));
@@ -5145,6 +5215,7 @@ document.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
   if (event.key === "Escape" && els.cloneModal.classList.contains("show")) closeCloneModal();
+  if (event.key === "Escape" && els.initModal.classList.contains("show")) closeInitModal();
   if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
   if (event.key === "Escape" && els.mainlineModal.classList.contains("show")) closeMainlineModal();

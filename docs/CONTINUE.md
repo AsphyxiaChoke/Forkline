@@ -45,6 +45,7 @@
 - 常见 `pathspec ... did not match any files` 错误已转成中文提示：当文件已经删除、重命名或不在当前工作区中时，会提示“找不到文件 ...”，不再直接露出 Git 英文原文。
 - 顶部最近仓库快速打开已接入：成功打开真实仓库后会写入浏览器 localStorage，顶部下拉框可快速切回最近项目，清除按钮只删除浏览器记录，不会删除本地仓库；窄屏下顶栏会换成两行避免搜索框、路径输入和按钮挤压。
 - 克隆仓库入口已接入：顶部新增“克隆”，弹窗填写来源 URL/本地裸仓库路径和目标文件夹；后端新增 `cloneRepository`，执行 `git clone <来源> <保存到>`，目标必须是本机绝对路径，且会拒绝覆盖非空目录；默认克隆后直接打开新仓库并写入最近仓库。
+- 初始化仓库入口已接入：顶部新增“初始化”，弹窗填写本机文件夹；后端新增 `initRepository`，执行 `git init <文件夹>`，可初始化已有普通非 Git 文件夹或创建目标文件夹，初始化后可直接打开并写入最近仓库；空仓库 `git log` 失败已容错，未出生分支会显示当前分支名。
 - 文件历史已接入：右侧新增“历史”标签，工作区文件右键菜单新增“查看文件历史 git log --follow”，提交文件对照面板新增“文件历史”按钮；后端新增 `/api/file-history`，执行 `git log --follow --find-renames <引用> -- <文件>` 并返回最近 80 条相关提交、文件状态、重命名来源和跳转用 SHA。
 - 逐行追踪已接入：右侧新增“逐行”标签，工作区文件右键菜单新增“逐行追踪 git blame”，提交文件对照面板新增“逐行追踪”按钮；后端新增 `/api/file-blame`，执行 `git blame --line-porcelain <引用> -- <文件>`，返回最多前 600 行的行号、提交、作者、时间、摘要和代码内容，并对文件不在当前引用中的情况给中文提示。
 
@@ -104,6 +105,7 @@
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 - 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。
 - 克隆仓库 API 验证：临时服务 `http://127.0.0.1:5202` 调用 `cloneRepository`，从 `D:\桌面\GitTestRemote.git` 克隆到 `C:\tmp\forkline-clone-api-20260613`，返回 `ok=true`、新仓库 `forkline-clone-api-20260613`、分支 `main`、工作区改动 0；再次克隆到同一非空目录会中文拒绝“目标文件夹不是空的”。测试克隆目录已删除，临时服务已关闭。
+- 初始化仓库 API 验证：临时服务 `http://127.0.0.1:5206` 调用 `initRepository` 初始化 `C:\tmp\forkline-init-api-20260613`，返回 `ok=true`、新仓库 `forkline-init-api-20260613`、分支 `master`、同步状态分支 `master`、提交数 0；重复初始化同一目录会中文拒绝“这个文件夹已经是 Git 仓库”。另验证已有普通非空目录 `C:\tmp\forkline-init-existing-api-20260613` 可初始化且不强制打开。HTTP 静态检查确认 `initRepo`、`initModal`、`initForm` 和“初始化仓库”入口存在；内置浏览器本次打开本地页仍超时，未记为视觉验证。临时测试目录已清理，临时服务已关闭。
 - 文件历史 API 验证：临时服务 `http://127.0.0.1:5203` 打开 `D:\桌面\GitTest` 后，请求 `/api/file-history?file=配置文件1.txt&ref=123` 返回文件 `配置文件1.txt`、引用 `123`、6 条历史记录和命令 `git log --follow 123 -- 配置文件1.txt`；请求绝对路径 `D:\桌面\GitTest\配置文件1.txt` 会中文拒绝“文件路径不合法”。静态检查确认“历史”标签、文件右键菜单、提交文件面板按钮和 CSS 已接入；内置浏览器打开本地页本次仍超时，未记为视觉验证。
 - 逐行追踪 API 验证：临时服务 `http://127.0.0.1:5205` 打开 `D:\桌面\GitTest` 后，请求 `/api/file-blame?file=配置文件3.txt&ref=123` 返回文件 `配置文件3.txt`、引用 `123`、1 行 blame、首行提交 `1ff8d18`、作者 `Admin`、未截断；请求 `配置文件1.txt` 返回中文“文件 配置文件1.txt 在 123 中不存在...”；请求绝对路径 `D:\桌面\GitTest\配置文件3.txt` 会中文拒绝“文件路径不合法”。静态检查确认“逐行”标签、文件右键菜单、提交文件面板按钮和 CSS 已接入。
 

@@ -32,6 +32,7 @@
           </select>
           <button id="clearRecentRepos" class="btn ghost recent-clear" type="button" title="清除最近仓库">×</button>
           <button id="cloneRepo" class="btn ghost clone-repo" type="button" title="克隆仓库">克隆</button>
+          <button id="initRepo" class="btn ghost init-repo" type="button" title="初始化仓库">初始化</button>
           <button id="openRepo" class="btn primary" type="button">打开</button>
         </div>
         <label class="search">
@@ -297,6 +298,31 @@
       <div class="checkout-actions branch-actions">
         <button id="cloneSubmit" class="checkout-choice primary" type="submit">开始克隆</button>
         <button id="cloneCancel" class="checkout-choice" type="button">取消</button>
+      </div>
+    </form>
+  </div>
+  <div id="initModal" class="checkout-modal" aria-hidden="true">
+    <form id="initForm" class="checkout-dialog clone-dialog" role="dialog" aria-modal="true" aria-labelledby="initModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon branch-icon">I</div>
+        <div>
+          <strong id="initModalTitle">初始化仓库</strong>
+          <span>把本机文件夹创建为 Git 仓库。</span>
+        </div>
+      </div>
+      <div class="branch-form-body">
+        <label class="edit-field">
+          <span>文件夹</span>
+          <input id="initPathInput" autocomplete="off" spellcheck="false" placeholder="例如 D:\project\new-repo" />
+        </label>
+        <label class="amend-toggle branch-check-toggle">
+          <input id="initOpenToggle" type="checkbox" checked />
+          <span>初始化后打开</span>
+        </label>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="initSubmit" class="checkout-choice primary" type="submit">开始初始化</button>
+        <button id="initCancel" class="checkout-choice" type="button">取消</button>
       </div>
     </form>
   </div>

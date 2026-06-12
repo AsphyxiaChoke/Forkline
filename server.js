@@ -101,10 +101,18 @@ async function openRepo(repoPath) {
   return readState();
 }
 
+async function readBranchDisplayName(repoPath) {
+  const symbolic = (await git(repoPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => "")).trim();
+  if (symbolic) return symbolic;
+  const branch = (await git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD") return "detached HEAD";
+  return branch;
+}
+
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
   const [branch, branchOutput, trackingOutput, remoteOutput, tagOutput, worktreeOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
-    git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "detached HEAD"),
+    readBranchDisplayName(currentRepo),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
     git(currentRepo, ["remote"]).catch(() => ""),
@@ -113,7 +121,7 @@ async function readState(ref = "") {
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
-    git(currentRepo, logArgs(ref)),
+    git(currentRepo, logArgs(ref)).catch(() => ""),
   ]);
 
   const branches = [];
@@ -137,6 +145,10 @@ async function readState(ref = "") {
       if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
     } else if (/^[^/]+\/.+/.test(refname) && isKnownRemoteBranch(refname, remoteNames)) remotes.push(refname);
     else branches.push(refname);
+  }
+  const currentBranch = branch.trim();
+  if (currentBranch && currentBranch !== "detached HEAD" && !branches.includes(currentBranch)) {
+    branches.unshift(currentBranch);
   }
 
   const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
@@ -494,6 +506,9 @@ async function runAction(body) {
   if (action === "cloneRepository") {
     return cloneRepository(body);
   }
+  if (action === "initRepository") {
+    return initRepository(body);
+  }
   if (!currentRepo) {
     return { ok: true, sample: true, output: "示例模式不会执行真实 Git 命令" };
   }
@@ -755,6 +770,7 @@ function actionLabel(body = {}) {
     push: "推送到远端",
     forcePushLease: "安全强推到远端",
     cloneRepository: body.targetPath ? `克隆仓库到 ${shortText(body.targetPath, 72)}` : "克隆仓库",
+    initRepository: body.targetPath ? `初始化仓库到 ${shortText(body.targetPath, 72)}` : "初始化仓库",
     fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
     testRemote: body.name ? `检查远端 ${shortText(body.name, 72)}` : "检查远端连接",
     addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
@@ -1059,6 +1075,28 @@ async function cloneRepository(body) {
   const output = await gitStandalone(["clone", "--progress", "--", source, targetPath], { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
   const lines = [`克隆完成`, `来源：${source}`, `位置：${targetPath}`];
   const result = { ok: true, output: lines.join("\n"), clonedPath: targetPath, gitOutput: shortText(output, 2000) };
+  if (body.openAfter !== false) {
+    result.state = await openRepo(targetPath);
+  }
+  return result;
+}
+
+async function initRepository(body) {
+  const targetPath = normalizeInitTargetPath(body.targetPath || body.path);
+  const parent = path.dirname(targetPath);
+  if (!fs.existsSync(parent)) throw new Error(`目标文件夹的上级目录不存在：${parent}`);
+  if (!fs.statSync(parent).isDirectory()) throw new Error(`目标文件夹的上级路径不是目录：${parent}`);
+  if (fs.existsSync(targetPath)) {
+    if (!fs.statSync(targetPath).isDirectory()) throw new Error(`目标路径已存在但不是文件夹：${targetPath}`);
+  } else {
+    fs.mkdirSync(targetPath, { recursive: true });
+  }
+  const gitPath = path.join(targetPath, ".git");
+  if (fs.existsSync(gitPath)) throw new Error(`这个文件夹已经是 Git 仓库：${targetPath}`);
+
+  const output = await gitStandalone(["init", targetPath], { timeout: 60000, maxBuffer: 1024 * 1024 * 4 });
+  const lines = [`初始化仓库完成`, `位置：${targetPath}`];
+  const result = { ok: true, output: lines.join("\n"), initializedPath: targetPath, gitOutput: shortText(output, 2000) };
   if (body.openAfter !== false) {
     result.state = await openRepo(targetPath);
   }
@@ -1851,6 +1889,16 @@ function normalizeCloneTargetPath(value) {
   return resolved;
 }
 
+function normalizeInitTargetPath(value) {
+  const targetPath = String(value || "").trim();
+  if (!targetPath || targetPath.includes("\0") || /[\r\n]/.test(targetPath)) throw new Error("初始化文件夹不合法");
+  const resolved = path.resolve(targetPath);
+  if (!path.isAbsolute(targetPath)) throw new Error("初始化文件夹必须是本机绝对路径");
+  const parsed = path.parse(resolved);
+  if (resolved === parsed.root) throw new Error("初始化文件夹不能是磁盘根目录");
+  return resolved;
+}
+
 function normalizeRemoteCheckoutBranch(remoteRef) {
   const parts = String(remoteRef || "").split("/").filter(Boolean);
   if (parts.length < 2) throw new Error("远端分支不合法");
@@ -2260,8 +2308,8 @@ function commandResultWithSummary(summary, output) {
 }
 
 async function readCurrentSyncState() {
-  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
-  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+  const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (!branch || branch === "detached HEAD") {
     return { branch: "HEAD", detached: true, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
   const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();

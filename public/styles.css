@@ -222,7 +222,7 @@ button {
 
 .repo-bar {
   display: grid;
-  grid-template-columns: 220px minmax(330px, 1fr) minmax(210px, 340px);
+  grid-template-columns: 220px minmax(350px, 1fr) minmax(210px, 340px);
   gap: 10px;
   min-width: 0;
   padding: 0 12px;
@@ -256,7 +256,7 @@ button {
 
 .path-open {
   display: grid;
-  grid-template-columns: minmax(90px, 1fr) minmax(84px, 126px) 34px 52px 52px;
+  grid-template-columns: minmax(82px, 1fr) minmax(72px, 112px) 34px 48px 58px 48px;
   overflow: hidden;
   background: var(--field);
 }
@@ -305,8 +305,9 @@ button {
   font-weight: 900;
 }
 
-.path-open .clone-repo {
-  min-width: 52px;
+.path-open .clone-repo,
+.path-open .init-repo {
+  min-width: 48px;
   height: 100%;
   border-left: 1px solid var(--line-soft);
   border-radius: 0;
@@ -315,8 +316,12 @@ button {
   font-weight: 900;
 }
 
+.path-open .init-repo {
+  min-width: 58px;
+}
+
 .path-open .primary {
-  min-width: 52px;
+  min-width: 48px;
   height: 100%;
   border-radius: 0;
 }
@@ -3446,7 +3451,7 @@ body.resizing .workbench-resizer-y::before {
   }
 
   .repo-bar {
-    grid-template-columns: minmax(170px, 220px) minmax(310px, 1fr);
+    grid-template-columns: minmax(170px, 220px) minmax(350px, 1fr);
     grid-template-rows: 38px 38px;
   }
 
