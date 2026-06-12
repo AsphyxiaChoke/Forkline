@@ -1235,7 +1235,19 @@ async function fetchRemote(body) {
 async function testRemote(body) {
   const remote = await ensureRemoteName(body.name);
   const details = (await readRemoteDetails()).find((item) => item.name === remote) || { name: remote, fetchUrl: "", pushUrl: "" };
-  const output = await git(currentRepo, ["ls-remote", "--heads", remote], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+  let output = "";
+  try {
+    output = await git(currentRepo, ["ls-remote", "--heads", remote], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+  } catch (error) {
+    const reason = friendlyErrorMessage(error, { body: { ...body, action: "testRemote" } });
+    const remoteError = new Error(reason);
+    remoteError.remoteCheck = buildRemoteCheck(remote, details, "error", {
+      reason,
+      output: reason,
+      rawOutput: String(error?.message || error || "").trim(),
+    });
+    throw remoteError;
+  }
   const heads = String(output || "")
     .split(/\r?\n/)
     .filter((line) => line.includes("\trefs/heads/"));
@@ -1246,7 +1258,165 @@ async function testRemote(body) {
     `可读取分支：${heads.length} 个`,
     `检查命令：git ls-remote --heads ${remote}`,
   ];
-  return { ok: true, output: lines.join("\n"), remoteCheck: { remote, heads: heads.length, fetchUrl: details.fetchUrl, pushUrl: details.pushUrl || details.fetchUrl } };
+  return {
+    ok: true,
+    output: lines.join("\n"),
+    remoteCheck: buildRemoteCheck(remote, details, "success", {
+      heads: heads.length,
+      output: lines.join("\n"),
+    }),
+  };
+}
+
+function buildRemoteCheck(remote, details = {}, status, options = {}) {
+  const fetchUrl = details.fetchUrl || "";
+  const pushUrl = details.pushUrl || fetchUrl;
+  const heads = Number.isFinite(options.heads) ? options.heads : 0;
+  const reason = String(options.reason || "").trim();
+  const rawOutput = String(options.rawOutput || "").trim();
+  const output = String(options.output || reason || "").trim();
+  const command = `git ls-remote --heads ${remote}`;
+  return {
+    remote,
+    status,
+    heads,
+    fetchUrl,
+    pushUrl,
+    command,
+    reason,
+    rawOutput,
+    output,
+    diagnosis: remoteDiagnosis({ remote, fetchUrl, pushUrl, status, heads, reason, output, rawOutput }),
+  };
+}
+
+function remoteDiagnosis({ remote, fetchUrl, pushUrl, status, heads, reason, output, rawOutput }) {
+  const text = `${reason || ""}\n${output || ""}\n${rawOutput || ""}`.toLowerCase();
+  const urlText = `${fetchUrl || ""} ${pushUrl || ""}`.toLowerCase();
+  const host = extractRemoteHost(fetchUrl || pushUrl);
+  const baseCommands = [`git remote -v`, `git ls-remote --heads ${remote}`];
+  if (status === "success") {
+    return {
+      category: "ok",
+      title: "远端读取正常",
+      summary: `Forkline 已能读取 ${heads} 个远端分支，URL 和读取权限基本正常。`,
+      steps: ["可以继续抓取、拉取或推送。", "如果推送失败，再查看同步页的保护提示和右侧日志。"],
+      commands: baseCommands,
+    };
+  }
+  if (text.includes("permission denied (publickey)") || text.includes("publickey") || text.includes("ssh") || urlText.startsWith("git@") || urlText.includes("ssh://")) {
+    const commands = host ? [...baseCommands, `ssh -T git@${host}`, `ssh-add -l`, `git remote get-url ${remote}`] : [...baseCommands, `ssh-add -l`, `git remote get-url ${remote}`];
+    return {
+      category: "ssh",
+      title: "SSH 凭据或主机认证",
+      summary: "当前远端像是 SSH 连接失败，常见原因是 SSH key 没添加到平台、ssh-agent 没加载 key，或远端 URL 指向了错误账号。",
+      steps: [
+        "确认这个仓库应该使用 SSH 地址，且远端 URL 没写错。",
+        host ? `在终端执行 ssh -T git@${host}，确认当前系统账号能通过平台认证。` : "在终端执行 ssh -T 对应 Git 主机，确认当前系统账号能通过平台认证。",
+        "如果 key 不在 ssh-agent 里，先加载 key；如果不想处理 SSH，可以把远端 URL 改成 HTTPS。",
+      ],
+      commands,
+    };
+  }
+  if (text.includes("authentication failed") || text.includes("could not read username") || text.includes("access denied") || text.includes("token") || (urlText.startsWith("http") && (text.includes("认证") || text.includes("authentication")))) {
+    return {
+      category: "https",
+      title: "HTTPS 凭据或 Token",
+      summary: "当前远端像是 HTTPS 登录失败，常见原因是凭据管理器里保存了旧密码，或 Personal Access Token 过期/权限不足。",
+      steps: [
+        "确认远端 URL 是你要访问的 HTTPS 仓库地址。",
+        "检查 Windows 凭据管理器或 Git Credential Manager 中保存的账号和 Token。",
+        "GitHub、GitLab 等平台通常要使用 Token，不能把账号密码当作推送密码。",
+      ],
+      commands: [...baseCommands, `git credential-manager diagnose`, `git remote get-url ${remote}`],
+    };
+  }
+  if (text.includes("could not resolve host") || text.includes("主机名无法解析") || text.includes("dns")) {
+    return {
+      category: "network",
+      title: "DNS 或主机名解析",
+      summary: "Git 无法解析远端主机名，通常是 URL 主机写错、DNS、代理或网络环境问题。",
+      steps: [
+        "检查远端 URL 的主机名有没有拼写错误。",
+        "确认当前网络、代理、VPN 或公司网络策略允许访问这个 Git 主机。",
+        "修正 URL 或网络环境后重新执行诊断。",
+      ],
+      commands: [...baseCommands, `git remote get-url ${remote}`, `git config --get http.proxy`],
+    };
+  }
+  if (text.includes("failed to connect") || text.includes("connection timed out") || text.includes("network is unreachable") || text.includes("连接超时") || text.includes("网络不可达")) {
+    return {
+      category: "network",
+      title: "网络连接超时",
+      summary: "Git 能识别远端地址，但连接不到服务器，常见原因是代理、VPN、防火墙或远端服务暂时不可达。",
+      steps: [
+        "确认浏览器或终端能访问对应 Git 平台。",
+        "检查代理、VPN、防火墙和公司网络限制。",
+        "网络恢复后先重新诊断，再执行抓取或推送。",
+      ],
+      commands: [...baseCommands, `git config --get http.proxy`, `git config --get https.proxy`],
+    };
+  }
+  if (text.includes("ssl certificate") || text.includes("certificate") || text.includes("证书")) {
+    return {
+      category: "certificate",
+      title: "HTTPS 证书校验",
+      summary: "Git 在校验 HTTPS 证书时失败，常见原因是系统时间、公司代理证书或自签证书配置问题。",
+      steps: [
+        "先确认系统时间和时区正确。",
+        "如果在公司网络或代理下，确认代理根证书已被系统和 Git 信任。",
+        "不要直接关闭 SSL 校验；优先修复证书链或代理证书配置。",
+      ],
+      commands: [...baseCommands, `git config --show-origin --get http.sslCAInfo`, `git config --show-origin --get http.sslVerify`],
+    };
+  }
+  if (text.includes("does not appear to be a git repository") || text.includes("no such remote") || text.includes("无法读取") || text.includes("unable to access")) {
+    return {
+      category: "url",
+      title: "远端 URL 或仓库路径",
+      summary: "远端地址不可用。可能是本地裸仓库路径不存在、URL 写错，或这个地址不是 Git 仓库。",
+      steps: [
+        "复制远端 URL 到浏览器或终端确认它真实存在。",
+        "如果是本地路径远端，确认磁盘路径仍然存在且是裸仓库或普通 Git 仓库。",
+        "在同步页修改 URL 后重新诊断。",
+      ],
+      commands: [...baseCommands, `git remote get-url ${remote}`],
+    };
+  }
+  if (text.includes("repository not found") || text.includes("not found") || text.includes("仓库不存在") || text.includes("没有访问权限") || text.includes("权限")) {
+    return {
+      category: "permission",
+      title: "仓库地址或访问权限",
+      summary: "远端仓库可能不存在、已改名，或当前账号没有私有仓库/组织权限。",
+      steps: [
+        "先核对远端 URL 中的用户名、组织名和仓库名。",
+        "确认当前登录账号有读取这个仓库的权限，私有仓库尤其要检查组织授权。",
+        "如果仓库已迁移或改名，在同步页修改 URL 后重新诊断。",
+      ],
+      commands: [...baseCommands, `git remote get-url ${remote}`],
+    };
+  }
+  return {
+    category: "unknown",
+    title: "需要继续排查",
+    summary: "Forkline 没能把这次失败归到常见类型。先保留 Git 原始输出，再从 URL、网络和认证三条线排查。",
+    steps: ["核对远端 URL。", "确认网络和代理可访问 Git 主机。", "确认当前系统账号或 Token 有仓库读取权限。"],
+    commands: [...baseCommands, `git remote get-url ${remote}`],
+  };
+}
+
+function extractRemoteHost(remoteUrl) {
+  const value = String(remoteUrl || "").trim();
+  if (!value) return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    try {
+      return new URL(value).hostname;
+    } catch {
+      return "";
+    }
+  }
+  const scpLike = value.match(/^[^@]+@([^:]+):/);
+  return scpLike?.[1] || "";
 }
 
 async function pullCurrentBranch() {
@@ -3358,7 +3528,9 @@ function sendJson(res, status, data) {
 }
 
 function sendError(res, error, context = {}) {
-  sendJson(res, 400, { error: friendlyErrorMessage(error, context), operationLog, runningOperations: listRunningOperations(context.operation?.id) });
+  const extra = {};
+  if (error?.remoteCheck) extra.remoteCheck = error.remoteCheck;
+  sendJson(res, 400, { error: friendlyErrorMessage(error, context), ...extra, operationLog, runningOperations: listRunningOperations(context.operation?.id) });
 }
 
 function friendlyErrorMessage(error, context = {}) {

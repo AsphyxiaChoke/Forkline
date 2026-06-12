@@ -3365,6 +3365,107 @@ body.resizing .workbench-resizer-y::before {
   overflow-wrap: anywhere;
 }
 
+.remote-diagnosis {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+
+.remote-diagnosis-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.remote-diagnosis-title strong,
+.remote-diagnosis-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-diagnosis-title strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.remote-diagnosis-title span {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.remote-diagnosis-steps {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.remote-diagnosis-steps li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.remote-diagnosis-commands {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.remote-command-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.remote-command-copy:hover {
+  border-color: var(--blue);
+  color: var(--text);
+}
+
+.remote-command-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.remote-command-copy em {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+}
+
 .remote-check-card pre {
   max-height: 140px;
   min-width: 0;

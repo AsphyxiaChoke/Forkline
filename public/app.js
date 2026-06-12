@@ -171,7 +171,12 @@ async function api(path, options = {}) {
   const data = await response.json();
   if (data.operationLog && state.data) state.data.operationLog = data.operationLog;
   if (data.runningOperations && state.data) state.data.runningOperations = data.runningOperations;
-  if (!response.ok || data.error) throw new Error(data.error || "请求失败");
+  if (!response.ok || data.error) {
+    const error = new Error(data.error || "请求失败");
+    error.data = data;
+    if (data.remoteCheck) error.remoteCheck = data.remoteCheck;
+    throw error;
+  }
   return data;
 }
 
@@ -1546,6 +1551,7 @@ function showRemoteContextMenu(event, remote) {
   const hasFetch = Boolean(remote?.fetchUrl);
   const hasPush = Boolean(remote?.pushUrl || remote?.fetchUrl);
   menu.querySelector('[data-remote-menu-action="test"]').disabled = !hasRemote;
+  menu.querySelector('[data-remote-menu-action="copyCheckCommand"]').disabled = !hasRemote;
   menu.querySelector('[data-remote-menu-action="fetch"]').disabled = !hasRemote;
   menu.querySelector('[data-remote-menu-action="edit"]').disabled = !hasRemote;
   menu.querySelector('[data-remote-menu-action="copyFetch"]').disabled = !hasFetch;
@@ -3856,7 +3862,7 @@ function remoteRowHtml(remote) {
         <span class="remote-url" title="${escapeAttr(pushUrl)}"><em>push</em><span>${escapeHtml(pushUrl)}</span></span>
       </div>
       <div class="remote-actions">
-        <button class="mini-btn" data-remote-action="test" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>检查</span><span class="command-hint">ls-remote</span></button>
+        <button class="mini-btn" data-remote-action="test" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>诊断</span><span class="command-hint">ls-remote</span></button>
         <button class="mini-btn" data-remote-action="fetch" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>抓取</span><span class="command-hint">git fetch</span></button>
         <button class="mini-btn" data-remote-action="edit" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>修改 URL</span><span class="command-hint">set-url</span></button>
         <button class="mini-btn danger" data-remote-action="delete" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>删除</span><span class="command-hint">remove</span></button>
@@ -3876,11 +3882,12 @@ function remoteCheckHtml(remotes) {
   const command = check.command || `git ls-remote --heads ${check.remote}`;
   const output = String(check.output || "").trim();
   const checkedAt = check.checkedAt || "";
+  const diagnosis = remoteCheckDiagnosis(check, remote, ok);
   return `
     <section class="remote-check-card ${ok ? "success" : "error"}">
       <div class="remote-check-head">
         <div>
-          <strong>${ok ? "远端连接正常" : "远端连接失败"}</strong>
+          <strong>${ok ? "远端连接正常" : "远端诊断失败"}</strong>
           <span>${escapeHtml(check.remote)}${checkedAt ? ` · ${escapeHtml(checkedAt)}` : ""}</span>
         </div>
         <span class="remote-check-status">${ok ? "通过" : "失败"}</span>
@@ -3889,29 +3896,113 @@ function remoteCheckHtml(remotes) {
         <span>fetch URL</span><div class="meta-value" title="${escapeAttr(fetchUrl)}">${escapeHtml(fetchUrl)}</div>
         <span>push URL</span><div class="meta-value" title="${escapeAttr(pushUrl)}">${escapeHtml(pushUrl)}</div>
         <span>检查命令</span><div class="meta-value">${escapeHtml(command)}</div>
-        ${ok ? `<span>可读分支</span><div class="meta-value">${escapeHtml(String(check.heads ?? "未知"))} 个</div>` : `<span>下一步</span><div class="meta-value">${escapeHtml(remoteCheckAdvice(output, remote))}</div>`}
+        ${ok ? `<span>可读分支</span><div class="meta-value">${escapeHtml(String(check.heads ?? "未知"))} 个</div>` : `<span>判断结果</span><div class="meta-value">${escapeHtml(diagnosis.summary)}</div>`}
       </div>
+      ${remoteDiagnosisHtml(diagnosis)}
       ${output ? `<pre>${escapeHtml(output)}</pre>` : ""}
     </section>
   `;
 }
 
-function remoteCheckAdvice(output, remote) {
-  const text = String(output || "").toLowerCase();
+function remoteDiagnosisHtml(diagnosis) {
+  const steps = Array.isArray(diagnosis.steps) ? diagnosis.steps.filter(Boolean) : [];
+  const commands = Array.isArray(diagnosis.commands) ? diagnosis.commands.filter(Boolean) : [];
+  return `
+    <div class="remote-diagnosis remote-diagnosis-${escapeAttr(diagnosis.category || "unknown")}">
+      <div class="remote-diagnosis-title">
+        <strong>${escapeHtml(diagnosis.title || "排查向导")}</strong>
+        <span>${escapeHtml(diagnosis.categoryLabel || remoteDiagnosisCategoryLabel(diagnosis.category))}</span>
+      </div>
+      ${steps.length ? `<ol class="remote-diagnosis-steps">${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>` : ""}
+      ${
+        commands.length
+          ? `<div class="remote-diagnosis-commands">${commands.map((cmd) => `<button class="remote-command-copy" data-copy-remote-command="${escapeAttr(cmd)}" type="button" title="复制命令"><span>${escapeHtml(cmd)}</span><em>复制</em></button>`).join("")}</div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function remoteCheckDiagnosis(check, remote, ok) {
+  if (check?.diagnosis) return check.diagnosis;
+  const output = String(check?.output || "").toLowerCase();
   const url = `${remote?.fetchUrl || ""} ${remote?.pushUrl || ""}`.toLowerCase();
-  if (text.includes("ssh") || text.includes("publickey") || url.startsWith("git@") || url.includes("ssh://")) {
-    return "先确认 SSH key 已添加到 Git 托管平台，并在终端执行 ssh -T 对应主机；也可以把远端 URL 改为 HTTPS。";
+  const commands = [`git remote -v`, check?.command || `git ls-remote --heads ${check?.remote || remote?.name || "origin"}`];
+  if (ok) {
+    return {
+      category: "ok",
+      title: "远端读取正常",
+      summary: `Forkline 已能读取 ${check?.heads ?? "未知"} 个远端分支，URL 和读取权限基本正常。`,
+      steps: ["可以继续抓取、拉取或推送。", "如果推送失败，再查看同步页的保护提示和右侧日志。"],
+      commands,
+    };
   }
-  if (text.includes("token") || text.includes("https") || text.includes("认证") || text.includes("authentication") || url.startsWith("http")) {
-    return "检查凭据管理器里的账号和 Personal Access Token，确认 token 未过期且有仓库读写权限。";
+  if (output.includes("ssh") || output.includes("publickey") || url.startsWith("git@") || url.includes("ssh://")) {
+    return {
+      category: "ssh",
+      title: "SSH 凭据或主机认证",
+      summary: "当前远端像是 SSH 连接失败，常见原因是 SSH key 没添加到平台、ssh-agent 没加载 key，或远端 URL 指向了错误账号。",
+      steps: ["确认远端 URL 没写错。", "在终端执行 ssh -T 对应 Git 主机，确认当前系统账号能通过平台认证。", "如果不想处理 SSH，可以把远端 URL 改成 HTTPS。"],
+      commands: [...commands, "ssh-add -l"],
+    };
   }
-  if (text.includes("dns") || text.includes("主机名") || text.includes("网络") || text.includes("连接") || text.includes("resolve") || text.includes("timeout")) {
-    return "检查远端 URL、DNS、代理、VPN 和防火墙；公司网络下还要确认代理证书。";
+  if (output.includes("token") || output.includes("https") || output.includes("认证") || output.includes("authentication") || url.startsWith("http")) {
+    return {
+      category: "https",
+      title: "HTTPS 凭据或 Token",
+      summary: "当前远端像是 HTTPS 登录失败，常见原因是凭据管理器里的旧密码，或 Personal Access Token 过期/权限不足。",
+      steps: ["确认远端 URL 是目标仓库的 HTTPS 地址。", "检查 Windows 凭据管理器或 Git Credential Manager 中保存的账号和 Token。", "重新生成 Token 后再诊断连接。"],
+      commands: [...commands, "git credential-manager diagnose"],
+    };
   }
-  if (text.includes("不存在") || text.includes("not found") || text.includes("权限")) {
-    return "检查仓库名、组织权限和私有仓库授权；如果仓库已改名，先修改远端 URL。";
+  if (output.includes("dns") || output.includes("主机名") || output.includes("网络") || output.includes("连接") || output.includes("resolve") || output.includes("timeout")) {
+    return {
+      category: "network",
+      title: "网络或 DNS",
+      summary: "当前远端像是网络访问失败，常见原因是 URL 主机写错、DNS、代理、VPN 或防火墙。",
+      steps: ["检查远端 URL 的主机名。", "确认当前网络、代理、VPN 或公司网络策略允许访问这个 Git 主机。", "网络恢复后重新诊断。"],
+      commands: [...commands, "git config --get http.proxy"],
+    };
   }
-  return "先确认远端 URL 正确，再检查网络和认证；必要时在同步页修改 URL 后重新检查。";
+  if (output.includes("does not appear") || output.includes("no such remote") || output.includes("无法读取") || output.includes("unable to access")) {
+    return {
+      category: "url",
+      title: "远端 URL 或仓库路径",
+      summary: "远端地址不可用。可能是本地裸仓库路径不存在、URL 写错，或这个地址不是 Git 仓库。",
+      steps: ["复制远端 URL 到浏览器或终端确认它真实存在。", "如果是本地路径远端，确认磁盘路径仍然存在且是 Git 仓库。", "在同步页修改 URL 后重新诊断。"],
+      commands: [...commands, `git remote get-url ${check?.remote || remote?.name || "origin"}`],
+    };
+  }
+  if (output.includes("不存在") || output.includes("not found") || output.includes("权限")) {
+    return {
+      category: "permission",
+      title: "仓库地址或访问权限",
+      summary: "远端仓库可能不存在、已改名，或当前账号没有私有仓库/组织权限。",
+      steps: ["核对远端 URL 中的用户名、组织名和仓库名。", "确认当前账号拥有读取这个仓库的权限。", "如果仓库已迁移或改名，在同步页修改 URL 后重新诊断。"],
+      commands: [...commands, `git remote get-url ${check?.remote || remote?.name || "origin"}`],
+    };
+  }
+  return {
+    category: "unknown",
+    title: "需要继续排查",
+    summary: "Forkline 没能把这次失败归到常见类型。先保留 Git 原始输出，再从 URL、网络和认证三条线排查。",
+    steps: ["核对远端 URL。", "确认网络和代理可访问 Git 主机。", "确认当前系统账号或 Token 有仓库读取权限。"],
+    commands,
+  };
+}
+
+function remoteDiagnosisCategoryLabel(category) {
+  const labels = {
+    ok: "正常",
+    ssh: "SSH",
+    https: "HTTPS",
+    permission: "权限",
+    network: "网络",
+    certificate: "证书",
+    url: "URL",
+    unknown: "未分类",
+  };
+  return labels[category] || "诊断";
 }
 
 function remoteCheckTime(date = new Date()) {
@@ -5952,13 +6043,14 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     if (action === "test") {
       const check = result.remoteCheck || {};
       state.remoteCheck = {
+        ...check,
         status: "success",
         remote: check.remote || remote.name,
         heads: check.heads ?? 0,
         fetchUrl: check.fetchUrl || remote.fetchUrl || "",
         pushUrl: check.pushUrl || remote.pushUrl || remote.fetchUrl || "",
-        command: `git ls-remote --heads ${check.remote || remote.name}`,
-        output: result.output || "远端连接正常",
+        command: check.command || `git ls-remote --heads ${check.remote || remote.name}`,
+        output: check.output || result.output || "远端连接正常",
         checkedAt: remoteCheckTime(),
       };
     } else if (action === "add" || action === "edit" || action === "delete") {
@@ -5972,13 +6064,15 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     renderAll();
   } catch (error) {
     if (action === "test" && remote?.name) {
+      const check = error.remoteCheck || {};
       state.remoteCheck = {
+        ...check,
         status: "error",
-        remote: remote.name,
-        fetchUrl: remote.fetchUrl || "",
-        pushUrl: remote.pushUrl || remote.fetchUrl || "",
-        command: `git ls-remote --heads ${remote.name}`,
-        output: error.message,
+        remote: check.remote || remote.name,
+        fetchUrl: check.fetchUrl || remote.fetchUrl || "",
+        pushUrl: check.pushUrl || remote.pushUrl || remote.fetchUrl || "",
+        command: check.command || `git ls-remote --heads ${remote.name}`,
+        output: check.output || error.message,
         checkedAt: remoteCheckTime(),
       };
       state.selectedTab = "sync";
@@ -6002,6 +6096,11 @@ async function runRemoteMenuAction(action) {
     }
     await copyText(url);
     toast(action === "copyFetch" ? "已复制 fetch URL" : "已复制 push URL");
+    return;
+  }
+  if (action === "copyCheckCommand") {
+    await copyText(`git ls-remote --heads ${remote.name}`);
+    toast("已复制诊断命令");
     return;
   }
   const mapped = action === "test" || action === "fetch" || action === "edit" || action === "delete" ? action : "";
@@ -6540,6 +6639,12 @@ els.detailBody.addEventListener("click", (event) => {
   if (syncAction) {
     event.preventDefault();
     if (!syncAction.disabled) runAction(syncAction.dataset.syncAction).catch((error) => toast(error.message));
+    return;
+  }
+  const remoteCommandCopy = event.target.closest("[data-copy-remote-command]");
+  if (remoteCommandCopy) {
+    event.preventDefault();
+    copyText(remoteCommandCopy.dataset.copyRemoteCommand || "").then(() => toast("已复制诊断命令")).catch((error) => toast(error.message));
     return;
   }
   const remoteAction = event.target.closest("[data-remote-action]");
