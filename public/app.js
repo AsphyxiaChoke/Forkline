@@ -1039,14 +1039,17 @@ function showFileContextMenu(event, filePath, scope = "") {
   }
   const menu = els.fileContextMenu;
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  const hasConflict = Boolean(fileInfo?.conflict);
   menu.querySelector('[data-file-action="stageFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="discardWorktreeFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="unstageFile"]').disabled = !hasStaged;
   menu.querySelector('[data-file-action="discardStagedFile"]').disabled = !hasStaged;
+  menu.querySelector('[data-file-action="resolveConflictOurs"]').disabled = !hasConflict;
+  menu.querySelector('[data-file-action="resolveConflictTheirs"]').disabled = !hasConflict;
   menu.querySelector('[data-file-action="stash"]').disabled = !selectedContextFiles().length;
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
-  positionContextMenu(menu, event, 270);
+  positionContextMenu(menu, event, 330);
 }
 
 function hideFileContextMenu() {
@@ -1125,7 +1128,7 @@ async function runFileContextAction(action) {
     await createStashFromSelection(selectedContextFiles());
     return;
   }
-  if (["stageFile", "discardWorktreeFile"].includes(action)) {
+  if (["stageFile", "discardWorktreeFile", "resolveConflictOurs", "resolveConflictTheirs"].includes(action)) {
     await runSingleFileAction(action, context.file);
     return;
   }
@@ -4242,6 +4245,7 @@ function updateWorkDiffActions(filePath = state.selectedFile) {
   const fileInfo = selectedWorkingFileInfo(filePath);
   const hasWorktreeFile = Boolean(fileInfo);
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  const hasConflict = Boolean(fileInfo?.conflict);
   document.querySelectorAll("[data-work-diff-scope]").forEach((button) => {
     const scope = button.dataset.workDiffScope;
     const enabled = hasWorktreeFile && (scope === "unstaged" ? hasUnstaged : scope === "staged" ? hasStaged : false);
@@ -4253,7 +4257,13 @@ function updateWorkDiffActions(filePath = state.selectedFile) {
     const action = button.dataset.workDiffAction;
     const enabled =
       hasWorktreeFile &&
-      ((action === "stageFile" || action === "discardWorktreeFile") ? hasUnstaged : action === "unstageFile" || action === "discardStagedFile" ? hasStaged : false);
+      ((action === "stageFile" || action === "discardWorktreeFile")
+        ? hasUnstaged
+        : action === "unstageFile" || action === "discardStagedFile"
+          ? hasStaged
+          : action === "resolveConflictOurs" || action === "resolveConflictTheirs"
+            ? hasConflict
+            : false);
     button.disabled = !enabled;
     button.title = workDiffActionTitle(action, filePath, enabled);
   });
@@ -4271,6 +4281,8 @@ function workDiffActionTitle(action, filePath, enabled) {
   const titles = {
     stageFile: `暂存 ${filePath}`,
     unstageFile: `取消暂存 ${filePath}`,
+    resolveConflictOurs: `使用当前版本解决冲突并暂存：${filePath}`,
+    resolveConflictTheirs: `使用对方版本解决冲突并暂存：${filePath}`,
     discardWorktreeFile: `丢弃工作区改动：${filePath}`,
     discardStagedFile: `丢弃已暂存改动：${filePath}`,
   };
@@ -5429,10 +5441,18 @@ async function createStashFromSelection(files = null) {
 
 async function runSingleFileAction(action, file) {
   if (!state.data || !file) return;
-  const names = { stageFile: "暂存", unstageFile: "取消暂存", discardWorktreeFile: "丢弃", discardStagedFile: "丢弃" };
+  const names = {
+    stageFile: "暂存",
+    unstageFile: "取消暂存",
+    discardWorktreeFile: "丢弃",
+    discardStagedFile: "丢弃",
+    resolveConflictOurs: "已使用当前版本解决冲突",
+    resolveConflictTheirs: "已使用对方版本解决冲突",
+  };
   if (isDiscardAction(action) && !state.data.repo.isSample && !confirm(discardConfirmMessage(action, [file]))) return;
+  if (isConflictResolveAction(action) && !state.data.repo.isSample && !confirm(conflictResolveConfirmMessage(action, file))) return;
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action, file }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify(singleFileActionPayload(action, file)) });
     toast(result.output || `${names[action] || "操作"}完成`);
     state.selectedChanges.delete(changeKey("unstaged", file));
     state.selectedChanges.delete(changeKey("staged", file));
@@ -5444,6 +5464,21 @@ async function runSingleFileAction(action, file) {
   } catch (error) {
     toast(error.message);
   }
+}
+
+function singleFileActionPayload(action, file) {
+  if (action === "resolveConflictOurs") return { action: "resolveConflictFile", side: "ours", file };
+  if (action === "resolveConflictTheirs") return { action: "resolveConflictFile", side: "theirs", file };
+  return { action, file };
+}
+
+function isConflictResolveAction(action) {
+  return action === "resolveConflictOurs" || action === "resolveConflictTheirs";
+}
+
+function conflictResolveConfirmMessage(action, file) {
+  const side = action === "resolveConflictOurs" ? "当前版本（git checkout --ours）" : "对方版本（git checkout --theirs）";
+  return `确认使用${side}解决冲突并暂存？\n\n文件：${file}\n这会覆盖此文件里的冲突标记。`;
 }
 
 async function runFileBatchAction(action, scope, button) {

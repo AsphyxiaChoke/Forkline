@@ -850,6 +850,9 @@ async function runAction(body) {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["reset", "-q", "--", file], { timeout: 60000 }));
   }
+  if (action === "resolveConflictFile") {
+    return commandResult(await resolveConflictFile(body));
+  }
   if (action === "stageHunk") {
     return commandResult(await applyWorktreeHunk(body, "stage"));
   }
@@ -1013,6 +1016,7 @@ function actionLabel(body = {}) {
     pruneRecoveryPoints: "按保留策略清理恢复点",
     stageFile: file ? `暂存文件 ${file}` : "暂存文件",
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
+    resolveConflictFile: file ? `解决冲突文件 ${file}` : "解决冲突文件",
     stageHunk: file ? `暂存改动块 ${file}` : "暂存改动块",
     unstageHunk: file ? `取消暂存改动块 ${file}` : "取消暂存改动块",
     discardWorktreeHunk: file ? `丢弃改动块 ${file}` : "丢弃改动块",
@@ -1536,6 +1540,17 @@ async function discardStagedFile(body) {
     await git(currentRepo, ["restore", "--source=HEAD", "--staged", "--worktree", "--", file], { timeout: 60000 });
   }
   return "已暂存改动已丢弃";
+}
+
+async function resolveConflictFile(body) {
+  const file = normalizeRepoFile(body.file);
+  const side = normalizeConflictSide(body.side);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  if (!target?.conflict) throw new Error("这个文件当前没有未解决冲突。");
+  await git(currentRepo, ["checkout", `--${side}`, "--", file], { timeout: 60000 });
+  await git(currentRepo, ["add", "--", file], { timeout: 60000 });
+  return side === "ours" ? "已使用当前版本解决冲突并暂存" : "已使用对方版本解决冲突并暂存";
 }
 
 async function applyWorktreeHunk(body, kind) {
@@ -2254,6 +2269,12 @@ function normalizeHunkIndex(value) {
   const index = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isInteger(index) || index < 0 || index > 200) throw new Error("改动块序号不合法，请刷新后再试。");
   return index;
+}
+
+function normalizeConflictSide(value) {
+  const side = String(value || "").trim().toLowerCase();
+  if (side === "ours" || side === "theirs") return side;
+  throw new Error("请选择要保留的冲突版本。");
 }
 
 function normalizeBranchName(branchName) {

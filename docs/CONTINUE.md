@@ -30,6 +30,7 @@
 - 提交右键菜单和提交详情面板都已加入“还原”和软 / 混合 / 硬重置入口，并在文案旁标注 `git revert`、`git reset --soft`、`git reset --mixed`、`git reset --hard`。还原会创建反向提交；硬重置入口标红且确认文案会提示会丢弃工作区改动。
 - GitKraken 风格学习方向：图谱保持主视觉区域，左栏承载仓库/分支/工作区导航，右栏承载所选提交的上下文详情；右键菜单按动作类别分组，左侧中文动作、右侧灰色等宽 Git 指令提示，危险动作明确标红。
 - 还原冲突体验已补强：`path 'xxx' is unmerged` 会翻译为中文冲突提示；工作区会识别 `REVERT_HEAD` 并显示“还原提交发生冲突”，冲突文件用红色标识，提供“继续还原 (git revert --continue)”和“中止还原 (git revert --abort)”入口。
+- 冲突文件一键取舍已接入：工作区底部 Diff 面板和文件右键菜单会在冲突文件上启用“使用当前版本 / 使用对方版本”，后端新增 `resolveConflictFile`，执行 `git checkout --ours/--theirs -- <文件>` 后自动 `git add <文件>`，用于 merge / cherry-pick / revert / rebase 冲突中的文件级快速解决。
 - “继续还原”现在会先检查是否仍存在 `REVERT_HEAD`；没有正在进行的还原时返回中文提示，不再显示 Git 原始的 `nothing to commit, working tree clean`。
 - Cherry-pick 已接入：提交右键菜单和提交详情面板都有“挑选此提交 / 挑选”入口，并标注 `git cherry-pick`；后端支持 `cherryPickCommit`、`continueCherryPick`、`skipCherryPick`、`abortCherryPick`。遇到 `CHERRY_PICK_HEAD` 时工作区显示“挑选提交发生冲突”，冲突文件用红色标识，并提供“继续挑选 / 跳过挑选 / 中止挑选”。
 - Merge 冲突工作流已接入：遇到 `MERGE_HEAD` 时工作区显示“合并发生冲突”，冲突文件用红色标识，并提供“继续合并 (git merge --continue)”和“中止合并 (git merge --abort)”入口；继续合并使用无交互编辑器，避免 Git 打开编辑器卡住。
@@ -75,6 +76,7 @@
 - Merge API 验证：在 GitTest 临时分支 `forkline/merge-conflict-*` 验证冲突后返回中文提示、`operation.type = merge`、冲突文件可识别，并验证 `abortMerge` 可移除 `MERGE_HEAD` 且恢复干净。
 - Merge 继续验证：在 `forkline/merge-continue-*` 验证手动解决并暂存冲突后 `continueMerge` 返回中文“已继续合并并创建合并提交 <sha>”，最终 HEAD 是两父 merge commit，工作区干净。
 - Merge UI 验证：进入 `forkline/ui-merge-conflict-*` 冲突状态后，工作区横幅显示“合并发生冲突”，按钮状态为“继续合并”禁用、“中止合并”可用，并显示 `git merge --continue` / `git merge --abort` 指令提示。
+- 冲突文件一键取舍 API 验证：临时服务 `http://127.0.0.1:5231` 打开 GitTest 后，创建 merge 冲突分支 `forkline/conflict-resolve-merge-20260613041454`，调用 `resolveConflictFile side=ours` 后文件内容保留当前分支版本、冲突标记清除；另创建 cherry-pick 冲突分支 `forkline/conflict-resolve-cherry-20260613041454-target`，调用 `resolveConflictFile side=theirs` 后文件内容保留被挑选提交版本、冲突标记清除并暂存。临时分支已删除，GitTest 已恢复 `123` 分支干净状态。
 - Merge mainline API 验证：在 `forkline/mainline-*` 分支创建两父 merge commit `5b478cc`；调用 `revertCommit` 不传 `mainline` 会返回“请选择 merge 提交主线：1-2”；传 `mainline=1` 后 `revertCommit` 创建反向提交并移除合并引入的文件，`cherryPickCommit` 可把同一 merge 提交挑选到新分支并保留文件。
 - Merge mainline UI 验证：浏览器选择 merge commit `5b478cc` 后，提交详情“挑选 / 还原”按钮不再禁用，命令提示分别显示 `git cherry-pick -m` / `git revert -m`；点击“挑选”会弹出“挑选 merge 提交”主线弹窗，列出父提交 1、父提交 2 并默认选父提交 1。
 - 远端追踪 API 验证：在 GitTest 创建 `forkline/remote-workflow-20260612155930`，第一次通过 Forkline `push` 自动设置 upstream 为 `origin/forkline/remote-workflow-20260612155930`；再次空提交后 API 返回 `ahead = 1`；第二次 `push` 后远端更新成功。
