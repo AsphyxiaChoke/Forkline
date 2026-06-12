@@ -124,6 +124,7 @@ async function api(path, options = {}) {
     ...options,
   });
   const data = await response.json();
+  if (data.operationLog && state.data) state.data.operationLog = data.operationLog;
   if (!response.ok || data.error) throw new Error(data.error || "请求失败");
   return data;
 }
@@ -134,7 +135,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "branches", "sync", "stashes", "tags"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "branches", "sync", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -1790,6 +1791,10 @@ function renderInspector() {
     renderRecoveryTab();
     return;
   }
+  if (state.selectedTab === "logs") {
+    renderLogsTab();
+    return;
+  }
   if (state.selectedTab === "sync") {
     renderSyncTab();
     return;
@@ -2523,6 +2528,66 @@ function recoveryDetailHtml(point) {
       <span>恢复会执行 git reset --hard 到这个恢复点。恢复前 Forkline 会再创建一个新的恢复点，方便撤回这次恢复。</span>
     </div>
   `;
+}
+
+function renderLogsTab() {
+  const logs = state.data?.operationLog || [];
+  els.detailTitle.textContent = "操作日志";
+  els.detailSub.textContent = logs.length ? `最近 ${logs.length} 条 Git 操作` : "还没有执行过 Git 操作";
+  els.detailNode.style.borderColor = logs.some((item) => item.status === "error") ? "var(--amber)" : "var(--teal)";
+  setActiveDiff(null);
+  els.detailBody.innerHTML = `
+    <div class="logs-toolbar">
+      <div>
+        <strong>最近操作</strong>
+        <span>成功、失败、耗时和 Git 输出摘要</span>
+      </div>
+      <button class="mini-btn" data-log-refresh type="button">刷新</button>
+    </div>
+    <div class="operation-log-list">
+      ${
+        logs.length
+          ? logs.map(renderOperationLogItem).join("")
+          : `<div class="log-empty">执行抓取、提交、切换、合并、储藏等操作后，会在这里显示结果。</div>`
+      }
+    </div>
+  `;
+}
+
+function renderOperationLogItem(item) {
+  const ok = item.status === "success";
+  const label = ok ? "成功" : "失败";
+  const duration = formatDurationText(item.durationMs);
+  const summary = String(item.summary || (ok ? "操作已完成" : "操作失败")).trim();
+  return `
+    <article class="operation-log-item ${ok ? "success" : "error"}">
+      <div class="operation-log-head">
+        <span class="log-status">${label}</span>
+        <strong title="${escapeAttr(item.label || "")}">${escapeHtml(item.label || "Git 操作")}</strong>
+        <em>${escapeHtml(duration)}</em>
+      </div>
+      <div class="operation-log-meta">
+        <span>${escapeHtml(item.time || "")}</span>
+        <code>${escapeHtml(item.action || "")}</code>
+      </div>
+      <pre>${escapeHtml(summary)}</pre>
+    </article>
+  `;
+}
+
+function formatDurationText(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  return `${Math.round(seconds / 60)}min`;
+}
+
+async function refreshLogsTab() {
+  if (!state.data) return;
+  state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+  state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+  renderInspector();
 }
 
 function selectRecoveryPoint(ref) {
@@ -4066,6 +4131,12 @@ els.detailBody.addEventListener("click", (event) => {
   if (recoveryRow) {
     event.preventDefault();
     selectRecoveryPoint(recoveryRow.dataset.recoveryRef || "");
+    return;
+  }
+  const logRefresh = event.target.closest("[data-log-refresh]");
+  if (logRefresh) {
+    event.preventDefault();
+    refreshLogsTab().catch((error) => toast(error.message));
     return;
   }
   const historyPlanAction = event.target.closest("[data-history-plan-action]");

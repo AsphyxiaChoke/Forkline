@@ -1945,6 +1945,150 @@ body.resizing .workbench-resizer-y::before {
   height: auto;
 }
 
+.logs-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.logs-toolbar > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.logs-toolbar strong,
+.logs-toolbar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-toolbar span {
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.operation-log-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.operation-log-item {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.operation-log-item.success {
+  border-left-color: var(--teal);
+}
+
+.operation-log-item.error {
+  border-left-color: var(--danger);
+}
+
+.operation-log-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.log-status {
+  min-width: 34px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(35, 199, 183, 0.14);
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.operation-log-item.error .log-status {
+  background: rgba(240, 99, 99, 0.12);
+  color: var(--danger);
+}
+
+.operation-log-head strong,
+.operation-log-head em,
+.operation-log-meta span,
+.operation-log-meta code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-log-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.operation-log-head em {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.operation-log-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.operation-log-meta code {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.operation-log-item pre {
+  max-height: 190px;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.log-empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  padding: 18px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  color: var(--quiet);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .edit-field {
   display: grid;
   gap: 6px;

@@ -12,6 +12,7 @@ const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
 let currentRepo = null;
 let nextOperationId = 1;
 const activeOperations = new Map();
+const operationLog = [];
 
 const laneColors = ["#23c7b7", "#ff7a67", "#f0b85b", "#5ca9ff", "#9c7cff", "#6bd58c", "#f071b8"];
 
@@ -134,6 +135,7 @@ async function readState(ref = "") {
     stashes: parseStashList(stashOutput),
     recoveryPoints: parseRecoveryPoints(recoveryOutput),
     tags: parseTags(tagOutput),
+    operationLog,
     commits: parseLog(logOutput),
   };
 }
@@ -513,6 +515,28 @@ function beginOperation(body = {}) {
   };
   activeOperations.set(operation.id, operation);
   return operation;
+}
+
+function recordOperation(operation, body, status, detail) {
+  const finishedAt = Date.now();
+  operationLog.unshift({
+    id: `${finishedAt}-${operation?.id || nextOperationId}`,
+    status,
+    action: String(body?.action || ""),
+    label: operation?.label || actionLabel(body),
+    startedAt: operation?.startedAt || finishedAt,
+    finishedAt,
+    durationMs: Math.max(0, finishedAt - (operation?.startedAt || finishedAt)),
+    time: formatLocalTime(new Date(finishedAt)),
+    summary: shortText(detail, 700),
+  });
+  if (operationLog.length > 40) operationLog.length = 40;
+}
+
+function actionOutputSummary(result) {
+  if (typeof result === "string") return result;
+  if (!result || typeof result !== "object") return "";
+  return result.output || result.message || result.error || "";
 }
 
 function actionLabel(body = {}) {
@@ -2235,6 +2259,26 @@ function sampleState() {
         time: "2026-06-12 21:30:00",
       },
     ],
+    operationLog: [
+      {
+        id: "sample-2",
+        status: "success",
+        action: "pullRebase",
+        label: "变基拉取远端",
+        time: "2026-06-12 21:32:18",
+        durationMs: 1240,
+        summary: "变基拉取完成\n当前分支：feature/visual-history -> origin/feature/visual-history\n同步状态：本地还有 2 个提交未推送",
+      },
+      {
+        id: "sample-1",
+        status: "error",
+        action: "push",
+        label: "推送到远端",
+        time: "2026-06-12 21:28:04",
+        durationMs: 460,
+        summary: "推送被保护：本地领先 2，同时落后 1，普通推送已保护。请先拉取/变基拉取，或确认后使用安全强推。",
+      },
+    ],
     workingFiles: files,
     commits: data.map(([sha, author, time, message, refs, lane, parents], index) => ({
       sha,
@@ -2269,7 +2313,7 @@ function sendJson(res, status, data) {
 }
 
 function sendError(res, error, context = {}) {
-  sendJson(res, 400, { error: friendlyErrorMessage(error, context) });
+  sendJson(res, 400, { error: friendlyErrorMessage(error, context), operationLog });
 }
 
 function friendlyErrorMessage(error, context = {}) {
@@ -2297,6 +2341,10 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("your local changes") && lower.includes("would be overwritten")) {
     return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
+  }
+  if (lower.includes("pathspec") && lower.includes("did not match any files")) {
+    const file = text.match(/pathspec ['"]([^'"]+)['"] did not match any files/i)?.[1] || "";
+    return file ? `找不到文件 ${file}，这个文件可能已经被删除、重命名，或不在当前工作区中。` : "找不到要操作的文件。请刷新工作区后再试。";
   }
   if (lower.includes("please commit your changes or stash them")) {
     return "当前有未提交修改。请先提交或储藏后再试。";
@@ -2620,8 +2668,11 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const operation = beginOperation(body);
       try {
-        sendJson(res, 200, await runAction(body));
+        const result = await runAction(body);
+        recordOperation(operation, body, "success", actionOutputSummary(result) || "操作已完成");
+        sendJson(res, 200, result && typeof result === "object" ? { ...result, operationLog } : { ok: true, output: String(result || ""), operationLog });
       } catch (error) {
+        recordOperation(operation, body, "error", friendlyErrorMessage(error, { body, operation }));
         sendError(res, error, { body, operation });
       } finally {
         activeOperations.delete(operation.id);
