@@ -9,6 +9,8 @@ const state = {
   theme: "dark",
   selectedFile: "",
   selectedCommitFile: "",
+  selectedSyncSha: "",
+  selectedSyncFile: "",
   activeDiff: null,
   openDiffOnInit: false,
   branchStartSha: "",
@@ -26,6 +28,7 @@ const state = {
   refreshingWorktree: false,
   worktreeSignature: "",
   commitDetails: new Map(),
+  loadingCommitDetails: new Set(),
   stashDetails: new Map(),
   selectedStash: "",
   selectedTag: "",
@@ -1686,17 +1689,20 @@ function refColor(ref) {
 }
 
 async function loadCommit(sha) {
-  if (!sha || state.commitDetails.has(sha)) return;
+  if (!sha || state.commitDetails.has(sha) || state.loadingCommitDetails.has(sha)) return;
   const commit = state.data.commits.find((item) => item.sha === sha);
   if (commit?.files?.length || commit?.diff?.length) {
     state.commitDetails.set(sha, { files: commit.files || [], diff: commit.diff || [] });
     return;
   }
+  state.loadingCommitDetails.add(sha);
   try {
     const detail = await api(`/api/commit?sha=${encodeURIComponent(sha)}`);
     state.commitDetails.set(sha, detail);
   } catch (error) {
     toast(error.message);
+  } finally {
+    state.loadingCommitDetails.delete(sha);
   }
 }
 
@@ -1979,12 +1985,28 @@ function renderSyncTab() {
   const upstreamGone = Boolean(sync.upstreamGone);
   const incoming = sync.incoming || [];
   const outgoing = sync.outgoing || [];
+  const syncCommits = [...incoming, ...outgoing];
+  if (state.selectedSyncSha && !syncCommits.some((commit) => commit.sha === state.selectedSyncSha)) {
+    state.selectedSyncSha = "";
+    state.selectedSyncFile = "";
+  }
+  const selectedSyncCommit = state.selectedSyncSha ? syncCommits.find((commit) => commit.sha === state.selectedSyncSha) : null;
+  const selectedSyncDetail = selectedSyncCommit ? state.commitDetails.get(selectedSyncCommit.sha) : null;
+  if (selectedSyncCommit && !selectedSyncDetail) {
+    loadSyncCommitPreview(selectedSyncCommit.sha);
+  }
+  const previewModel = selectedSyncCommit ? syncPreviewModel(selectedSyncCommit, selectedSyncDetail) : null;
   const remotes = sync.remotes || [];
   const pushGuard = syncPushGuard(sync);
   els.detailNode.style.borderColor = upstreamGone ? "var(--danger)" : hasUpstream ? "var(--teal)" : "var(--yellow)";
   els.detailTitle.textContent = "同步详情";
   els.detailSub.textContent = sync.branch ? `${sync.branch}${sync.upstream ? ` -> ${sync.upstream}` : " · 未设置 upstream"}` : "当前分支";
-  setActiveDiff(null);
+  if (selectedSyncCommit && previewModel?.selectedDiff?.length) {
+    const fileLabel = previewModel.selectedFile ? `${selectedSyncCommit.short || selectedSyncCommit.sha.slice(0, 7)} · ${previewModel.selectedFile}` : selectedSyncCommit.message;
+    setActiveDiff({ source: "sync", title: `${selectedSyncCommit.short || selectedSyncCommit.sha.slice(0, 7)} · 同步提交`, path: fileLabel, diff: previewModel.selectedDiff, emptyText: "没有可显示的同步改动" });
+  } else {
+    setActiveDiff(null);
+  }
   els.detailBody.innerHTML = `
     <div class="sync-actions">
       <button class="mini-btn" data-sync-action="fetch" type="button"><span>抓取</span><span class="command-hint">git fetch</span></button>
@@ -2011,7 +2033,9 @@ function renderSyncTab() {
     ${syncCommitListHtml(incoming, "远端没有本地缺少的提交")}
     <div class="detail-section-title">待推送提交</div>
     ${syncCommitListHtml(outgoing, "本地没有待推送提交")}
+    ${syncCommits.length ? `<div class="detail-section-title">同步提交预览</div>${syncCommitPreviewHtml(selectedSyncCommit, selectedSyncDetail, previewModel)}` : ""}
   `;
+  bindFileTree(els.detailBody, { mode: "sync" });
 }
 
 function syncStatusText(sync) {
@@ -2119,11 +2143,60 @@ function syncCommitListHtml(commits, emptyText) {
 }
 
 function syncCommitRowHtml(commit) {
+  const selected = commit.sha === state.selectedSyncSha;
   return `
-    <button class="sync-commit-row" data-sync-commit="${escapeAttr(commit.sha)}" type="button">
+    <button class="sync-commit-row ${selected ? "selected" : ""}" data-sync-commit="${escapeAttr(commit.sha)}" type="button">
       <span class="sync-commit-message" title="${escapeAttr(commit.message)}">${escapeHtml(commit.message)}</span>
       <span class="sync-commit-meta">${escapeHtml(commit.short || commit.sha.slice(0, 7))} · ${escapeHtml(commit.author || "unknown")} · ${escapeHtml(commit.time || "")}</span>
     </button>
+  `;
+}
+
+function syncPreviewModel(commit, detail) {
+  const files = detail?.files || [];
+  if (!files.length) {
+    state.selectedSyncFile = "";
+  } else if (!state.selectedSyncFile || !files.some((file) => file.file === state.selectedSyncFile)) {
+    state.selectedSyncFile = files[0].file;
+  }
+  const selectedFile = state.selectedSyncFile;
+  const diff = detail?.diff || [];
+  const selectedDiff = selectedFile ? diffForFile(diff, selectedFile) : diff;
+  return { files, selectedFile, selectedDiff };
+}
+
+function syncCommitPreviewHtml(commit, detail, model) {
+  if (!commit) {
+    return `<div class="empty-panel compact"><span>选择上方提交查看改动</span></div>`;
+  }
+  if (!detail) {
+    return `<div class="empty-panel compact"><span>正在读取 ${escapeHtml(commit.short || commit.sha.slice(0, 7))} 的改动...</span></div>`;
+  }
+  const files = model?.files || [];
+  const selectedFile = model?.selectedFile || "";
+  const selectedDiff = model?.selectedDiff || [];
+  return `
+    <div class="sync-preview">
+      <div class="sync-preview-head">
+        <strong title="${escapeAttr(commit.message)}">${escapeHtml(commit.message)}</strong>
+        <span>${escapeHtml(commit.short || commit.sha.slice(0, 7))} · ${escapeHtml(commit.author || "unknown")} · ${escapeHtml(commit.time || "")}</span>
+      </div>
+      <div class="commit-file-view">
+        <div class="commit-file-tree sync-preview-files">
+          ${files.length ? fileTreeHtml(files) : `<div class="file-row"><span></span><span class="file-name">没有文件列表</span><span></span></div>`}
+        </div>
+        <div class="commit-file-diff sync-preview-diff">
+          <div class="panel-title compact">
+            <div class="panel-title-text">
+              <span>${escapeHtml(selectedFile ? shortFileName(selectedFile) : commit.short || commit.sha.slice(0, 7))}</span>
+              <span class="panel-subtitle">${escapeHtml(selectedFile || "未选择文件")}</span>
+            </div>
+            <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${selectedDiff.length ? "" : "disabled"}>最大化</button>
+          </div>
+          ${renderSideDiff(selectedDiff, "没有可显示的同步改动")}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -2381,6 +2454,12 @@ function bindFileTree(root, options = {}) {
     });
     markCommitFile();
   }
+  if (options.mode === "sync") {
+    root.querySelectorAll("[data-select-file]").forEach((row) => {
+      row.addEventListener("click", () => selectSyncPreviewFile(row.dataset.file || ""));
+    });
+    markSyncPreviewFile();
+  }
 }
 
 function selectChangeFile(filePath, scope, event) {
@@ -2444,9 +2523,46 @@ function selectCommitFile(filePath) {
   renderInspector();
 }
 
+function syncCommitBySha(sha) {
+  const sync = state.data?.sync || {};
+  return [...(sync.incoming || []), ...(sync.outgoing || [])].find((commit) => commit.sha === sha);
+}
+
+async function selectSyncCommit(sha) {
+  const commit = syncCommitBySha(sha);
+  if (!commit) {
+    toast("这个提交已经不在当前同步列表中，请刷新后再试。");
+    return;
+  }
+  state.selectedSyncSha = sha;
+  state.selectedSyncFile = "";
+  renderInspector();
+  await loadSyncCommitPreview(sha);
+}
+
+async function loadSyncCommitPreview(sha) {
+  if (!sha || state.commitDetails.has(sha) || state.loadingCommitDetails.has(sha)) return;
+  await loadCommit(sha);
+  if (state.selectedTab === "sync" && state.selectedSyncSha === sha) {
+    renderInspector();
+  }
+}
+
+function selectSyncPreviewFile(filePath) {
+  if (!filePath || filePath === state.selectedSyncFile) return;
+  state.selectedSyncFile = filePath;
+  renderInspector();
+}
+
 function markCommitFile() {
   els.detailBody.querySelectorAll("[data-select-file]").forEach((row) => {
     row.classList.toggle("selected", row.dataset.file === state.selectedCommitFile);
+  });
+}
+
+function markSyncPreviewFile() {
+  els.detailBody.querySelectorAll("[data-select-file]").forEach((row) => {
+    row.classList.toggle("selected", row.dataset.file === state.selectedSyncFile);
   });
 }
 
@@ -3610,12 +3726,7 @@ els.detailBody.addEventListener("click", (event) => {
   if (syncCommit) {
     event.preventDefault();
     const sha = syncCommit.dataset.syncCommit;
-    if (!state.data?.commits?.some((commit) => commit.sha === sha)) {
-      toast("这个提交不在当前图谱列表中，请切换到对应分支查看。");
-      return;
-    }
-    state.selectedTab = "details";
-    selectCommit(sha).catch((error) => toast(error.message));
+    selectSyncCommit(sha).catch((error) => toast(error.message));
     return;
   }
   const button = event.target.closest("[data-commit-tool]");

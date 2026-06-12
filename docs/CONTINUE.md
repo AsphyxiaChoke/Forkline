@@ -15,6 +15,7 @@
 - 当前分支 upstream 管理已接入：同步页显示远端分支下拉框，支持 `git branch --set-upstream-to=<远端分支> <当前分支>` 和 `git branch --unset-upstream <当前分支>`；远端分支右键菜单也支持“设为当前分支 upstream”，当前本地分支右键菜单支持“取消当前分支 upstream”。
 - 普通推送保护已接入：如果当前分支落后 upstream，或本地领先同时落后形成分叉，后端会阻止普通 `git push` 并返回中文“推送被保护”；同步页会显示保护条、禁用普通推送按钮，并保留安全强推入口。
 - 变基拉取已接入：同步页新增“变基拉取”按钮，当前本地分支右键菜单新增“变基拉取当前分支”，后端执行 `git pull --rebase`；执行前会检查本地分支、upstream、未完成操作和干净工作区，确认弹窗说明会重写本地未推送提交 SHA。
+- 同步提交预览已接入：同步页中的待拉取 / 待推送提交现在可直接点击，在同步页内预览该提交的文件列表和 Diff，并复用最大化对照。
 - 本地静态资源响应已加 `Cache-Control: no-store`，避免开发验证时浏览器继续使用旧版 `app.js` / `styles.css`。
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
@@ -72,6 +73,7 @@
 - 推送保护 UI 验证：在临时分叉分支 `forkline/push-guard-ui-*` 上打开 `http://127.0.0.1:5195/?tab=sync`，同步页显示“普通推送已保护”保护条，普通“推送”按钮禁用且 title 显示“本地领先 1，同时落后 1，普通推送已保护”，安全强推按钮保持可用；249px 右侧内容无横向溢出，控制台无错误。临时本地分支、远端分支和 `C:\tmp` 临时克隆已清理。
 - 变基拉取 API 验证：浏览器服务 `http://127.0.0.1:5196` 打开 GitTest 后，创建临时分叉分支 `forkline/pull-rebase-verify-20260612-01`，让本地相对 upstream 同时 `ahead = 1`、`behind = 1`；调用 Forkline `pullRebase` 后返回“变基拉取完成”，同步状态变为 `behind = 0`、`ahead = 1`，Git 日志顺序为本地重放提交 -> 远端提交 -> 基准提交。临时本地分支、远端分支和 `C:\\tmp` 临时克隆已清理。
 - 变基拉取 UI 验证：浏览器打开 `http://127.0.0.1:5196/?tab=sync`，同步页显示“变基拉取 pull --rebase”按钮；259px 右侧内容无横向溢出，控制台无 Forkline 错误。当前分支右键菜单显示“变基拉取当前分支 git pull --rebase”，按钮启用，菜单无横向溢出。
+- 同步提交预览 UI 验证：浏览器服务 `http://127.0.0.1:5197` 打开 GitTest 后，创建临时分叉分支 `forkline/sync-preview-verify-20260612-01`，远端和本地各新增一个真实文件提交；同步页点击待拉取提交后预览 `forkline-fixtures/sync-preview-remote.txt` 和 `remote preview line 1`，点击待推送提交后预览 `forkline-fixtures/sync-preview-local.txt` 和 `local preview line 1`；页面仍停留在“同步”页，无横向溢出，控制台无错误，最大化对照可打开当前同步提交 Diff。临时本地分支、远端分支和 `C:\\tmp` 临时克隆已清理。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
