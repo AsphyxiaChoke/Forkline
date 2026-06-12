@@ -993,6 +993,50 @@ body.resizing .stage-split-resizer::before {
   border-top: 1px solid var(--line-soft);
 }
 
+.operation-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid rgba(240, 99, 99, 0.45);
+  border-radius: 8px;
+  background: rgba(240, 99, 99, 0.08);
+}
+
+.operation-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.operation-copy strong {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.operation-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.operation-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.operation-actions .mini-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  text-align: left;
+}
+
 .change-section-title {
   display: flex;
   align-items: center;
@@ -1080,6 +1124,11 @@ button.file-row {
   background: rgba(35, 199, 183, 0.16);
 }
 
+.file-row.conflict {
+  color: var(--danger);
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
 .empty-row {
   color: var(--quiet);
 }
@@ -1113,6 +1162,10 @@ button.file-row {
 }
 
 .badge.D {
+  background: var(--danger);
+}
+
+.badge.C {
   background: var(--danger);
 }
 
@@ -1596,6 +1649,23 @@ body.resizing .workbench-resizer-y::before {
   background: var(--field);
 }
 
+.commit-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.commit-tools .mini-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  height: auto;
+  text-align: left;
+}
+
 .edit-field {
   display: grid;
   gap: 6px;
@@ -1878,12 +1948,20 @@ body.resizing .workbench-resizer-y::before {
   z-index: 90;
 }
 
+#commitContextMenu {
+  width: min(360px, calc(100vw - 16px));
+}
+
 .context-menu.show {
   display: grid;
   gap: 3px;
 }
 
 .context-menu button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
   height: 32px;
   min-width: 0;
   overflow: hidden;
@@ -1900,8 +1978,38 @@ body.resizing .workbench-resizer-y::before {
   white-space: nowrap;
 }
 
+.menu-label,
+.command-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-hint {
+  color: var(--quiet);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.context-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line-soft);
+}
+
 .context-menu button:hover {
   background: var(--panel-3);
+}
+
+.context-menu button.danger {
+  color: var(--danger);
+}
+
+.context-menu button.danger .command-hint,
+.mini-btn.danger .command-hint {
+  color: var(--danger);
 }
 
 .context-menu button:disabled {

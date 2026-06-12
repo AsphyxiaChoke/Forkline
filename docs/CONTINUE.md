@@ -11,6 +11,10 @@
 - Stash 入口已补齐：工作区顶部有“储藏”按钮，文件右键菜单支持“储藏所选”，储藏列表继续支持查看 Diff、应用、弹出和删除。
 - Stash 体验已调整：储藏成功后会自动打开右侧“储藏”页，并提示“工作区更改已移到右侧储藏列表”；工作区顶部按钮文案改短并补 tooltip，避免按钮挤在一起。
 - `index.lock` 提示已增强：写入操作失败时会显示刚才执行的 Forkline 操作名、锁文件路径/时间、活跃 Forkline 操作和可检测到的 Git 进程；toast 支持多行并延长显示时间。
+- 提交右键菜单和提交详情面板都已加入“还原”和软 / 混合 / 硬重置入口，并在文案旁标注 `git revert`、`git reset --soft`、`git reset --mixed`、`git reset --hard`。还原会创建反向提交；硬重置入口标红且确认文案会提示会丢弃工作区改动。
+- GitKraken 风格学习方向：图谱保持主视觉区域，左栏承载仓库/分支/工作区导航，右栏承载所选提交的上下文详情；右键菜单按动作类别分组，左侧中文动作、右侧灰色等宽 Git 指令提示，危险动作明确标红。
+- 还原冲突体验已补强：`path 'xxx' is unmerged` 会翻译为中文冲突提示；工作区会识别 `REVERT_HEAD` 并显示“还原提交发生冲突”，冲突文件用红色标识，提供“继续还原 (git revert --continue)”和“中止还原 (git revert --abort)”入口。
+- “继续还原”现在会先检查是否仍存在 `REVERT_HEAD`；没有正在进行的还原时返回中文提示，不再显示 Git 原始的 `nothing to commit, working tree clean`。
 
 ## 已验证
 
@@ -25,6 +29,7 @@
 - Stash 验证：通过 Forkline API 对 `forkline-fixtures/stash-api-temp.txt` 执行所选文件储藏，临时文件被 stash 移除，stash 数量从 1 增至 2；随后已删除临时 stash，GitTest 原有测试改动保持不变。UI 验证：工作区顶部显示“储藏”，文件右键菜单显示“储藏所选”，并能按未暂存/已暂存状态禁用不适用动作。
 - Stash 说明：储藏会把改动从工作区移到 Git stash，所以工作区改动消失是正常行为；用户可在右侧“储藏”页恢复。
 - `index.lock` 验证：在 `D:\桌面\GitTest\.git\index.lock` 临时创建测试锁后调用 `stageAll`，API 返回“刚才的‘暂存全部更改’没有执行成功”，并显示锁文件路径、锁文件时间和 Git 进程检测说明；测试锁随后已删除。
+- Revert / Reset 验证：在 GitTest 临时分支 `forkline/revert-reset-api-20260612134014` 上创建两个测试提交，API 调用 `revertCommit` 生成 `Revert "Forkline revert target ..."` 提交；随后分别验证 `resetToCommit` 的 soft、mixed、hard 模式可移动 HEAD，最终测试分支工作区干净。
 
 ## GitTest 测试数据
 
@@ -41,5 +46,5 @@
 
 按原计划继续完善：
 
-1. Revert / Reset：先做提交右键菜单入口，并给 reset 增加 soft / mixed / hard 的清晰中文确认。
-2. Cherry-pick：提交右键新增“挑选此提交”，冲突时给中文提示并在工作区展示冲突状态。
+1. Cherry-pick：提交右键新增“挑选此提交”，冲突时给中文提示并在工作区展示冲突状态。
+2. Revert / Reset 后续增强：增加“中止还原 / 继续还原”状态入口，并为 merge commit revert 提供主线选择。

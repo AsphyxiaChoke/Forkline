@@ -496,7 +496,7 @@ async function renameBranchFromForm(nextBranch) {
 function renderWorkingFiles() {
   els.worktreeList.innerHTML = "";
   const files = state.data.workingFiles;
-  state.worktreeSignature = worktreeSignature(files);
+  state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
   if (!files.length) {
     els.worktreeList.innerHTML = `<div class="file-row"><span></span><span class="file-name">工作区干净</span><span></span></div>`;
     return;
@@ -508,11 +508,12 @@ function renderWorkingFiles() {
 function renderStage() {
   els.changeList.innerHTML = "";
   const files = state.data.workingFiles;
-  state.worktreeSignature = worktreeSignature(files);
+  state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
+  const operationBanner = renderRepoOperationBanner(files);
   if (!files.length) {
     state.selectedFile = "";
     state.selectedChanges.clear();
-    els.changeList.innerHTML = `<div class="file-row"><span></span><span class="file-name">没有未提交的更改</span><span></span></div>`;
+    els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">没有未提交的更改</span><span></span></div>`;
     if (state.activeDiff?.source !== "history") renderWorkDiffEmpty("没有未提交的更改");
   } else {
     const groups = changeGroups(files);
@@ -522,6 +523,7 @@ function renderStage() {
       state.selectedFile = visibleFiles[0]?.file || "";
     }
     els.changeList.innerHTML = `
+      ${operationBanner}
       ${renderChangeSection("unstaged", "未暂存", groups.unstaged, [
         { action: "stageFile", label: "暂存", bulkLabel: "暂存所选" },
         { action: "discardWorktreeFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
@@ -537,7 +539,32 @@ function renderStage() {
   }
   const counts = countFiles(files);
   const groups = changeGroups(files);
-  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除`;
+  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除`;
+}
+
+function renderRepoOperationBanner(files) {
+  const operation = state.data?.repo?.operation;
+  const conflicts = (files || []).filter((file) => file.conflict);
+  if (!operation && !conflicts.length) return "";
+  const title = operation?.type === "revert" ? "还原提交发生冲突" : operation?.label || "仓库有未完成操作";
+  const text = conflicts.length
+    ? `${conflicts.length} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续操作；不想保留这次还原就中止。`
+    : "当前操作还没有结束。";
+  const actions = operation?.type === "revert"
+    ? `
+      <button class="mini-btn" data-repo-operation="continueRevert" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git revert --continue"}"><span>继续还原</span><span class="command-hint">git revert --continue</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortRevert" type="button" title="git revert --abort"><span>中止还原</span><span class="command-hint">git revert --abort</span></button>
+    `
+    : "";
+  return `
+    <div class="operation-banner">
+      <div class="operation-copy">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(text)}</span>
+      </div>
+      <div class="operation-actions">${actions}</div>
+    </div>
+  `;
 }
 
 function changeGroups(files) {
@@ -902,6 +929,73 @@ async function runCommitContextAction(action) {
     state.selectedTab = "details";
     await selectCommit(commit.sha);
     setTimeout(() => els.detailBody.querySelector("[data-reword-form] input")?.focus(), 0);
+    return;
+  }
+  if (action === "revert" || action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
+    await runCommitToolAction(action, commit.sha);
+  }
+}
+
+async function runCommitToolAction(action, sha) {
+  const commit = state.data?.commits.find((item) => item.sha === sha || item.sha === state.selectedSha);
+  if (!commit) return;
+  if (action === "revert") {
+    await revertCommit(commit);
+    return;
+  }
+  if (action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
+    await resetToCommit(commit, action.replace(/^reset/, "").toLowerCase());
+  }
+}
+
+async function revertCommit(commit) {
+  if (!state.data || !commit) return;
+  if (!state.data.repo.isSample && !confirm(`确认还原提交 ${commit.short}？\n\n这会创建一个新的反向提交，不会删除历史提交。\n提交信息：${commit.message}`)) return;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "revertCommit", sha: commit.sha }),
+    });
+    toast(result.output || `已还原提交 ${commit.short}`);
+    await reloadAfterHistoryAction();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function resetToCommit(commit, mode) {
+  if (!state.data || !commit) return;
+  const modeText = { soft: "软重置（soft）", mixed: "混合重置（mixed）", hard: "硬重置（hard）" }[mode] || "混合重置（mixed）";
+  const effects = {
+    soft: "当前分支会移动到此提交；后续提交的改动会保留在已暂存区。",
+    mixed: "当前分支会移动到此提交；后续提交的改动会保留在工作区，且不会暂存。",
+    hard: "当前分支会移动到此提交；后续提交和当前工作区改动都会被丢弃，无法从工作区恢复。",
+  };
+  const warning = mode === "hard" ? "\n\n危险：Hard Reset 会丢弃未提交改动，请确认你真的不需要它们。" : "";
+  if (!state.data.repo.isSample && !confirm(`确认执行${modeText}到提交 ${commit.short}？\n\n${effects[mode]}${warning}\n\n提交信息：${commit.message}`)) return;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "resetToCommit", sha: commit.sha, mode }),
+    });
+    toast(result.output || `已${modeText}到 ${commit.short}`);
+    await reloadAfterHistoryAction();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function reloadAfterHistoryAction() {
+  state.commitDetails.clear();
+  state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+  state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+  state.selectedSha = state.data.commits[0]?.sha || "";
+  state.selectedFile = "";
+  state.selectedCommitFile = "";
+  renderAll();
+  if (state.selectedSha) {
+    await loadCommit(state.selectedSha);
+    renderInspector();
   }
 }
 
@@ -1233,6 +1327,13 @@ function renderDetailsTab(commit, detail) {
       <span>父提交</span><div class="meta-value">${escapeHtml(commit.parents?.length ? commit.parents.map((p) => p.slice(0, 7)).join(", ") : "根提交")}</div>
       <span>引用</span><div class="meta-value">${escapeHtml(commit.refs || "无")}</div>
     </div>
+    <div class="detail-section-title">提交操作</div>
+    <div class="commit-tools">
+      <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" ${isMergeCommit ? "disabled" : ""} title="${isMergeCommit ? "merge 提交需要选择主线，暂不支持一键还原" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">git revert</span></button>
+      <button class="mini-btn" data-commit-tool="resetSoft" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --soft：移动当前分支，改动保留在已暂存区"><span>软重置</span><span class="command-hint">git reset --soft</span></button>
+      <button class="mini-btn" data-commit-tool="resetMixed" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --mixed：移动当前分支，改动保留在工作区"><span>混合重置</span><span class="command-hint">git reset --mixed</span></button>
+      <button class="mini-btn danger" data-commit-tool="resetHard" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --hard：移动当前分支，并丢弃工作区改动"><span>硬重置</span><span class="command-hint">git reset --hard</span></button>
+    </div>
     <div class="detail-section-title">提交信息</div>
     <form class="reword-form" data-reword-form data-sha="${escapeAttr(commit.sha)}">
       <label class="edit-field">
@@ -1512,11 +1613,12 @@ function treeFileCount(node) {
 function fileLeafRowHtml(file, depth, options = {}) {
   const selectionScope = options.selectionScope || "";
   const selected = selectionScope && state.selectedChanges.has(changeKey(selectionScope, file.raw));
+  const conflict = Boolean(file.conflict);
   return `
-    <button class="file-row leaf-row ${selected ? "multi-selected" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" style="--depth:${depth}" title="${escapeAttr(file.raw)}">
-      <span class="badge ${file.state}">${file.state}</span>
+    <button class="file-row leaf-row ${selected ? "multi-selected" : ""} ${conflict ? "conflict" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" style="--depth:${depth}" title="${escapeAttr(conflict ? `${file.raw} · 冲突未解决` : file.raw)}">
+      <span class="badge ${file.state}">${conflict ? "!" : file.state}</span>
       <span class="file-leaf">${escapeHtml(file.leaf)}</span>
-      <span class="file-extra">${escapeHtml(file.extra || "")}</span>
+      <span class="file-extra">${escapeHtml(conflict ? "冲突" : file.extra || "")}</span>
     </button>
   `;
 }
@@ -1806,7 +1908,11 @@ function remoteCheckoutBranch(remoteRef) {
 }
 
 function worktreeSignature(files) {
-  return (files || []).map((file) => `${file.state}:${file.file}:${file.extra || ""}`).join("|");
+  return (files || []).map((file) => `${file.state}:${file.file}:${file.extra || ""}:${file.conflict ? "conflict" : ""}`).join("|");
+}
+
+function worktreeStateSignature(files, operation) {
+  return `${worktreeSignature(files)}|op:${operation?.type || ""}`;
 }
 
 async function refreshWorktree(silent = false) {
@@ -1816,9 +1922,11 @@ async function refreshWorktree(silent = false) {
   try {
     const data = await api("/api/worktree");
     const nextFiles = data.workingFiles || [];
-    const nextSignature = worktreeSignature(nextFiles);
+    const nextOperation = data.operation || null;
+    const nextSignature = worktreeStateSignature(nextFiles, nextOperation);
     if (nextSignature !== state.worktreeSignature) {
       state.data.workingFiles = nextFiles;
+      state.data.repo.operation = nextOperation;
       renderWorkingFiles();
       renderStage();
       if (!silent) toast("未提交修改已刷新");
@@ -2146,6 +2254,34 @@ async function runAction(action) {
   }
 }
 
+async function runRepoOperation(action, button) {
+  if (!state.data) return;
+  const messages = {
+    continueRevert: "确认继续还原？请先确认所有冲突文件已经解决并暂存。",
+    abortRevert: "确认中止还原？这会放弃当前这次还原，并回到还原前的状态。",
+  };
+  if (!state.data.repo.isSample && !confirm(messages[action] || "确认继续？")) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action }) });
+    toast(result.output || "操作已完成");
+    state.commitDetails.clear();
+    state.selectedChanges.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function fillLatestCommitMessage() {
   const commit = state.data?.commits?.[0];
   if (!commit) {
@@ -2236,6 +2372,7 @@ async function runSingleFileAction(action, file) {
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
     state.data.workingFiles = data.workingFiles || [];
+    state.data.repo.operation = data.operation || null;
     renderWorkingFiles();
     renderStage();
   } catch (error) {
@@ -2263,6 +2400,7 @@ async function runFileBatchAction(action, scope, button) {
     toast(`${name}完成：${files.length} 个文件`);
     const data = await api("/api/worktree");
     state.data.workingFiles = data.workingFiles || [];
+    state.data.repo.operation = data.operation || null;
     renderWorkingFiles();
     renderStage();
   } catch (error) {
@@ -2328,7 +2466,7 @@ function countFiles(files) {
       acc[file.state] = (acc[file.state] || 0) + 1;
       return acc;
     },
-    { M: 0, A: 0, D: 0 }
+    { M: 0, A: 0, D: 0, C: 0 }
   );
 }
 
@@ -2512,6 +2650,12 @@ els.detailBody.addEventListener("submit", (event) => {
   event.preventDefault();
   rewordSelectedCommit(form);
 });
+els.detailBody.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-commit-tool]");
+  if (!button) return;
+  event.preventDefault();
+  runCommitToolAction(button.dataset.commitTool, button.dataset.sha).catch((error) => toast(error.message));
+});
 document.querySelectorAll("[data-action]").forEach((button) => {
   button.addEventListener("click", () => runAction(button.dataset.action));
 });
@@ -2563,6 +2707,12 @@ document.addEventListener("click", (event) => {
   if (bulkAction) {
     event.stopPropagation();
     runFileBatchAction(bulkAction.dataset.bulkFileAction, bulkAction.dataset.scope || "", bulkAction);
+    return;
+  }
+  const repoOperation = event.target.closest("[data-repo-operation]");
+  if (repoOperation) {
+    event.stopPropagation();
+    runRepoOperation(repoOperation.dataset.repoOperation, repoOperation);
     return;
   }
   if (event.target.closest("[data-open-diff-modal]")) openDiffModal();

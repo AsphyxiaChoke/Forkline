@@ -113,6 +113,7 @@ async function readState(ref = "") {
       branch: branch.trim() || "detached HEAD",
       selectedRef: ref,
       isSample: false,
+      operation: detectRepoOperation(currentRepo),
     },
     branches: branches.slice(0, 32),
     branchInfo: parseWorktreeBranches(worktreeOutput, currentRepo),
@@ -159,10 +160,10 @@ async function readCommit(sha) {
 
 async function readWorktree() {
   if (!currentRepo) {
-    return { workingFiles: sampleState().workingFiles };
+    return { workingFiles: sampleState().workingFiles, operation: null };
   }
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
-  return { workingFiles: parseStatus(statusOutput) };
+  return { workingFiles: parseStatus(statusOutput), operation: detectRepoOperation(currentRepo) };
 }
 
 async function readWorkingDiff(filePath) {
@@ -218,6 +219,12 @@ async function runAction(body) {
     await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
     await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
     return { ok: true, output: "已丢弃全部未提交更改" };
+  }
+  if (action === "continueRevert") {
+    return continueRevert();
+  }
+  if (action === "abortRevert") {
+    return commandResult(await git(currentRepo, ["revert", "--abort"], { timeout: 120000 }) || "已中止还原，工作区已回到还原前状态");
   }
   if (action === "checkoutBranch") {
     return checkoutBranch(body);
@@ -302,6 +309,12 @@ async function runAction(body) {
   if (action === "rewordCommit") {
     return commandResult(await rewordCommit(body));
   }
+  if (action === "revertCommit") {
+    return revertCommit(body);
+  }
+  if (action === "resetToCommit") {
+    return resetToCommit(body);
+  }
   throw new Error("未知操作");
 }
 
@@ -326,6 +339,8 @@ function actionLabel(body = {}) {
     push: "推送到远端",
     stageAll: "暂存全部更改",
     discardAll: "丢弃全部未提交更改",
+    continueRevert: "继续还原",
+    abortRevert: "中止还原",
     createBranch: branch ? `创建分支 ${branch}` : "创建分支",
     renameBranch: branch ? `重命名分支 ${branch}` : "重命名分支",
     deleteBranch: branch ? `删除分支 ${branch}` : "删除分支",
@@ -345,10 +360,18 @@ function actionLabel(body = {}) {
     commit: "创建提交",
     amendCommit: "追加到上一次提交",
     rewordCommit: body.sha ? `修改提交信息 ${shortText(body.sha, 12)}` : "修改历史提交信息",
+    revertCommit: body.sha ? `还原提交 ${shortText(body.sha, 12)}` : "还原提交",
+    resetToCommit: body.sha ? `${resetModeLabel(body.mode)}到 ${shortText(body.sha, 12)}` : "重置到提交",
     checkoutBranch: branch ? `切换分支 ${branch}${checkoutModeText(body.mode)}` : "切换分支",
     checkoutRemoteBranch: ref ? `签出远端分支 ${ref}${checkoutModeText(body.mode)}` : "签出远端分支",
   };
   return labels[action] || `Git 操作 ${action || "未知"}`;
+}
+
+function resetModeLabel(mode) {
+  if (mode === "soft") return "软重置";
+  if (mode === "hard") return "硬重置";
+  return "混合重置";
 }
 
 function checkoutModeText(mode) {
@@ -620,6 +643,52 @@ async function rewordCommit(body) {
   return "提交信息已修改，历史 SHA 已重写";
 }
 
+async function revertCommit(body) {
+  const target = await resolveCommit(body.sha);
+  const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
+  const parents = parentLine.split(/\s+/).slice(1);
+  if (parents.length > 1) throw new Error("暂不支持一键还原 merge 提交；需要指定主线后才能 revert");
+  await git(currentRepo, ["revert", "--no-edit", target], { timeout: 120000 });
+  const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  return { ok: true, output: `已还原提交 ${target.slice(0, 7)}，新建反向提交 ${newHead}` };
+}
+
+async function resetToCommit(body) {
+  const target = await resolveCommit(body.sha);
+  const mode = normalizeResetMode(body.mode);
+  const args = mode === "mixed" ? ["reset", target] : ["reset", `--${mode}`, target];
+  await git(currentRepo, args, { timeout: 120000 });
+  return { ok: true, output: `已${resetModeLabel(mode)}到 ${target.slice(0, 7)}` };
+}
+
+async function continueRevert() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation?.type !== "revert") {
+    return { ok: true, output: "当前没有正在进行的还原，工作区已经干净。" };
+  }
+  const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  try {
+    const output = await git(currentRepo, ["revert", "--continue"], {
+      timeout: 120000,
+      env: { GIT_EDITOR: `"${process.execPath}" "${editorFile}"` },
+    });
+    return commandResult(output || "已继续还原并创建反向提交");
+  } finally {
+    removeQuietly(editorFile);
+  }
+}
+
+async function resolveCommit(value) {
+  const sha = normalizeSha(value);
+  return (await git(currentRepo, ["rev-parse", "--verify", `${sha}^{commit}`])).trim();
+}
+
+function normalizeResetMode(value) {
+  const mode = String(value || "mixed").trim().toLowerCase();
+  if (["soft", "mixed", "hard"].includes(mode)) return mode;
+  throw new Error("Reset 类型不合法");
+}
+
 function normalizeSha(value) {
   const sha = String(value || "").trim();
   if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw new Error("提交 SHA 不合法");
@@ -830,14 +899,16 @@ function parseStatusRecords(records) {
 }
 
 function statusFile(indexStatus, worktreeStatus, status, file) {
+  const conflict = indexStatus === "U" || worktreeStatus === "U" || ["AA", "AU", "UD", "DU", "UA", "UU", "DD"].includes(status);
   const staged = indexStatus !== " " && indexStatus !== "?";
   const unstaged = worktreeStatus !== " " || indexStatus === "?";
   const displayStatus = worktreeStatus !== " " ? worktreeStatus : indexStatus;
-  const state = displayStatus === "A" || displayStatus === "?" ? "A" : displayStatus === "D" ? "D" : "M";
+  const state = conflict ? "C" : displayStatus === "A" || displayStatus === "?" ? "A" : displayStatus === "D" ? "D" : "M";
   return {
     state,
     file,
     extra: status,
+    conflict,
     staged,
     unstaged,
     indexStatus: indexStatus.trim(),
@@ -1021,6 +1092,12 @@ function friendlyErrorMessage(error, context = {}) {
   const raw = String(error?.message || error || "").trim();
   const text = raw || "操作失败";
   const lower = text.toLowerCase();
+  if (lower.includes("no cherry-pick or revert in progress")) {
+    return "当前没有正在进行的还原，工作区已经干净。";
+  }
+  if (lower.includes("nothing to commit") && lower.includes("working tree clean")) {
+    return "没有需要继续提交的还原内容，工作区已经干净。";
+  }
   if (lower.includes("index.lock") && (lower.includes("unable to create") || lower.includes("file exists"))) {
     return indexLockMessage(text, context);
   }
@@ -1029,6 +1106,14 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("please commit your changes or stash them")) {
     return "当前有未提交修改。请先提交或储藏后再试。";
+  }
+  if (lower.includes(" is unmerged")) {
+    const file = text.match(/path ['"]([^'"]+)['"] is unmerged/i)?.[1] || "";
+    const target = file ? `文件 ${file} ` : "";
+    return `${target}还有未解决的冲突。请先在工作区解决冲突并暂存，再点“继续还原”；如果不想保留这次还原，点“中止还原”。`;
+  }
+  if (lower.includes("revert") && (lower.includes("automatic merge failed") || lower.includes("conflict"))) {
+    return "还原提交时发生冲突。请在工作区查看冲突文件，手动解决后提交；不想继续时可以执行中止还原。";
   }
   if (lower.includes("automatic merge failed") || lower.includes("merge conflict") || lower.includes("conflict (")) {
     return "合并发生冲突。请在工作区查看冲突文件，手动解决后提交；不想继续时可以执行中止合并。";
@@ -1109,6 +1194,21 @@ function resolveGitDirSync(repoPath) {
     return "";
   }
   return "";
+}
+
+function detectRepoOperation(repoPath) {
+  const gitDir = resolveGitDirSync(repoPath);
+  if (!gitDir) return null;
+  if (fs.existsSync(path.join(gitDir, "REVERT_HEAD"))) {
+    return { type: "revert", label: "还原提交未完成", canContinue: true, canAbort: true };
+  }
+  if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
+    return { type: "cherryPick", label: "挑选提交未完成", canContinue: false, canAbort: false };
+  }
+  if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
+    return { type: "merge", label: "合并未完成", canContinue: false, canAbort: false };
+  }
+  return null;
 }
 
 function describeLockFile(lockPath) {
