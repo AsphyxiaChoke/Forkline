@@ -40,6 +40,7 @@
         <button class="icon-btn" data-action="fetch" title="抓取" type="button">抓取</button>
         <button class="icon-btn" data-action="pull" title="拉取" type="button">拉取</button>
         <button class="icon-btn" data-action="push" title="推送" type="button">推送</button>
+        <button class="icon-btn danger" data-action="forcePushLease" title="安全强推（git push --force-with-lease）" type="button">强推</button>
       </div>
     </header>
 
@@ -183,6 +184,7 @@
     <button data-branch-action="checkout" type="button">切换到此分支</button>
     <button data-branch-action="merge" type="button">合并分支到当前分支</button>
     <button data-branch-action="rebase" type="button"><span class="menu-label">变基当前分支到此分支</span><span class="command-hint">git rebase</span></button>
+    <button data-branch-action="forcePush" class="danger" type="button"><span class="menu-label">安全强推当前分支</span><span class="command-hint">git push --force-with-lease</span></button>
     <button data-branch-action="cleanup" type="button" hidden>清理失效占用</button>
     <button data-branch-action="branch" type="button">从此分支新建分支</button>
     <button data-branch-action="copy" type="button">复制分支名</button>

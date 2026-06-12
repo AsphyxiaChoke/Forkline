@@ -344,7 +344,18 @@ button {
   color: var(--danger);
 }
 
+.icon-btn.danger {
+  border-color: rgba(240, 99, 99, 0.45);
+  color: var(--danger);
+}
+
 .mini-btn.danger:hover:not(:disabled) {
+  border-color: rgba(240, 99, 99, 0.75);
+  background: rgba(240, 99, 99, 0.1);
+  color: var(--danger);
+}
+
+.icon-btn.danger:hover:not(:disabled) {
   border-color: rgba(240, 99, 99, 0.75);
   background: rgba(240, 99, 99, 0.1);
   color: var(--danger);

@@ -221,6 +221,9 @@ async function runAction(body) {
   if (action === "push") {
     return pushCurrentBranch();
   }
+  if (action === "forcePushLease") {
+    return forcePushCurrentBranchWithLease();
+  }
   if (action === "stageAll") {
     return commandResult(await git(currentRepo, ["add", "-A"], { timeout: 60000 }));
   }
@@ -391,6 +394,7 @@ function actionLabel(body = {}) {
     fetch: "抓取远端",
     pull: "拉取远端",
     push: "推送到远端",
+    forcePushLease: "安全强推到远端",
     stageAll: "暂存全部更改",
     discardAll: "丢弃全部未提交更改",
     continueRevert: "继续还原",
@@ -580,6 +584,25 @@ async function pushCurrentBranch() {
   }
   const after = await readCurrentSyncState();
   return syncCommandResult("push", output, before, after);
+}
+
+async function forcePushCurrentBranchWithLease() {
+  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+    throw new Error("当前处于游离 HEAD，不能直接强推。请先切换或创建本地分支。");
+  }
+  const before = await readCurrentSyncState();
+  if (!before.upstream) {
+    throw new Error("当前分支没有 upstream，不能执行安全强推。请先普通推送一次建立跟踪关系。");
+  }
+  if (before.upstreamGone) {
+    throw new Error("当前分支的 upstream 已不存在，不能执行安全强推。请先抓取远端并确认要推送到哪里。");
+  }
+  const remoteNames = await readRemoteNames();
+  const parsed = splitRemoteBranchRef(before.upstream, remoteNames);
+  const output = await git(currentRepo, ["push", "--force-with-lease", parsed.remote, `HEAD:${parsed.branch}`], { timeout: 120000 });
+  const after = await readCurrentSyncState();
+  return syncCommandResult("forcePush", output, before, after);
 }
 
 async function fetchRemotes() {
@@ -1393,6 +1416,7 @@ function syncTitle(action) {
   if (action === "fetch") return "抓取完成";
   if (action === "pull") return "拉取完成";
   if (action === "push") return "推送完成";
+  if (action === "forcePush") return "安全强推完成";
   return "同步完成";
 }
 
@@ -1438,7 +1462,7 @@ function parseRemoteSyncChanges(output) {
       changes.push(`新增远端 Tag ${right}`);
     } else if (left.includes("[deleted]")) {
       changes.push(`删除远端引用 ${right}`);
-    } else if (left.includes("[forced update]")) {
+    } else if (left.includes("[forced update]") || line.toLowerCase().includes("forced update")) {
       changes.push(`强制更新 ${right}`);
     } else if (right) {
       changes.push(`更新 ${right}`);
@@ -1771,6 +1795,9 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("no configured push destination") || lower.includes("does not appear to be a git repository")) {
     return "当前仓库没有可用远端。请先添加远端地址后再推送或拉取。";
+  }
+  if (lower.includes("stale info") || (context.body?.action === "forcePushLease" && lower.includes("rejected"))) {
+    return "安全强推被 Git 拒绝：远端分支在你上次抓取后可能已经变化。请先抓取远端，确认远端新增提交是否可以覆盖，再重新操作。";
   }
   if (lower.includes("failed to push some refs") && (lower.includes("non-fast-forward") || lower.includes("fetch first") || lower.includes("rejected"))) {
     return "推送被远端拒绝：远端可能有你本地没有的提交。请先抓取/拉取，处理差异后再推送。";

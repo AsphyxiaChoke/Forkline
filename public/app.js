@@ -855,6 +855,7 @@ function showBranchContextMenu(event, branch, options = {}) {
   const checkoutButton = menu.querySelector('[data-branch-action="checkout"]');
   const mergeButton = menu.querySelector('[data-branch-action="merge"]');
   const rebaseButton = menu.querySelector('[data-branch-action="rebase"]');
+  const forcePushButton = menu.querySelector('[data-branch-action="forcePush"]');
   const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
   const renameButton = menu.querySelector('[data-branch-action="rename"]');
   const deleteButton = menu.querySelector('[data-branch-action="delete"]');
@@ -885,6 +886,12 @@ function showBranchContextMenu(event, branch, options = {}) {
     : isRemote && !remoteLocalBranch
       ? "这个远端引用不能自动推导本地分支名"
       : `把当前分支 ${state.data?.repo?.branch || ""} 变基到 ${branch}`;
+  forcePushButton.disabled = !isLocal || !isCurrent;
+  forcePushButton.title = !isLocal
+    ? "只能对当前本地分支执行安全强推"
+    : !isCurrent
+      ? "请先切换到这个分支后再安全强推"
+      : "使用 git push --force-with-lease 推送当前分支";
   cleanupButton.hidden = !prunable;
   cleanupButton.disabled = !prunable;
   renameButton.textContent = isRemote ? "重命名分支" : "重命名本地分支";
@@ -904,7 +911,7 @@ function showBranchContextMenu(event, branch, options = {}) {
         : "";
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
-  positionContextMenu(menu, event, 240);
+  positionContextMenu(menu, event, 280);
 }
 
 function hideBranchContextMenu() {
@@ -1025,6 +1032,10 @@ async function runBranchContextAction(action) {
   }
   if (action === "rebase") {
     await rebaseOntoRef(branch);
+    return;
+  }
+  if (action === "forcePush") {
+    await runAction("forcePushLease");
     return;
   }
   if (action === "cleanup") {
@@ -2714,7 +2725,16 @@ function chooseStashRestore(stash) {
 
 async function runAction(action) {
   if (!state.data) return;
-  const names = { fetch: "抓取", pull: "拉取", push: "推送", stageAll: "暂存全部", discardAll: "丢弃全部", commit: "创建提交", amendCommit: "追加提交" };
+  const names = {
+    fetch: "抓取",
+    pull: "拉取",
+    push: "推送",
+    forcePushLease: "安全强推",
+    stageAll: "暂存全部",
+    discardAll: "丢弃全部",
+    commit: "创建提交",
+    amendCommit: "追加提交",
+  };
   if (!state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return;
   try {
     const payload = { action };
@@ -2812,6 +2832,15 @@ function actionConfirmMessage(action, name) {
       return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n命令：git push`;
     }
     return `当前分支 ${branch} 没有 upstream。确认推送并自动设置 upstream？\n\n默认命令：git push -u origin ${branch}\n如果仓库没有 origin，会使用第一个远端。`;
+  }
+  if (action === "forcePushLease") {
+    const branch = state.data?.repo?.branch || "当前分支";
+    const info = state.data?.branchInfo?.[branch] || {};
+    const upstream = info.upstream || "未设置 upstream";
+    const divergence = info.upstream
+      ? `当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}`
+      : "当前分支没有 upstream，后端会拒绝安全强推。";
+    return `确认安全强推当前分支：${branch}？\n\n目标：${upstream}\n命令：git push --force-with-lease\n${divergence}\n\n这会改写远端分支历史。--force-with-lease 会在远端分支自你上次抓取后又变化时拒绝推送；如果不确定，请先抓取并检查远端提交。`;
   }
   return `确认执行：${name}？`;
 }
