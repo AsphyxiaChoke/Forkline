@@ -2212,17 +2212,14 @@ async function createStashFromSelection(files = null) {
       method: "POST",
       body: JSON.stringify({ action: "createStash", message: trimmedMessage, files: selectedOnly ? stashFiles : [] }),
     });
-    toast(result.output || "已创建储藏");
+    toast("已创建储藏，工作区更改已移到右侧“储藏”列表");
     state.stashDetails.clear();
     state.selectedChanges.clear();
     state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedStash = state.data.stashes?.[0]?.ref || state.selectedStash;
+    state.selectedTab = "stashes";
     renderAll();
-    if (state.selectedTab !== "stashes" && state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
   } catch (error) {
     toast(error.message);
   }

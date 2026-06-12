@@ -882,7 +882,7 @@ body.resizing .stage-resizer-y::before {
 
 .changes {
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -913,12 +913,42 @@ body.resizing .stage-split-resizer::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
   height: 38px;
   padding: 0 12px;
   border-bottom: 1px solid var(--line-soft);
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.panel-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
+.changes > .panel-title {
+  min-height: 38px;
+  height: auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.changes > .panel-title .panel-actions {
+  flex-wrap: wrap;
 }
 
 .panel-title-text {
@@ -946,8 +976,10 @@ body.resizing .stage-split-resizer::before {
 
 .mini-btn {
   height: 28px;
-  padding: 0 10px;
+  min-width: 42px;
+  padding: 0 8px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .change-list {
