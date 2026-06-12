@@ -550,6 +550,10 @@ body.resizing .workspace-resizer::before {
   color: var(--teal);
 }
 
+.branch-checkout.remote {
+  color: var(--blue);
+}
+
 .branch-delete {
   color: var(--danger);
 }

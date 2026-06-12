@@ -77,7 +77,7 @@ async function readState(ref = "") {
   if (!currentRepo) return sampleState();
   const [branch, branchOutput, worktreeOutput, statusOutput, stashOutput, logOutput] = await Promise.all([
     git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "detached HEAD"),
-    git(currentRepo, ["branch", "--all", "--format=%(refname:short)"]).catch(() => ""),
+    git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
@@ -87,12 +87,21 @@ async function readState(ref = "") {
   const branches = [];
   const remotes = [];
   for (const raw of branchOutput.split(/\r?\n/)) {
-    const name = raw.trim();
-    if (!name || name.endsWith("/HEAD")) continue;
-    if (name === "origin" || name === "upstream") continue;
-    if (name.startsWith("remotes/")) remotes.push(name.replace(/^remotes\//, ""));
-    else if (/^(origin|upstream)\//.test(name)) remotes.push(name);
-    else branches.push(name);
+    const refname = raw.trim();
+    if (!refname) continue;
+    if (refname.startsWith("refs/heads/")) {
+      branches.push(refname.replace(/^refs\/heads\//, ""));
+      continue;
+    }
+    if (refname.startsWith("refs/remotes/")) {
+      const remoteBranch = refname.replace(/^refs\/remotes\//, "");
+      if (remoteBranch && !remoteBranch.endsWith("/HEAD")) remotes.push(remoteBranch);
+      continue;
+    }
+    if (refname.endsWith("/HEAD") || refname === "origin" || refname === "upstream") continue;
+    if (refname.startsWith("remotes/")) remotes.push(refname.replace(/^remotes\//, ""));
+    else if (/^[^/]+\/.+/.test(refname)) remotes.push(refname);
+    else branches.push(refname);
   }
 
   return {
@@ -211,6 +220,9 @@ async function runAction(body) {
   if (action === "checkoutBranch") {
     return checkoutBranch(body);
   }
+  if (action === "checkoutRemoteBranch") {
+    return checkoutRemoteBranch(body);
+  }
   if (action === "createBranch") {
     return createBranch(body);
   }
@@ -321,6 +333,51 @@ async function checkoutBranch(body) {
   }
   await git(currentRepo, ["switch", branch], { timeout: 60000 });
   return { ok: true, output: "已切换分支并保留本地更改" };
+}
+
+async function checkoutRemoteBranch(body) {
+  const remoteRef = normalizeRefName(body.ref, "远端分支");
+  const mode = normalizeCheckoutMode(body.mode);
+  const sourceBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const remoteBranches = (await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]))
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter((item) => item && !item.endsWith("/HEAD"));
+  if (!remoteBranches.includes(remoteRef)) throw new Error("远端分支不存在，请先抓取远端后再试");
+  const localBranch = normalizeRemoteCheckoutBranch(remoteRef);
+  const localBranches = (await git(currentRepo, ["branch", "--format=%(refname:short)"]))
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const localExists = localBranches.includes(localBranch);
+  const worktrees = parseWorktreeBranches(await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""), currentRepo);
+  if (localExists && worktrees[localBranch] && localBranch !== sourceBranch) {
+    const info = worktrees[localBranch];
+    const suffix = info.prunable ? "。这个占用记录已经失效，可以清理 worktree 记录后再切换" : "";
+    throw new Error(`分支 ${localBranch} 已在其他工作树签出：${info.worktreePath}${suffix}`);
+  }
+
+  const switchArgs = localExists ? ["switch", localBranch] : ["switch", "--track", "-c", localBranch, remoteRef];
+  if (mode === "stash") {
+    const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+    let stash = null;
+    if (dirty.trim()) {
+      const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+      const message = `Forkline: checkout ${localBranch} ${stamp}`;
+      await git(currentRepo, ["stash", "push", "-u", "-m", message], { timeout: 120000 });
+      stash = { branch: sourceBranch, target: localBranch, ref: "stash@{0}", message };
+    }
+    await git(currentRepo, switchArgs, { timeout: 60000 });
+    return { ok: true, branch: localBranch, remote: remoteRef, output: `已从 ${remoteRef} 签出本地分支 ${localBranch}`, stash };
+  }
+  if (mode === "force") {
+    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
+    await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
+    await git(currentRepo, switchArgs, { timeout: 60000 });
+    return { ok: true, branch: localBranch, remote: remoteRef, output: `已强制签出本地分支 ${localBranch}` };
+  }
+  await git(currentRepo, switchArgs, { timeout: 60000 });
+  return { ok: true, branch: localBranch, remote: remoteRef, output: `已从 ${remoteRef} 签出本地分支 ${localBranch}` };
 }
 
 async function createBranch(body) {
@@ -580,6 +637,12 @@ function normalizeRefName(value, label = "分支起点") {
     throw new Error(`${label}不合法`);
   }
   return ref;
+}
+
+function normalizeRemoteCheckoutBranch(remoteRef) {
+  const parts = String(remoteRef || "").split("/").filter(Boolean);
+  if (parts.length < 2) throw new Error("远端分支不合法");
+  return normalizeBranchName(parts.slice(1).join("/"));
 }
 
 function normalizeStashRef(value) {

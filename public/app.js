@@ -189,7 +189,7 @@ function renderBranches() {
     els.branchStrip.appendChild(chip);
   });
   state.data.remotes.forEach((branch, index) => {
-    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef, { remote: true, merge: true }));
+    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef, { remote: true, remoteCheckout: true, merge: true }));
   });
 }
 
@@ -230,6 +230,24 @@ function branchButton(branch, index, active, options = {}) {
         checkoutBranch(branch, checkout);
       });
     }
+    row.appendChild(checkout);
+  }
+  if (options.remoteCheckout) {
+    const checkout = document.createElement("button");
+    const localBranch = remoteCheckoutBranch(branch);
+    checkout.className = "branch-checkout remote";
+    checkout.type = "button";
+    checkout.textContent = "签出";
+    checkout.disabled = Boolean(!localBranch || localBranch === state.data.repo.branch);
+    checkout.title = !localBranch
+      ? "这个远端引用不能自动推导本地分支名"
+      : checkout.disabled
+        ? "对应的本地分支已经是当前分支"
+        : `签出 ${branch} 为本地分支 ${localBranch}`;
+    checkout.addEventListener("click", (event) => {
+      event.stopPropagation();
+      checkoutRemoteBranch(branch, checkout);
+    });
     row.appendChild(checkout);
   }
   if (options.merge) {
@@ -688,8 +706,21 @@ function showBranchContextMenu(event, branch, options = {}) {
   const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
   const renameButton = menu.querySelector('[data-branch-action="rename"]');
   const deleteButton = menu.querySelector('[data-branch-action="delete"]');
-  checkoutButton.disabled = !isLocal || isCurrent || occupied;
-  checkoutButton.title = isRemote ? "远端分支不能直接切换，请先从它新建本地分支" : isCurrent ? "当前分支" : occupied ? "分支被其他工作树占用" : "";
+  const remoteLocalBranch = isRemote ? remoteCheckoutBranch(branch) : "";
+  const remoteIsCurrent = Boolean(remoteLocalBranch && remoteLocalBranch === state.data?.repo?.branch);
+  checkoutButton.textContent = isRemote ? "签出为本地分支" : "切换到此分支";
+  checkoutButton.disabled = isRemote ? !remoteLocalBranch || remoteIsCurrent : !isLocal || isCurrent || occupied;
+  checkoutButton.title = isRemote
+    ? !remoteLocalBranch
+      ? "这个远端引用不能自动推导本地分支名"
+      : remoteIsCurrent
+      ? "对应的本地分支已经是当前分支"
+      : `签出 ${branch} 为本地分支 ${remoteLocalBranch || ""}`
+    : isCurrent
+      ? "当前分支"
+      : occupied
+        ? "分支被其他工作树占用"
+        : "";
   mergeButton.disabled = isCurrent;
   mergeButton.title = isCurrent ? "不能把当前分支合并到自己" : `合并 ${branch} 到当前分支`;
   cleanupButton.hidden = !prunable;
@@ -721,8 +752,12 @@ async function runBranchContextAction(action) {
     return;
   }
   if (action === "checkout") {
+    if (isRemote) {
+      await checkoutRemoteBranch(branch);
+      return;
+    }
     if (!isLocal) {
-      toast("远端分支不能直接切换，请先从它新建本地分支");
+      toast("这个分支不能直接切换");
       return;
     }
     await checkoutBranch(branch);
@@ -1694,6 +1729,11 @@ function shortFileName(filePath) {
   return String(filePath || "").replaceAll("\\", "/").split("/").filter(Boolean).pop() || "变更对照";
 }
 
+function remoteCheckoutBranch(remoteRef) {
+  const parts = String(remoteRef || "").split("/").filter(Boolean);
+  return parts.length >= 2 ? parts.slice(1).join("/") : "";
+}
+
 function worktreeSignature(files) {
   return (files || []).map((file) => `${file.state}:${file.file}:${file.extra || ""}`).join("|");
 }
@@ -1812,6 +1852,50 @@ async function checkoutBranch(branch, button) {
     state.selectedRef = branch;
     state.data = await api(`/api/state?ref=${encodeURIComponent(branch)}`);
     state.selectedRef = state.data.repo.selectedRef || branch;
+    state.selectedSha = state.data.commits[0]?.sha || "";
+    els.searchInput.value = "";
+    renderAll();
+    if (state.selectedSha) {
+      await loadCommit(state.selectedSha);
+      renderInspector();
+    }
+    await maybeRestoreCheckoutStash(state.data.repo.branch);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function checkoutRemoteBranch(remoteRef, button) {
+  if (!state.data || !remoteRef) return;
+  const localBranch = remoteCheckoutBranch(remoteRef);
+  if (localBranch && localBranch === state.data.repo.branch) {
+    toast("对应的本地分支已经是当前分支");
+    return;
+  }
+  const dirtyCount = (state.data.workingFiles || []).length;
+  let mode = "keep";
+  const targetText = localBranch ? `${remoteRef} -> ${localBranch}` : remoteRef;
+  if (!state.data.repo.isSample && dirtyCount) {
+    mode = await chooseCheckoutMode(targetText, dirtyCount);
+    if (!mode) return;
+  } else if (!state.data.repo.isSample && !confirm(`确认将远端分支签出为本地分支：${targetText}？`)) {
+    return;
+  }
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "checkoutRemoteBranch", ref: remoteRef, mode }),
+    });
+    const nextBranch = result.branch || localBranch || remoteRef;
+    rememberCheckoutStash(result.stash);
+    toast(result.output || `已签出 ${nextBranch}`);
+    state.commitDetails.clear();
+    state.selectedRef = nextBranch;
+    state.data = await api(`/api/state?ref=${encodeURIComponent(nextBranch)}`);
+    state.selectedRef = state.data.repo.selectedRef || nextBranch;
     state.selectedSha = state.data.commits[0]?.sha || "";
     els.searchInput.value = "";
     renderAll();
