@@ -1163,6 +1163,7 @@ function commandPaletteItems() {
   const commit = selectedCommandCommit();
   const hasCommit = Boolean(commit);
   const remoteCommit = hasCommit ? commitRemoteUrl(commit.sha) : "";
+  const pullRequest = state.data?.sync?.pullRequest || {};
   const branch = state.data?.repo?.branch || "当前分支";
   return [
     commandItem("focusSearch", "搜索提交", "聚焦顶部提交搜索框", "图谱", "commit author branch sha", hasRepo, () => {
@@ -1194,6 +1195,8 @@ function commandPaletteItems() {
     commandItem("pullRebase", "变基拉取", `把 ${branch} 的本地提交重放到远端之后`, "git pull --rebase", "remote rebase", realRepo, () => runAction("pullRebase")),
     commandItem("push", "推送", `推送 ${branch}`, "git push", "remote sync", realRepo, () => runAction("push")),
     commandItem("forcePushLease", "安全强推", "使用 force-with-lease 更新远端分支", "危险", "force push lease", realRepo, () => runAction("forcePushLease"), true),
+    commandItem("openPullRequest", pullRequest.title || "创建 PR", `为 ${branch} 打开 ${pullRequest.platformLabel || "远端"} PR/MR 页面`, "web", "pull request merge request pr mr github gitlab", Boolean(pullRequest.available), () => runSyncPullRequestAction("open")),
+    commandItem("copyPullRequest", "复制 PR 链接", "复制当前分支的 PR/MR 创建地址", "copy", "pull request merge request pr mr clipboard", Boolean(pullRequest.available), () => runSyncPullRequestAction("copy")),
     commandItem("newBranch", "新建分支", "从当前 HEAD 创建本地分支", "git branch", "branch checkout", hasRepo, openBranchModal),
     commandItem("createTag", "创建 Tag", "基于当前提交创建 Tag", "git tag", "release tag", hasCommit, () => openTagModal(commit)),
     commandItem("copySha", "复制提交 SHA", "复制当前选中提交的完整 SHA", "复制", "clipboard commit sha", hasCommit, async () => {
@@ -1384,6 +1387,8 @@ function showBranchContextMenu(event, branch, options = {}) {
   const rebaseButton = menu.querySelector('[data-branch-action="rebase"]');
   const pullRebaseButton = menu.querySelector('[data-branch-action="pullRebase"]');
   const forcePushButton = menu.querySelector('[data-branch-action="forcePush"]');
+  const openPullRequestButton = menu.querySelector('[data-branch-action="openPullRequest"]');
+  const copyPullRequestButton = menu.querySelector('[data-branch-action="copyPullRequest"]');
   const setUpstreamButton = menu.querySelector('[data-branch-action="setUpstream"]');
   const unsetUpstreamButton = menu.querySelector('[data-branch-action="unsetUpstream"]');
   const cleanupButton = menu.querySelector('[data-branch-action="cleanup"]');
@@ -1395,6 +1400,11 @@ function showBranchContextMenu(event, branch, options = {}) {
   const currentBranch = state.data?.repo?.branch || "";
   const currentInfo = state.data?.branchInfo?.[currentBranch] || {};
   const canSetUpstream = Boolean(isRemote && currentBranch && currentBranch !== "detached HEAD" && !branch.endsWith("/HEAD"));
+  const pullRequest = state.data?.sync?.pullRequest || {};
+  const canOpenPullRequest = Boolean(isLocal && isCurrent && pullRequest.available && pullRequest.url);
+  const pullRequestUnavailable = !isLocal || !isCurrent
+    ? "只能为当前本地分支创建 PR/MR，请先切换到这个分支。"
+    : pullRequest.reason || "当前分支暂时不能生成 PR 链接。";
   checkoutButton.textContent = isRemote ? "签出为本地分支" : "切换到此分支";
   compareButton.disabled = !branch || (isLocal && isCurrent);
   compareButton.title = isLocal && isCurrent ? "不能把当前分支和自己比较" : `比较当前分支与 ${branch}`;
@@ -1436,6 +1446,15 @@ function showBranchContextMenu(event, branch, options = {}) {
     : !isCurrent
       ? "请先切换到这个分支后再安全强推"
       : "使用 git push --force-with-lease 推送当前分支";
+  if (openPullRequestButton) {
+    openPullRequestButton.querySelector(".menu-label").textContent = pullRequest.title || "创建 Pull Request";
+    openPullRequestButton.disabled = !canOpenPullRequest;
+    openPullRequestButton.title = canOpenPullRequest ? pullRequest.url : pullRequestUnavailable;
+  }
+  if (copyPullRequestButton) {
+    copyPullRequestButton.disabled = !canOpenPullRequest;
+    copyPullRequestButton.title = canOpenPullRequest ? pullRequest.url : pullRequestUnavailable;
+  }
   setUpstreamButton.disabled = !canSetUpstream || currentInfo.upstream === branch;
   setUpstreamButton.title = !canSetUpstream
     ? "只能把远端分支设为当前本地分支的 upstream"
@@ -1463,7 +1482,7 @@ function showBranchContextMenu(event, branch, options = {}) {
         : "";
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
-  positionContextMenu(menu, event, 280);
+  positionContextMenu(menu, event, 330);
 }
 
 function hideBranchContextMenu() {
@@ -1649,6 +1668,14 @@ async function runBranchContextAction(action) {
   }
   if (action === "forcePush") {
     await runAction("forcePushLease");
+    return;
+  }
+  if (action === "openPullRequest") {
+    await runSyncPullRequestAction("open");
+    return;
+  }
+  if (action === "copyPullRequest") {
+    await runSyncPullRequestAction("copy");
     return;
   }
   if (action === "setUpstream") {
@@ -2329,6 +2356,26 @@ function openRemoteCommit(commit) {
   }
   opened.opener = null;
   toast("已打开远端提交页面");
+}
+
+async function runSyncPullRequestAction(action) {
+  const pullRequest = state.data?.sync?.pullRequest || {};
+  if (!pullRequest.available || !pullRequest.url) {
+    toast(pullRequest.reason || "当前分支暂时不能生成 PR 链接");
+    return;
+  }
+  if (action === "copy") {
+    await copyText(pullRequest.url);
+    toast("已复制 PR 链接");
+    return;
+  }
+  const opened = window.open(pullRequest.url, "_blank");
+  if (!opened) {
+    toast(`浏览器拦截了新窗口，可以复制地址手动打开：\n${pullRequest.url}`);
+    return;
+  }
+  opened.opener = null;
+  toast(pullRequest.title === "创建 Merge Request" ? "已打开 Merge Request 页面" : "已打开 Pull Request 页面");
 }
 
 function commitRemoteUrl(sha) {
@@ -3687,6 +3734,7 @@ function renderSyncTab() {
   const previewModel = selectedSyncCommit ? syncPreviewModel(selectedSyncCommit, selectedSyncDetail) : null;
   const remotes = sync.remotes || [];
   const pushGuard = syncPushGuard(sync);
+  const pullRequest = sync.pullRequest || {};
   els.detailNode.style.borderColor = upstreamGone ? "var(--danger)" : hasUpstream ? "var(--teal)" : "var(--yellow)";
   els.detailTitle.textContent = "同步详情";
   els.detailSub.textContent = sync.branch ? `${sync.branch}${sync.upstream ? ` -> ${sync.upstream}` : " · 未设置 upstream"}` : "当前分支";
@@ -3703,6 +3751,8 @@ function renderSyncTab() {
       <button class="mini-btn" data-sync-action="pullRebase" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"} title="git pull --rebase"><span>变基拉取</span><span class="command-hint">pull --rebase</span></button>
       <button class="mini-btn" data-sync-action="push" type="button" ${pushGuard.blocked ? "disabled" : ""} title="${escapeAttr(pushGuard.title || "git push")}"><span>推送</span><span class="command-hint">git push</span></button>
       <button class="mini-btn danger" data-sync-action="forcePushLease" type="button" ${hasUpstream && !upstreamGone ? "" : "disabled"}><span>安全强推</span><span class="command-hint">--force-with-lease</span></button>
+      <button class="mini-btn" data-sync-pr-action="open" type="button" ${pullRequest.available ? "" : "disabled"} title="${escapeAttr(pullRequest.available ? pullRequest.url : pullRequest.reason || "当前分支不能创建 PR")}"><span>${escapeHtml(pullRequest.title || "创建 PR")}</span><span class="command-hint">${escapeHtml(pullRequest.platformLabel || "web")}</span></button>
+      <button class="mini-btn" data-sync-pr-action="copy" type="button" ${pullRequest.available ? "" : "disabled"} title="${escapeAttr(pullRequest.available ? pullRequest.url : pullRequest.reason || "当前分支不能创建 PR")}"><span>复制 PR 链接</span><span class="command-hint">copy</span></button>
     </div>
     <div class="meta-grid sync-meta">
       <span>当前分支</span><div class="meta-value">${escapeHtml(sync.branch || state.data?.repo?.branch || "未知")}</div>
@@ -3711,6 +3761,7 @@ function renderSyncTab() {
       <span>建议</span><div class="meta-value">${escapeHtml(syncAdviceText(sync))}</div>
     </div>
     ${syncPushGuardHtml(pushGuard)}
+    ${syncPullRequestHtml(pullRequest)}
     <div class="detail-section-title">上游分支</div>
     ${upstreamControlHtml(sync)}
     <div class="sync-section-head">
@@ -3783,6 +3834,34 @@ function syncPushGuardHtml(guard) {
     <div class="sync-warning">
       <strong>普通推送已保护</strong>
       <span>${escapeHtml(guard.text)}</span>
+    </div>
+  `;
+}
+
+function syncPullRequestHtml(pr = {}) {
+  if (!pr.available) {
+    return `
+      <div class="pr-card pr-card-muted">
+        <div class="pr-card-head">
+          <strong>Pull Request</strong>
+          <span>${escapeHtml(pr.reason || "当前分支暂时不能生成 PR 链接")}</span>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="pr-card">
+      <div class="pr-card-head">
+        <div>
+          <strong>${escapeHtml(pr.title || "创建 Pull Request")}</strong>
+          <span>${escapeHtml(pr.platformLabel || "Web")} · ${escapeHtml(pr.remote || "origin")}</span>
+        </div>
+        <span class="pr-route" title="${escapeAttr(`${pr.source || ""} -> ${pr.target || ""}`)}">${escapeHtml(pr.source || "")} → ${escapeHtml(pr.target || "")}</span>
+      </div>
+      <div class="pr-link-row">
+        <code title="${escapeAttr(pr.url || "")}">${escapeHtml(pr.url || "")}</code>
+        <button class="mini-btn" data-sync-pr-action="copy" type="button">复制</button>
+      </div>
     </div>
   `;
 }
@@ -7024,6 +7103,12 @@ els.detailBody.addEventListener("click", (event) => {
   if (syncAction) {
     event.preventDefault();
     if (!syncAction.disabled) runAction(syncAction.dataset.syncAction).catch((error) => toast(error.message));
+    return;
+  }
+  const syncPrAction = event.target.closest("[data-sync-pr-action]");
+  if (syncPrAction) {
+    event.preventDefault();
+    if (!syncPrAction.disabled) runSyncPullRequestAction(syncPrAction.dataset.syncPrAction).catch((error) => toast(error.message));
     return;
   }
   const remoteCommandCopy = event.target.closest("[data-copy-remote-command]");

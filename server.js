@@ -3492,10 +3492,16 @@ async function readCurrentSyncDetails() {
     credentialManager: { available: false, name: "Git Credential Manager", version: "", message: "未检测" },
     commands: ["git remote -v"],
   }));
+  const pullRequest = await readPullRequestLink(state, remotes).catch((error) => ({
+    available: false,
+    reason: `无法生成 PR 链接：${String(error?.message || error || "未知错误")}`,
+    url: "",
+  }));
   const details = {
     ...state,
     remotes,
     auth,
+    pullRequest,
     incoming: [],
     outgoing: [],
   };
@@ -3765,6 +3771,125 @@ function authSummaryText(remotes, ssh, agent, credentialManager) {
   return `${remoteText}；${sshText}；${agentText}；${gcmText}`;
 }
 
+async function readPullRequestLink(syncState = {}, remotes = []) {
+  const branch = String(syncState.branch || "").trim();
+  if (!branch || branch === "HEAD" || branch === "detached HEAD" || syncState.detached) {
+    return { available: false, reason: "当前处于游离 HEAD，请先切换或创建本地分支。", url: "" };
+  }
+  const remote = preferredWebRemote(remotes);
+  if (!remote?.webBase) {
+    return { available: false, reason: "当前仓库没有可识别的 GitHub / GitLab / Bitbucket / Gitea 网页远端。", url: "" };
+  }
+  const targetBranch = await inferPullRequestTarget(branch, syncState);
+  if (!targetBranch) {
+    return { available: false, reason: "没有找到可作为目标的主分支。", url: "" };
+  }
+  if (targetBranch === branch) {
+    return { available: false, reason: "当前分支已经是目标分支，不需要创建 PR。", url: "" };
+  }
+  const platform = remoteWebPlatform(remote.webBase);
+  const url = buildPullRequestUrl(remote.webBase, platform, branch, targetBranch);
+  return {
+    available: Boolean(url),
+    url,
+    source: branch,
+    target: targetBranch,
+    remote: remote.name,
+    remoteUrl: remote.url,
+    platform,
+    platformLabel: remotePlatformLabel(platform),
+    title: platform === "gitlab" ? "创建 Merge Request" : "创建 Pull Request",
+    reason: url ? "" : "当前远端平台暂不支持自动生成 PR 链接。",
+  };
+}
+
+function preferredWebRemote(remotes = []) {
+  const ordered = [
+    ...remotes.filter((remote) => remote.name === "origin"),
+    ...remotes.filter((remote) => remote.name !== "origin"),
+  ];
+  for (const remote of ordered) {
+    const url = remote.pushUrl || remote.fetchUrl || "";
+    const webBase = remoteWebBase(url) || remoteWebBase(remote.fetchUrl);
+    if (webBase) return { ...remote, url, webBase };
+  }
+  return null;
+}
+
+async function inferPullRequestTarget(branch, syncState = {}) {
+  const localBranches = parseSimpleLines(await git(currentRepo, ["branch", "--format=%(refname:short)"]).catch(() => ""));
+  const upstreamBranch = syncState.upstream ? syncState.upstream.split("/").slice(1).join("/") : "";
+  if (upstreamBranch && upstreamBranch !== branch) return upstreamBranch;
+  const preferred = ["main", "master", "develop", "development", "dev", "trunk"];
+  const preferredMatch = preferred.find((name) => localBranches.includes(name) && name !== branch);
+  if (preferredMatch) return preferredMatch;
+  return localBranches.find((name) => name && name !== branch) || "";
+}
+
+function buildPullRequestUrl(webBase, platform, sourceBranch, targetBranch) {
+  const base = String(webBase || "").replace(/\/+$/, "");
+  if (!base || !sourceBranch || !targetBranch) return "";
+  const source = encodeURIComponent(sourceBranch);
+  const target = encodeURIComponent(targetBranch);
+  if (platform === "gitlab") {
+    return `${base}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${source}&merge_request%5Btarget_branch%5D=${target}`;
+  }
+  if (platform === "bitbucket") {
+    return `${base}/pull-requests/new?source=${source}&dest=${target}`;
+  }
+  if (platform === "github") {
+    return `${base}/compare/${target}...${source}?expand=1`;
+  }
+  return `${base}/compare/${target}...${source}`;
+}
+
+function remoteWebBase(remoteUrl) {
+  const value = String(remoteUrl || "").trim();
+  if (!value) return "";
+  const scpLike = value.match(/^git@([^:]+):(.+)$/);
+  if (scpLike) return cleanRemoteWebPath(`https://${scpLike[1]}/${scpLike[2]}`);
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      url.username = "";
+      url.password = "";
+      return cleanRemoteWebPath(url.toString());
+    }
+    if (url.protocol === "ssh:" && url.hostname && url.pathname) {
+      return cleanRemoteWebPath(`https://${url.hostname}${url.pathname}`);
+    }
+  } catch {
+  }
+  return "";
+}
+
+function cleanRemoteWebPath(value) {
+  return String(value || "")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "");
+}
+
+function remoteWebPlatform(webBase) {
+  try {
+    const url = new URL(webBase);
+    const host = url.hostname.toLowerCase();
+    if (host === "github.com" || host.endsWith(".github.com")) return "github";
+    if (host === "gitlab.com" || host.includes("gitlab")) return "gitlab";
+    if (host === "bitbucket.org" || host.endsWith(".bitbucket.org")) return "bitbucket";
+    if (host.includes("gitea") || host.includes("forgejo")) return "gitea";
+  } catch {
+  }
+  return "generic";
+}
+
+function remotePlatformLabel(platform) {
+  if (platform === "github") return "GitHub";
+  if (platform === "gitlab") return "GitLab";
+  if (platform === "bitbucket") return "Bitbucket";
+  if (platform === "gitea") return "Gitea / Forgejo";
+  return "Web";
+}
+
 function sampleState() {
   const files = [
     { state: "M", file: "src/views/HistoryPanel.tsx", extra: "+28 -6" },
@@ -3894,6 +4019,18 @@ function sampleState() {
         agent: { available: true, loaded: true, keyCount: 1, message: "ssh-agent 已加载 1 个 key。" },
         credentialManager: { available: true, name: "Git Credential Manager", version: "Git Credential Manager 2.x", message: "Git Credential Manager 可用。" },
         commands: ["git remote -v", "ssh-add -l", "ssh -T git@github.com", "git credential-manager version", "git credential-manager diagnose"],
+      },
+      pullRequest: {
+        available: true,
+        url: "https://github.com/example/atlas-dashboard/compare/main...feature%2Fvisual-history?expand=1",
+        source: "feature/visual-history",
+        target: "main",
+        remote: "origin",
+        remoteUrl: "git@github.com:example/atlas-dashboard.git",
+        platform: "github",
+        platformLabel: "GitHub",
+        title: "创建 Pull Request",
+        reason: "",
       },
       incoming: [
         { sha: "b91a4d3c22aa", short: "b91a4d3", author: "Nora", time: "18 分钟前", message: "远端补充发布说明", refs: "origin/feature/visual-history", parents: [] },

@@ -3479,6 +3479,92 @@ body.resizing .workbench-resizer-y::before {
   line-height: 1.45;
 }
 
+.pr-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(92, 169, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(92, 169, 255, 0.06);
+}
+
+.pr-card-muted {
+  border-color: var(--line-soft);
+  background: var(--field);
+}
+
+.pr-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pr-card-head > div,
+.pr-card-muted .pr-card-head {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pr-card-head strong,
+.pr-card-head span,
+.pr-route,
+.pr-link-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-card-head strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.pr-card-head span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pr-route {
+  flex: 0 1 auto;
+  max-width: 48%;
+  padding: 3px 8px;
+  border: 1px solid rgba(92, 169, 255, 0.34);
+  border-radius: 999px;
+  color: var(--blue);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.pr-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pr-link-row code {
+  display: block;
+  min-height: 28px;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 750;
+}
+
 .upstream-panel {
   display: grid;
   gap: 8px;
