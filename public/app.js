@@ -33,6 +33,7 @@ const state = {
   selectedStash: "",
   selectedTag: "",
   selectedRecoveryRef: "",
+  recoveryFilter: { query: "", branch: "", action: "" },
   historyPlan: null,
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
@@ -2469,14 +2470,18 @@ function selectTag(name) {
 
 function renderRecoveryTab() {
   const points = state.data?.recoveryPoints || [];
+  const filteredPoints = filteredRecoveryPoints(points);
   if (state.selectedRecoveryRef && !points.some((point) => point.ref === state.selectedRecoveryRef)) {
     state.selectedRecoveryRef = "";
   }
-  if (!state.selectedRecoveryRef && points.length) state.selectedRecoveryRef = points[0].ref;
-  const selected = points.find((point) => point.ref === state.selectedRecoveryRef);
+  if (state.selectedRecoveryRef && !filteredPoints.some((point) => point.ref === state.selectedRecoveryRef)) {
+    state.selectedRecoveryRef = "";
+  }
+  if (!state.selectedRecoveryRef && filteredPoints.length) state.selectedRecoveryRef = filteredPoints[0].ref;
+  const selected = filteredPoints.find((point) => point.ref === state.selectedRecoveryRef);
   els.detailNode.style.borderColor = "var(--purple)";
   els.detailTitle.textContent = "恢复点";
-  els.detailSub.textContent = points.length ? `${points.length} 个可恢复位置` : "没有恢复点";
+  els.detailSub.textContent = points.length ? `${filteredPoints.length} / ${points.length} 个可恢复位置` : "没有恢复点";
   setActiveDiff(null);
   if (!points.length) {
     els.detailBody.innerHTML = `
@@ -2489,14 +2494,100 @@ function renderRecoveryTab() {
   }
   els.detailBody.innerHTML = `
     <div class="recovery-layout">
+      ${recoveryFilterHtml(points, filteredPoints)}
       <div class="recovery-list">
-        ${points.map((point) => recoveryRowHtml(point, point.ref === state.selectedRecoveryRef)).join("")}
+        ${
+          filteredPoints.length
+            ? filteredPoints.map((point) => recoveryRowHtml(point, point.ref === state.selectedRecoveryRef)).join("")
+            : `<div class="empty-panel compact"><span>没有匹配的恢复点。可以调整搜索、分支或动作筛选。</span></div>`
+        }
       </div>
       <div class="recovery-detail">
-        ${selected ? recoveryDetailHtml(selected) : ""}
+        ${selected ? recoveryDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一个恢复点查看详情。</span></div>`}
       </div>
     </div>
   `;
+}
+
+function recoveryFilterHtml(points, filteredPoints) {
+  const filter = state.recoveryFilter || {};
+  const branches = uniqueSorted(points.map((point) => point.branch || "HEAD"));
+  const actions = uniqueRecoveryActions(points);
+  const active = recoveryFilterActive();
+  const deleteText = filteredPoints.length === points.length ? "删除全部" : "删除筛选结果";
+  return `
+    <div class="recovery-filterbar">
+      <input data-recovery-filter="query" autocomplete="off" placeholder="搜索恢复点、提交、分支" value="${escapeAttr(filter.query || "")}" />
+      <select data-recovery-filter="branch">
+        <option value="">全部分支</option>
+        ${branches.map((branch) => `<option value="${escapeAttr(branch)}" ${branch === filter.branch ? "selected" : ""}>${escapeHtml(branch)}</option>`).join("")}
+      </select>
+      <select data-recovery-filter="action">
+        <option value="">全部动作</option>
+        ${actions.map((item) => `<option value="${escapeAttr(item.value)}" ${item.value === filter.action ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+      </select>
+      <div class="recovery-filter-actions">
+        <button class="mini-btn" data-recovery-filter-reset type="button" ${active ? "" : "disabled"}>重置</button>
+        <button class="mini-btn danger" data-recovery-bulk-delete type="button" ${filteredPoints.length ? "" : "disabled"}>
+          <span>${deleteText}</span><span class="command-hint">update-ref -d</span>
+        </button>
+      </div>
+      <div class="recovery-filter-count">${escapeHtml(`显示 ${filteredPoints.length} / ${points.length} 个恢复点`)}</div>
+    </div>
+  `;
+}
+
+function filteredRecoveryPoints(points = state.data?.recoveryPoints || []) {
+  const filter = state.recoveryFilter || {};
+  const query = String(filter.query || "").trim().toLowerCase();
+  return points.filter((point) => {
+    if (filter.branch && (point.branch || "HEAD") !== filter.branch) return false;
+    if (filter.action && recoveryActionValue(point) !== filter.action) return false;
+    if (!query) return true;
+    return recoverySearchText(point).includes(query);
+  });
+}
+
+function recoveryFilterActive() {
+  const filter = state.recoveryFilter || {};
+  return Boolean(filter.query || filter.branch || filter.action);
+}
+
+function recoverySearchText(point) {
+  return [
+    point.ref,
+    point.shortRef,
+    point.sha,
+    point.short,
+    point.subject,
+    point.branch,
+    point.action,
+    point.actionLabel,
+    point.time,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function uniqueRecoveryActions(points) {
+  const seen = new Map();
+  points.forEach((point) => {
+    const value = recoveryActionValue(point);
+    if (!value || seen.has(value)) return;
+    seen.set(value, point.actionLabel || value);
+  });
+  return [...seen.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
+}
+
+function recoveryActionValue(point) {
+  return point.action || point.actionLabel || "";
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 }
 
 function recoveryRowHtml(point, active) {
@@ -2626,6 +2717,57 @@ function selectRecoveryPoint(ref) {
   if (!ref || ref === state.selectedRecoveryRef) return;
   state.selectedRecoveryRef = ref;
   renderInspector();
+}
+
+function updateRecoveryFilter(key, value, input) {
+  if (!["query", "branch", "action"].includes(key)) return;
+  state.recoveryFilter = { ...(state.recoveryFilter || {}), [key]: value };
+  renderInspector();
+  if (input && key === "query") {
+    const cursor = input.selectionStart ?? value.length;
+    requestAnimationFrame(() => {
+      const next = els.detailBody.querySelector('[data-recovery-filter="query"]');
+      if (!next) return;
+      next.focus();
+      next.setSelectionRange(cursor, cursor);
+    });
+  }
+}
+
+function resetRecoveryFilter() {
+  state.recoveryFilter = { query: "", branch: "", action: "" };
+  renderInspector();
+}
+
+async function deleteFilteredRecoveryPoints(button) {
+  if (!state.data) return;
+  const points = filteredRecoveryPoints();
+  if (!points.length) {
+    toast("当前筛选结果没有可删除的恢复点");
+    return;
+  }
+  const filter = state.recoveryFilter || {};
+  const conditions = [
+    filter.query ? `搜索：${filter.query}` : "",
+    filter.branch ? `分支：${filter.branch}` : "",
+    filter.action ? `动作：${points[0]?.actionLabel || filter.action}` : "",
+  ].filter(Boolean);
+  const scopeText = conditions.length ? conditions.join("\n") : "未设置筛选，将删除当前全部恢复点";
+  const message = `确认删除当前列表里的 ${points.length} 个恢复点？\n\n${scopeText}\n\n命令：git update-ref -d <恢复点引用>\n\n删除后不能再通过 Forkline 恢复到这些引用。`;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRecoveryPoints", refs: points.map((point) => point.ref) }) });
+    toast(result.output || "恢复点已删除");
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedRecoveryRef = filteredRecoveryPoints()[0]?.ref || "";
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function runRecoveryAction(action, ref, button) {
@@ -4121,6 +4263,16 @@ els.detailBody.addEventListener("submit", (event) => {
   event.preventDefault();
   rewordSelectedCommit(form);
 });
+els.detailBody.addEventListener("input", (event) => {
+  const filter = event.target.closest("[data-recovery-filter]");
+  if (!filter || state.selectedTab !== "recovery") return;
+  updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
+});
+els.detailBody.addEventListener("change", (event) => {
+  const filter = event.target.closest("[data-recovery-filter]");
+  if (!filter || state.selectedTab !== "recovery") return;
+  updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
+});
 els.detailBody.addEventListener("click", (event) => {
   const syncAction = event.target.closest("[data-sync-action]");
   if (syncAction) {
@@ -4157,6 +4309,18 @@ els.detailBody.addEventListener("click", (event) => {
     if (!recoveryAction.disabled) {
       runRecoveryAction(recoveryAction.dataset.recoveryAction, recoveryAction.dataset.recoveryRef || state.selectedRecoveryRef || "", recoveryAction).catch((error) => toast(error.message));
     }
+    return;
+  }
+  const recoveryFilterReset = event.target.closest("[data-recovery-filter-reset]");
+  if (recoveryFilterReset) {
+    event.preventDefault();
+    resetRecoveryFilter();
+    return;
+  }
+  const recoveryBulkDelete = event.target.closest("[data-recovery-bulk-delete]");
+  if (recoveryBulkDelete) {
+    event.preventDefault();
+    if (!recoveryBulkDelete.disabled) deleteFilteredRecoveryPoints(recoveryBulkDelete).catch((error) => toast(error.message));
     return;
   }
   const recoveryRow = event.target.closest(".recovery-row[data-recovery-ref]");

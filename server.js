@@ -454,6 +454,9 @@ async function runAction(body) {
   if (action === "deleteRecoveryPoint") {
     return deleteRecoveryPoint(body);
   }
+  if (action === "deleteRecoveryPoints") {
+    return deleteRecoveryPoints(body);
+  }
   if (action === "stageFile") {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["add", "--", file], { timeout: 60000 }));
@@ -605,6 +608,7 @@ function actionLabel(body = {}) {
     dropStash: ref ? `删除储藏 ${ref}` : "删除储藏",
     restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
     deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",
+    deleteRecoveryPoints: Array.isArray(body.refs) ? `批量删除 ${body.refs.length} 个恢复点` : "批量删除恢复点",
     stageFile: file ? `暂存文件 ${file}` : "暂存文件",
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
     discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
@@ -1569,6 +1573,20 @@ async function deleteRecoveryPoint(body) {
   const ref = await ensureRecoveryRef(body.ref);
   await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
   return { ok: true, output: `已删除恢复点 ${shortRecoveryRef(ref)}` };
+}
+
+async function deleteRecoveryPoints(body) {
+  const refs = [...new Set((Array.isArray(body.refs) ? body.refs : []).map((item) => String(item || "").trim()).filter(Boolean))];
+  if (!refs.length) throw new Error("请选择要删除的恢复点");
+  if (refs.length > 80) throw new Error("一次最多删除 80 个恢复点，请先缩小筛选范围。");
+  const safeRefs = [];
+  for (const ref of refs) {
+    safeRefs.push(await ensureRecoveryRef(ref));
+  }
+  for (const ref of safeRefs) {
+    await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
+  }
+  return { ok: true, output: `已删除 ${safeRefs.length} 个恢复点` };
 }
 
 async function ensureRecoveryRef(value) {

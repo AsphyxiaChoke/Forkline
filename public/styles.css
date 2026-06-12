@@ -112,6 +112,7 @@ body.modal-open {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -2238,6 +2239,60 @@ body.resizing .workbench-resizer-y::before {
 .recovery-row.active {
   border-color: rgba(156, 124, 255, 0.55);
   background: rgba(156, 124, 255, 0.08);
+}
+
+.recovery-filterbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.recovery-filterbar input,
+.recovery-filterbar select {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  outline: none;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recovery-filterbar input:focus,
+.recovery-filterbar select:focus {
+  border-color: rgba(156, 124, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(156, 124, 255, 0.14);
+}
+
+.recovery-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recovery-filter-actions .mini-btn {
+  flex: 1 1 108px;
+  min-width: 0;
+}
+
+.recovery-filter-count {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stash-row-top {
