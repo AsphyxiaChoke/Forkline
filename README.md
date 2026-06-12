@@ -18,6 +18,7 @@
 - 同步页可为当前分支生成 Pull Request / Merge Request 创建链接，支持 GitHub、GitLab、Bitbucket 和常见 Gitea / Forgejo 网页远端；入口也在命令面板和当前分支右键菜单中，可直接打开或复制链接。
 - 同步页的待拉取 / 待推送提交可直接点击预览文件列表和 Diff，并可最大化对照查看。
 - 提交详情和提交右键菜单支持在 GitHub / GitLab / Bitbucket / Gitea 等网页远端中打开当前提交。
+- 提交详情、提交右键菜单和命令面板支持补丁工作流：可把任意提交导出为 `git format-patch` 文本、复制或下载 `.patch` 文件，也可粘贴 `.patch` / `git diff` 内容并用 `git apply` 应用到工作区或直接暂存。
 - 右侧“日志”页会显示进行中的 Git 操作，并记录最近 Git 操作的成功/失败、耗时和 Git 输出摘要，便于排查哪个操作正在卡住或刚刚失败。
 - 支持当前分支 upstream 管理：同步页可从已抓取的远端分支中设置 upstream 或取消 upstream；远端分支右键菜单也可直接设为当前分支 upstream。
 - 支持普通推送保护：当前分支落后 upstream 或与 upstream 分叉时，Forkline 会阻止普通 `git push`，同步页显示中文保护原因，并引导先“变基拉取”或在确认改写历史时使用安全强推。
@@ -92,6 +93,8 @@ http://127.0.0.1:5177
 合并分支时如果出现冲突，工作区会标出冲突文件，并显示“继续合并 / 中止合并”。冲突文件右键菜单和底部 Diff 面板可执行“使用当前版本 / 使用对方版本”，对应 `git checkout --ours -- <文件>` / `git checkout --theirs -- <文件>` 后自动 `git add <文件>`；解决并暂存后继续，不想保留这次合并则中止。变基、挑选、还原冲突也复用同一套文件级解决入口。
 
 分支右键菜单里的“与当前分支比较”会读取 `git rev-list --left-right --count <当前分支>...<目标分支>`，并用 `git diff <当前分支>...<目标分支>` 展示目标分支相对共同祖先带来的文件变化。这个比较支持本地分支和已抓取到的远端分支。
+
+补丁导出会执行 `git format-patch -1 <提交> --stdout`，适合把单个提交发给别人或跨仓库搬运改动。应用补丁会先执行 `git apply --check` 预检；勾选“应用后暂存”时使用 `git apply --index`，不勾选时只写入工作区。如果当前分支内容和补丁生成时不一致，Git 会拒绝应用，Forkline 会显示中文原因。
 
 右侧“分支”页的整理列表会读取本地分支最后提交、upstream 状态和 `git branch --merged HEAD`。单个删除和“删除已合并”都执行安全删除 `git branch -d <分支>`；如果分支还没有完全合并，Git 会阻止删除。Forkline 默认保护当前分支和 `main` / `master` / `develop` / `dev` / `trunk` 这类主干分支，也会禁用被其他 worktree 占用的分支。
 

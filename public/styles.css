@@ -4824,6 +4824,23 @@ body.resizing .workbench-resizer-y::before {
   width: min(680px, calc(100vw - 32px));
 }
 
+.patch-dialog {
+  width: min(780px, calc(100vw - 32px));
+}
+
+.patch-form-body {
+  gap: 12px;
+}
+
+.patch-form-body textarea {
+  min-height: min(360px, 45vh);
+  max-height: 56vh;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .checkout-warning {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);

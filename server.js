@@ -231,6 +231,47 @@ async function readCommit(sha) {
   };
 }
 
+async function readCommitPatch(sha) {
+  if (!currentRepo) {
+    const sample = sampleState();
+    const commit = sample.commits.find((item) => item.sha === sha) || sample.commits[0];
+    return {
+      ok: true,
+      sha: commit.sha,
+      short: commit.short,
+      fileName: commitPatchFileName(commit.short || "sample", commit.message || "forkline-sample"),
+      patch: [
+        `From ${commit.sha} Mon Sep 17 00:00:00 2001`,
+        `Subject: [PATCH] ${commit.message}`,
+        "",
+        "diff --git a/README.md b/README.md",
+        "--- a/README.md",
+        "+++ b/README.md",
+        "@@ -1 +1 @@",
+        "-Forkline 示例",
+        "+Forkline 示例补丁",
+        "",
+      ].join("\n"),
+      command: `git format-patch -1 ${commit.short} --stdout`,
+    };
+  }
+  const target = await resolveCommit(sha);
+  const [patch, shortOutput, subjectOutput] = await Promise.all([
+    git(currentRepo, ["format-patch", "-1", "--stdout", target], { maxBuffer: 1024 * 1024 * 12 }),
+    git(currentRepo, ["rev-parse", "--short", target], { timeout: 60000 }),
+    git(currentRepo, ["show", "-s", "--format=%s", target], { maxBuffer: 1024 * 256 }),
+  ]);
+  const short = shortOutput.trim();
+  return {
+    ok: true,
+    sha: target,
+    short,
+    fileName: commitPatchFileName(short, subjectOutput.trim()),
+    patch,
+    command: `git format-patch -1 ${short} --stdout`,
+  };
+}
+
 async function readFileHistory(filePath, refInput = "") {
   const file = normalizeRepoFile(filePath);
   if (!currentRepo) {
@@ -870,6 +911,9 @@ async function runAction(body) {
   if (action === "branchFromStash") {
     return branchFromStash(body);
   }
+  if (action === "applyPatch") {
+    return applyPatchText(body);
+  }
   if (action === "restoreRecoveryPoint") {
     return restoreRecoveryPoint(body);
   }
@@ -1060,6 +1104,7 @@ function actionLabel(body = {}) {
     popStash: ref ? `弹出储藏 ${ref}` : "弹出储藏",
     dropStash: ref ? `删除储藏 ${ref}` : "删除储藏",
     branchFromStash: branch && ref ? `从储藏 ${ref} 创建分支 ${branch}` : "从储藏创建分支",
+    applyPatch: body.stage ? "应用补丁并暂存" : "应用补丁到工作区",
     restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
     deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",
     deleteRecoveryPoints: Array.isArray(body.refs) ? `批量删除 ${body.refs.length} 个恢复点` : "批量删除恢复点",
@@ -1839,6 +1884,33 @@ async function branchFromStash(body) {
   };
 }
 
+async function applyPatchText(body) {
+  const patch = normalizePatchText(body.patch);
+  const stage = Boolean(body.stage);
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再应用补丁。`);
+  const filePath = writeTempFile("forkline-apply-patch-", patch, ".patch");
+  const checkArgs = ["apply", "--check", "--binary"];
+  const applyArgs = ["apply", "--binary"];
+  if (stage) {
+    checkArgs.push("--index");
+    applyArgs.push("--index");
+  }
+  checkArgs.push(filePath);
+  applyArgs.push(filePath);
+  try {
+    await git(currentRepo, checkArgs, { timeout: 120000, maxBuffer: 1024 * 1024 * 8 });
+    const output = await git(currentRepo, applyArgs, { timeout: 120000, maxBuffer: 1024 * 1024 * 8 });
+    return {
+      ok: true,
+      output: output.trim() || (stage ? "已应用补丁并暂存改动" : "已应用补丁到工作区"),
+      state: await readState(),
+    };
+  } finally {
+    removeQuietly(filePath);
+  }
+}
+
 async function ignoreWorktreePath(body) {
   const file = normalizeRepoFile(body.file);
   const mode = normalizeIgnoreMode(body.mode);
@@ -2543,6 +2615,25 @@ function normalizeSha(value) {
   const sha = String(value || "").trim();
   if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw new Error("提交 SHA 不合法");
   return sha;
+}
+
+function normalizePatchText(value) {
+  const text = String(value || "").replace(/\r\n/g, "\n").trimEnd();
+  if (!text.trim()) throw new Error("请粘贴补丁内容");
+  if (Buffer.byteLength(text, "utf8") > 1024 * 1024 * 8) throw new Error("补丁太大，请拆分后再应用。");
+  if (!text.includes("diff --git ") && !text.includes("--- ") && !text.includes("+++ ")) {
+    throw new Error("补丁内容不像 git patch / diff。请确认粘贴的是完整补丁。");
+  }
+  return `${text}\n`;
+}
+
+function commitPatchFileName(shortSha, subject) {
+  const slug = String(subject || "commit")
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72) || "commit";
+  return `${String(shortSha || "commit").slice(0, 12)}-${slug}.patch`;
 }
 
 function writeTempFile(prefix, content, extension = ".tmp") {
@@ -4535,6 +4626,9 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("index.lock") && (lower.includes("unable to create") || lower.includes("file exists"))) {
     return indexLockMessage(text, context);
   }
+  if (lower.includes("patch failed") || lower.includes("does not apply") || lower.includes("corrupt patch") || lower.includes("error: patch")) {
+    return `补丁无法应用。常见原因是当前分支内容和补丁生成时不一致、补丁已经应用过，或补丁内容不完整。\n\nGit 输出：${shortText(text, 1200)}`;
+  }
   if (lower.includes("your local changes") && lower.includes("would be overwritten")) {
     return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
   }
@@ -4891,6 +4985,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/commit") {
       sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/patch") {
+      sendJson(res, 200, await readCommitPatch(parsed.searchParams.get("sha") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/file-history") {

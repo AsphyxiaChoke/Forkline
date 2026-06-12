@@ -130,6 +130,12 @@ const els = {
   initOpenToggle: $("#initOpenToggle"),
   initSubmit: $("#initSubmit"),
   initCancel: $("#initCancel"),
+  patchModal: $("#patchModal"),
+  patchForm: $("#patchForm"),
+  patchTextInput: $("#patchTextInput"),
+  patchStageToggle: $("#patchStageToggle"),
+  patchSubmit: $("#patchSubmit"),
+  patchCancel: $("#patchCancel"),
   commandPalette: $("#commandPalette"),
   commandInput: $("#commandInput"),
   commandList: $("#commandList"),
@@ -1095,6 +1101,7 @@ function otherModalOpen() {
     els.stashRestoreModal,
     els.cloneModal,
     els.initModal,
+    els.patchModal,
     els.branchModal,
     els.tagModal,
     els.mainlineModal,
@@ -1200,6 +1207,9 @@ function commandPaletteItems() {
     commandItem("openPullRequest", pullRequest.title || "创建 PR", `为 ${branch} 打开 ${pullRequest.platformLabel || "远端"} PR/MR 页面`, "web", "pull request merge request pr mr github gitlab", Boolean(pullRequest.available), () => runSyncPullRequestAction("open")),
     commandItem("copyPullRequest", "复制 PR 链接", "复制当前分支的 PR/MR 创建地址", "copy", "pull request merge request pr mr clipboard", Boolean(pullRequest.available), () => runSyncPullRequestAction("copy")),
     commandItem("newBranch", "新建分支", hasCommit ? `从选中提交 ${commit.short} 创建本地分支` : "从当前 HEAD 创建本地分支", "git branch", "branch checkout commit", hasRepo, openBranchModal),
+    commandItem("applyPatch", "应用补丁", "粘贴 .patch / diff 到当前仓库", "git apply", "patch diff apply format-patch", realRepo, openPatchModal),
+    commandItem("copyPatch", "复制选中提交补丁", "把选中提交导出为 format-patch 文本", "format-patch", "patch diff copy", hasCommit, () => copyCommitPatch(commit)),
+    commandItem("downloadPatch", "下载选中提交补丁", "把选中提交保存为 .patch 文件", ".patch", "patch diff download format-patch", hasCommit, () => downloadCommitPatch(commit)),
     commandItem("createTag", "创建 Tag", "基于当前提交创建 Tag", "git tag", "release tag", hasCommit, () => openTagModal(commit)),
     commandItem("copySha", "复制提交 SHA", "复制当前选中提交的完整 SHA", "复制", "clipboard commit sha", hasCommit, async () => {
       await copyText(commit.sha);
@@ -1796,6 +1806,14 @@ async function runCommitContextAction(action) {
     toast("已复制提交信息");
     return;
   }
+  if (action === "copyPatch") {
+    await copyCommitPatch(commit);
+    return;
+  }
+  if (action === "downloadPatch") {
+    await downloadCommitPatch(commit);
+    return;
+  }
   if (action === "openRemote") {
     openRemoteCommit(commit);
     return;
@@ -1838,6 +1856,14 @@ async function runCommitToolAction(action, sha) {
     await loadCommit(commit.sha);
     renderInspector();
     openBranchModal();
+    return;
+  }
+  if (action === "copyPatch") {
+    await copyCommitPatch(commit);
+    return;
+  }
+  if (action === "downloadPatch") {
+    await downloadCommitPatch(commit);
     return;
   }
   if (action === "openRemote") {
@@ -2368,6 +2394,43 @@ function openRemoteCommit(commit) {
   toast("已打开远端提交页面");
 }
 
+async function fetchCommitPatch(commit) {
+  if (!commit?.sha) throw new Error("没有选中的提交");
+  return api(`/api/patch?sha=${encodeURIComponent(commit.sha)}`);
+}
+
+async function copyCommitPatch(commit) {
+  const result = await fetchCommitPatch(commit);
+  await copyText(result.patch || "");
+  toast(`已复制补丁：${result.fileName || result.short || commit.short}`);
+}
+
+async function downloadCommitPatch(commit) {
+  const result = await fetchCommitPatch(commit);
+  downloadTextFile(result.fileName || `${commit.short || "commit"}.patch`, result.patch || "", "text/x-patch;charset=utf-8");
+  toast(`已下载补丁：${result.fileName || commit.short}`);
+}
+
+function downloadTextFile(fileName, text, type = "text/plain;charset=utf-8") {
+  const blob = new Blob([String(text || "")], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeDownloadName(fileName);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function safeDownloadName(value) {
+  const name = String(value || "forkline.patch")
+    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return name || "forkline.patch";
+}
+
 async function runSyncPullRequestAction(action) {
   const pullRequest = state.data?.sync?.pullRequest || {};
   if (!pullRequest.available || !pullRequest.url) {
@@ -2803,6 +2866,8 @@ function renderDetailsTab(commit, detail) {
     <div class="commit-tools">
       <button class="mini-btn" data-commit-tool="branch" data-sha="${escapeAttr(commit.sha)}" type="button" title="git branch：从此提交创建本地分支"><span>新建分支</span><span class="command-hint">git branch</span></button>
       <button class="mini-btn" data-commit-tool="openRemote" data-sha="${escapeAttr(commit.sha)}" type="button" ${remoteUrl ? "" : "disabled"} title="${remoteUrl ? `打开远端提交：${escapeAttr(remoteUrl)}` : "当前仓库没有可识别的网页远端 URL"}"><span>远端查看</span><span class="command-hint">web</span></button>
+      <button class="mini-btn" data-commit-tool="copyPatch" data-sha="${escapeAttr(commit.sha)}" type="button" title="git format-patch -1：复制此提交补丁"><span>复制补丁</span><span class="command-hint">format-patch</span></button>
+      <button class="mini-btn" data-commit-tool="downloadPatch" data-sha="${escapeAttr(commit.sha)}" type="button" title="下载此提交的 .patch 文件"><span>下载补丁</span><span class="command-hint">.patch</span></button>
       <button class="mini-btn" data-commit-tool="cherryPick" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支"}"><span>挑选</span><span class="command-hint">${isMergeCommit ? "git cherry-pick -m" : "git cherry-pick"}</span></button>
       <button class="mini-btn" data-commit-tool="revert" data-sha="${escapeAttr(commit.sha)}" type="button" title="${isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交"}"><span>还原</span><span class="command-hint">${isMergeCommit ? "git revert -m" : "git revert"}</span></button>
       <button class="mini-btn" data-commit-tool="resetSoft" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --soft：移动当前分支，改动保留在已暂存区"><span>软重置</span><span class="command-hint">git reset --soft</span></button>
@@ -6343,6 +6408,59 @@ function closeInitModal() {
   document.body.classList.remove("modal-open");
 }
 
+function openPatchModal() {
+  if (!state.data || state.data.repo.isSample) {
+    toast("请先打开真实 Git 仓库");
+    return;
+  }
+  els.patchTextInput.value = "";
+  els.patchStageToggle.checked = true;
+  els.patchModal.classList.add("show");
+  els.patchModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  setTimeout(() => els.patchTextInput.focus(), 0);
+}
+
+function closePatchModal() {
+  els.patchModal.classList.remove("show");
+  els.patchModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+}
+
+async function submitPatchForm(event) {
+  event.preventDefault();
+  if (!state.data || state.data.repo.isSample) {
+    toast("请先打开真实 Git 仓库");
+    return;
+  }
+  const patch = els.patchTextInput.value;
+  const stage = els.patchStageToggle.checked;
+  if (!patch.trim()) {
+    toast("请粘贴补丁内容");
+    els.patchTextInput.focus();
+    return;
+  }
+  const command = stage ? "git apply --index" : "git apply";
+  if (!confirm(`确认应用补丁？\n\n命令：${command}\n${stage ? "补丁会应用并进入暂存区。" : "补丁会应用到工作区，不会自动暂存。"}`)) return;
+  try {
+    els.patchSubmit.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "applyPatch", patch, stage }),
+    });
+    closePatchModal();
+    toast(result.output || "补丁已应用");
+    state.commitDetails.clear();
+    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    els.patchSubmit.disabled = false;
+  }
+}
+
 async function submitInitForm(event) {
   event.preventDefault();
   const targetPath = els.initPathInput.value.trim();
@@ -7365,6 +7483,8 @@ els.cloneTargetInput.addEventListener("input", () => {
 });
 els.initForm.addEventListener("submit", submitInitForm);
 els.initCancel.addEventListener("click", closeInitModal);
+els.patchForm.addEventListener("submit", submitPatchForm);
+els.patchCancel.addEventListener("click", closePatchModal);
 els.commandClose.addEventListener("click", closeCommandPalette);
 els.commandPalette.addEventListener("click", (event) => {
   if (event.target === els.commandPalette) closeCommandPalette();
@@ -7402,6 +7522,9 @@ els.cloneModal.addEventListener("click", (event) => {
 });
 els.initModal.addEventListener("click", (event) => {
   if (event.target === els.initModal) closeInitModal();
+});
+els.patchModal.addEventListener("click", (event) => {
+  if (event.target === els.patchModal) closePatchModal();
 });
 els.mainlineForm.addEventListener("submit", (event) => {
   submitMainlineForm(event).catch((error) => toast(error.message));
@@ -7836,6 +7959,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
   if (event.key === "Escape" && els.cloneModal.classList.contains("show")) closeCloneModal();
   if (event.key === "Escape" && els.initModal.classList.contains("show")) closeInitModal();
+  if (event.key === "Escape" && els.patchModal.classList.contains("show")) closePatchModal();
   if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
   if (event.key === "Escape" && els.mainlineModal.classList.contains("show")) closeMainlineModal();

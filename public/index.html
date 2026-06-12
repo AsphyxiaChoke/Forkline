@@ -201,6 +201,31 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="patchModal" class="checkout-modal" aria-hidden="true">
+    <form id="patchForm" class="checkout-dialog patch-dialog" role="dialog" aria-modal="true" aria-labelledby="patchModalTitle">
+      <div class="checkout-warning">
+        <div class="checkout-icon branch-icon">P</div>
+        <div>
+          <strong id="patchModalTitle">应用补丁</strong>
+          <span>粘贴 `.patch` 或 `git diff` 内容，应用到当前仓库。</span>
+        </div>
+      </div>
+      <div class="branch-form-body patch-form-body">
+        <label class="edit-field">
+          <span>补丁内容</span>
+          <textarea id="patchTextInput" autocomplete="off" spellcheck="false" placeholder="粘贴 git format-patch 或 git diff 生成的内容"></textarea>
+        </label>
+        <label class="amend-toggle branch-check-toggle">
+          <input id="patchStageToggle" type="checkbox" checked />
+          <span>应用后暂存</span>
+        </label>
+      </div>
+      <div class="checkout-actions branch-actions">
+        <button id="patchSubmit" class="checkout-choice primary" type="submit">应用补丁</button>
+        <button id="patchCancel" class="checkout-choice" type="button">取消</button>
+      </div>
+    </form>
+  </div>
   <div id="commandPalette" class="checkout-modal command-modal" aria-hidden="true">
     <div class="checkout-dialog command-dialog" role="dialog" aria-modal="true" aria-labelledby="commandPaletteTitle">
       <div class="checkout-warning command-head">
@@ -226,6 +251,8 @@
     <div class="context-separator" role="separator"></div>
     <button data-commit-action="copySha" type="button">复制 SHA</button>
     <button data-commit-action="copyMessage" type="button">复制提交信息</button>
+    <button data-commit-action="copyPatch" type="button"><span class="menu-label">复制补丁</span><span class="command-hint">format-patch</span></button>
+    <button data-commit-action="downloadPatch" type="button"><span class="menu-label">下载补丁</span><span class="command-hint">.patch</span></button>
     <button data-commit-action="openRemote" type="button"><span class="menu-label">在远端查看</span><span class="command-hint">web</span></button>
     <button data-commit-action="editMessage" type="button">修改提交信息</button>
     <div class="context-separator" role="separator"></div>
