@@ -357,6 +357,9 @@ async function runAction(body) {
   if (action === "rewordCommit") {
     return commandResult(await rewordCommit(body));
   }
+  if (action === "rewriteHistoryCommit") {
+    return rewriteHistoryCommit(body);
+  }
   if (action === "cherryPickCommit") {
     return cherryPickCommit(body);
   }
@@ -424,6 +427,7 @@ function actionLabel(body = {}) {
     commit: "创建提交",
     amendCommit: "追加到上一次提交",
     rewordCommit: body.sha ? `修改提交信息 ${shortText(body.sha, 12)}` : "修改历史提交信息",
+    rewriteHistoryCommit: body.sha ? `${historyRewriteActionLabel(body.mode)} ${shortText(body.sha, 12)}` : "编辑历史提交",
     cherryPickCommit: body.sha ? `挑选提交 ${shortText(body.sha, 12)}` : "挑选提交",
     revertCommit: body.sha ? `还原提交 ${shortText(body.sha, 12)}` : "还原提交",
     resetToCommit: body.sha ? `${resetModeLabel(body.mode)}到 ${shortText(body.sha, 12)}` : "重置到提交",
@@ -431,6 +435,13 @@ function actionLabel(body = {}) {
     checkoutRemoteBranch: ref ? `签出远端分支 ${ref}${checkoutModeText(body.mode)}` : "签出远端分支",
   };
   return labels[action] || `Git 操作 ${action || "未知"}`;
+}
+
+function historyRewriteActionLabel(mode) {
+  if (mode === "squash") return "压缩提交";
+  if (mode === "fixup") return "修补提交";
+  if (mode === "drop") return "丢弃提交";
+  return "编辑提交";
 }
 
 function resetModeLabel(mode) {
@@ -778,6 +789,48 @@ async function rewordCommit(body) {
   return "提交信息已修改，历史 SHA 已重写";
 }
 
+async function rewriteHistoryCommit(body) {
+  const mode = normalizeHistoryRewriteMode(body.mode);
+  const target = await resolveCommit(body.sha);
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
+  await ensureCleanWorktree("编辑历史提交前，请先提交、暂存或还原工作区改动");
+  const currentBranch = await currentLocalBranchForRewrite();
+  await ensureCommitInCurrentHistory(target);
+  const parents = await commitParents(target);
+  if (parents.length > 1) throw new Error("暂不支持对 merge 提交执行压缩、修补或丢弃");
+  if ((mode === "squash" || mode === "fixup") && parents.length === 0) {
+    throw new Error("根提交没有父提交，不能压缩或修补进父提交");
+  }
+
+  const base = mode === "drop" ? target : parents[0];
+  const baseParents = base ? await commitParents(base) : [];
+  const rebaseArgs = baseParents.length ? ["rebase", "-i", `${base}^`] : ["rebase", "-i", "--root"];
+  await ensureLinearRewriteRange(baseParents.length ? `${base}^` : "--root", mode);
+
+  const sequenceFile = writeTempFile("forkline-history-sequence-", sequenceEditorScript(target, mode), ".cjs");
+  const editorFile = writeTempFile("forkline-noop-editor-", "process.exit(0);\n", ".cjs");
+  try {
+    const output = await git(currentRepo, rebaseArgs, {
+      timeout: 180000,
+      env: {
+        GIT_SEQUENCE_EDITOR: `"${process.execPath}" "${sequenceFile}"`,
+        GIT_EDITOR: `"${process.execPath}" "${editorFile}"`,
+      },
+    });
+    const newHead = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+    return commandResultWithSummary(`${historyRewriteResultLabel(mode)} ${target.slice(0, 7)}，当前分支 ${currentBranch} 的 HEAD 为 ${newHead}`, output);
+  } catch (error) {
+    if (detectRepoOperation(currentRepo)?.type !== "rebase") {
+      await git(currentRepo, ["rebase", "--abort"], { timeout: 60000 }).catch(() => "");
+    }
+    throw error;
+  } finally {
+    removeQuietly(sequenceFile);
+    removeQuietly(editorFile);
+  }
+}
+
 async function revertCommit(body) {
   const target = await resolveCommit(body.sha);
   const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
@@ -918,10 +971,59 @@ async function resolveCommit(value) {
   return (await git(currentRepo, ["rev-parse", "--verify", `${sha}^{commit}`])).trim();
 }
 
+async function currentLocalBranchForRewrite() {
+  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+    throw new Error("当前处于游离 HEAD，不能编辑分支历史。请先切换到本地分支。");
+  }
+  return branch;
+}
+
+async function ensureCleanWorktree(message) {
+  const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+  if (statusOutput.trim()) throw new Error(message);
+}
+
+async function ensureCommitInCurrentHistory(target) {
+  await git(currentRepo, ["merge-base", "--is-ancestor", target, "HEAD"]).catch(() => {
+    throw new Error("只能编辑当前分支历史中的提交");
+  });
+}
+
+async function commitParents(target) {
+  const line = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
+  return line.split(/\s+/).slice(1);
+}
+
+async function ensureLinearRewriteRange(upstream, mode) {
+  const args = upstream === "--root" ? ["rev-list", "--parents", "HEAD"] : ["rev-list", "--parents", `${upstream}..HEAD`];
+  const merges = (await git(currentRepo, args))
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/).filter(Boolean))
+    .filter((parts) => parts.length > 2);
+  if (merges.length) {
+    const first = merges[0][0]?.slice(0, 7) || "";
+    throw new Error(`这段历史里包含 merge 提交 ${first}。为避免破坏分支拓扑，暂不自动执行 ${historyRewriteActionLabel(mode)}。`);
+  }
+}
+
 function normalizeResetMode(value) {
   const mode = String(value || "mixed").trim().toLowerCase();
   if (["soft", "mixed", "hard"].includes(mode)) return mode;
   throw new Error("Reset 类型不合法");
+}
+
+function normalizeHistoryRewriteMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (["squash", "fixup", "drop"].includes(mode)) return mode;
+  throw new Error("历史编辑类型不合法");
+}
+
+function historyRewriteResultLabel(mode) {
+  if (mode === "squash") return "已将提交压缩进父提交";
+  if (mode === "fixup") return "已将提交修补进父提交";
+  if (mode === "drop") return "已丢弃提交";
+  return "已编辑提交";
 }
 
 function normalizeMainline(value, parentCount) {
@@ -945,17 +1047,18 @@ function writeTempFile(prefix, content, extension = ".tmp") {
   return filePath;
 }
 
-function sequenceEditorScript(targetSha) {
+function sequenceEditorScript(targetSha, action = "reword") {
   return `
 const fs = require("fs");
 const todoPath = process.argv[2];
 const target = ${JSON.stringify(targetSha)};
+const action = ${JSON.stringify(action)};
 const text = fs.readFileSync(todoPath, "utf8");
 const lines = text.split(/\\r?\\n/).map((line) => {
   const trimmed = line.trimStart();
   if (!trimmed.startsWith("pick ")) return line;
   const hash = trimmed.split(/\\s+/)[1] || "";
-  return target.startsWith(hash) ? line.replace(/^(\\s*)pick(\\s+)/, "$1reword$2") : line;
+  return target.startsWith(hash) ? line.replace(/^(\\s*)pick(\\s+)/, "$1" + action + "$2") : line;
 });
 fs.writeFileSync(todoPath, lines.join("\\n"), "utf8");
 `;
@@ -1469,6 +1572,9 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("previous cherry-pick is now empty") || lower.includes("the previous cherry-pick is now empty")) {
     return "这次挑选解决冲突后没有留下新的改动。可以跳过挑选，或中止这次挑选。";
   }
+  if (lower.includes("cannot 'squash' without a previous commit") || lower.includes("cannot 'fixup' without a previous commit")) {
+    return "这个提交前面没有可合并的提交，不能执行压缩或修补。";
+  }
   if (lower.includes("index.lock") && (lower.includes("unable to create") || lower.includes("file exists"))) {
     return indexLockMessage(text, context);
   }
@@ -1549,10 +1655,12 @@ function friendlyErrorMessage(error, context = {}) {
 }
 
 function actionOperationKind(action) {
-  if (String(action || "").toLowerCase().includes("cherrypick")) return "cherryPick";
-  if (String(action || "").toLowerCase().includes("revert")) return "revert";
-  if (String(action || "").toLowerCase().includes("merge")) return "merge";
-  if (String(action || "").toLowerCase().includes("rebase")) return "rebase";
+  const value = String(action || "").toLowerCase();
+  if (value.includes("cherrypick")) return "cherryPick";
+  if (value.includes("rewritehistorycommit") || value.includes("rewordcommit")) return "rebase";
+  if (value.includes("revert")) return "revert";
+  if (value.includes("merge")) return "merge";
+  if (value.includes("rebase")) return "rebase";
   return "";
 }
 

@@ -24,6 +24,7 @@
 - Merge commit 主线选择已接入：对 merge 提交执行 cherry-pick / revert 时不再禁用，而是弹出“选择主线”弹窗，显示父提交 1、父提交 2 的短 SHA，并把选择传给后端 `mainline` 参数，对应 `git cherry-pick -m` / `git revert -m`。
 - Rebase 分支工作流已接入：分支右键菜单新增“变基当前分支到此分支”，标注 `git rebase`；后端支持 `rebaseOntoRef`、`continueRebase`、`skipRebase`、`abortRebase`。遇到 `.git/rebase-merge` 或 `.git/rebase-apply` 时工作区显示“变基发生冲突”，冲突文件用红色标识，并提供“继续变基 / 跳过变基 / 中止变基”。
 - Rebase 风险提示已补齐：执行前会中文确认“会重写当前分支提交 SHA”，工作区不干净时阻止；冲突、没有正在变基、仍有未解决冲突等常见 Git 输出会转为中文提示。
+- 基础交互式历史编辑已接入：提交详情和提交右键菜单新增“压缩进父提交 / 修补进父提交 / 丢弃此提交”，分别标注 `git rebase -i squash`、`git rebase -i fixup`、`git rebase -i drop`；后端新增 `rewriteHistoryCommit`，会检查工作区干净、当前处于本地分支、目标提交属于当前分支历史，并拒绝自动处理 merge 提交或包含 merge 的历史段。
 
 ## 已验证
 
@@ -55,6 +56,8 @@
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
 - Rebase 冲突流程验证：在 GitTest 上分别验证 `abortRebase` 可恢复干净状态，手动解决并暂存后 `continueRebase` 可继续并让 topic 父提交等于目标 HEAD，`skipRebase` 可跳过当前冲突提交并结束变基。
 - Rebase UI 验证：浏览器打开 `http://127.0.0.1:5186`，GitTest 分支右键菜单显示“变基当前分支到此分支 git rebase”；进入变基冲突后，工作区横幅显示“变基发生冲突”，未解决冲突时“继续变基”禁用，“跳过变基”和“中止变基”可用，控制台无错误。
+- 历史编辑 API 验证：浏览器服务 `http://127.0.0.1:5187` 打开 GitTest 后，通过 `/api/action` 验证 `rewriteHistoryCommit` 的 `squash`、`fixup`、`drop`。`squash` 和 `fixup` 都把两次提交压成 1 次并保留第二次提交的文件改动；`fixup` 保留父提交标题；`drop` 删除目标提交引入的第二行改动，最终工作区干净。
+- 历史编辑 UI 验证：浏览器打开 `http://127.0.0.1:5187`，GitTest 提交详情显示“压缩进父提交 / 修补进父提交 / 丢弃此提交”；提交右键菜单显示同样动作和 Git 指令提示。右键菜单与详情按钮无横向溢出，控制台无 Forkline 错误。
 
 ## GitTest 测试数据
 
@@ -65,13 +68,13 @@
 - 本地远端：`origin -> D:\桌面\GitTestRemote.git`
 - 上游丢失测试分支：`forkline/remote-workflow-20260612155930`，用于验证本地分支显示 `[gone]` / “上游丢失”。
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
-- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*` 临时验证分支。
+- 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*`、`forkline/history-*` 临时验证分支。
 - 测试 Tag：`forkline-v0.1.0`
 
 ## 下一步建议
 
 按原计划继续完善：
 
-1. 交互式历史编辑队列：把 reword 之外的 squash / fixup / drop 做成可视化队列，接近 GitKraken 的交互式 rebase 体验。
+1. 交互式历史编辑队列增强：现在已有单提交 squash / fixup / drop，下一步可以做成可视化队列，支持一次调整多个提交、拖拽排序和执行前预览。
 2. 远端同步体验继续补：把 fetch / pull / push 的结果做成更清晰的同步摘要，后续再考虑 force-with-lease、远端 URL 管理和认证失败指引。
 3. Rebase 保护增强：交互式 rebase 前备份当前分支位置，并在异常退出后提供更明显的恢复入口。

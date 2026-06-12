@@ -794,8 +794,13 @@ function showCommitContextMenu(event, commit) {
   state.contextCommitSha = commit.sha;
   const menu = els.commitContextMenu;
   const isMergeCommit = (commit.parents || []).length > 1;
+  const canFold = !isMergeCommit && (commit.parents || []).length === 1;
+  const canDrop = !isMergeCommit;
   const cherryPickButton = menu.querySelector('[data-commit-action="cherryPick"]');
   const revertButton = menu.querySelector('[data-commit-action="revert"]');
+  const squashButton = menu.querySelector('[data-commit-action="squash"]');
+  const fixupButton = menu.querySelector('[data-commit-action="fixup"]');
+  const dropButton = menu.querySelector('[data-commit-action="drop"]');
   if (cherryPickButton) {
     cherryPickButton.disabled = false;
     cherryPickButton.title = isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支";
@@ -804,9 +809,21 @@ function showCommitContextMenu(event, commit) {
     revertButton.disabled = false;
     revertButton.title = isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交";
   }
+  if (squashButton) {
+    squashButton.disabled = !canFold;
+    squashButton.title = isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩";
+  }
+  if (fixupButton) {
+    fixupButton.disabled = !canFold;
+    fixupButton.title = isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补";
+  }
+  if (dropButton) {
+    dropButton.disabled = !canDrop;
+    dropButton.title = isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交";
+  }
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
-  positionContextMenu(menu, event, 260);
+  positionContextMenu(menu, event, 340);
 }
 
 function positionContextMenu(menu, event, fallbackHeight = 220) {
@@ -1085,7 +1102,7 @@ async function runCommitContextAction(action) {
     setTimeout(() => els.detailBody.querySelector("[data-reword-form] input")?.focus(), 0);
     return;
   }
-  if (action === "cherryPick" || action === "revert" || action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
+  if (action === "cherryPick" || action === "revert" || action === "squash" || action === "fixup" || action === "drop" || action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
     await runCommitToolAction(action, commit.sha);
   }
 }
@@ -1109,8 +1126,66 @@ async function runCommitToolAction(action, sha) {
     await revertCommit(commit);
     return;
   }
+  if (action === "squash" || action === "fixup" || action === "drop") {
+    await rewriteHistoryCommit(commit, action);
+    return;
+  }
   if (action === "resetSoft" || action === "resetMixed" || action === "resetHard") {
     await resetToCommit(commit, action.replace(/^reset/, "").toLowerCase());
+  }
+}
+
+function historyRewriteConfig(mode) {
+  return {
+    squash: {
+      title: "压缩进父提交",
+      command: "git rebase -i / squash",
+      effect: "此提交的改动和提交信息会合并进它的父提交，此提交本身会消失。",
+      needsParent: true,
+    },
+    fixup: {
+      title: "修补进父提交",
+      command: "git rebase -i / fixup",
+      effect: "此提交的改动会合并进它的父提交，但此提交信息会被丢弃。",
+      needsParent: true,
+    },
+    drop: {
+      title: "丢弃此提交",
+      command: "git rebase -i / drop",
+      effect: "此提交会从当前分支历史中删除，后续提交会被重新播放。",
+      needsParent: false,
+    },
+  }[mode];
+}
+
+async function rewriteHistoryCommit(commit, mode) {
+  if (!state.data || !commit) return;
+  const config = historyRewriteConfig(mode);
+  if (!config) return;
+  if (needsMainline(commit)) {
+    toast("暂不支持对 merge 提交执行自动历史编辑。");
+    return;
+  }
+  if (config.needsParent && !(commit.parents || []).length) {
+    toast("根提交没有父提交，不能压缩或修补。");
+    return;
+  }
+  const dirtyCount = (state.data.workingFiles || []).length;
+  const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 会阻止历史编辑。请先提交或储藏。` : "";
+  const warning = mode === "drop" ? "\n\n危险：如果后续提交依赖此提交，可能会产生冲突。" : "";
+  const current = state.data.repo.branch || "当前分支";
+  const message = `确认${config.title} ${commit.short}？\n\n命令：${config.command}\n分支：${current}\n效果：${config.effect}\n这会重写此提交之后的历史 SHA。${warning}${dirtyNote}\n\n提交信息：${commit.message}`;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "rewriteHistoryCommit", sha: commit.sha, mode }),
+    });
+    toast(result.output || `已${config.title} ${commit.short}`);
+    await reloadAfterHistoryAction();
+  } catch (error) {
+    toast(error.message);
+    await refreshWorktree(false);
   }
 }
 
@@ -1573,6 +1648,8 @@ function renderInspector() {
 function renderDetailsTab(commit, detail) {
   const message = commitMessageParts(commit, detail);
   const isMergeCommit = (commit.parents || []).length > 1;
+  const canFold = !isMergeCommit && (commit.parents || []).length === 1;
+  const canDrop = !isMergeCommit;
   els.detailBody.innerHTML = `
     <div class="meta-grid">
       <span>提交</span><div class="meta-value">${escapeHtml(commit.short)}</div>
@@ -1587,6 +1664,12 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn" data-commit-tool="resetSoft" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --soft：移动当前分支，改动保留在已暂存区"><span>软重置</span><span class="command-hint">git reset --soft</span></button>
       <button class="mini-btn" data-commit-tool="resetMixed" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --mixed：移动当前分支，改动保留在工作区"><span>混合重置</span><span class="command-hint">git reset --mixed</span></button>
       <button class="mini-btn danger" data-commit-tool="resetHard" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --hard：移动当前分支，并丢弃工作区改动"><span>硬重置</span><span class="command-hint">git reset --hard</span></button>
+    </div>
+    <div class="detail-section-title">历史编辑</div>
+    <div class="commit-tools">
+      <button class="mini-btn" data-commit-tool="squash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩"}"><span>压缩进父提交</span><span class="command-hint">git rebase -i squash</span></button>
+      <button class="mini-btn" data-commit-tool="fixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补"}"><span>修补进父提交</span><span class="command-hint">git rebase -i fixup</span></button>
+      <button class="mini-btn danger" data-commit-tool="drop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交"}"><span>丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
     </div>
     <div class="detail-section-title">提交信息</div>
     <form class="reword-form" data-reword-form data-sha="${escapeAttr(commit.sha)}">
