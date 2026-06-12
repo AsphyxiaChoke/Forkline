@@ -241,6 +241,43 @@ async function readFileHistory(filePath, refInput = "") {
   };
 }
 
+async function readFileBlame(filePath, refInput = "") {
+  const file = normalizeRepoFile(filePath);
+  if (!currentRepo) {
+    const sampleCommit = sampleState().commits[0];
+    return {
+      ok: true,
+      file,
+      ref: refInput || "HEAD",
+      lines: [
+        {
+          line: 1,
+          text: "示例内容",
+          sha: sampleCommit.sha,
+          short: sampleCommit.short,
+          author: sampleCommit.author,
+          time: sampleCommit.time,
+          summary: sampleCommit.message,
+        },
+      ],
+      truncated: false,
+      command: `git blame --line-porcelain ${file}`,
+    };
+  }
+  const ref = refInput ? normalizeCompareRef(refInput, "逐行追踪引用") : "HEAD";
+  await resolveCommitRef(ref, "逐行追踪引用");
+  const output = await git(currentRepo, ["blame", "--line-porcelain", ref, "--", file], { maxBuffer: 1024 * 1024 * 10 });
+  const parsed = parseBlamePorcelain(output, 600);
+  return {
+    ok: true,
+    file,
+    ref,
+    lines: parsed.lines,
+    truncated: parsed.truncated,
+    command: `git blame --line-porcelain ${ref} -- ${file}`,
+  };
+}
+
 async function readCompare(baseInput, headInput) {
   if (!currentRepo) {
     const sample = sampleState();
@@ -1603,6 +1640,59 @@ function normalizeHistoryPath(value) {
   return String(value || "").replaceAll("\\", "/").toLowerCase();
 }
 
+function parseBlamePorcelain(output, maxLines = 600) {
+  const lines = [];
+  const commits = new Map();
+  let current = null;
+  let truncated = false;
+  for (const rawLine of String(output || "").split(/\r?\n/)) {
+    if (!rawLine) continue;
+    const header = rawLine.match(/^([0-9a-f]{40})\s+\d+\s+(\d+)(?:\s+\d+)?$/i);
+    if (header) {
+      const sha = header[1];
+      current = {
+        sha,
+        line: Number(header[2] || lines.length + 1),
+        ...(commits.get(sha) || {}),
+      };
+      continue;
+    }
+    if (!current) continue;
+    if (rawLine.startsWith("\t")) {
+      if (lines.length >= maxLines) {
+        truncated = true;
+        continue;
+      }
+      const meta = commits.get(current.sha) || {};
+      lines.push({
+        line: current.line || lines.length + 1,
+        text: rawLine.slice(1),
+        sha: current.sha,
+        short: (current.sha || "").slice(0, 7),
+        author: current.author || meta.author || "unknown",
+        time: current.time || meta.time || "",
+        summary: current.summary || meta.summary || "(无提交信息)",
+      });
+      current = null;
+      continue;
+    }
+    const index = rawLine.indexOf(" ");
+    const key = index >= 0 ? rawLine.slice(0, index) : rawLine;
+    const value = index >= 0 ? rawLine.slice(index + 1) : "";
+    if (key === "author") current.author = value || "unknown";
+    else if (key === "author-time") current.time = formatBlameTime(value);
+    else if (key === "summary") current.summary = value || "(无提交信息)";
+    commits.set(current.sha, { ...(commits.get(current.sha) || {}), author: current.author, time: current.time, summary: current.summary });
+  }
+  return { lines, truncated };
+}
+
+function formatBlameTime(value) {
+  const seconds = Number(value || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  return formatLocalTime(new Date(seconds * 1000));
+}
+
 function normalizeResetMode(value) {
   const mode = String(value || "mixed").trim().toLowerCase();
   if (["soft", "mixed", "hard"].includes(mode)) return mode;
@@ -2646,6 +2736,12 @@ function friendlyErrorMessage(error, context = {}) {
     const file = text.match(/pathspec ['"]([^'"]+)['"] did not match any files/i)?.[1] || "";
     return file ? `找不到文件 ${file}，这个文件可能已经被删除、重命名，或不在当前工作区中。` : "找不到要操作的文件。请刷新工作区后再试。";
   }
+  if (lower.includes("fatal: no such path") && lower.includes(" in ")) {
+    const match = text.match(/fatal: no such path ['"]?(.+?)['"]? in (.+)$/i);
+    const file = match?.[1] || "";
+    const ref = match?.[2] || "";
+    return file ? `文件 ${file} 在 ${ref || "当前引用"} 中不存在。它可能已经被删除、重命名，或还没有提交到这个分支。` : "这个文件在当前引用中不存在，可能已经被删除或重命名。";
+  }
   if (lower.includes("please commit your changes or stash them")) {
     return "当前有未提交修改。请先提交或储藏后再试。";
   }
@@ -2990,6 +3086,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/file-history") {
       sendJson(res, 200, await readFileHistory(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/file-blame") {
+      sendJson(res, 200, await readFileBlame(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/compare") {

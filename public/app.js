@@ -14,6 +14,7 @@ const state = {
   selectedCompareFile: "",
   compare: { base: "", head: "", data: null, loading: false, error: "" },
   fileHistory: { file: "", ref: "", data: null, loading: false, error: "" },
+  fileBlame: { file: "", ref: "", data: null, loading: false, error: "" },
   activeDiff: null,
   openDiffOnInit: false,
   branchStartSha: "",
@@ -153,7 +154,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "fileHistory", "branches", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "fileHistory", "fileBlame", "branches", "sync", "compare", "stashes", "tags", "recovery", "logs"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -1076,6 +1077,10 @@ async function runFileContextAction(action) {
     await openFileHistory(context.file);
     return;
   }
+  if (action === "blame") {
+    await openFileBlame(context.file);
+    return;
+  }
   if (action === "stash") {
     await createStashFromSelection(selectedContextFiles());
     return;
@@ -1869,6 +1874,10 @@ function renderInspector() {
     renderFileHistoryTab();
     return;
   }
+  if (state.selectedTab === "fileBlame") {
+    renderFileBlameTab();
+    return;
+  }
   const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
@@ -2041,6 +2050,7 @@ function renderFilesTab(commit, detail) {
             <span class="panel-subtitle">${escapeHtml(state.selectedCommitFile || "未选择文件")}</span>
           </div>
           <button class="mini-btn" data-file-history-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>文件历史</button>
+          <button class="mini-btn" data-file-blame-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>逐行追踪</button>
           <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${selectedDiff.length ? "" : "disabled"}>最大化</button>
         </div>
         ${renderSideDiff(selectedDiff, "没有可显示的历史改动")}
@@ -2121,6 +2131,98 @@ function fileHistoryChangeLabel(stateCode) {
     M: { label: "修改", className: "modified" },
   };
   return map[code] || map.M;
+}
+
+function renderFileBlameTab() {
+  const blame = state.fileBlame;
+  els.detailNode.style.borderColor = "var(--blue)";
+  els.detailTitle.textContent = "逐行追踪";
+  els.detailSub.textContent = blame.file || "从文件右键菜单或提交文件列表打开";
+  if (!blame.file) {
+    els.detailBody.innerHTML = `
+      <div class="empty-state">
+        <strong>还没有选择文件</strong>
+        <span>在工作区文件上右键选择“逐行追踪”，或在提交的文件面板里点击“逐行追踪”。</span>
+      </div>
+    `;
+    return;
+  }
+  if (blame.loading) {
+    els.detailBody.innerHTML = `<div class="empty-state"><strong>正在读取逐行追踪</strong><span>${escapeHtml(blame.file)}</span></div>`;
+    return;
+  }
+  if (blame.error) {
+    els.detailBody.innerHTML = `<div class="empty-state danger"><strong>读取失败</strong><span>${escapeHtml(blame.error)}</span></div>`;
+    return;
+  }
+  const data = blame.data || {};
+  const lines = data.lines || [];
+  els.detailBody.innerHTML = `
+    <div class="file-blame-head">
+      <div>
+        <div class="detail-section-title">逐行追踪</div>
+        <strong>${escapeHtml(data.file || blame.file)}</strong>
+        <span>${escapeHtml(data.command || `git blame --line-porcelain -- ${blame.file}`)}</span>
+      </div>
+      <div class="file-blame-actions">
+        ${data.truncated ? `<span class="blame-truncated">仅显示前 ${lines.length} 行</span>` : ""}
+        <button class="mini-btn" data-file-blame-refresh type="button">刷新</button>
+      </div>
+    </div>
+    ${
+      lines.length
+        ? `<div class="file-blame-list">${lines.map(renderFileBlameLine).join("")}</div>`
+        : `<div class="empty-state"><strong>没有可显示的内容</strong><span>这个文件可能在当前引用 ${escapeHtml(data.ref || blame.ref || "HEAD")} 中不存在，或是空文件。</span></div>`
+    }
+  `;
+}
+
+function renderFileBlameLine(line, index, lines) {
+  const previous = lines[index - 1];
+  const grouped = previous?.sha === line.sha;
+  return `
+    <div class="file-blame-row ${grouped ? "grouped" : ""}">
+      <button class="blame-commit" data-file-blame-action="view" data-sha="${escapeAttr(line.sha || "")}" type="button" title="${escapeAttr(line.summary || "")}">
+        <strong>${grouped ? "" : escapeHtml(line.short || line.sha?.slice(0, 7) || "")}</strong>
+        <span>${grouped ? "" : escapeHtml(line.author || "unknown")}</span>
+      </button>
+      <span class="blame-line">${escapeHtml(line.line || index + 1)}</span>
+      <code>${escapeHtml(line.text || "")}</code>
+    </div>
+  `;
+}
+
+async function openFileBlame(filePath, ref = "") {
+  if (!filePath) {
+    toast("请选择文件");
+    return;
+  }
+  const targetRef = ref || currentFileHistoryRef();
+  state.fileBlame = { file: filePath, ref: targetRef, data: null, loading: true, error: "" };
+  state.selectedTab = "fileBlame";
+  renderInspector();
+  try {
+    const data = await api(`/api/file-blame?file=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(targetRef)}`);
+    state.fileBlame = { file: filePath, ref: data.ref || targetRef, data, loading: false, error: "" };
+  } catch (error) {
+    state.fileBlame = { file: filePath, ref: targetRef, data: null, loading: false, error: error.message };
+  }
+  renderInspector();
+}
+
+async function runFileBlameAction(action, button) {
+  const sha = button.dataset.sha || "";
+  if (!sha) return;
+  const commit = state.data?.commits.find((item) => item.sha === sha);
+  if (!commit) {
+    toast("这个提交不在当前图谱列表中，请清空过滤或切换到包含它的分支后再试。");
+    return;
+  }
+  if (action === "view") {
+    els.searchInput.value = "";
+    state.selectedTab = "details";
+    await selectCommit(sha);
+  }
 }
 
 async function openFileHistory(filePath, ref = "") {
@@ -3846,6 +3948,7 @@ async function submitCloneForm(event) {
 async function applyOpenedRepoData(data) {
   state.commitDetails.clear();
   state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
+  state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
   state.data = data;
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
   if (state.selectedRef) {
@@ -4888,6 +4991,26 @@ els.detailBody.addEventListener("click", (event) => {
   if (fileHistoryAction) {
     event.preventDefault();
     runFileHistoryAction(fileHistoryAction.dataset.fileHistoryAction, fileHistoryAction).catch((error) => toast(error.message));
+    return;
+  }
+  const fileBlameOpen = event.target.closest("[data-file-blame-open]");
+  if (fileBlameOpen) {
+    event.preventDefault();
+    if (!fileBlameOpen.disabled) {
+      openFileBlame(fileBlameOpen.dataset.file || "", fileBlameOpen.dataset.ref || "").catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const fileBlameRefresh = event.target.closest("[data-file-blame-refresh]");
+  if (fileBlameRefresh) {
+    event.preventDefault();
+    openFileBlame(state.fileBlame.file, state.fileBlame.ref).catch((error) => toast(error.message));
+    return;
+  }
+  const fileBlameAction = event.target.closest("[data-file-blame-action]");
+  if (fileBlameAction) {
+    event.preventDefault();
+    runFileBlameAction(fileBlameAction.dataset.fileBlameAction, fileBlameAction).catch((error) => toast(error.message));
     return;
   }
   const historyPlanAction = event.target.closest("[data-history-plan-action]");

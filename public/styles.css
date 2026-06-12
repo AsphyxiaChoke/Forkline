@@ -2151,6 +2151,135 @@ body.resizing .workbench-resizer-y::before {
   height: auto;
 }
 
+.file-blame-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.file-blame-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-blame-head strong,
+.file-blame-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-blame-head span {
+  color: var(--quiet);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-blame-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.blame-truncated {
+  align-self: center;
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.file-blame-list {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.file-blame-row {
+  display: grid;
+  grid-template-columns: 92px 42px minmax(360px, max-content);
+  align-items: stretch;
+  width: max-content;
+  min-width: 100%;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.file-blame-row:last-child {
+  border-bottom: 0;
+}
+
+.file-blame-row.grouped .blame-commit {
+  border-top-color: transparent;
+}
+
+.blame-commit {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 7px;
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.blame-commit:hover {
+  background: var(--panel-3);
+}
+
+.blame-commit strong,
+.blame-commit span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blame-commit span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.blame-line {
+  display: grid;
+  place-items: center end;
+  padding: 0 8px;
+  border-right: 1px solid var(--line-soft);
+  color: var(--quiet);
+  background: var(--field);
+  font-weight: 800;
+}
+
+.file-blame-row code {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+  padding: 5px 9px;
+  color: var(--text);
+  white-space: pre;
+}
+
 .logs-toolbar {
   display: flex;
   align-items: flex-start;
