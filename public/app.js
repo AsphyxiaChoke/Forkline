@@ -47,6 +47,7 @@ const state = {
   ignoredCheckoutStashes: new Set(),
   selectedChanges: new Set(),
   lastChangeSelection: null,
+  branchFilter: "",
   cloneTargetAuto: false,
   commandPaletteIndex: 0,
 };
@@ -71,6 +72,9 @@ const els = {
   searchCount: $("#searchCount"),
   clearSearch: $("#clearSearch"),
   branchList: $("#branchList"),
+  branchFilterInput: $("#branchFilterInput"),
+  branchFilterCount: $("#branchFilterCount"),
+  clearBranchFilter: $("#clearBranchFilter"),
   newBranch: $("#newBranch"),
   remoteList: $("#remoteList"),
   worktreeList: $("#worktreeList"),
@@ -215,6 +219,7 @@ function renderBranches() {
   els.branchStrip.innerHTML = "";
   const currentRef = state.selectedRef;
   const currentBranch = state.data.repo.branch;
+  const filterTerms = branchFilterTerms();
 
   const allChip = document.createElement("button");
   allChip.className = `branch-chip ${state.selectedRef ? "" : "active"}`;
@@ -224,7 +229,7 @@ function renderBranches() {
   els.branchStrip.appendChild(allChip);
 
   const branchInfo = state.data.branchInfo || {};
-  state.data.branches.forEach((branch, index) => {
+  const localBranchItems = state.data.branches.map((branch, index) => {
     const info = branchInfo[branch] || {};
     const options = {
       local: true,
@@ -241,7 +246,21 @@ function renderBranches() {
       rename: true,
       delete: true,
     };
-    els.branchList.appendChild(branchButton(branch, index, branch === currentRef, options));
+    return { branch, index, options, active: branch === currentRef };
+  });
+  const remoteBranchItems = state.data.remotes.map((branch, index) => ({
+    branch,
+    index: index + 3,
+    options: { remote: true, remoteCheckout: true, merge: true, deleteRemote: true },
+    active: branch === currentRef,
+  }));
+  const visibleLocalBranches = filterBranchItems(localBranchItems, filterTerms);
+  const visibleRemoteBranches = filterBranchItems(remoteBranchItems, filterTerms);
+  visibleLocalBranches.forEach(({ branch, index, options, active }) => {
+    els.branchList.appendChild(branchButton(branch, index, active, options));
+  });
+  if (!visibleLocalBranches.length) appendBranchEmpty(els.branchList, filterTerms.length ? "没有匹配的本地分支" : "没有本地分支");
+  localBranchItems.forEach(({ branch, index, options }) => {
     const chip = document.createElement("button");
     chip.className = `branch-chip ${branch === currentRef ? "active" : ""}`;
     chip.type = "button";
@@ -254,9 +273,69 @@ function renderBranches() {
     });
     els.branchStrip.appendChild(chip);
   });
-  state.data.remotes.forEach((branch, index) => {
-    els.remoteList.appendChild(branchButton(branch, index + 3, branch === currentRef, { remote: true, remoteCheckout: true, merge: true, deleteRemote: true }));
+  visibleRemoteBranches.forEach(({ branch, index, options, active }) => {
+    els.remoteList.appendChild(branchButton(branch, index, active, options));
   });
+  if (!visibleRemoteBranches.length) appendBranchEmpty(els.remoteList, filterTerms.length ? "没有匹配的远端分支" : "没有远端分支");
+  updateBranchFilterMeta(filterTerms, visibleLocalBranches.length + visibleRemoteBranches.length, localBranchItems.length + remoteBranchItems.length);
+}
+
+function branchFilterTerms() {
+  return String(state.branchFilter || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function filterBranchItems(items, terms) {
+  if (!terms.length) return items;
+  return items.filter((item) => {
+    const text = branchSearchText(item.branch, item.options);
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+function branchSearchText(branch, options = {}) {
+  return [
+    branch,
+    options.upstream,
+    options.upstreamGone ? "上游丢失 gone" : "",
+    options.ahead ? `领先 ahead ${options.ahead}` : "",
+    options.behind ? `落后 behind ${options.behind}` : "",
+    options.remote ? remoteCheckoutBranch(branch) : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function updateBranchFilterMeta(terms, visibleCount, totalCount) {
+  const active = terms.length > 0;
+  els.branchFilterCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
+  els.branchFilterCount.title = active ? `分支筛选结果：${visibleCount} / ${totalCount}` : "";
+  els.branchFilterCount.hidden = !active;
+  els.clearBranchFilter.hidden = !active;
+}
+
+function appendBranchEmpty(root, text) {
+  const empty = document.createElement("div");
+  empty.className = "branch-empty";
+  empty.textContent = text;
+  root.appendChild(empty);
+}
+
+function updateBranchFilter(value) {
+  state.branchFilter = String(value || "");
+  renderBranches();
+}
+
+function clearBranchFilter() {
+  if (!state.branchFilter && !els.branchFilterInput.value) return;
+  state.branchFilter = "";
+  els.branchFilterInput.value = "";
+  renderBranches();
+  els.branchFilterInput.focus();
 }
 
 function branchButton(branch, index, active, options = {}) {
@@ -976,6 +1055,10 @@ function commandPaletteItems() {
     commandItem("focusSearch", "搜索提交", "聚焦顶部提交搜索框", "图谱", "commit author branch sha", hasRepo, () => {
       els.searchInput.focus();
       els.searchInput.select();
+    }),
+    commandItem("focusBranchFilter", "筛选分支", "聚焦左侧本地和远端分支筛选", "分支", "branch remote upstream filter", hasRepo, () => {
+      els.branchFilterInput.focus();
+      els.branchFilterInput.select();
     }),
     commandItem("tabDetails", "打开详情", "查看当前提交详情", "详情", "details commit", hasRepo, () => switchInspectorTab("details")),
     commandItem("tabFiles", "打开文件", "查看当前提交文件改动", "文件", "files diff", hasRepo, () => switchInspectorTab("files")),
@@ -6082,6 +6165,8 @@ els.commandList.addEventListener("click", (event) => {
   if (!button || button.disabled) return;
   executeCommandPaletteItem(button.dataset.commandId).catch((error) => toast(error.message));
 });
+els.branchFilterInput.addEventListener("input", () => updateBranchFilter(els.branchFilterInput.value));
+els.clearBranchFilter.addEventListener("click", clearBranchFilter);
 els.searchInput.addEventListener("input", renderCommits);
 els.clearSearch.addEventListener("click", clearCommitSearch);
 els.themeToggle.addEventListener("click", toggleTheme);

@@ -524,7 +524,7 @@ body.resizing .workspace-resizer::before {
 
 .sidebar {
   display: grid;
-  grid-template-rows: 96px minmax(150px, 0.9fr) minmax(110px, 0.65fr) 190px;
+  grid-template-rows: 88px 42px minmax(140px, 0.9fr) minmax(104px, 0.65fr) 190px;
   border-right: 1px solid var(--line);
 }
 
@@ -532,11 +532,68 @@ body.resizing .workspace-resizer::before {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 12px 10px 8px;
+  margin: 10px 10px 6px;
   padding: 10px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--card);
+}
+
+.branch-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 34px;
+  margin: 0 10px 8px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.branch-filter input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.branch-filter output {
+  max-width: 58px;
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-filter button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.branch-filter button:hover {
+  border-color: rgba(35, 199, 183, 0.55);
+  color: var(--text);
+}
+
+.branch-filter output[hidden],
+.branch-filter button[hidden] {
+  display: none;
 }
 
 .avatar {
@@ -605,6 +662,15 @@ body.resizing .workspace-resizer::before {
 
 .nav-list {
   height: 100%;
+}
+
+.branch-empty {
+  padding: 9px 10px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .branch-row {
