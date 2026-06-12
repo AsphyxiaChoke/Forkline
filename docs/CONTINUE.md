@@ -41,6 +41,7 @@
 - 历史编辑队列已接入：提交详情和提交右键菜单新增“加入队列：压缩 / 修补 / 丢弃”；右侧详情会显示队列动作、统一预检、影响范围、阻塞原因和执行按钮；后端新增 `/api/history-rewrite-queue-preview` 与 `rewriteHistoryQueue`，一次执行多条 `squash` / `fixup` / `drop`，执行前创建 `history-queue` 恢复点，并拦截脏工作区、重复提交、merge 提交、包含 merge 的重放范围，以及前一条被 drop 但后一条还要 squash/fixup 的危险组合。
 - 自动恢复点已接入：追加提交、变基拉取、分支变基、修改提交信息、交互式历史编辑和 reset 前会自动创建 `refs/forkline/recovery/...` 隐藏引用；右侧新增“恢复点”页，可查看、恢复或删除恢复点。恢复动作会先再创建一个恢复前恢复点。
 - 恢复点管理已增强：右侧“恢复点”页支持搜索、按分支筛选、按动作筛选、显示筛选数量，并支持删除当前筛选结果；后端新增 `deleteRecoveryPoints`，会先验证所有 ref 都在 `refs/forkline/recovery/...` 下再批量删除。
+- 恢复点保留策略已接入：右侧“恢复点”页新增“保留策略”，支持设置“保留最近 N 天”和“每个分支保留 N 个”；前端会预览将清理/保留数量，后端执行前重新读取真实 `refs/forkline/recovery/...` 并只删除 Forkline 管理范围内的恢复引用。
 - 工作区 Diff 面板已接入当前文件快捷操作：查看未提交文件对照时，面板标题右侧可直接执行“暂存 / 取消 / 丢弃 / 丢已暂存 / 最大化”，并会按未暂存、已暂存状态自动启用或禁用；标题区支持换行，右侧栏缩窄时不会挤压路径和按钮。
 - 右侧详情标签栏已改成横向可滚动：现在 7 个标签不会再被旧的 5 列网格挤到两行，窄侧栏下会保持单行、文本截断并允许横向滚动。
 - 右侧“日志”页已接入：后端会在 `/api/state` 暴露当前正在执行的 Forkline 操作，并在每次 `/api/action` 完成后记录最近 40 条 Git 操作，包含中文操作名、动作类型、成功/失败、耗时和输出摘要；失败响应也会带回最新日志，方便判断刚才哪个操作失败或卡住。
@@ -106,6 +107,7 @@
 - 右侧标签栏静态验证：`public/styles.css` 中 `.tabs` 已从 `repeat(5, 1fr)` 改为 flex 横向滚动，`.tab` 设置 `flex: 1 0 56px`、固定高度和省略号；`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过。
 - 操作日志 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，调用 `findCheckoutStash` 成功返回日志项“查找 123 的签出储藏 / success / 操作已完成”；调用不存在文件的 `stageFile` 返回中文“找不到文件 ...”，并在 `operationLog` 中记录失败项。
 - 恢复点批量清理 API 验证：在 GitTest 临时创建 3 条 `refs/forkline/recovery/...` 测试引用，其中 2 条分支为 `123`、1 条分支为 `other`；通过 `deleteRecoveryPoints` 删除分支 `123` 的筛选结果后只剩 `other`，随后清理剩余测试引用，最终恢复点数量为 0。
+- 恢复点保留策略 API 验证：临时服务 `http://127.0.0.1:5212` 打开 GitTest 后，创建 5 条 `refs/forkline/recovery/.../forkline_policy_test/...` 测试引用；调用 `pruneRecoveryPoints`，策略为“保留最近 30 天 / 每个分支保留 2 个”，API 返回已清理 3 个并保留最新 2 个；随后已清理剩余测试引用，GitTest 恢复点 refs 为空。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 - 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。
 - 克隆仓库 API 验证：临时服务 `http://127.0.0.1:5202` 调用 `cloneRepository`，从 `D:\桌面\GitTestRemote.git` 克隆到 `C:\tmp\forkline-clone-api-20260613`，返回 `ok=true`、新仓库 `forkline-clone-api-20260613`、分支 `main`、工作区改动 0；再次克隆到同一非空目录会中文拒绝“目标文件夹不是空的”。测试克隆目录已删除，临时服务已关闭。
@@ -131,4 +133,4 @@
 
 1. 历史编辑队列交互继续增强：现在已有多动作队列、统一预检和一次执行，后续可以补拖拽排序、队列项重排、批量改提交信息和更接近 GitKraken 的动效反馈。
 2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取和同步提交预览已完成，后续可继续做认证失败指引。
-3. 恢复点保留策略：现在已有搜索、按分支/动作筛选和批量清理，后续可以增加“保留最近 N 天 / 每个分支保留 N 个”的自动清理策略。
+3. 恢复点策略继续增强：现在已有手动策略清理，后续可以增加本地偏好记忆、清理前候选列表展开，以及危险操作完成后可选自动执行保留策略。

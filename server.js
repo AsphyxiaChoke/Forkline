@@ -818,6 +818,9 @@ async function runAction(body) {
   if (action === "deleteRecoveryPoints") {
     return deleteRecoveryPoints(body);
   }
+  if (action === "pruneRecoveryPoints") {
+    return pruneRecoveryPoints(body);
+  }
   if (action === "stageFile") {
     const file = normalizeRepoFile(body.file);
     return commandResult(await git(currentRepo, ["add", "--", file], { timeout: 60000 }));
@@ -977,6 +980,7 @@ function actionLabel(body = {}) {
     restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
     deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",
     deleteRecoveryPoints: Array.isArray(body.refs) ? `批量删除 ${body.refs.length} 个恢复点` : "批量删除恢复点",
+    pruneRecoveryPoints: "按保留策略清理恢复点",
     stageFile: file ? `暂存文件 ${file}` : "暂存文件",
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
     discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
@@ -2240,6 +2244,113 @@ async function deleteRecoveryPoints(body) {
   return { ok: true, output: `已删除 ${safeRefs.length} 个恢复点` };
 }
 
+async function pruneRecoveryPoints(body) {
+  const policy = normalizeRecoveryRetentionPolicy(body);
+  const points = await readRecoveryPointsFromGit();
+  const plan = recoveryRetentionPlan(points, policy);
+  if (!plan.deletePoints.length) {
+    return {
+      ok: true,
+      output: `没有需要清理的恢复点。当前保留 ${points.length} 个恢复点。`,
+      deleted: 0,
+      plan,
+    };
+  }
+  if (plan.deletePoints.length > 120) {
+    throw new Error(`本次策略会删除 ${plan.deletePoints.length} 个恢复点。为避免误删，请先缩小策略范围或使用筛选删除。`);
+  }
+  for (const point of plan.deletePoints) {
+    const ref = await ensureRecoveryRef(point.ref);
+    await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
+  }
+  return {
+    ok: true,
+    output: `已按保留策略清理 ${plan.deletePoints.length} 个恢复点，保留 ${plan.keepCount} 个。${recoveryRetentionPolicyLabel(policy)}`,
+    deleted: plan.deletePoints.length,
+    plan,
+  };
+}
+
+async function readRecoveryPointsFromGit() {
+  const output = await git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => "");
+  return parseRecoveryPoints(output);
+}
+
+function normalizeRecoveryRetentionPolicy(body) {
+  const keepDays = normalizeRetentionNumber(body.keepDays, "保留天数", 3650);
+  const maxPerBranch = normalizeRetentionNumber(body.maxPerBranch, "每个分支保留数量", 500);
+  if (!keepDays && !maxPerBranch) throw new Error("请至少设置一个恢复点保留规则。");
+  return { keepDays, maxPerBranch };
+}
+
+function normalizeRetentionNumber(value, label, max) {
+  if (value === undefined || value === null || value === "") return 0;
+  const text = String(value).trim();
+  if (!/^\d+$/.test(text)) throw new Error(`${label}必须是 0 到 ${max} 之间的整数。`);
+  const number = Number.parseInt(text, 10);
+  if (number < 0 || number > max) throw new Error(`${label}必须是 0 到 ${max} 之间的整数。`);
+  return number;
+}
+
+function recoveryRetentionPlan(points, policy, now = new Date()) {
+  const deleteRefs = new Set();
+  const nowMs = now.getTime();
+  if (policy.keepDays) {
+    const threshold = nowMs - policy.keepDays * 24 * 60 * 60 * 1000;
+    for (const point of points) {
+      const timeMs = recoveryPointTimeMs(point);
+      if (timeMs && timeMs < threshold) deleteRefs.add(point.ref);
+    }
+  }
+  if (policy.maxPerBranch) {
+    const groups = new Map();
+    for (const point of points) {
+      const branch = point.branch || "HEAD";
+      groups.set(branch, [...(groups.get(branch) || []), point]);
+    }
+    for (const group of groups.values()) {
+      group
+        .sort((a, b) => recoveryPointTimeMs(b) - recoveryPointTimeMs(a) || String(b.ref).localeCompare(String(a.ref)))
+        .slice(policy.maxPerBranch)
+        .forEach((point) => deleteRefs.add(point.ref));
+    }
+  }
+  const deletePoints = points.filter((point) => deleteRefs.has(point.ref));
+  return {
+    keepDays: policy.keepDays,
+    maxPerBranch: policy.maxPerBranch,
+    keepCount: Math.max(0, points.length - deletePoints.length),
+    deleteCount: deletePoints.length,
+    deletePoints: deletePoints.map((point) => ({
+      ref: point.ref,
+      shortRef: point.shortRef,
+      short: point.short,
+      branch: point.branch,
+      actionLabel: point.actionLabel,
+      time: point.time,
+    })),
+  };
+}
+
+function recoveryPointTimeMs(point) {
+  return recoveryTimestampToMs(point?.timestamp || String(point?.shortRef || "").split("/")[0]);
+}
+
+function recoveryTimestampToMs(timestamp) {
+  const match = String(timestamp || "").match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+  if (!match) return 0;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])).getTime();
+}
+
+function recoveryRetentionPolicyLabel(policy) {
+  return [
+    policy.keepDays ? `保留最近 ${policy.keepDays} 天` : "",
+    policy.maxPerBranch ? `每个分支保留 ${policy.maxPerBranch} 个` : "",
+  ]
+    .filter(Boolean)
+    .join("；");
+}
+
 async function ensureRecoveryRef(value) {
   const input = String(value || "").trim().replace(/^\/+/, "");
   if (!input) throw new Error("请选择恢复点");
@@ -2279,6 +2390,7 @@ function recoveryPointFromParts(ref, sha, short, subject = "") {
     branch,
     action,
     actionLabel: recoveryActionLabel(action),
+    timestamp,
     time: recoveryTimeLabel(timestamp),
   };
 }

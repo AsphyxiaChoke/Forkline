@@ -38,6 +38,7 @@ const state = {
   selectedTag: "",
   selectedRecoveryRef: "",
   recoveryFilter: { query: "", branch: "", action: "" },
+  recoveryPolicy: { keepDays: "90", maxPerBranch: "50" },
   historyPlan: null,
   historyQueue: { items: [], loading: false, preview: null, error: "" },
   ignoredCheckoutStashes: new Set(),
@@ -3203,6 +3204,7 @@ function renderRecoveryTab() {
   els.detailBody.innerHTML = `
     <div class="recovery-layout">
       ${recoveryFilterHtml(points, filteredPoints)}
+      ${recoveryRetentionHtml(points)}
       <div class="recovery-list">
         ${
           filteredPoints.length
@@ -3214,6 +3216,42 @@ function renderRecoveryTab() {
         ${selected ? recoveryDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一个恢复点查看详情。</span></div>`}
       </div>
     </div>
+  `;
+}
+
+function recoveryRetentionHtml(points) {
+  const policy = normalizedRecoveryPolicy();
+  const plan = recoveryRetentionPlan(points, policy);
+  const active = recoveryPolicyActive(policy);
+  const buttonText = !active ? "设置策略" : plan.deleteCount ? "按策略清理" : "无需清理";
+  const summary = active
+    ? `将清理 ${plan.deleteCount} 个，保留 ${plan.keepCount} 个`
+    : `当前共有 ${points.length} 个恢复点`;
+  return `
+    <section class="recovery-retention">
+      <div class="recovery-retention-head">
+        <strong>保留策略</strong>
+        <span>${escapeHtml(summary)}</span>
+      </div>
+      <div class="recovery-retention-grid">
+        <label class="recovery-retention-rule">
+          <span>保留最近</span>
+          <input data-recovery-policy="keepDays" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.keepDays)}" />
+          <em>天</em>
+        </label>
+        <label class="recovery-retention-rule">
+          <span>每分支</span>
+          <input data-recovery-policy="maxPerBranch" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.maxPerBranch)}" />
+          <em>个</em>
+        </label>
+      </div>
+      <div class="recovery-retention-actions">
+        <span>${escapeHtml(recoveryPolicyLabel(policy) || "策略未启用")}</span>
+        <button class="mini-btn danger" data-recovery-prune type="button" ${active && plan.deleteCount ? "" : "disabled"}>
+          <span>${buttonText}</span><span class="command-hint">update-ref -d</span>
+        </button>
+      </div>
+    </section>
   `;
 }
 
@@ -3292,6 +3330,72 @@ function uniqueRecoveryActions(points) {
 
 function recoveryActionValue(point) {
   return point.action || point.actionLabel || "";
+}
+
+function normalizedRecoveryPolicy() {
+  const raw = state.recoveryPolicy || {};
+  return {
+    keepDays: boundedRecoveryPolicyNumber(raw.keepDays, 3650),
+    maxPerBranch: boundedRecoveryPolicyNumber(raw.maxPerBranch, 500),
+  };
+}
+
+function boundedRecoveryPolicyNumber(value, max) {
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+  const number = Number.parseInt(text, 10);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.min(number, max);
+}
+
+function recoveryPolicyActive(policy = normalizedRecoveryPolicy()) {
+  return Boolean(policy.keepDays || policy.maxPerBranch);
+}
+
+function recoveryRetentionPlan(points, policy = normalizedRecoveryPolicy(), now = Date.now()) {
+  const deleteRefs = new Set();
+  if (policy.keepDays) {
+    const threshold = now - policy.keepDays * 24 * 60 * 60 * 1000;
+    points.forEach((point) => {
+      const timeMs = recoveryPointTimeMs(point);
+      if (timeMs && timeMs < threshold) deleteRefs.add(point.ref);
+    });
+  }
+  if (policy.maxPerBranch) {
+    const groups = new Map();
+    points.forEach((point) => {
+      const branch = point.branch || "HEAD";
+      groups.set(branch, [...(groups.get(branch) || []), point]);
+    });
+    groups.forEach((group) => {
+      group
+        .sort((a, b) => recoveryPointTimeMs(b) - recoveryPointTimeMs(a) || String(b.ref).localeCompare(String(a.ref)))
+        .slice(policy.maxPerBranch)
+        .forEach((point) => deleteRefs.add(point.ref));
+    });
+  }
+  const deletePoints = points.filter((point) => deleteRefs.has(point.ref));
+  return {
+    deletePoints,
+    deleteCount: deletePoints.length,
+    keepCount: Math.max(0, points.length - deletePoints.length),
+  };
+}
+
+function recoveryPointTimeMs(point) {
+  const timestamp = point?.timestamp || String(point?.shortRef || "").split("/")[0];
+  const match = String(timestamp || "").match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+  if (!match) return 0;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])).getTime();
+}
+
+function recoveryPolicyLabel(policy = normalizedRecoveryPolicy()) {
+  return [
+    policy.keepDays ? `保留最近 ${policy.keepDays} 天` : "",
+    policy.maxPerBranch ? `每个分支保留 ${policy.maxPerBranch} 个` : "",
+  ]
+    .filter(Boolean)
+    .join("；");
 }
 
 function uniqueSorted(values) {
@@ -3445,6 +3549,62 @@ function updateRecoveryFilter(key, value, input) {
 function resetRecoveryFilter() {
   state.recoveryFilter = { query: "", branch: "", action: "" };
   renderInspector();
+}
+
+function updateRecoveryPolicy(key, value, input) {
+  if (!["keepDays", "maxPerBranch"].includes(key)) return;
+  const cleanValue = String(value || "").replace(/[^\d]/g, "").slice(0, 4);
+  state.recoveryPolicy = { ...(state.recoveryPolicy || {}), [key]: cleanValue };
+  renderInspector();
+  if (input) {
+    const cursor = Math.min(input.selectionStart ?? cleanValue.length, cleanValue.length);
+    requestAnimationFrame(() => {
+      const next = els.detailBody.querySelector(`[data-recovery-policy="${key}"]`);
+      if (!next) return;
+      next.focus();
+      next.setSelectionRange(cursor, cursor);
+    });
+  }
+}
+
+async function pruneRecoveryPointsByPolicy(button) {
+  if (!state.data) return;
+  const policy = normalizedRecoveryPolicy();
+  if (!recoveryPolicyActive(policy)) {
+    toast("请先设置恢复点保留策略。");
+    return;
+  }
+  const plan = recoveryRetentionPlan(state.data.recoveryPoints || [], policy);
+  if (!plan.deleteCount) {
+    toast("当前没有需要清理的恢复点。");
+    return;
+  }
+  const message = [
+    `确认按保留策略清理 ${plan.deleteCount} 个恢复点？`,
+    "",
+    recoveryPolicyLabel(policy),
+    `保留：${plan.keepCount} 个`,
+    "命令：git update-ref -d <恢复点引用>",
+    "",
+    "删除后不能再通过 Forkline 恢复到这些引用。",
+  ].join("\n");
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "pruneRecoveryPoints", keepDays: policy.keepDays, maxPerBranch: policy.maxPerBranch }),
+    });
+    toast(result.output || "恢复点清理完成");
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedRecoveryRef = filteredRecoveryPoints()[0]?.ref || "";
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function deleteFilteredRecoveryPoints(button) {
@@ -5261,13 +5421,25 @@ els.detailBody.addEventListener("submit", (event) => {
 });
 els.detailBody.addEventListener("input", (event) => {
   const filter = event.target.closest("[data-recovery-filter]");
-  if (!filter || state.selectedTab !== "recovery") return;
-  updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
+  if (filter && state.selectedTab === "recovery") {
+    updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
+    return;
+  }
+  const policy = event.target.closest("[data-recovery-policy]");
+  if (policy && state.selectedTab === "recovery") {
+    updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
+  }
 });
 els.detailBody.addEventListener("change", (event) => {
   const filter = event.target.closest("[data-recovery-filter]");
-  if (!filter || state.selectedTab !== "recovery") return;
-  updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
+  if (filter && state.selectedTab === "recovery") {
+    updateRecoveryFilter(filter.dataset.recoveryFilter, filter.value, filter);
+    return;
+  }
+  const policy = event.target.closest("[data-recovery-policy]");
+  if (policy && state.selectedTab === "recovery") {
+    updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
+  }
 });
 els.detailBody.addEventListener("click", (event) => {
   const syncAction = event.target.closest("[data-sync-action]");
@@ -5337,6 +5509,12 @@ els.detailBody.addEventListener("click", (event) => {
   if (recoveryFilterReset) {
     event.preventDefault();
     resetRecoveryFilter();
+    return;
+  }
+  const recoveryPrune = event.target.closest("[data-recovery-prune]");
+  if (recoveryPrune) {
+    event.preventDefault();
+    if (!recoveryPrune.disabled) pruneRecoveryPointsByPolicy(recoveryPrune).catch((error) => toast(error.message));
     return;
   }
   const recoveryBulkDelete = event.target.closest("[data-recovery-bulk-delete]");
