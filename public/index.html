@@ -208,6 +208,14 @@
     <button data-tag-action="deleteLocal" class="danger" type="button"><span class="menu-label">删除本地 Tag</span><span class="command-hint">git tag -d</span></button>
     <button data-tag-action="deleteRemote" class="danger" type="button"><span class="menu-label">删除远端 Tag</span><span class="command-hint">git push --delete</span></button>
   </div>
+  <div id="remoteContextMenu" class="context-menu" aria-hidden="true">
+    <button data-remote-menu-action="fetch" type="button"><span class="menu-label">抓取此远端</span><span class="command-hint">git fetch</span></button>
+    <button data-remote-menu-action="edit" type="button"><span class="menu-label">修改 URL</span><span class="command-hint">git remote set-url</span></button>
+    <button data-remote-menu-action="copyFetch" type="button">复制 fetch URL</button>
+    <button data-remote-menu-action="copyPush" type="button">复制 push URL</button>
+    <div class="context-separator" role="separator"></div>
+    <button data-remote-menu-action="delete" class="danger" type="button"><span class="menu-label">删除远端</span><span class="command-hint">git remote remove</span></button>
+  </div>
   <div id="checkoutModal" class="checkout-modal" aria-hidden="true">
     <div class="checkout-dialog" role="dialog" aria-modal="true" aria-labelledby="checkoutModalTitle">
       <div class="checkout-warning">

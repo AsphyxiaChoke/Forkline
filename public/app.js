@@ -21,6 +21,7 @@ const state = {
   contextBranch: null,
   contextFile: null,
   contextTag: null,
+  contextRemote: null,
   diffRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
@@ -74,6 +75,7 @@ const els = {
   branchContextMenu: $("#branchContextMenu"),
   fileContextMenu: $("#fileContextMenu"),
   tagContextMenu: $("#tagContextMenu"),
+  remoteContextMenu: $("#remoteContextMenu"),
   detailNode: $("#detailNode"),
   detailTitle: $("#detailTitle"),
   detailSub: $("#detailSub"),
@@ -127,7 +129,7 @@ async function init() {
     const initialRef = params.get("ref") || "";
     const initialTab = params.get("tab") || "";
     state.openDiffOnInit = params.get("diff") === "max";
-    if (["details", "files", "branches", "stashes", "tags"].includes(initialTab)) state.selectedTab = initialTab;
+    if (["details", "files", "branches", "sync", "stashes", "tags"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
@@ -791,6 +793,7 @@ function showCommitContextMenu(event, commit) {
   hideBranchContextMenu();
   hideFileContextMenu();
   hideTagContextMenu();
+  hideRemoteContextMenu();
   state.contextCommitSha = commit.sha;
   const menu = els.commitContextMenu;
   const isMergeCommit = (commit.parents || []).length > 1;
@@ -845,6 +848,7 @@ function showBranchContextMenu(event, branch, options = {}) {
   hideCommitContextMenu();
   hideFileContextMenu();
   hideTagContextMenu();
+  hideRemoteContextMenu();
   state.contextBranch = { name: branch, ...options };
   const menu = els.branchContextMenu;
   const isLocal = Boolean(options.local || options.checkout || options.rename || options.delete);
@@ -924,6 +928,7 @@ function showFileContextMenu(event, filePath, scope = "") {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideTagContextMenu();
+  hideRemoteContextMenu();
   const fileInfo = state.data?.workingFiles?.find((file) => file.file === filePath);
   if (!fileInfo) return;
   const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
@@ -964,6 +969,7 @@ function showTagContextMenu(event, tag) {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
+  hideRemoteContextMenu();
   state.contextTag = tag || null;
   const menu = els.tagContextMenu;
   const hasTag = Boolean(tag?.name);
@@ -979,6 +985,32 @@ function hideTagContextMenu() {
   els.tagContextMenu.classList.remove("show");
   els.tagContextMenu.setAttribute("aria-hidden", "true");
   state.contextTag = null;
+}
+
+function showRemoteContextMenu(event, remote) {
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+  hideFileContextMenu();
+  hideTagContextMenu();
+  state.contextRemote = remote || null;
+  const menu = els.remoteContextMenu;
+  const hasRemote = Boolean(remote?.name);
+  const hasFetch = Boolean(remote?.fetchUrl);
+  const hasPush = Boolean(remote?.pushUrl || remote?.fetchUrl);
+  menu.querySelector('[data-remote-menu-action="fetch"]').disabled = !hasRemote;
+  menu.querySelector('[data-remote-menu-action="edit"]').disabled = !hasRemote;
+  menu.querySelector('[data-remote-menu-action="copyFetch"]').disabled = !hasFetch;
+  menu.querySelector('[data-remote-menu-action="copyPush"]').disabled = !hasPush;
+  menu.querySelector('[data-remote-menu-action="delete"]').disabled = !hasRemote;
+  menu.classList.add("show");
+  menu.setAttribute("aria-hidden", "false");
+  positionContextMenu(menu, event, 210);
+}
+
+function hideRemoteContextMenu() {
+  els.remoteContextMenu.classList.remove("show");
+  els.remoteContextMenu.setAttribute("aria-hidden", "true");
+  state.contextRemote = null;
 }
 
 async function runFileContextAction(action) {
@@ -1909,6 +1941,7 @@ function renderSyncTab() {
   const upstreamGone = Boolean(sync.upstreamGone);
   const incoming = sync.incoming || [];
   const outgoing = sync.outgoing || [];
+  const remotes = sync.remotes || [];
   els.detailNode.style.borderColor = upstreamGone ? "var(--danger)" : hasUpstream ? "var(--teal)" : "var(--yellow)";
   els.detailTitle.textContent = "同步详情";
   els.detailSub.textContent = sync.branch ? `${sync.branch}${sync.upstream ? ` -> ${sync.upstream}` : " · 未设置 upstream"}` : "当前分支";
@@ -1926,6 +1959,11 @@ function renderSyncTab() {
       <span>同步状态</span><div class="meta-value">${escapeHtml(syncStatusText(sync))}</div>
       <span>建议</span><div class="meta-value">${escapeHtml(syncAdviceText(sync))}</div>
     </div>
+    <div class="sync-section-head">
+      <div class="detail-section-title">远端仓库</div>
+      <button class="mini-btn" data-remote-action="add" type="button"><span>添加远端</span><span class="command-hint">git remote add</span></button>
+    </div>
+    ${remoteListHtml(remotes)}
     <div class="detail-section-title">待拉取提交</div>
     ${syncCommitListHtml(incoming, "远端没有本地缺少的提交")}
     <div class="detail-section-title">待推送提交</div>
@@ -1972,6 +2010,36 @@ function syncCommitRowHtml(commit) {
       <span class="sync-commit-message" title="${escapeAttr(commit.message)}">${escapeHtml(commit.message)}</span>
       <span class="sync-commit-meta">${escapeHtml(commit.short || commit.sha.slice(0, 7))} · ${escapeHtml(commit.author || "unknown")} · ${escapeHtml(commit.time || "")}</span>
     </button>
+  `;
+}
+
+function remoteListHtml(remotes) {
+  if (!remotes.length) {
+    return `<div class="empty-panel compact"><span>还没有配置远端。添加远端后，就可以抓取、拉取和推送。</span></div>`;
+  }
+  return `
+    <div class="remote-list">
+      ${remotes.map((remote) => remoteRowHtml(remote)).join("")}
+    </div>
+  `;
+}
+
+function remoteRowHtml(remote) {
+  const fetchUrl = remote.fetchUrl || "未设置";
+  const pushUrl = remote.pushUrl || remote.fetchUrl || "未设置";
+  return `
+    <div class="remote-row" data-remote-name="${escapeAttr(remote.name)}">
+      <div class="remote-main">
+        <strong class="remote-name" title="${escapeAttr(remote.name)}">${escapeHtml(remote.name)}</strong>
+        <span class="remote-url" title="${escapeAttr(fetchUrl)}"><em>fetch</em><span>${escapeHtml(fetchUrl)}</span></span>
+        <span class="remote-url" title="${escapeAttr(pushUrl)}"><em>push</em><span>${escapeHtml(pushUrl)}</span></span>
+      </div>
+      <div class="remote-actions">
+        <button class="mini-btn" data-remote-action="fetch" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>抓取</span><span class="command-hint">git fetch</span></button>
+        <button class="mini-btn" data-remote-action="edit" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>修改 URL</span><span class="command-hint">set-url</span></button>
+        <button class="mini-btn danger" data-remote-action="delete" data-remote-name="${escapeAttr(remote.name)}" type="button"><span>删除</span><span class="command-hint">remove</span></button>
+      </div>
+    </div>
   `;
 }
 
@@ -2921,6 +2989,92 @@ function actionConfirmMessage(action, name) {
   return `确认执行：${name}？`;
 }
 
+async function runRemoteAction(action, remoteName = "", button = null) {
+  if (!state.data) return;
+  const remote = findRemote(remoteName);
+  let payload = null;
+  let message = "";
+  if (action === "add") {
+    const existingNames = syncRemotes().map((item) => item.name);
+    const defaultName = existingNames.includes("origin") ? "upstream" : "origin";
+    const nameInput = prompt("远端名称：", defaultName);
+    if (nameInput === null) return;
+    const name = cleanPromptValue(nameInput, "远端名称");
+    if (!name) return;
+    const urlInput = prompt("远端 URL：", "git@github.com:用户名/仓库名.git");
+    if (urlInput === null) return;
+    const url = cleanPromptValue(urlInput, "远端 URL");
+    if (!url) return;
+    payload = { action: "addRemote", name, url };
+    message = `确认添加远端：${name}？\n\nURL：${url}\n命令：git remote add ${name} ${url}`;
+  } else if (action === "edit") {
+    if (!remote?.name) return;
+    const currentUrl = remote.pushUrl || remote.fetchUrl || "";
+    const urlInput = prompt(`修改远端 ${remote.name} 的 URL：`, currentUrl);
+    if (urlInput === null) return;
+    const url = cleanPromptValue(urlInput, "远端 URL");
+    if (!url) return;
+    payload = { action: "setRemoteUrl", name: remote.name, url };
+    message = `确认修改远端 URL：${remote.name}？\n\n新 URL：${url}\n命令：git remote set-url ${remote.name} ${url}`;
+  } else if (action === "delete") {
+    if (!remote?.name) return;
+    payload = { action: "deleteRemote", name: remote.name };
+    message = `确认删除远端：${remote.name}？\n\n命令：git remote remove ${remote.name}\n这个操作只会删除当前仓库里的远端配置，不会删除 GitHub 或服务器上的仓库。`;
+  } else if (action === "fetch") {
+    if (!remote?.name) return;
+    payload = { action: "fetchRemote", name: remote.name };
+    message = `确认抓取远端：${remote.name}？\n\n命令：git fetch ${remote.name} --prune`;
+  }
+  if (!payload) return;
+  if (!state.data.repo.isSample && !confirm(message)) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    toast(result.output || "远端操作完成");
+    state.commitDetails.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    state.selectedTab = "sync";
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function runRemoteMenuAction(action) {
+  const remote = state.contextRemote;
+  hideRemoteContextMenu();
+  if (!remote?.name) return;
+  if (action === "copyFetch" || action === "copyPush") {
+    const url = action === "copyFetch" ? remote.fetchUrl : remote.pushUrl || remote.fetchUrl;
+    if (!url) {
+      toast("这个远端没有可复制的 URL");
+      return;
+    }
+    await copyText(url);
+    toast(action === "copyFetch" ? "已复制 fetch URL" : "已复制 push URL");
+    return;
+  }
+  const mapped = action === "fetch" || action === "edit" || action === "delete" ? action : "";
+  if (mapped) await runRemoteAction(mapped, remote.name);
+}
+
+function syncRemotes() {
+  return state.data?.sync?.remotes || [];
+}
+
+function findRemote(name) {
+  return syncRemotes().find((remote) => remote.name === name) || null;
+}
+
+function cleanPromptValue(value, label) {
+  const text = String(value || "").trim();
+  if (!text) toast(`请填写${label}`);
+  return text;
+}
+
 function selectedContextFiles() {
   const files = state.data?.workingFiles || [];
   const selected = new Set();
@@ -3273,6 +3427,14 @@ els.detailBody.addEventListener("click", (event) => {
     if (!syncAction.disabled) runAction(syncAction.dataset.syncAction).catch((error) => toast(error.message));
     return;
   }
+  const remoteAction = event.target.closest("[data-remote-action]");
+  if (remoteAction) {
+    event.preventDefault();
+    if (!remoteAction.disabled) {
+      runRemoteAction(remoteAction.dataset.remoteAction, remoteAction.dataset.remoteName || "", remoteAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   const syncCommit = event.target.closest("[data-sync-commit]");
   if (syncCommit) {
     event.preventDefault();
@@ -3292,6 +3454,14 @@ els.detailBody.addEventListener("click", (event) => {
   runCommitToolAction(button.dataset.commitTool, button.dataset.sha).catch((error) => toast(error.message));
 });
 els.detailBody.addEventListener("contextmenu", (event) => {
+  const remoteRow = event.target.closest(".remote-row[data-remote-name]");
+  if (remoteRow) {
+    event.preventDefault();
+    event.stopPropagation();
+    const remote = findRemote(remoteRow.dataset.remoteName || "");
+    if (remote) showRemoteContextMenu(event, remote);
+    return;
+  }
   const tagRow = event.target.closest(".tag-row[data-tag-name]");
   if (!tagRow) return;
   event.preventDefault();
@@ -3347,10 +3517,19 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  const remoteMenuAction = event.target.closest("#remoteContextMenu [data-remote-menu-action]");
+  if (remoteMenuAction) {
+    event.stopPropagation();
+    if (!remoteMenuAction.disabled) {
+      runRemoteMenuAction(remoteMenuAction.dataset.remoteMenuAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
   if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
   if (!event.target.closest("#fileContextMenu")) hideFileContextMenu();
   if (!event.target.closest("#tagContextMenu")) hideTagContextMenu();
+  if (!event.target.closest("#remoteContextMenu")) hideRemoteContextMenu();
   const stashAction = event.target.closest("[data-stash-action]");
   if (stashAction) {
     event.stopPropagation();
@@ -3398,18 +3577,21 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.branchContextMenu.classList.contains("show")) hideBranchContextMenu();
   if (event.key === "Escape" && els.fileContextMenu.classList.contains("show")) hideFileContextMenu();
   if (event.key === "Escape" && els.tagContextMenu.classList.contains("show")) hideTagContextMenu();
+  if (event.key === "Escape" && els.remoteContextMenu.classList.contains("show")) hideRemoteContextMenu();
 });
 document.addEventListener("scroll", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
   hideTagContextMenu();
+  hideRemoteContextMenu();
 }, true);
 window.addEventListener("resize", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
   hideTagContextMenu();
+  hideRemoteContextMenu();
 });
 
 initTheme();

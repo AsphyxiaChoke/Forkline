@@ -1924,6 +1924,92 @@ body.resizing .workbench-resizer-y::before {
   min-width: 0;
 }
 
+.sync-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin: 16px 0 10px;
+}
+
+.sync-section-head .detail-section-title {
+  min-width: 0;
+  margin: 0;
+}
+
+.sync-section-head .mini-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.remote-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.remote-row {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.remote-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.remote-name,
+.remote-url,
+.remote-url span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-name {
+  font-size: 13px;
+}
+
+.remote-url {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.remote-url em {
+  color: var(--quiet);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.remote-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.remote-actions .mini-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
 .sync-commit-list {
   display: grid;
   gap: 8px;

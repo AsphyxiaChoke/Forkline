@@ -226,6 +226,18 @@ async function runAction(body) {
   if (action === "forcePushLease") {
     return forcePushCurrentBranchWithLease();
   }
+  if (action === "fetchRemote") {
+    return fetchRemote(body);
+  }
+  if (action === "addRemote") {
+    return addRemote(body);
+  }
+  if (action === "setRemoteUrl") {
+    return setRemoteUrl(body);
+  }
+  if (action === "deleteRemote") {
+    return deleteRemote(body);
+  }
   if (action === "stageAll") {
     return commandResult(await git(currentRepo, ["add", "-A"], { timeout: 60000 }));
   }
@@ -397,6 +409,10 @@ function actionLabel(body = {}) {
     pull: "拉取远端",
     push: "推送到远端",
     forcePushLease: "安全强推到远端",
+    fetchRemote: body.name ? `抓取远端 ${shortText(body.name, 72)}` : "抓取指定远端",
+    addRemote: body.name ? `添加远端 ${shortText(body.name, 72)}` : "添加远端",
+    setRemoteUrl: body.name ? `修改远端 ${shortText(body.name, 72)} URL` : "修改远端 URL",
+    deleteRemote: body.name ? `删除远端 ${shortText(body.name, 72)}` : "删除远端",
     stageAll: "暂存全部更改",
     discardAll: "丢弃全部未提交更改",
     continueRevert: "继续还原",
@@ -614,11 +630,41 @@ async function fetchRemotes() {
   return syncCommandResult("fetch", output, before, after);
 }
 
+async function fetchRemote(body) {
+  const remote = await ensureRemoteName(body.name);
+  const before = await readCurrentSyncState();
+  const output = await git(currentRepo, ["fetch", remote, "--prune"], { timeout: 120000 });
+  const after = await readCurrentSyncState();
+  return syncCommandResult("fetch", output || `已抓取远端 ${remote}`, before, after);
+}
+
 async function pullCurrentBranch() {
   const before = await readCurrentSyncState();
   const output = await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return syncCommandResult("pull", output, before, after);
+}
+
+async function addRemote(body) {
+  const remote = normalizeRemoteName(body.name);
+  const url = normalizeRemoteUrl(body.url);
+  const remoteNames = await readRemoteNames();
+  if (remoteNames.includes(remote)) throw new Error(`远端 ${remote} 已存在`);
+  await git(currentRepo, ["remote", "add", remote, url], { timeout: 60000 });
+  return { ok: true, output: `已添加远端 ${remote}\nURL：${url}` };
+}
+
+async function setRemoteUrl(body) {
+  const remote = await ensureRemoteName(body.name);
+  const url = normalizeRemoteUrl(body.url);
+  await git(currentRepo, ["remote", "set-url", remote, url], { timeout: 60000 });
+  return { ok: true, output: `已修改远端 ${remote} 的 URL\nURL：${url}` };
+}
+
+async function deleteRemote(body) {
+  const remote = await ensureRemoteName(body.name);
+  await git(currentRepo, ["remote", "remove", remote], { timeout: 60000 });
+  return { ok: true, output: `已删除远端 ${remote}` };
 }
 
 async function deleteRemoteBranch(body) {
@@ -1164,6 +1210,18 @@ function normalizeRefName(value, label = "分支起点") {
   return ref;
 }
 
+function normalizeRemoteName(value) {
+  const remote = normalizeRefName(value, "远端名");
+  if (remote.includes("/")) throw new Error("远端名不能包含 /");
+  return remote;
+}
+
+function normalizeRemoteUrl(value) {
+  const url = String(value || "").trim();
+  if (!url || url.includes("\0") || /[\r\n]/.test(url)) throw new Error("远端 URL 不合法");
+  return url;
+}
+
 function normalizeRemoteCheckoutBranch(remoteRef) {
   const parts = String(remoteRef || "").split("/").filter(Boolean);
   if (parts.length < 2) throw new Error("远端分支不合法");
@@ -1172,6 +1230,18 @@ function normalizeRemoteCheckoutBranch(remoteRef) {
 
 async function readRemoteNames() {
   return parseRemoteNames(await git(currentRepo, ["remote"]).catch(() => ""));
+}
+
+async function ensureRemoteName(value) {
+  const remote = normalizeRemoteName(value);
+  const remoteNames = await readRemoteNames();
+  if (!remoteNames.includes(remote)) throw new Error(`远端 ${remote} 不存在`);
+  return remote;
+}
+
+async function readRemoteDetails() {
+  const [names, verboseOutput] = await Promise.all([readRemoteNames(), git(currentRepo, ["remote", "-v"]).catch(() => "")]);
+  return parseRemoteDetails(verboseOutput, names);
 }
 
 async function defaultRemoteName(value = "") {
@@ -1192,6 +1262,27 @@ function parseRemoteNames(output) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseRemoteDetails(output, remoteNames = []) {
+  const order = new Map(remoteNames.map((name, index) => [name, index]));
+  const remotes = new Map(remoteNames.map((name) => [name, { name, fetchUrl: "", pushUrl: "" }]));
+  for (const rawLine of String(output || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const match = line.match(/^(\S+)\s+(.+)\s+\((fetch|push)\)$/);
+    if (!match) continue;
+    const [, name, url, kind] = match;
+    if (!remotes.has(name)) remotes.set(name, { name, fetchUrl: "", pushUrl: "" });
+    const remote = remotes.get(name);
+    if (kind === "fetch") remote.fetchUrl = url.trim();
+    else remote.pushUrl = url.trim();
+  }
+  return [...remotes.values()].sort((left, right) => {
+    const leftIndex = order.has(left.name) ? order.get(left.name) : Number.MAX_SAFE_INTEGER;
+    const rightIndex = order.has(right.name) ? order.get(right.name) : Number.MAX_SAFE_INTEGER;
+    return leftIndex - rightIndex || left.name.localeCompare(right.name);
+  });
 }
 
 function isKnownRemoteBranch(remoteRef, remoteNames = []) {
@@ -1625,9 +1716,10 @@ function parseLog(output) {
 }
 
 async function readCurrentSyncDetails() {
-  const state = await readCurrentSyncState();
+  const [state, remotes] = await Promise.all([readCurrentSyncState(), readRemoteDetails()]);
   const details = {
     ...state,
+    remotes,
     incoming: [],
     outgoing: [],
   };
@@ -1720,6 +1812,10 @@ function sampleState() {
       upstreamGone: false,
       ahead: 2,
       behind: 1,
+      remotes: [
+        { name: "origin", fetchUrl: "git@github.com:example/atlas-dashboard.git", pushUrl: "git@github.com:example/atlas-dashboard.git" },
+        { name: "upstream", fetchUrl: "https://github.com/example/base-dashboard.git", pushUrl: "https://github.com/example/base-dashboard.git" },
+      ],
       incoming: [
         { sha: "b91a4d3c22aa", short: "b91a4d3", author: "Nora", time: "18 分钟前", message: "远端补充发布说明", refs: "origin/feature/visual-history", parents: [] },
       ],
@@ -1797,6 +1893,12 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("please commit your changes or stash them")) {
     return "当前有未提交修改。请先提交或储藏后再试。";
+  }
+  if (lower.includes("remote") && lower.includes("already exists")) {
+    return "这个远端名已经存在。请换一个名称，或在同步页修改已有远端的 URL。";
+  }
+  if (lower.includes("no such remote") || lower.includes("does not appear to be a git repository")) {
+    return "远端不可用。请检查远端名称和 URL 是否正确，或先确认网络/本地路径可访问。";
   }
   if (lower.includes(" is unmerged")) {
     const file = text.match(/path ['"]([^'"]+)['"] is unmerged/i)?.[1] || "";
@@ -2059,7 +2161,7 @@ function serveStatic(req, res) {
       res.end("Not found");
       return;
     }
-    res.writeHead(200, { "Content-Type": mime(filePath) });
+    res.writeHead(200, { "Content-Type": mime(filePath), "Cache-Control": "no-store" });
     res.end(data);
   });
 }
