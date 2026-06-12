@@ -3045,6 +3045,93 @@ body.resizing .workbench-resizer-y::before {
   min-width: 0;
 }
 
+.remote-check-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(35, 199, 183, 0.34);
+  border-radius: 8px;
+  background: rgba(35, 199, 183, 0.07);
+}
+
+.remote-check-card.error {
+  border-color: rgba(240, 99, 99, 0.42);
+  background: rgba(240, 99, 99, 0.08);
+}
+
+.remote-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.remote-check-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.remote-check-head strong,
+.remote-check-head span,
+.remote-check-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-check-head strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.remote-check-head span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.remote-check-status {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid rgba(35, 199, 183, 0.36);
+  border-radius: 999px;
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.remote-check-card.error .remote-check-status {
+  border-color: rgba(240, 99, 99, 0.42);
+  color: var(--danger);
+}
+
+.remote-check-meta .meta-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.remote-check-card pre {
+  max-height: 140px;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .sync-commit-list {
   display: grid;
   gap: 8px;

@@ -12,7 +12,7 @@
 - 安全强推已接入：顶部工具栏新增“强推”，当前本地分支右键菜单新增“安全强推当前分支”，后端执行 `git push --force-with-lease <远端> HEAD:<分支>`；普通 push 非快进拒绝和 force-with-lease stale 拒绝都有中文提示。
 - 右侧“同步”页已接入：显示当前分支 upstream、同步状态、操作建议、待拉取提交和待推送提交，并提供抓取 / 拉取 / 推送 / 安全强推入口。
 - 同步页远端仓库管理已接入：显示 `git remote -v` 的 fetch / push URL，支持添加远端、抓取单个远端、修改 URL、删除远端；远端行右键菜单也提供抓取、修改 URL、复制 URL、删除远端，并显示对应 Git 指令。
-- 远端连接检查已接入：同步页远端行和远端右键菜单新增“检查连接”，后端执行只读 `git ls-remote --heads <远端>`，成功时显示 fetch/push URL 和可读取分支数；认证、权限、DNS、网络、证书等常见失败会转成中文排查提示。
+- 远端连接检查已接入：同步页远端行和远端右键菜单新增“检查连接”，后端执行只读 `git ls-remote --heads <远端>`，成功时显示 fetch/push URL 和可读取分支数；认证、权限、DNS、网络、证书等常见失败会转成中文排查提示。前端同步页现在会保留最近一次检查结果，显示 URL、检查命令、成功/失败状态、Git 输出摘要和下一步建议，不再只依赖 toast。
 - 当前分支 upstream 管理已接入：同步页显示远端分支下拉框，支持 `git branch --set-upstream-to=<远端分支> <当前分支>` 和 `git branch --unset-upstream <当前分支>`；远端分支右键菜单也支持“设为当前分支 upstream”，当前本地分支右键菜单支持“取消当前分支 upstream”。
 - 普通推送保护已接入：如果当前分支落后 upstream，或本地领先同时落后形成分叉，后端会阻止普通 `git push` 并返回中文“推送被保护”；同步页会显示保护条、禁用普通推送按钮，并保留安全强推入口。
 - 变基拉取已接入：同步页新增“变基拉取”按钮，当前本地分支右键菜单新增“变基拉取当前分支”，后端执行 `git pull --rebase`；执行前会检查本地分支、upstream、未完成操作和干净工作区，确认弹窗说明会重写本地未推送提交 SHA。
@@ -85,6 +85,7 @@
 - 同步详情 UI 验证：右侧“同步”标签显示“分叉：领先 1，落后 1”，待拉取和待推送列表各显示一条提交，抓取 / 拉取 / 推送 / 安全强推按钮可见且无横向溢出，控制台无 Forkline 错误。
 - 远端仓库管理 API 验证：浏览器服务 `http://127.0.0.1:5192` 打开 GitTest 后，添加临时远端 `forkline-temp-*` 指向 `D:\桌面\GitTestRemote.git`，验证 `addRemote`、`fetchRemote`、`setRemoteUrl`、`deleteRemote` 均成功；临时远端已删除，GitTest 最终只剩 `origin`。
 - 远端连接检查 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，调用 `testRemote origin` 返回“远端 origin 连接正常”、fetch/push URL 和 18 个可读取分支；临时添加坏远端 `forkline-bad-remote-test` 后调用 `testRemote` 返回中文“无法读取，请确认远端 URL 正确、仓库存在，并且你拥有访问权限”，随后坏远端已删除。
+- 远端诊断 API 验证：临时服务 `http://127.0.0.1:5216` 打开 GitTest 后，调用 `testRemote origin` 返回 18 个可读取分支；临时添加坏远端 `forkline-bad-diagnostics` 指向不存在路径后，调用 `testRemote` 返回中文“远端 ... 无法读取。请确认远端 URL 正确、仓库存在，并且你拥有访问权限。”；临时坏远端已删除，GitTest 最终只剩 `origin`。内置浏览器本次仍卡在连接层，未记为视觉验证。
 - 远端仓库管理 UI 验证：浏览器服务 `http://127.0.0.1:5193` 打开 GitTest 的 `?tab=sync`，右侧同步页显示真实仓库 `origin` 的 fetch / push URL；249px 宽右侧内容无横向溢出，远端右键菜单显示“抓取此远端 / 修改 URL / 复制 fetch URL / 复制 push URL / 删除远端”，控制台无错误。
 - Upstream 管理 API 验证：浏览器服务 `http://127.0.0.1:5194` 打开 GitTest 后，在当前 `123` 分支调用 `setUpstream` 设置到 `origin/123`，API 返回 `sync.upstream = origin/123` 且领先/落后均为 0；随后调用 `unsetUpstream`，API 返回 upstream 为空。验证后 GitTest 已恢复为无 upstream、工作区干净。
 - Upstream 管理 UI 验证：浏览器打开 `http://127.0.0.1:5194/?tab=sync`，同步页“上游分支”下拉默认选中 `origin/123`，设置按钮可见，未设置 upstream 时取消按钮禁用；249px 右侧内容无横向溢出。远端分支 `origin/123` 右键菜单显示“设为当前分支 upstream git branch -u”，按钮启用，菜单无横向溢出，控制台无错误。
@@ -133,5 +134,5 @@
 按原计划继续完善：
 
 1. 历史编辑队列交互继续增强：现在已有多动作队列、队列项改动作、显示顺序调整、统一预检和一次执行，后续可以补批量改提交信息、更细的计划对照和更接近 GitKraken 的动效反馈。
-2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取和同步提交预览已完成，后续可继续做认证失败指引。
+2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取、同步提交预览和持久远端诊断已完成，后续可继续做更完整的 SSH/PAT 凭据向导。
 3. 恢复点策略继续增强：现在已有手动策略清理，后续可以增加本地偏好记忆、清理前候选列表展开，以及危险操作完成后可选自动执行保留策略。

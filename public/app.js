@@ -39,6 +39,7 @@ const state = {
   selectedRecoveryRef: "",
   recoveryFilter: { query: "", branch: "", action: "" },
   recoveryPolicy: { keepDays: "90", maxPerBranch: "50" },
+  remoteCheck: null,
   historyPlan: null,
   historyQueue: { items: [], loading: false, preview: null, error: "" },
   ignoredCheckoutStashes: new Set(),
@@ -2842,6 +2843,7 @@ function renderSyncTab() {
       <button class="mini-btn" data-remote-action="add" type="button"><span>添加远端</span><span class="command-hint">git remote add</span></button>
     </div>
     ${remoteListHtml(remotes)}
+    ${remoteCheckHtml(remotes)}
     <div class="detail-section-title">待拉取提交</div>
     ${syncCommitListHtml(incoming, "远端没有本地缺少的提交")}
     <div class="detail-section-title">待推送提交</div>
@@ -3143,6 +3145,60 @@ function remoteRowHtml(remote) {
       </div>
     </div>
   `;
+}
+
+function remoteCheckHtml(remotes) {
+  const check = state.remoteCheck;
+  if (!check?.remote) return "";
+  const remote = remotes.find((item) => item.name === check.remote);
+  if (!remote) return "";
+  const ok = check.status === "success";
+  const fetchUrl = check.fetchUrl || remote.fetchUrl || "未设置";
+  const pushUrl = check.pushUrl || remote.pushUrl || remote.fetchUrl || "未设置";
+  const command = check.command || `git ls-remote --heads ${check.remote}`;
+  const output = String(check.output || "").trim();
+  const checkedAt = check.checkedAt || "";
+  return `
+    <section class="remote-check-card ${ok ? "success" : "error"}">
+      <div class="remote-check-head">
+        <div>
+          <strong>${ok ? "远端连接正常" : "远端连接失败"}</strong>
+          <span>${escapeHtml(check.remote)}${checkedAt ? ` · ${escapeHtml(checkedAt)}` : ""}</span>
+        </div>
+        <span class="remote-check-status">${ok ? "通过" : "失败"}</span>
+      </div>
+      <div class="meta-grid sync-meta remote-check-meta">
+        <span>fetch URL</span><div class="meta-value" title="${escapeAttr(fetchUrl)}">${escapeHtml(fetchUrl)}</div>
+        <span>push URL</span><div class="meta-value" title="${escapeAttr(pushUrl)}">${escapeHtml(pushUrl)}</div>
+        <span>检查命令</span><div class="meta-value">${escapeHtml(command)}</div>
+        ${ok ? `<span>可读分支</span><div class="meta-value">${escapeHtml(String(check.heads ?? "未知"))} 个</div>` : `<span>下一步</span><div class="meta-value">${escapeHtml(remoteCheckAdvice(output, remote))}</div>`}
+      </div>
+      ${output ? `<pre>${escapeHtml(output)}</pre>` : ""}
+    </section>
+  `;
+}
+
+function remoteCheckAdvice(output, remote) {
+  const text = String(output || "").toLowerCase();
+  const url = `${remote?.fetchUrl || ""} ${remote?.pushUrl || ""}`.toLowerCase();
+  if (text.includes("ssh") || text.includes("publickey") || url.startsWith("git@") || url.includes("ssh://")) {
+    return "先确认 SSH key 已添加到 Git 托管平台，并在终端执行 ssh -T 对应主机；也可以把远端 URL 改为 HTTPS。";
+  }
+  if (text.includes("token") || text.includes("https") || text.includes("认证") || text.includes("authentication") || url.startsWith("http")) {
+    return "检查凭据管理器里的账号和 Personal Access Token，确认 token 未过期且有仓库读写权限。";
+  }
+  if (text.includes("dns") || text.includes("主机名") || text.includes("网络") || text.includes("连接") || text.includes("resolve") || text.includes("timeout")) {
+    return "检查远端 URL、DNS、代理、VPN 和防火墙；公司网络下还要确认代理证书。";
+  }
+  if (text.includes("不存在") || text.includes("not found") || text.includes("权限")) {
+    return "检查仓库名、组织权限和私有仓库授权；如果仓库已改名，先修改远端 URL。";
+  }
+  return "先确认远端 URL 正确，再检查网络和认证；必要时在同步页修改 URL 后重新检查。";
+}
+
+function remoteCheckTime(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function renderTagsTab() {
@@ -4526,6 +4582,7 @@ async function applyOpenedRepoData(data) {
   state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
   state.historyPlan = null;
   state.historyQueue = { items: [], loading: false, preview: null, error: "" };
+  state.remoteCheck = null;
   state.data = data;
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
   if (state.selectedRef) {
@@ -5045,6 +5102,21 @@ async function runRemoteAction(action, remoteName = "", button = null) {
   if (button) button.disabled = true;
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    if (action === "test") {
+      const check = result.remoteCheck || {};
+      state.remoteCheck = {
+        status: "success",
+        remote: check.remote || remote.name,
+        heads: check.heads ?? 0,
+        fetchUrl: check.fetchUrl || remote.fetchUrl || "",
+        pushUrl: check.pushUrl || remote.pushUrl || remote.fetchUrl || "",
+        command: `git ls-remote --heads ${check.remote || remote.name}`,
+        output: result.output || "远端连接正常",
+        checkedAt: remoteCheckTime(),
+      };
+    } else if (action === "add" || action === "edit" || action === "delete") {
+      state.remoteCheck = null;
+    }
     toast(result.output || "远端操作完成");
     state.commitDetails.clear();
     state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
@@ -5052,6 +5124,19 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     state.selectedTab = "sync";
     renderAll();
   } catch (error) {
+    if (action === "test" && remote?.name) {
+      state.remoteCheck = {
+        status: "error",
+        remote: remote.name,
+        fetchUrl: remote.fetchUrl || "",
+        pushUrl: remote.pushUrl || remote.fetchUrl || "",
+        command: `git ls-remote --heads ${remote.name}`,
+        output: error.message,
+        checkedAt: remoteCheckTime(),
+      };
+      state.selectedTab = "sync";
+      renderInspector();
+    }
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
