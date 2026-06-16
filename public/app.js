@@ -31,6 +31,7 @@ const state = {
   contextFile: null,
   contextTag: null,
   contextRemote: null,
+  contextReflogEntry: null,
   diffRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
@@ -40,6 +41,7 @@ const state = {
   selectedStash: "",
   selectedTag: "",
   selectedRecoveryRef: "",
+  selectedReflogSelector: "",
   recoveryFilter: { query: "", branch: "", action: "" },
   recoveryPolicy: defaultRecoveryPolicy(),
   remoteCheck: null,
@@ -109,6 +111,7 @@ const els = {
   fileContextMenu: $("#fileContextMenu"),
   tagContextMenu: $("#tagContextMenu"),
   remoteContextMenu: $("#remoteContextMenu"),
+  reflogContextMenu: $("#reflogContextMenu"),
   detailNode: $("#detailNode"),
   detailTitle: $("#detailTitle"),
   detailSub: $("#detailSub"),
@@ -1086,6 +1089,7 @@ function openCommandPalette() {
   hideFileContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
   state.commandPaletteIndex = 0;
   els.commandInput.value = "";
   renderCommandPalette();
@@ -1306,6 +1310,7 @@ function showCommitContextMenu(event, commit) {
   hideFileContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
   state.contextCommitSha = commit.sha;
   const menu = els.commitContextMenu;
   const isMergeCommit = (commit.parents || []).length > 1;
@@ -1387,6 +1392,7 @@ function showBranchContextMenu(event, branch, options = {}) {
   hideFileContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
   state.contextBranch = { name: branch, ...options };
   const menu = els.branchContextMenu;
   const isLocal = Boolean(options.local || options.checkout || options.rename || options.delete);
@@ -1508,6 +1514,7 @@ function showFileContextMenu(event, filePath, scope = "") {
   hideBranchContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
   const fileInfo = state.data?.workingFiles?.find((file) => file.file === filePath);
   if (!fileInfo) return;
   const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
@@ -1555,6 +1562,7 @@ function showTagContextMenu(event, tag) {
   hideBranchContextMenu();
   hideFileContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
   state.contextTag = tag || null;
   const menu = els.tagContextMenu;
   const hasTag = Boolean(tag?.name);
@@ -1577,6 +1585,7 @@ function showRemoteContextMenu(event, remote) {
   hideBranchContextMenu();
   hideFileContextMenu();
   hideTagContextMenu();
+  hideReflogContextMenu();
   state.contextRemote = remote || null;
   const menu = els.remoteContextMenu;
   const hasRemote = Boolean(remote?.name);
@@ -1598,6 +1607,29 @@ function hideRemoteContextMenu() {
   els.remoteContextMenu.classList.remove("show");
   els.remoteContextMenu.setAttribute("aria-hidden", "true");
   state.contextRemote = null;
+}
+
+function showReflogContextMenu(event, entry) {
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+  hideFileContextMenu();
+  hideTagContextMenu();
+  hideRemoteContextMenu();
+  state.contextReflogEntry = entry || null;
+  const menu = els.reflogContextMenu;
+  const hasEntry = Boolean(entry?.sha);
+  menu.querySelectorAll("[data-reflog-menu-action]").forEach((button) => {
+    button.disabled = !hasEntry;
+  });
+  menu.classList.add("show");
+  menu.setAttribute("aria-hidden", "false");
+  positionContextMenu(menu, event, 190);
+}
+
+function hideReflogContextMenu() {
+  els.reflogContextMenu.classList.remove("show");
+  els.reflogContextMenu.setAttribute("aria-hidden", "true");
+  state.contextReflogEntry = null;
 }
 
 async function runFileContextAction(action) {
@@ -4949,6 +4981,7 @@ function selectTag(name) {
 
 function renderRecoveryTab() {
   const points = state.data?.recoveryPoints || [];
+  const reflogEntries = state.data?.reflogEntries || [];
   const filteredPoints = filteredRecoveryPoints(points);
   if (state.selectedRecoveryRef && !points.some((point) => point.ref === state.selectedRecoveryRef)) {
     state.selectedRecoveryRef = "";
@@ -4958,33 +4991,48 @@ function renderRecoveryTab() {
   }
   if (!state.selectedRecoveryRef && filteredPoints.length) state.selectedRecoveryRef = filteredPoints[0].ref;
   const selected = filteredPoints.find((point) => point.ref === state.selectedRecoveryRef);
+  if (state.selectedReflogSelector && !reflogEntries.some((entry) => entry.selector === state.selectedReflogSelector)) {
+    state.selectedReflogSelector = "";
+  }
+  if (!state.selectedReflogSelector && reflogEntries.length) state.selectedReflogSelector = reflogEntries[0].selector;
+  const selectedReflog = reflogEntries.find((entry) => entry.selector === state.selectedReflogSelector);
   els.detailNode.style.borderColor = "var(--purple)";
   els.detailTitle.textContent = "恢复点";
-  els.detailSub.textContent = points.length ? `${filteredPoints.length} / ${points.length} 个可恢复位置` : "没有恢复点";
+  els.detailSub.textContent = [
+    points.length ? `恢复点 ${filteredPoints.length} / ${points.length}` : "没有自动恢复点",
+    reflogEntries.length ? `引用日志 ${reflogEntries.length} 条` : "",
+  ].filter(Boolean).join(" · ");
   setActiveDiff(null);
-  if (!points.length) {
+  if (!points.length && !reflogEntries.length) {
     els.detailBody.innerHTML = `
       <div class="empty-panel">
         <strong>没有恢复点</strong>
-        <span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点。</span>
+        <span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点；HEAD 引用日志也会显示在这里。</span>
       </div>
     `;
     return;
   }
   els.detailBody.innerHTML = `
     <div class="recovery-layout">
-      ${recoveryFilterHtml(points, filteredPoints)}
-      ${recoveryRetentionHtml(points)}
-      <div class="recovery-list">
-        ${
-          filteredPoints.length
-            ? filteredPoints.map((point) => recoveryRowHtml(point, point.ref === state.selectedRecoveryRef)).join("")
-            : `<div class="empty-panel compact"><span>没有匹配的恢复点。可以调整搜索、分支或动作筛选。</span></div>`
-        }
-      </div>
-      <div class="recovery-detail">
-        ${selected ? recoveryDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一个恢复点查看详情。</span></div>`}
-      </div>
+      ${
+        points.length
+          ? `
+            ${recoveryFilterHtml(points, filteredPoints)}
+            ${recoveryRetentionHtml(points)}
+            <div class="recovery-list">
+              ${
+                filteredPoints.length
+                  ? filteredPoints.map((point) => recoveryRowHtml(point, point.ref === state.selectedRecoveryRef)).join("")
+                  : `<div class="empty-panel compact"><span>没有匹配的恢复点。可以调整搜索、分支或动作筛选。</span></div>`
+              }
+            </div>
+            <div class="recovery-detail">
+              ${selected ? recoveryDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一个恢复点查看详情。</span></div>`}
+            </div>
+          `
+          : `<div class="empty-panel compact"><strong>没有自动恢复点</strong><span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点。</span></div>`
+      }
+      ${reflogSectionHtml(reflogEntries, selectedReflog)}
     </div>
   `;
 }
@@ -5262,6 +5310,66 @@ function recoveryDetailHtml(point) {
   `;
 }
 
+function reflogSectionHtml(entries, selected) {
+  return `
+    <section class="reflog-section">
+      <div class="reflog-section-head">
+        <div>
+          <strong>引用日志</strong>
+          <span>HEAD 最近经过的位置，用来找回被重置或切走的提交</span>
+        </div>
+        <em>${escapeHtml(entries.length ? `${entries.length} 条` : "无记录")}</em>
+      </div>
+      ${
+        entries.length
+          ? `
+            <div class="reflog-list">
+              ${entries.map((entry) => reflogRowHtml(entry, entry.selector === state.selectedReflogSelector)).join("")}
+            </div>
+            <div class="reflog-detail">
+              ${selected ? reflogDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一条引用日志查看可恢复位置。</span></div>`}
+            </div>
+          `
+          : `<div class="empty-panel compact"><span>当前仓库没有可读取的 HEAD 引用日志。</span></div>`
+      }
+    </section>
+  `;
+}
+
+function reflogRowHtml(entry, active) {
+  return `
+    <button class="reflog-row ${active ? "active" : ""}" data-reflog-selector="${escapeAttr(entry.selector)}" data-reflog-sha="${escapeAttr(entry.sha)}" type="button">
+      <span class="stash-row-top">
+        <strong title="${escapeAttr(entry.message || "")}">${escapeHtml(entry.message || "HEAD 位置变更")}</strong>
+        <em>${escapeHtml(entry.selector || "")}</em>
+      </span>
+      <span class="stash-message" title="${escapeAttr(entry.sha || "")}">${escapeHtml(`${entry.short || ""} · ${entry.time || "未知时间"}`)}</span>
+      <span class="stash-branch">${escapeHtml([entry.actionLabel, entry.author].filter(Boolean).join(" · ") || "移动")}</span>
+    </button>
+  `;
+}
+
+function reflogDetailHtml(entry) {
+  return `
+    <div class="reflog-actions">
+      <button class="mini-btn" data-reflog-action="view" data-reflog-selector="${escapeAttr(entry.selector)}" type="button">查看提交</button>
+      <button class="mini-btn" data-reflog-action="copy" data-reflog-selector="${escapeAttr(entry.selector)}" type="button">复制 SHA</button>
+      <button class="mini-btn" data-reflog-action="create" data-reflog-selector="${escapeAttr(entry.selector)}" type="button"><span>创建恢复点</span><span class="command-hint">update-ref</span></button>
+      <button class="mini-btn danger" data-reflog-action="restore" data-reflog-selector="${escapeAttr(entry.selector)}" type="button"><span>恢复到此处</span><span class="command-hint">reset --hard</span></button>
+    </div>
+    <div class="meta-grid stash-meta">
+      <span>位置</span><div class="meta-value">${escapeHtml(entry.selector || "HEAD")}</div>
+      <span>提交</span><div class="meta-value" title="${escapeAttr(entry.sha || "")}">${escapeHtml(entry.short || entry.sha || "未知")}</div>
+      <span>动作</span><div class="meta-value">${escapeHtml(entry.actionLabel || "移动")}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(entry.time || "未知")}</div>
+      <span>说明</span><div class="meta-value" title="${escapeAttr(entry.message || "")}">${escapeHtml(entry.message || "HEAD 位置变更")}</div>
+    </div>
+    <div class="empty-panel compact">
+      <span>引用日志是 Git 记录 HEAD 曾经指向哪里。创建恢复点只保存引用；恢复到此处会执行 git reset --hard，执行前 Forkline 会再创建一个恢复前恢复点。</span>
+    </div>
+  `;
+}
+
 function renderLogsTab() {
   const logs = state.data?.operationLog || [];
   const running = state.data?.runningOperations || [];
@@ -5357,6 +5465,22 @@ function selectRecoveryPoint(ref) {
   if (!ref || ref === state.selectedRecoveryRef) return;
   state.selectedRecoveryRef = ref;
   renderInspector();
+}
+
+function findReflogEntry(selector) {
+  return (state.data?.reflogEntries || []).find((entry) => entry.selector === selector);
+}
+
+function selectReflogEntry(selector) {
+  if (!selector || selector === state.selectedReflogSelector) return;
+  state.selectedReflogSelector = selector;
+  renderInspector();
+}
+
+async function viewReflogEntry(entry) {
+  if (!entry?.sha) return;
+  state.selectedTab = "details";
+  await selectRef(entry.sha);
 }
 
 function updateRecoveryFilter(key, value, input) {
@@ -5502,6 +5626,66 @@ async function runRecoveryAction(action, ref, button) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+async function runReflogAction(action, selector, button) {
+  if (!state.data || !selector) return;
+  const entry = findReflogEntry(selector);
+  if (!entry) {
+    toast("引用日志记录已经变化，请刷新后再试");
+    return;
+  }
+  if (action === "view") {
+    await viewReflogEntry(entry);
+    return;
+  }
+  if (action === "copy") {
+    await copyText(entry.sha);
+    toast("已复制提交 SHA");
+    return;
+  }
+  if (action !== "create" && action !== "restore") return;
+  const body = { selector: entry.selector, sha: entry.sha };
+  const apiAction = action === "create" ? "createRecoveryPointFromReflog" : "restoreReflogEntry";
+  if (action === "restore") {
+    const message = [
+      "确认把当前分支恢复到这条引用日志？",
+      "",
+      `位置：${entry.selector}`,
+      `提交：${entry.short || entry.sha}`,
+      `说明：${entry.message || "HEAD 位置变更"}`,
+      `命令：git reset --hard ${entry.sha}`,
+      "",
+      "这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。",
+    ].join("\n");
+    if (!state.data.repo.isSample && !confirm(message)) return;
+  }
+  try {
+    if (button) button.disabled = true;
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ...body }) });
+    toast(result.output || "引用日志操作完成");
+    state.commitDetails.clear();
+    state.selectedChanges.clear();
+    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    if (result.recovery?.ref) state.selectedRecoveryRef = result.recovery.ref;
+    if (!state.data.reflogEntries?.some((item) => item.selector === state.selectedReflogSelector)) {
+      state.selectedReflogSelector = state.data.reflogEntries?.[0]?.selector || "";
+    }
+    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    renderAll();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function runReflogMenuAction(action) {
+  const entry = state.contextReflogEntry;
+  hideReflogContextMenu();
+  if (!entry?.selector) return;
+  await runReflogAction(action, entry.selector, null);
 }
 
 async function runTagAction(action, tagName, button) {
@@ -7754,6 +7938,20 @@ els.detailBody.addEventListener("click", (event) => {
     selectRecoveryPoint(recoveryRow.dataset.recoveryRef || "");
     return;
   }
+  const reflogAction = event.target.closest("[data-reflog-action]");
+  if (reflogAction) {
+    event.preventDefault();
+    if (!reflogAction.disabled) {
+      runReflogAction(reflogAction.dataset.reflogAction, reflogAction.dataset.reflogSelector || state.selectedReflogSelector || "", reflogAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
+  const reflogRow = event.target.closest(".reflog-row[data-reflog-selector]");
+  if (reflogRow) {
+    event.preventDefault();
+    selectReflogEntry(reflogRow.dataset.reflogSelector || "");
+    return;
+  }
   const logRefresh = event.target.closest("[data-log-refresh]");
   if (logRefresh) {
     event.preventDefault();
@@ -7840,6 +8038,17 @@ els.detailBody.addEventListener("contextmenu", (event) => {
     if (remote) showRemoteContextMenu(event, remote);
     return;
   }
+  const reflogRow = event.target.closest(".reflog-row[data-reflog-selector]");
+  if (reflogRow) {
+    event.preventDefault();
+    event.stopPropagation();
+    const selector = reflogRow.dataset.reflogSelector || "";
+    state.selectedReflogSelector = selector;
+    renderInspector();
+    const entry = findReflogEntry(selector);
+    if (entry) showReflogContextMenu(event, entry);
+    return;
+  }
   const tagRow = event.target.closest(".tag-row[data-tag-name]");
   if (!tagRow) return;
   event.preventDefault();
@@ -7903,11 +8112,20 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  const reflogMenuAction = event.target.closest("#reflogContextMenu [data-reflog-menu-action]");
+  if (reflogMenuAction) {
+    event.stopPropagation();
+    if (!reflogMenuAction.disabled) {
+      runReflogMenuAction(reflogMenuAction.dataset.reflogMenuAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
   if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
   if (!event.target.closest("#fileContextMenu")) hideFileContextMenu();
   if (!event.target.closest("#tagContextMenu")) hideTagContextMenu();
   if (!event.target.closest("#remoteContextMenu")) hideRemoteContextMenu();
+  if (!event.target.closest("#reflogContextMenu")) hideReflogContextMenu();
   const stashAction = event.target.closest("[data-stash-action]");
   if (stashAction) {
     event.stopPropagation();
@@ -7968,6 +8186,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.fileContextMenu.classList.contains("show")) hideFileContextMenu();
   if (event.key === "Escape" && els.tagContextMenu.classList.contains("show")) hideTagContextMenu();
   if (event.key === "Escape" && els.remoteContextMenu.classList.contains("show")) hideRemoteContextMenu();
+  if (event.key === "Escape" && els.reflogContextMenu.classList.contains("show")) hideReflogContextMenu();
 });
 document.addEventListener("scroll", () => {
   hideCommitContextMenu();
@@ -7975,6 +8194,7 @@ document.addEventListener("scroll", () => {
   hideFileContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
 }, true);
 window.addEventListener("resize", () => {
   hideCommitContextMenu();
@@ -7982,6 +8202,7 @@ window.addEventListener("resize", () => {
   hideFileContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
+  hideReflogContextMenu();
 });
 
 initTheme();

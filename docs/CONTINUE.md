@@ -54,6 +54,7 @@
 - 自动恢复点已接入：追加提交、变基拉取、分支变基、修改提交信息、交互式历史编辑和 reset 前会自动创建 `refs/forkline/recovery/...` 隐藏引用；右侧新增“恢复点”页，可查看、恢复或删除恢复点。恢复动作会先再创建一个恢复前恢复点。
 - 恢复点管理已增强：右侧“恢复点”页支持搜索、按分支筛选、按动作筛选、显示筛选数量，并支持删除当前筛选结果；后端新增 `deleteRecoveryPoints`，会先验证所有 ref 都在 `refs/forkline/recovery/...` 下再批量删除。
 - 恢复点保留策略已接入：右侧“恢复点”页新增“保留策略”，支持设置“保留最近 N 天”和“每个分支保留 N 个”；策略会保存到当前浏览器的 `forkline-recovery-policy`；前端会预览将清理/保留数量并展开最多 6 个将清理候选，后端执行前重新读取真实 `refs/forkline/recovery/...` 并只删除 Forkline 管理范围内的恢复引用。
+- 引用日志恢复已接入：右侧“恢复点”页新增 HEAD reflog 区块，读取 `git log -g HEAD`，可查看 reflog 提交、从某条 reflog 创建 Forkline 恢复点，或在本地分支且工作区干净时恢复到该记录；reflog 行右键菜单也提供“查看提交 / 复制 SHA / 创建恢复点 / 恢复到此处”。
 - 工作区 Diff 面板已接入当前文件快捷操作：查看未提交文件对照时，面板标题右侧可直接执行“暂存 / 取消 / 丢弃 / 丢已暂存 / 最大化”，并会按未暂存、已暂存状态自动启用或禁用；标题区支持换行，右侧栏缩窄时不会挤压路径和按钮。
 - 工作区 Diff 视图切换和按块操作已接入：底部工作区对照可在“未暂存 / 已暂存”之间切换，同一文件两边都有改动时也能查看对应 Diff；hunk 头会显示“暂存此块 / 丢弃此块”或“取消暂存此块”。后端新增 `stageHunk`、`unstageHunk`、`discardWorktreeHunk`，会重新读取真实 `git diff` / `git diff --cached` 并通过 `git apply` 只应用选中 hunk。未跟踪文本文件会按 40 行左右生成虚拟块，支持只暂存选中的块；未跟踪文件块级丢弃暂不开放。
 - 右侧详情标签栏已改成横向可滚动：现在 7 个标签不会再被旧的 5 列网格挤到两行，窄侧栏下会保持单行、文本截断并允许横向滚动。
@@ -144,6 +145,7 @@
 - 恢复点批量清理 API 验证：在 GitTest 临时创建 3 条 `refs/forkline/recovery/...` 测试引用，其中 2 条分支为 `123`、1 条分支为 `other`；通过 `deleteRecoveryPoints` 删除分支 `123` 的筛选结果后只剩 `other`，随后清理剩余测试引用，最终恢复点数量为 0。
 - 恢复点保留策略 API 验证：临时服务 `http://127.0.0.1:5212` 打开 GitTest 后，创建 5 条 `refs/forkline/recovery/.../forkline_policy_test/...` 测试引用；调用 `pruneRecoveryPoints`，策略为“保留最近 30 天 / 每个分支保留 2 个”，API 返回已清理 3 个并保留最新 2 个；随后已清理剩余测试引用，GitTest 恢复点 refs 为空。
 - 恢复点策略偏好/候选预览静态验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 通过；HTTP 静态资源检查确认最新 `app.js` 返回 `forkline-recovery-policy`、`saveRecoveryPolicyPreference`、`recoveryRetentionPreviewHtml`，最新 `styles.css` 返回 `.recovery-retention-preview-row`。内置浏览器打开 localhost 本次仍超时并重置会话，未记为视觉验证。
+- 引用日志恢复 API/UI 验证：临时服务 `http://127.0.0.1:5274` 打开 GitTest 后，在临时分支 `forkline-reflog-verify-*` 创建测试提交，再 `reset --hard HEAD~1` 制造 reflog 记录；`/api/state` 返回该临时提交的 reflog 项，`createRecoveryPointFromReflog` 创建 `refs/forkline/recovery/.../reflog-*`，`restoreReflogEntry` 恢复 HEAD 到临时提交并自动创建 `restore-reflog` 恢复前恢复点。内置浏览器打开同一服务后手动打开 GitTest，右侧“恢复点”页显示“引用日志 80 条”，reflog 行无横向溢出，右键菜单显示“查看提交 / 复制 SHA / 创建恢复点 update-ref / 恢复到此处 reset --hard”。测试后已切回 `123`、删除临时分支和测试恢复点 refs，GitTest 工作区干净。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 - 比较页任意引用选择器 API/HTTP 验证：临时服务 `http://127.0.0.1:5239` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `base = 123`、`head = forkline/merge-clean`、目标独有提交 3 个、文件变化 6 个；HTTP 静态检查确认 `comparePickerHtml`、`data-compare-run` 和 `.compare-picker` 均已从最新资源返回。内置 Browser 本次打开 localhost 仍超时，未记为视觉验证。
 - 分支整理 API 验证：临时服务 `http://127.0.0.1:5256` 打开 GitTest 后，创建本地临时分支 `forkline/cleanup-api-verify` 指向当前 HEAD；`branchCleanup` 返回该分支 `mergedIntoCurrent = true`、`canDelete = true`、`statusLabel = 已合并`；调用 `deleteBranches` 后返回“已删除 1 个本地分支”，`show-ref` 确认该临时分支不存在。内置 Browser 本次打开 localhost 仍卡在连接/加载层，未记为视觉验证；GitTest 最终保持 `123` 分支且工作区干净。

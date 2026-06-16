@@ -115,7 +115,7 @@ async function readBranchDisplayName(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
+  const [branch, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
     readBranchDisplayName(currentRepo),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
@@ -129,6 +129,7 @@ async function readState(ref = "") {
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
+    readReflogOutput().catch(() => ""),
     git(currentRepo, logArgs(ref)).catch(() => ""),
   ]);
 
@@ -190,6 +191,7 @@ async function readState(ref = "") {
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
     recoveryPoints: parseRecoveryPoints(recoveryOutput),
+    reflogEntries: parseReflogEntries(reflogOutput),
     tags: parseTags(tagOutput),
     runningOperations: listRunningOperations(),
     operationLog,
@@ -917,6 +919,12 @@ async function runAction(body) {
   if (action === "restoreRecoveryPoint") {
     return restoreRecoveryPoint(body);
   }
+  if (action === "createRecoveryPointFromReflog") {
+    return createRecoveryPointFromReflog(body);
+  }
+  if (action === "restoreReflogEntry") {
+    return restoreReflogEntry(body);
+  }
   if (action === "deleteRecoveryPoint") {
     return deleteRecoveryPoint(body);
   }
@@ -1106,6 +1114,8 @@ function actionLabel(body = {}) {
     branchFromStash: branch && ref ? `从储藏 ${ref} 创建分支 ${branch}` : "从储藏创建分支",
     applyPatch: body.stage ? "应用补丁并暂存" : "应用补丁到工作区",
     restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
+    createRecoveryPointFromReflog: body.sha ? `从引用日志创建恢复点 ${shortText(body.sha, 12)}` : "从引用日志创建恢复点",
+    restoreReflogEntry: body.sha ? `恢复到引用日志 ${shortText(body.sha, 12)}` : "恢复到引用日志",
     deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",
     deleteRecoveryPoints: Array.isArray(body.refs) ? `批量删除 ${body.refs.length} 个恢复点` : "批量删除恢复点",
     pruneRecoveryPoints: "按保留策略清理恢复点",
@@ -2869,11 +2879,15 @@ async function currentLocalBranch(actionText = "执行操作") {
 }
 
 async function createRecoveryPoint(actionKey) {
+  return createRecoveryPointForCommit(actionKey, "HEAD");
+}
+
+async function createRecoveryPointForCommit(actionKey, targetRef = "HEAD", branchOverride = "") {
   const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD")).trim() || "HEAD";
-  const sha = (await git(currentRepo, ["rev-parse", "--verify", "HEAD"])).trim();
-  const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  const sha = (await git(currentRepo, ["rev-parse", "--verify", `${targetRef}^{commit}`])).trim();
+  const short = (await git(currentRepo, ["rev-parse", "--short", sha])).trim();
   const timestamp = recoveryTimestamp();
-  const ref = `${RECOVERY_REF_PREFIX}/${timestamp}/${recoverySlug(branch, "HEAD")}/${recoverySlug(actionKey, "operation")}`;
+  const ref = `${RECOVERY_REF_PREFIX}/${timestamp}/${recoverySlug(branchOverride || branch, "HEAD")}/${recoverySlug(actionKey, "operation")}`;
   await git(currentRepo, ["check-ref-format", ref], { timeout: 60000 });
   await git(currentRepo, ["update-ref", ref, sha], { timeout: 60000 });
   return recoveryPointFromParts(ref, sha, short);
@@ -2902,6 +2916,26 @@ async function restoreRecoveryPoint(body) {
   await git(currentRepo, ["reset", "--hard", target], { timeout: 120000 });
   const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
   return appendRecoveryLine({ ok: true, output: `已恢复到 ${short}` }, before);
+}
+
+async function createRecoveryPointFromReflog(body) {
+  const entry = await ensureReflogEntry(body);
+  const recovery = await createRecoveryPointForCommit(`reflog-${entry.short}`, entry.sha);
+  return {
+    ok: true,
+    recovery,
+    output: `已从引用日志 ${entry.selector} 创建恢复点 ${recovery.shortRef}（${recovery.short}）`,
+  };
+}
+
+async function restoreReflogEntry(body) {
+  const entry = await ensureReflogEntry(body);
+  await currentLocalBranch("恢复引用日志记录");
+  await ensureCleanWorktree("恢复到引用日志记录前，请先提交、储藏或还原当前工作区改动。");
+  const before = await createRecoveryPoint("restore-reflog");
+  await git(currentRepo, ["reset", "--hard", entry.sha], { timeout: 120000 });
+  const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
+  return appendRecoveryLine({ ok: true, output: `已恢复到引用日志 ${entry.selector}：${short}` }, before);
 }
 
 async function deleteRecoveryPoint(body) {
@@ -2954,6 +2988,28 @@ async function pruneRecoveryPoints(body) {
 async function readRecoveryPointsFromGit() {
   const output = await git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => "");
   return parseRecoveryPoints(output);
+}
+
+function readReflogOutput(maxCount = 80) {
+  const count = Math.max(1, Math.min(Number.parseInt(String(maxCount || 80), 10) || 80, 200));
+  return git(currentRepo, [
+    "log",
+    "-g",
+    `--max-count=${count}`,
+    "--date=iso-strict",
+    "--format=%H%x1f%h%x1f%gd%x1f%gs%x1f%an%x1f%ad",
+    "HEAD",
+  ], { maxBuffer: 1024 * 1024 * 2 });
+}
+
+async function ensureReflogEntry(body) {
+  const requestedSha = normalizeSha(body.sha);
+  const sha = await resolveCommit(requestedSha);
+  const selector = String(body.selector || "").trim();
+  const entries = parseReflogEntries(await readReflogOutput(120).catch(() => ""));
+  const entry = entries.find((item) => item.sha === sha && (!selector || item.selector === selector)) || entries.find((item) => item.sha === sha);
+  if (!entry) throw new Error("引用日志中没有这条记录，请刷新后再试。");
+  return { ...entry, sha };
 }
 
 function normalizeRecoveryRetentionPolicy(body) {
@@ -3054,6 +3110,70 @@ function parseRecoveryPoints(output) {
     .filter(Boolean);
 }
 
+function parseReflogEntries(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .filter((line) => line.includes("\x1f"))
+    .map((line, index) => {
+      const [sha, short, rawSelector, rawMessage, author, rawTime] = line.split("\x1f");
+      if (!sha) return null;
+      const selector = rawSelector || `HEAD@{${index}}`;
+      const message = reflogMessage(rawMessage);
+      return {
+        index,
+        sha,
+        short: short || String(sha).slice(0, 7),
+        selector,
+        message,
+        action: reflogActionKey(message),
+        actionLabel: reflogActionLabel(message),
+        author: author || "",
+        rawTime: rawTime || "",
+        time: reflogTimeLabel(rawTime),
+      };
+    })
+    .filter(Boolean);
+}
+
+function reflogMessage(value) {
+  return String(value || "").trim() || "HEAD 位置变更";
+}
+
+function reflogActionKey(message) {
+  const lower = String(message || "").toLowerCase();
+  if (lower.startsWith("commit")) return "commit";
+  if (lower.startsWith("checkout")) return "checkout";
+  if (lower.startsWith("reset")) return "reset";
+  if (lower.startsWith("merge")) return "merge";
+  if (lower.startsWith("rebase")) return "rebase";
+  if (lower.startsWith("cherry-pick")) return "cherry-pick";
+  if (lower.startsWith("revert")) return "revert";
+  if (lower.startsWith("pull")) return "pull";
+  if (lower.startsWith("clone")) return "clone";
+  return "move";
+}
+
+function reflogActionLabel(message) {
+  const labels = {
+    commit: "提交",
+    checkout: "切换",
+    reset: "重置",
+    merge: "合并",
+    rebase: "变基",
+    "cherry-pick": "挑选",
+    revert: "还原",
+    pull: "拉取",
+    clone: "克隆",
+    move: "移动",
+  };
+  return labels[reflogActionKey(message)] || "移动";
+}
+
+function reflogTimeLabel(value) {
+  const date = new Date(String(value || ""));
+  return Number.isNaN(date.getTime()) ? String(value || "") : formatLocalTime(date);
+}
+
 function recoveryPointFromParts(ref, sha, short, subject = "") {
   if (!ref || !ref.startsWith(`${RECOVERY_REF_PREFIX}/`)) return null;
   const shortRef = shortRecoveryRef(ref);
@@ -3113,7 +3233,9 @@ function recoveryActionLabel(action) {
     "reset-mixed": "混合重置前",
     "reset-hard": "硬重置前",
     "restore-recovery": "恢复前",
+    "restore-reflog": "引用日志恢复前",
   };
+  if (String(action || "").startsWith("reflog-")) return "引用日志保存点";
   return labels[action] || "危险操作前";
 }
 
@@ -4531,6 +4653,32 @@ function sampleState() {
         action: "rebase-onto",
         actionLabel: "变基前",
         time: "2026-06-12 21:30:00",
+      },
+    ],
+    reflogEntries: [
+      {
+        index: 0,
+        sha: "f83a9c2b0177",
+        short: "f83a9c2",
+        selector: "HEAD@{0}",
+        message: "commit: 打磨提交图连线动画",
+        action: "commit",
+        actionLabel: "提交",
+        author: "Mina",
+        rawTime: "2026-06-12T21:42:00+08:00",
+        time: "2026-06-12 21:42:00",
+      },
+      {
+        index: 1,
+        sha: "fa51203b0921",
+        short: "fa51203",
+        selector: "HEAD@{1}",
+        message: "checkout: moving from main to feature/visual-history",
+        action: "checkout",
+        actionLabel: "切换",
+        author: "Mina",
+        rawTime: "2026-06-12T21:18:00+08:00",
+        time: "2026-06-12 21:18:00",
       },
     ],
     runningOperations: [

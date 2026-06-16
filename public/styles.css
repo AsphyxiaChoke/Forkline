@@ -3479,7 +3479,8 @@ body.resizing .workbench-resizer-y::before {
 
 .stash-list,
 .tag-list,
-.recovery-list {
+.recovery-list,
+.reflog-list {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -3495,7 +3496,8 @@ body.resizing .workbench-resizer-y::before {
 
 .stash-row,
 .tag-row,
-.recovery-row {
+.recovery-row,
+.reflog-row {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -3523,6 +3525,57 @@ body.resizing .workbench-resizer-y::before {
 .recovery-row.active {
   border-color: rgba(156, 124, 255, 0.55);
   background: rgba(156, 124, 255, 0.08);
+}
+
+.reflog-row:hover,
+.reflog-row.active {
+  border-color: rgba(35, 199, 183, 0.5);
+  background: rgba(35, 199, 183, 0.07);
+}
+
+.reflog-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.reflog-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.reflog-section-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reflog-section-head strong,
+.reflog-section-head span,
+.reflog-section-head em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reflog-section-head strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.reflog-section-head span,
+.reflog-section-head em {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .recovery-filterbar {
@@ -3780,7 +3833,8 @@ body.resizing .workbench-resizer-y::before {
 
 .stash-detail,
 .tag-detail,
-.recovery-detail {
+.recovery-detail,
+.reflog-detail {
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -3789,6 +3843,7 @@ body.resizing .workbench-resizer-y::before {
 .stash-actions,
 .tag-actions,
 .recovery-actions,
+.reflog-actions,
 .sync-actions {
   display: flex;
   flex-wrap: wrap;

@@ -321,6 +321,13 @@
     <div class="context-separator" role="separator"></div>
     <button data-remote-menu-action="delete" class="danger" type="button"><span class="menu-label">删除远端</span><span class="command-hint">git remote remove</span></button>
   </div>
+  <div id="reflogContextMenu" class="context-menu" aria-hidden="true">
+    <button data-reflog-menu-action="view" type="button">查看提交</button>
+    <button data-reflog-menu-action="copy" type="button">复制 SHA</button>
+    <div class="context-separator" role="separator"></div>
+    <button data-reflog-menu-action="create" type="button"><span class="menu-label">创建恢复点</span><span class="command-hint">update-ref</span></button>
+    <button data-reflog-menu-action="restore" class="danger" type="button"><span class="menu-label">恢复到此处</span><span class="command-hint">reset --hard</span></button>
+  </div>
   <div id="checkoutModal" class="checkout-modal" aria-hidden="true">
     <div class="checkout-dialog" role="dialog" aria-modal="true" aria-labelledby="checkoutModalTitle">
       <div class="checkout-warning">
