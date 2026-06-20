@@ -104,3 +104,25 @@
 - `docs/CONTINUE.md`: updated the current feature note to say the workspace filter now lives in the bottom changes panel.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`.
+
+## 2026-06-20 - Task: redesign branch graph modes
+### What was done
+- Split the commit graph into two clearer modes: all-branch overview and single-branch focus.
+- All-branch view keeps multiple lanes, branch labels, merge parent-count labels, and dashed secondary-parent merge lines so branch merge relationships are visible.
+- Single-branch view now uses first-parent history and draws one main timeline; merge commits keep a side hint and "合并" label without expanding every merged side-branch commit into the branch view.
+- Widened the graph column to make merge labels and branch lanes easier to read.
+- Updated the continuation document with the new graph behavior.
+### Testing
+- `node --check public/app.js` passed with the Codex runtime Node.
+- `node --check server.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Real Git command verification on `D:\桌面\GitTest` confirmed `git log --first-parent main` returns the main branch timeline while retaining merge commits.
+- Browser preview verification on `http://127.0.0.1:5295/` confirmed all-branch view uses `graph-lines overview`, 2 lane guides, `M2`, and a dashed secondary-parent path.
+- Browser preview verification confirmed switching to `main` uses `graph-lines focus`, one lane guide, 3 first-parent commits (`Merge feature/login`, `main update`, `base commit`), a side merge hint, and no console errors. The preview server was stopped after testing.
+### Notes
+- `server.js`: single-ref log requests now use `--first-parent`, and sample ref-state returns a first-parent style commit list.
+- `public/app.js`: separates overview and focused graph rendering, keeps side-branch lanes in all-branch mode, and draws focused branch history as a mainline graph.
+- `public/styles.css`: widens the graph column to match the new SVG width.
+- `docs/CONTINUE.md`: documents the new all-branch versus single-branch graph behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`.

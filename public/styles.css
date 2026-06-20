@@ -43,7 +43,7 @@
   --changes-w: 370px;
   --stage-h: 300px;
   --commit-form-h: 116px;
-  --graph-w: 156px;
+  --graph-w: 176px;
   --history-cols: var(--graph-w) minmax(0, 1fr) minmax(104px, 150px) minmax(76px, 96px) minmax(70px, 96px);
   --row-h: 62px;
   --header-h: 58px;

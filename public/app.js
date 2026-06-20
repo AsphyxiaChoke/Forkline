@@ -58,8 +58,8 @@ const state = {
   folderBrowse: null,
 };
 
-const graphWidth = 156;
-const laneX = [28, 58, 88, 118, 136, 146, 150];
+const graphWidth = 176;
+const laneX = [28, 54, 80, 106, 132, 154, 166];
 const rowH = 62;
 const els = {
   repoName: $("#repoName"),
@@ -2683,41 +2683,43 @@ async function createTagFromForm(event) {
 }
 
 function renderGraphSvg(commits, height, selectedRef) {
+  return selectedRef ? renderBranchGraphSvg(commits, height, selectedRef) : renderOverviewGraphSvg(commits, height);
+}
+
+function renderOverviewGraphSvg(commits, height) {
   const bySha = new Map(commits.map((commit, index) => [commit.sha, { commit, index }]));
   const byShort = new Map(commits.map((commit, index) => [commit.short, { commit, index }]));
-  const selectedColor = selectedRef ? refColor(selectedRef) : "";
-  const isFocused = Boolean(selectedRef);
-  const guides = laneGuides(commits, height, selectedColor, isFocused);
+  const guides = overviewLaneGuides(commits, height);
   let paths = "";
   let nodes = "";
   let labels = "";
   commits.forEach((commit, index) => {
     const x1 = laneX[commit.lane] || laneX[0];
     const y1 = index * rowH + rowH / 2;
-    const color = selectedColor || commit.color;
-    const isPrimaryNode = !isFocused && commit.lane === 0;
+    const color = commit.color || laneColor(commit.lane);
+    const isPrimaryNode = commit.lane === 0;
     const parents = commit.parents || [];
     const isMerge = parents.length > 1;
-    nodes += node(x1, y1, color, isFocused, isPrimaryNode, isMerge);
-    const label = selectedRef && index === 0 ? selectedRef : !selectedRef ? tipLabel(commit.refs) : "";
-    if (label) labels += graphLabel(x1, y1, label, color, isFocused);
+    nodes += graphNode(x1, y1, color, { primary: isPrimaryNode, merge: isMerge });
+    const label = tipLabel(commit.refs);
+    if (label) labels += graphLabel(x1, y1, label, color, false);
     if (isMerge) labels += mergeLabel(x1, y1, parents.length, color);
     if (!parents.length && index < commits.length - 1) {
       const next = commits[index + 1];
-      paths += curve(x1, y1, laneX[next.lane] || laneX[0], (index + 1) * rowH + rowH / 2, color, isFocused, isPrimaryNode && next.lane === 0);
+      paths += overviewCurve(x1, y1, laneX[next.lane] || laneX[0], (index + 1) * rowH + rowH / 2, color, { primary: isPrimaryNode && next.lane === 0 });
     }
     parents.forEach((parentSha, parentIndex) => {
       const parent = bySha.get(parentSha) || byShort.get(parentSha.slice(0, 7));
       if (!parent) {
-        paths += curve(x1, y1, x1, Math.min(y1 + rowH, height), color, isFocused, isPrimaryNode, parentIndex);
+        paths += overviewCurve(x1, y1, x1, Math.min(y1 + rowH, height), color, { primary: isPrimaryNode, secondary: parentIndex > 0 });
         return;
       }
       if (parent.index <= index) return;
-      paths += curve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, color, isFocused, isPrimaryNode && parent.commit.lane === 0, parentIndex);
+      paths += overviewCurve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, color, { primary: isPrimaryNode && parent.commit.lane === 0, secondary: parentIndex > 0 });
     });
   });
   return `
-    <svg class="graph-lines ${isFocused ? "focus" : "overview"}" height="${height}" viewBox="0 0 ${graphWidth} ${height}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines overview" height="${height}" viewBox="0 0 ${graphWidth} ${height}" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${guides}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -2726,9 +2728,43 @@ function renderGraphSvg(commits, height, selectedRef) {
   `;
 }
 
+function renderBranchGraphSvg(commits, height, selectedRef) {
+  const color = refColor(selectedRef);
+  const x = laneX[0];
+  let paths = "";
+  let nodes = "";
+  let labels = "";
+  commits.forEach((commit, index) => {
+    const y = index * rowH + rowH / 2;
+    const parents = commit.parents || [];
+    const isMerge = parents.length > 1;
+    if (index < commits.length - 1) {
+      const nextY = (index + 1) * rowH + rowH / 2;
+      paths += branchMainLine(x, y, nextY, color);
+    }
+    if (isMerge) {
+      const mergeX = laneX[2];
+      paths += branchMergeHint(x, y, mergeX, color);
+      labels += mergeLabel(mergeX, y, parents.length, color, "合并");
+    }
+    nodes += graphNode(x, y, color, { focused: true, merge: isMerge });
+    if (index === 0) labels += graphLabel(x, y, selectedRef, color, true);
+  });
+  return `
+    <svg class="graph-lines focus" height="${height}" viewBox="0 0 ${graphWidth} ${height}" preserveAspectRatio="none" aria-hidden="true">
+      <g class="lane-guides" fill="none" stroke-linecap="round">${branchLaneGuide(x, height, color)}</g>
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
+      <g>${labels}</g>
+      <g>${nodes}</g>
+    </svg>
+  `;
+}
+
 function layoutGraphCommits(visibleCommits, selectedRef) {
-  if (selectedRef || !state.data?.commits?.length) return visibleCommits;
+  if (selectedRef) return visibleCommits.map((commit) => ({ ...commit, lane: 0, color: refColor(selectedRef) }));
+  if (!state.data?.commits?.length) return visibleCommits;
   const allCommits = state.data.commits;
+  const bySha = new Map(allCommits.map((commit) => [commit.sha, commit]));
   const primary = primaryBranchName();
   const primaryLine = primaryLineSet(allCommits, primary);
   if (!primaryLine.size) return visibleCommits;
@@ -2753,8 +2789,11 @@ function layoutGraphCommits(visibleCommits, selectedRef) {
       lane = inheritedLane.get(commit.sha) ?? allocateLane(branch);
     }
     laneBySha.set(commit.sha, lane);
-    (commit.parents || []).forEach((parentSha) => {
-      if (!primaryLine.has(parentSha) && !inheritedLane.has(parentSha)) inheritedLane.set(parentSha, lane);
+    (commit.parents || []).forEach((parentSha, parentIndex) => {
+      if (primaryLine.has(parentSha) || inheritedLane.has(parentSha)) return;
+      const parentCommit = bySha.get(parentSha);
+      const parentLane = parentIndex === 0 ? lane : allocateLane(parentCommit ? sideBranchName(parentCommit, primary) : "");
+      inheritedLane.set(parentSha, parentLane);
     });
   });
 
@@ -2807,31 +2846,30 @@ function isPrimaryRef(name, primary) {
   return Boolean(primary) && (name === primary || name.endsWith(`/${primary}`));
 }
 
-function curve(x1, y1, x2, y2, color, selected, primary = false, parentIndex = 0) {
+function overviewCurve(x1, y1, x2, y2, color, options = {}) {
   const mid = (y1 + y2) / 2;
   const d = `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
-  const isSecondaryParent = parentIndex > 0;
-  if (selected) {
-    return `
-      <path d="${d}" stroke="${color}" stroke-width="${isSecondaryParent ? 12 : 10}" opacity="${isSecondaryParent ? 0.2 : 0.16}" />
-      <path d="${d}" stroke="${color}" stroke-width="${isSecondaryParent ? 5.4 : 4.6}" opacity="0.98" ${isSecondaryParent ? 'stroke-dasharray="7 5"' : ""} />
-    `;
-  }
-  return `<path d="${d}" stroke="${color}" stroke-width="${isSecondaryParent ? 4.4 : primary ? 4.8 : 3.1}" opacity="${isSecondaryParent ? 0.84 : primary ? 0.9 : 0.72}" ${isSecondaryParent ? 'stroke-dasharray="7 5"' : ""} />`;
+  const secondary = Boolean(options.secondary);
+  const primary = Boolean(options.primary);
+  return `<path d="${d}" stroke="${color}" stroke-width="${secondary ? 4.2 : primary ? 5 : 3.2}" opacity="${secondary ? 0.8 : primary ? 0.92 : 0.7}" ${secondary ? 'stroke-dasharray="8 5"' : ""} />`;
 }
 
-function laneGuides(commits, height, selectedColor, selected) {
-  if (selected) {
-    const lanes = [...new Set(commits.map((commit) => Number(commit.lane) || 0))].sort((a, b) => a - b);
-    return lanes
-      .map((lane, index) => {
-        const x = laneX[lane] || laneX[0];
-        const opacity = index === 0 ? 0.15 : 0.08;
-        const width = index === 0 ? 18 : 12;
-        return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${selectedColor}" stroke-width="${width}" opacity="${opacity}" />`;
-      })
-      .join("");
-  }
+function branchMainLine(x, y1, y2, color) {
+  return `
+    <path d="M ${x} ${y1} L ${x} ${y2}" stroke="${color}" stroke-width="14" opacity="0.14" />
+    <path d="M ${x} ${y1} L ${x} ${y2}" stroke="${color}" stroke-width="5" opacity="0.95" />
+  `;
+}
+
+function branchMergeHint(x, y, mergeX, color) {
+  const controlX = (x + mergeX) / 2;
+  return `
+    <path d="M ${mergeX} ${y - 16} C ${controlX} ${y - 16}, ${controlX} ${y}, ${x} ${y}" stroke="${color}" stroke-width="9" opacity="0.12" />
+    <path d="M ${mergeX} ${y - 16} C ${controlX} ${y - 16}, ${controlX} ${y}, ${x} ${y}" stroke="${color}" stroke-width="4" opacity="0.72" stroke-dasharray="7 5" />
+  `;
+}
+
+function overviewLaneGuides(commits, height) {
   const lanes = [...new Set(commits.map((commit) => Number(commit.lane) || 0))].sort((a, b) => a - b);
   return lanes
     .map((lane) => {
@@ -2844,7 +2882,14 @@ function laneGuides(commits, height, selectedColor, selected) {
     .join("");
 }
 
-function node(x, y, color, selected, primary = false, merge = false) {
+function branchLaneGuide(x, height, color) {
+  return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${color}" stroke-width="22" opacity="0.13" />`;
+}
+
+function graphNode(x, y, color, options = {}) {
+  const selected = Boolean(options.focused);
+  const primary = Boolean(options.primary);
+  const merge = Boolean(options.merge);
   const radius = merge ? 8.2 : selected ? 7.4 : primary ? 6.9 : 6.4;
   return `
     <circle cx="${x}" cy="${y}" r="${merge ? 17 : selected ? 15 : primary ? 13 : 12}" fill="${color}" opacity="${merge ? 0.22 : selected ? 0.18 : primary ? 0.14 : 0.1}" />
@@ -2868,13 +2913,14 @@ function graphLabel(x, y, label, color, selected) {
   `;
 }
 
-function mergeLabel(x, y, count, color) {
-  const labelX = Math.min(x + 13, graphWidth - 34);
+function mergeLabel(x, y, count, color, text = `M${count}`) {
+  const labelWidth = text.length > 3 ? 36 : 28;
+  const labelX = Math.min(x + 13, graphWidth - labelWidth - 6);
   const labelY = y + 8;
   return `
     <g class="graph-merge-label">
-      <rect x="${labelX}" y="${labelY}" width="28" height="18" rx="6" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
-      <text x="${labelX + 6}" y="${labelY + 13}" fill="var(--graph-label-text)" font-size="10" font-weight="900" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">M${count}</text>
+      <rect x="${labelX}" y="${labelY}" width="${labelWidth}" height="18" rx="6" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
+      <text x="${labelX + 6}" y="${labelY + 13}" fill="var(--graph-label-text)" font-size="10" font-weight="900" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">${escapeHtml(text)}</text>
     </g>
   `;
 }
@@ -6824,14 +6870,10 @@ async function selectRef(ref) {
     state.selectedRef = ref;
     els.searchInput.value = "";
     state.commitDetails.clear();
-    if (state.data.repo.isSample) {
-      state.data.repo.selectedRef = ref;
-    } else {
-      const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
-      state.data.repo = { ...state.data.repo, ...(data.repo || {}), selectedRef: data.repo?.selectedRef || ref };
-      state.data.commits = data.commits || [];
-      state.selectedRef = state.data.repo.selectedRef || ref;
-    }
+    const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
+    state.data.repo = { ...state.data.repo, ...(data.repo || {}), selectedRef: data.repo?.selectedRef || ref };
+    state.data.commits = data.commits || [];
+    state.selectedRef = state.data.repo.selectedRef || ref;
     state.selectedSha = state.data.commits[0]?.sha || "";
     renderAll();
     if (state.selectedSha) {

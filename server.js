@@ -205,6 +205,7 @@ async function readRefState(ref = "") {
   if (!currentRepo) {
     const sample = sampleState();
     sample.repo.selectedRef = ref;
+    if (ref) sample.commits = sampleBranchCommits(sample, ref);
     return { repo: sample.repo, commits: sample.commits };
   }
   const selectedRef = String(ref || "").trim();
@@ -227,18 +228,40 @@ async function readRefState(ref = "") {
   };
 }
 
+function sampleBranchCommits(sample, ref) {
+  const commits = sample?.commits || [];
+  if (!ref || !commits.length) return commits;
+  const bySha = new Map(commits.map((commit) => [commit.sha, commit]));
+  let cursor = commits.find((commit) => refNamesFromText(commit.refs).includes(ref)) || commits[0];
+  const list = [];
+  while (cursor && !list.some((commit) => commit.sha === cursor.sha)) {
+    list.push({ ...cursor, lane: 0, color: laneColors[0] });
+    cursor = bySha.get(cursor.parents?.[0]);
+  }
+  return list;
+}
+
+function refNamesFromText(refs) {
+  return String(refs || "")
+    .split(",")
+    .map((item) => item.trim().replace(/^HEAD\s+->\s+/, ""))
+    .filter(Boolean);
+}
+
 function logArgs(ref) {
+  const selectedRef = String(ref || "").trim();
   const args = [
     "log",
     "--graph",
+    "--topo-order",
     "--max-count=120",
     "--date=relative",
     "--pretty=format:%x1f%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%D%x1f%P",
   ];
-  if (ref) {
-    args.splice(1, 0, ref);
+  if (selectedRef) {
+    args.push("--first-parent", selectedRef);
   } else {
-    args.splice(1, 0, "--branches", "--remotes");
+    args.push("--branches", "--remotes");
   }
   return args;
 }
