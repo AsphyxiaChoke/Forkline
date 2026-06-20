@@ -83,3 +83,24 @@
 - `docs/CONTINUE.md`: documented the restored folder picker and merge graph readability change.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`; no persistent test data was created.
+
+## 2026-06-20 - Task: simplify workspace changes panel
+### What was done
+- Removed the duplicate left-sidebar workspace file list.
+- Renamed the bottom unstaged changes area to "工作区" and moved the workspace file filter into that panel.
+- Kept the existing workspace filtering behavior, including path/status matching, count display, and clear action.
+- Updated the continuation document so future sessions know the workspace filter now lives in the bottom changes panel.
+### Testing
+- `node --check public/app.js` passed with the Codex runtime Node.
+- `node --check server.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Static checks confirmed `worktreeList`, the old left `<section class="worktree">`, and `file-stack` are no longer referenced in `public/`.
+- Live `http://127.0.0.1:5177/` verification confirmed the left sidebar only shows local and remote branches, the bottom panel title is "工作区", and the filter input is inside the bottom changes panel with no console errors.
+- Temporary in-memory preview `http://127.0.0.1:5293/` verified sample workspace filtering: entering `workbench` reduced the change list to `src/styles/workbench.css`, showed `1/5`, and the clear button restored all 5 rows with no console errors. The preview server was stopped after testing.
+### Notes
+- `public/index.html`: removed the old sidebar workspace block and placed the workspace filter in the bottom changes panel.
+- `public/app.js`: removed the old sidebar list rendering path, renamed the unstaged section to "工作区", and keeps filter metadata synchronized during stage rendering.
+- `public/styles.css`: removed obsolete sidebar workspace/file-stack styles and sized the bottom changes grid for the new filter row.
+- `docs/CONTINUE.md`: updated the current feature note to say the workspace filter now lives in the bottom changes panel.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`.

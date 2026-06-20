@@ -83,7 +83,6 @@ const els = {
   clearBranchFilter: $("#clearBranchFilter"),
   newBranch: $("#newBranch"),
   remoteList: $("#remoteList"),
-  worktreeList: $("#worktreeList"),
   worktreeFilterInput: $("#worktreeFilterInput"),
   worktreeFilterCount: $("#worktreeFilterCount"),
   clearWorktreeFilter: $("#clearWorktreeFilter"),
@@ -719,22 +718,11 @@ async function renameBranchFromForm(nextBranch) {
 }
 
 function renderWorkingFiles() {
-  els.worktreeList.innerHTML = "";
   const files = state.data.workingFiles;
   const terms = worktreeFilterTerms();
   const visibleFiles = filterWorkingFiles(files, terms);
   state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
   updateWorktreeFilterMeta(terms, visibleFiles.length, files.length);
-  if (!files.length) {
-    els.worktreeList.innerHTML = `<div class="file-row"><span></span><span class="file-name">工作区干净</span><span></span></div>`;
-    return;
-  }
-  if (!visibleFiles.length) {
-    els.worktreeList.innerHTML = `<div class="file-row empty-row"><span></span><span class="file-name">没有匹配的工作区文件</span><span></span></div>`;
-    return;
-  }
-  els.worktreeList.innerHTML = fileTreeHtml(visibleFiles);
-  bindFileTree(els.worktreeList, { selectable: true });
 }
 
 function renderStage() {
@@ -743,6 +731,7 @@ function renderStage() {
   const terms = worktreeFilterTerms();
   const visibleFiles = filterWorkingFiles(files, terms);
   state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
+  updateWorktreeFilterMeta(terms, visibleFiles.length, files.length);
   const operationBanner = renderRepoOperationBanner(files);
   if (!files.length) {
     state.selectedFile = "";
@@ -770,7 +759,7 @@ function renderStage() {
       }
       els.changeList.innerHTML = `
         ${operationBanner}
-        ${renderChangeSection("unstaged", "未暂存", groups.unstaged, [
+        ${renderChangeSection("unstaged", "工作区", groups.unstaged, [
           { action: "stageFile", label: "暂存", bulkLabel: "暂存所选" },
           { action: "discardWorktreeFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
         ])}
@@ -932,7 +921,7 @@ function changeGroups(files) {
 }
 
 function renderChangeSection(scope, title, files, actions) {
-  const emptyText = title === "未暂存" ? "没有未暂存的更改" : "没有已暂存的更改";
+  const emptyText = title === "工作区" ? "工作区没有未暂存的更改" : "没有已暂存的更改";
   const selectedCount = selectedFilesInScope(scope, files).length;
   return `
     <section class="change-section">

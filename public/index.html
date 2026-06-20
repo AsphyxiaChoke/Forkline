@@ -83,15 +83,6 @@
           <div id="remoteList" class="nav-list"></div>
         </section>
 
-        <section class="worktree">
-          <div class="side-title">工作区</div>
-          <label class="worktree-filter">
-            <input id="worktreeFilterInput" type="search" autocomplete="off" spellcheck="false" placeholder="筛选文件或状态" />
-            <output id="worktreeFilterCount" hidden></output>
-            <button id="clearWorktreeFilter" type="button" title="清空工作区筛选" aria-label="清空工作区筛选" hidden>×</button>
-          </label>
-          <div id="worktreeList" class="file-stack"></div>
-        </section>
       </aside>
 
       <div class="workspace-resizer" data-resizer="sidebar" title="拖拽调整左侧栏"></div>
@@ -116,7 +107,7 @@
           <div class="stage-resizer-y" data-resizer="stage" title="拖拽调整变更面板高度"></div>
           <div class="changes">
             <div class="panel-title">
-              <span>未暂存的更改</span>
+              <span>工作区</span>
               <div class="panel-actions">
                 <button id="refreshChanges" class="mini-btn" type="button" title="刷新工作区更改">刷新</button>
                 <button id="stashChanges" class="mini-btn" type="button" title="储藏全部未提交更改">储藏</button>
@@ -124,6 +115,11 @@
                 <button id="discardAll" class="mini-btn danger" type="button" title="丢弃全部未提交更改">丢弃</button>
               </div>
             </div>
+            <label class="worktree-filter stage-filter">
+              <input id="worktreeFilterInput" type="search" autocomplete="off" spellcheck="false" placeholder="筛选文件或状态" />
+              <output id="worktreeFilterCount" hidden></output>
+              <button id="clearWorktreeFilter" type="button" title="清空工作区筛选" aria-label="清空工作区筛选" hidden>×</button>
+            </label>
             <div id="changeList" class="change-list"></div>
           </div>
           <div class="stage-split-resizer" data-resizer="changes" title="拖拽调整变更文件宽度"></div>

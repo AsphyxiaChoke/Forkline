@@ -530,7 +530,7 @@ body.resizing .workspace-resizer::before {
 
 .sidebar {
   display: grid;
-  grid-template-rows: 88px 42px minmax(140px, 0.9fr) minmax(104px, 0.65fr) 190px;
+  grid-template-rows: 88px 42px minmax(140px, 1fr) minmax(104px, 0.72fr);
   border-right: 1px solid var(--line);
 }
 
@@ -567,6 +567,10 @@ body.resizing .workspace-resizer::before {
   height: 32px;
   margin: 0 0 4px;
   padding: 0 6px 0 10px;
+}
+
+.stage-filter {
+  margin: 6px 8px 2px;
 }
 
 .branch-filter input,
@@ -630,17 +634,12 @@ body.resizing .workspace-resizer::before {
   font-weight: 900;
 }
 
-.side-section,
-.worktree {
+.side-section {
   display: grid;
   grid-template-rows: 30px minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
   padding: 0 10px 10px;
-}
-
-.worktree {
-  grid-template-rows: 30px 32px minmax(0, 1fr);
 }
 
 .side-title {
@@ -662,7 +661,6 @@ body.resizing .workspace-resizer::before {
 }
 
 .nav-list,
-.file-stack,
 .change-list {
   min-height: 0;
   overflow: auto;
@@ -708,11 +706,6 @@ body.resizing .workspace-resizer::before {
   margin-bottom: 4px;
 }
 
-.file-stack {
-  height: 100%;
-  padding-right: 2px;
-}
-
 .nav-item {
   display: grid;
   grid-template-columns: 15px minmax(0, 1fr);
@@ -724,8 +717,7 @@ body.resizing .workspace-resizer::before {
   text-align: left;
 }
 
-.side-section > .nav-item,
-.worktree > .nav-item {
+.side-section > .nav-item {
   margin-bottom: 4px;
 }
 
@@ -1246,7 +1238,7 @@ body.resizing .stage-resizer-y::before {
 
 .changes {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto 40px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
