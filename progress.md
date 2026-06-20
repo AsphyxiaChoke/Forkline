@@ -223,3 +223,17 @@
 - `public/app.js`: stops auto-selecting the first visible worktree file during stage rendering and only loads worktree diff after an explicit selection.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/app.js` and `progress.md`; stop any temporary verification service on port 5306 if still running.
+
+## 2026-06-21 - Task: clear worktree highlight on deselect
+### What was done
+- Updated worktree file selection so Ctrl-clicking an already selected file clears both the multi-select state and the focused file highlight.
+- When the last selected worktree file is deselected, the work diff panel returns to "未选择文件" instead of keeping the previous file highlighted.
+### Testing
+- Browser verification on `http://127.0.0.1:5307/` confirmed the initial worktree list has no selected rows and the diff panel shows "未选择文件".
+- Browser verification confirmed clicking `src/views/HistoryPanel.tsx` selects and highlights that row, loads `HistoryPanel.tsx · 未暂存`, and opens file history.
+- Browser verification confirmed Ctrl-clicking the same row clears both `.selected` and `.multi-selected`, empties the diff path, and restores the diff text to "未选择文件".
+- Browser page console errors/warnings were empty.
+### Notes
+- `public/app.js`: derives the focused worktree file from the current selection after each click, so deselection clears the visual highlight.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/app.js` and `progress.md`; stop any temporary verification service on port 5307 if still running.

@@ -6057,11 +6057,15 @@ function bindFileTree(root, options = {}) {
 
 function selectChangeFile(filePath, scope, event) {
   if (!filePath) return;
-  state.selectedFile = filePath;
-  setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   updateChangeSelection(scope, filePath, event);
+  const selected = state.selectedChanges.has(changeKey(scope, filePath));
+  state.selectedFile = selected ? filePath : "";
+  if (selected) {
+    setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
+  }
   renderStage();
-  openSelectedFileInspector(filePath);
+  if (selected) openSelectedFileInspector(filePath);
+  else renderWorkDiffEmpty("未选择文件");
 }
 
 function updateChangeSelection(scope, filePath, event = {}) {
