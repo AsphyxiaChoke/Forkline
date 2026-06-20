@@ -115,8 +115,9 @@ async function readBranchDisplayName(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
-  const [branch, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
+  const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
     readBranchDisplayName(currentRepo),
+    git(currentRepo, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
@@ -176,6 +177,7 @@ async function readState(ref = "") {
       name: path.basename(currentRepo),
       path: currentRepo,
       branch: branch.trim() || "detached HEAD",
+      headSha: headShaOutput.trim(),
       selectedRef: ref,
       isSample: false,
       operation: detectRepoOperation(currentRepo),
@@ -195,6 +197,32 @@ async function readState(ref = "") {
     tags: parseTags(tagOutput),
     runningOperations: listRunningOperations(),
     operationLog,
+    commits: parseLog(logOutput),
+  };
+}
+
+async function readRefState(ref = "") {
+  if (!currentRepo) {
+    const sample = sampleState();
+    sample.repo.selectedRef = ref;
+    return { repo: sample.repo, commits: sample.commits };
+  }
+  const selectedRef = String(ref || "").trim();
+  const [branch, headShaOutput, logOutput] = await Promise.all([
+    readBranchDisplayName(currentRepo),
+    git(currentRepo, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
+    git(currentRepo, logArgs(selectedRef)).catch(() => ""),
+  ]);
+  return {
+    repo: {
+      name: path.basename(currentRepo),
+      path: currentRepo,
+      branch: branch.trim() || "detached HEAD",
+      headSha: headShaOutput.trim(),
+      selectedRef,
+      isSample: false,
+      operation: detectRepoOperation(currentRepo),
+    },
     commits: parseLog(logOutput),
   };
 }
@@ -4459,6 +4487,7 @@ function sampleState() {
       name: "atlas-dashboard",
       path: "示例仓库",
       branch: "feature/visual-history",
+      headSha: data[0][0],
       isSample: true,
       remoteNames: ["origin", "upstream"],
     },
@@ -5124,6 +5153,10 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       sendJson(res, 200, await readState(parsed.searchParams.get("ref") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/ref-state") {
+      sendJson(res, 200, await readRefState(parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "POST" && parsed.pathname === "/api/open") {

@@ -785,6 +785,13 @@ body.resizing .workspace-resizer::before {
   opacity: 0.55;
 }
 
+.branch-row.current-branch .branch-checkout {
+  border-color: rgba(35, 199, 183, 0.55);
+  background: rgba(35, 199, 183, 0.1);
+  color: var(--teal);
+  opacity: 1;
+}
+
 .branch-checkout.blocked {
   border-color: rgba(240, 184, 91, 0.4);
   color: var(--amber);
@@ -806,6 +813,16 @@ body.resizing .workspace-resizer::before {
 .nav-item.active {
   border-color: rgba(35, 199, 183, 0.75);
   background: rgba(35, 199, 183, 0.11);
+}
+
+.nav-item.current-branch {
+  border-color: rgba(35, 199, 183, 0.62);
+  box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.nav-item.active.current-branch {
+  border-color: rgba(35, 199, 183, 0.92);
+  background: rgba(35, 199, 183, 0.15);
 }
 
 .branch-dot {
@@ -886,6 +903,12 @@ body.resizing .workspace-resizer::before {
   color: var(--amber);
 }
 
+.branch-badge.current {
+  border-color: rgba(35, 199, 183, 0.42);
+  background: rgba(35, 199, 183, 0.16);
+  color: var(--teal);
+}
+
 .nav-item span:last-child,
 .branch-chip span:last-child,
 .message strong,
@@ -931,6 +954,15 @@ body.resizing .workspace-resizer::before {
 .branch-chip.active {
   border-color: rgba(35, 199, 183, 0.85);
   background: rgba(35, 199, 183, 0.12);
+}
+
+.branch-chip.current-branch {
+  border-color: rgba(35, 199, 183, 0.75);
+  box-shadow: inset 0 -3px 0 var(--teal);
+}
+
+.branch-chip.active.current-branch {
+  background: rgba(35, 199, 183, 0.16);
 }
 
 .history {
@@ -1047,6 +1079,20 @@ body.resizing .workspace-resizer::before {
   box-shadow: inset 4px 0 0 var(--teal);
 }
 
+.commit-row.current-head {
+  background: linear-gradient(90deg, rgba(92, 169, 255, 0.14), rgba(92, 169, 255, 0.03) 42%, transparent), var(--row);
+  box-shadow: inset 4px 0 0 var(--blue);
+}
+
+.commit-row.current-head:nth-child(odd) {
+  background: linear-gradient(90deg, rgba(92, 169, 255, 0.14), rgba(92, 169, 255, 0.03) 42%, transparent), var(--row-alt);
+}
+
+.commit-row.current-head.selected {
+  background: linear-gradient(90deg, rgba(35, 199, 183, 0.16), rgba(92, 169, 255, 0.08) 48%, transparent), var(--row-selected);
+  box-shadow: inset 4px 0 0 var(--teal), inset 8px 0 0 rgba(92, 169, 255, 0.82);
+}
+
 .graph-cell {
   position: relative;
   height: var(--row-h);
@@ -1079,6 +1125,35 @@ body.resizing .workspace-resizer::before {
 .message span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.message .commit-ref-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.message .commit-ref-text {
+  display: inline;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.head-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid rgba(92, 169, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(92, 169, 255, 0.14);
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 16px;
 }
 
 .commit-row .search-hit {

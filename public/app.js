@@ -280,7 +280,7 @@ function renderBranches() {
   if (!visibleLocalBranches.length) appendBranchEmpty(els.branchList, filterTerms.length ? "没有匹配的本地分支" : "没有本地分支");
   localBranchItems.forEach(({ branch, index, options }) => {
     const chip = document.createElement("button");
-    chip.className = `branch-chip ${branch === currentRef ? "active" : ""}`;
+    chip.className = `branch-chip ${branch === currentRef ? "active" : ""} ${branch === currentBranch ? "current-branch" : ""}`;
     chip.type = "button";
     chip.innerHTML = `<span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span>`;
     chip.addEventListener("click", () => selectRef(branch));
@@ -358,14 +358,14 @@ function clearBranchFilter() {
 
 function branchButton(branch, index, active, options = {}) {
   const row = document.createElement("div");
-  row.className = "branch-row";
+  row.className = `branch-row ${options.current ? "current-branch" : ""}`;
   row.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     event.stopPropagation();
     showBranchContextMenu(event, branch, options);
   });
   const button = document.createElement("button");
-  button.className = `nav-item ${active ? "active" : ""}`;
+  button.className = `nav-item ${active ? "active" : ""} ${options.current ? "current-branch" : ""}`;
   button.type = "button";
   button.title = branchTrackingTitle(branch, options);
   button.innerHTML = `<span class="branch-dot" style="--branch:${laneColor(index)}"></span><span class="branch-copy"><span class="branch-name">${escapeHtml(branch)}</span>${branchTrackingHtml(options)}</span>`;
@@ -460,6 +460,7 @@ function branchButton(branch, index, active, options = {}) {
 function branchTrackingHtml(options = {}) {
   if (!options.local) return "";
   const badges = [];
+  if (options.current) badges.push(`<span class="branch-badge current">当前</span>`);
   if (options.upstream) badges.push(`<span class="branch-badge upstream">${escapeHtml(options.upstream)}</span>`);
   else if (options.current) badges.push(`<span class="branch-badge muted">未设置 upstream</span>`);
   if (options.upstreamGone) badges.push(`<span class="branch-badge danger">上游丢失</span>`);
@@ -471,6 +472,7 @@ function branchTrackingHtml(options = {}) {
 function branchTrackingTitle(branch, options = {}) {
   if (!options.local) return branch;
   const parts = [branch];
+  if (options.current) parts.push("当前分支");
   if (options.upstream) parts.push(`upstream：${options.upstream}`);
   else if (options.current) parts.push("未设置 upstream，推送时会自动设置");
   if (options.upstreamGone) parts.push("上游分支已不存在");
@@ -1000,8 +1002,9 @@ function renderCommits() {
   }
 
   state.filtered.forEach((commit) => {
+    const headCommit = isHeadCommit(commit);
     const row = document.createElement("button");
-    row.className = `commit-row ${commit.sha === state.selectedSha ? "selected" : ""}`;
+    row.className = `commit-row ${commit.sha === state.selectedSha ? "selected" : ""} ${headCommit ? "current-head" : ""}`;
     row.type = "button";
     row.dataset.sha = commit.sha;
     row.innerHTML = `
@@ -1009,7 +1012,7 @@ function renderCommits() {
       </div>
       <div class="message">
         <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, terms)}</strong>
-        <span title="${escapeAttr(commit.refs || "提交历史")}">${highlightSearchText(commit.refs || "提交历史", terms)}</span>
+        <span class="commit-ref-line" title="${escapeAttr(commit.refs || "提交历史")}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || "提交历史", terms)}</span></span>
       </div>
       <div class="author">
         <span class="author-badge" style="--avatar:${commit.color}">${initials(commit.author)}</span>
@@ -1044,6 +1047,17 @@ function commitMatchesSearch(commit, terms) {
     .join(" ")
     .toLowerCase();
   return terms.every((term) => text.includes(term));
+}
+
+function isHeadCommit(commit) {
+  const headSha = state.data?.repo?.headSha || "";
+  if (headSha) return commit.sha === headSha;
+  return String(commit?.refs || "")
+    .split(",")
+    .some((ref) => {
+      const value = ref.trim();
+      return value === "HEAD" || value.startsWith("HEAD -> ");
+    });
 }
 
 function updateCommitSearchMeta(terms, visibleCount, totalCount) {
@@ -6733,7 +6747,9 @@ async function selectRef(ref) {
     if (state.data.repo.isSample) {
       state.data.repo.selectedRef = ref;
     } else {
-      state.data = await api(`/api/state?ref=${encodeURIComponent(ref)}`);
+      const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
+      state.data.repo = { ...state.data.repo, ...(data.repo || {}), selectedRef: data.repo?.selectedRef || ref };
+      state.data.commits = data.commits || [];
       state.selectedRef = state.data.repo.selectedRef || ref;
     }
     state.selectedSha = state.data.commits[0]?.sha || "";
