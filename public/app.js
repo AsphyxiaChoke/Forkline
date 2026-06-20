@@ -7,6 +7,7 @@ const state = {
   filtered: [],
   selectedSha: "",
   selectedTab: "details",
+  inspectorContext: "commit",
   selectedRef: "",
   theme: "dark",
   selectedFile: "",
@@ -61,6 +62,12 @@ const state = {
 const graphWidth = 176;
 const laneX = [28, 54, 80, 106, 132, 154, 166];
 const rowH = 62;
+const inspectorTabs = {
+  commit: ["details", "files", "tags"],
+  file: ["fileHistory", "fileBlame"],
+  branch: ["branches", "sync", "compare"],
+  more: ["worktrees", "submodules", "stashes", "recovery", "logs"],
+};
 const els = {
   repoName: $("#repoName"),
   repoPath: $("#repoPath"),
@@ -74,6 +81,7 @@ const els = {
   initRepo: $("#initRepo"),
   openRepo: $("#openRepo"),
   openCommandPalette: $("#openCommandPalette"),
+  moreInspectorSelect: $("#moreInspectorSelect"),
   searchInput: $("#searchInput"),
   searchCount: $("#searchCount"),
   clearSearch: $("#clearSearch"),
@@ -118,6 +126,8 @@ const els = {
   detailTitle: $("#detailTitle"),
   detailSub: $("#detailSub"),
   detailBody: $("#detailBody"),
+  inspector: $(".inspector"),
+  inspectorTabs: $(".tabs"),
   checkoutModal: $("#checkoutModal"),
   checkoutModalText: $("#checkoutModalText"),
   folderModal: $("#folderModal"),
@@ -1323,8 +1333,51 @@ function selectedCommandCommit() {
 }
 
 function switchInspectorTab(tab) {
+  state.inspectorContext = contextForInspectorTab(tab) || state.inspectorContext;
   state.selectedTab = tab;
+  ensureInspectorTabData(tab);
   renderInspector();
+}
+
+function contextForInspectorTab(tab) {
+  return Object.entries(inspectorTabs).find(([, tabs]) => tabs.includes(tab))?.[0] || "";
+}
+
+function setInspectorContext(context, preferredTab = "") {
+  if (!inspectorTabs[context]) context = "commit";
+  state.inspectorContext = context;
+  const tabs = inspectorTabs[context];
+  state.selectedTab = preferredTab && tabs.includes(preferredTab)
+    ? preferredTab
+    : tabs.includes(state.selectedTab)
+      ? state.selectedTab
+      : tabs[0];
+}
+
+function renderInspectorTabs() {
+  const tabContext = contextForInspectorTab(state.selectedTab);
+  if (tabContext && tabContext !== state.inspectorContext) state.inspectorContext = tabContext;
+  const visibleTabs = state.inspectorContext === "more" ? [] : inspectorTabs[state.inspectorContext] || inspectorTabs.commit;
+  if (visibleTabs.length && !visibleTabs.includes(state.selectedTab)) state.selectedTab = visibleTabs[0];
+  els.inspector?.classList.toggle("more-context", state.inspectorContext === "more");
+  document.querySelectorAll(".tab").forEach((tab) => {
+    const visible = visibleTabs.includes(tab.dataset.tab);
+    tab.hidden = !visible;
+    tab.classList.toggle("active", visible && tab.dataset.tab === state.selectedTab);
+  });
+  if (els.moreInspectorSelect) {
+    const moreTabs = inspectorTabs.more;
+    els.moreInspectorSelect.value = moreTabs.includes(state.selectedTab) ? state.selectedTab : "";
+  }
+}
+
+function ensureInspectorTabData(tab) {
+  if (tab === "fileHistory" && state.selectedFile && state.fileHistory.file !== state.selectedFile) {
+    openFileHistory(state.selectedFile).catch((error) => toast(error.message));
+  }
+  if (tab === "fileBlame" && state.selectedFile && state.fileBlame.file !== state.selectedFile) {
+    openFileBlame(state.selectedFile).catch((error) => toast(error.message));
+  }
 }
 
 function moveCommandPaletteSelection(delta) {
@@ -1379,6 +1432,7 @@ function handleCommandPaletteKeydown(event) {
 async function selectCommit(sha) {
   if (!sha) return;
   if (state.historyPlan?.sha !== sha) state.historyPlan = null;
+  setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
   state.selectedSha = sha;
   renderCommits();
   await loadCommit(sha);
@@ -2714,7 +2768,8 @@ function renderOverviewGraphSvg(commits, height) {
         return;
       }
       if (parent.index <= index) return;
-      paths += overviewCurve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, color, { primary: isPrimaryNode && parent.commit.lane === 0, secondary: parentIndex > 0 });
+      const parentColor = parent.commit.color || laneColor(parent.commit.lane);
+      paths += overviewCurve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, parentIndex > 0 ? parentColor : color, { primary: isPrimaryNode && parent.commit.lane === 0, secondary: parentIndex > 0 });
     });
   });
   return `
@@ -2768,36 +2823,48 @@ function layoutGraphCommits(visibleCommits, selectedRef) {
   if (!primaryLine.size) return visibleCommits;
 
   const inheritedLane = new Map();
+  const inheritedName = new Map();
   const laneBySha = new Map();
+  const laneNameBySha = new Map();
   const namedLanes = new Map([[primary, 0]]);
+  const nameByLane = new Map([[0, primary]]);
   let nextLane = 1;
 
   const allocateLane = (name = "") => {
     if (name && namedLanes.has(name)) return namedLanes.get(name);
     const lane = Math.min(nextLane, laneX.length - 1);
     if (name) namedLanes.set(name, lane);
+    if (name && !nameByLane.has(lane)) nameByLane.set(lane, name);
     nextLane = Math.min(laneX.length - 1, nextLane + 1);
     return lane;
   };
 
   allCommits.forEach((commit) => {
     let lane = 0;
+    let branchName = primary;
     if (!primaryLine.has(commit.sha)) {
       const branch = sideBranchName(commit, primary);
       lane = inheritedLane.get(commit.sha) ?? allocateLane(branch);
+      branchName = inheritedName.get(commit.sha) || branch || nameByLane.get(lane) || "";
+      if (branchName && !nameByLane.has(lane)) nameByLane.set(lane, branchName);
     }
     laneBySha.set(commit.sha, lane);
+    laneNameBySha.set(commit.sha, branchName);
     (commit.parents || []).forEach((parentSha, parentIndex) => {
       if (primaryLine.has(parentSha) || inheritedLane.has(parentSha)) return;
       const parentCommit = bySha.get(parentSha);
-      const parentLane = parentIndex === 0 ? lane : allocateLane(parentCommit ? sideBranchName(parentCommit, primary) : "");
+      const parentName = parentCommit ? sideBranchName(parentCommit, primary) : "";
+      const nextName = parentIndex === 0 ? branchName : parentName;
+      const parentLane = parentIndex === 0 ? lane : allocateLane(nextName);
       inheritedLane.set(parentSha, parentLane);
+      if (nextName) inheritedName.set(parentSha, nextName);
     });
   });
 
   return visibleCommits.map((commit) => {
     const lane = laneBySha.has(commit.sha) ? laneBySha.get(commit.sha) : Number(commit.lane) || 0;
-    return { ...commit, lane, color: laneColor(lane) };
+    const branchName = laneNameBySha.get(commit.sha) || "";
+    return { ...commit, lane, color: branchName ? refColor(branchName) : laneColor(lane) };
   });
 }
 
@@ -2869,13 +2936,19 @@ function branchMergeHint(x, y, mergeX, color) {
 
 function overviewLaneGuides(commits, height) {
   const lanes = [...new Set(commits.map((commit) => Number(commit.lane) || 0))].sort((a, b) => a - b);
+  const colorByLane = new Map();
+  commits.forEach((commit) => {
+    const lane = Number(commit.lane) || 0;
+    if (!colorByLane.has(lane) && commit.color) colorByLane.set(lane, commit.color);
+  });
   return lanes
     .map((lane) => {
       const x = laneX[lane] || laneX[0];
+      const color = colorByLane.get(lane) || laneColor(lane);
       if (lane === 0) {
-        return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${laneColor(0)}" stroke-width="18" opacity="0.13" />`;
+        return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${color}" stroke-width="18" opacity="0.13" />`;
       }
-      return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${laneColor(lane)}" stroke-width="1.6" opacity="${lane < 4 ? 0.3 : 0.18}" stroke-dasharray="2 8" />`;
+      return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${color}" stroke-width="1.6" opacity="${lane < 4 ? 0.3 : 0.18}" stroke-dasharray="2 8" />`;
     })
     .join("");
 }
@@ -2946,7 +3019,7 @@ async function loadCommit(sha) {
 }
 
 function renderInspector() {
-  document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.selectedTab));
+  renderInspectorTabs();
   if (state.selectedTab === "stashes") {
     renderStashesTab();
     return;
@@ -5982,8 +6055,10 @@ function bindFileTree(root, options = {}) {
 function selectChangeFile(filePath, scope, event) {
   if (!filePath) return;
   state.selectedFile = filePath;
+  setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   updateChangeSelection(scope, filePath, event);
   renderStage();
+  openSelectedFileInspector(filePath);
 }
 
 function updateChangeSelection(scope, filePath, event = {}) {
@@ -6024,10 +6099,21 @@ function clearSelectedScope(scope) {
 function selectWorkingFile(filePath) {
   if (!filePath || filePath === state.selectedFile) return;
   state.selectedFile = filePath;
+  setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(filePath));
   markSelectedFile();
   updateWorkDiffActions();
   loadWorkingDiff(filePath);
+  openSelectedFileInspector(filePath);
+}
+
+function openSelectedFileInspector(filePath) {
+  if (!filePath) return;
+  if (state.selectedTab === "fileBlame") {
+    openFileBlame(filePath).catch((error) => toast(error.message));
+    return;
+  }
+  openFileHistory(filePath).catch((error) => toast(error.message));
 }
 
 function markSelectedFile() {
@@ -6853,6 +6939,7 @@ async function openRepo(pathOverride = "") {
 async function selectRef(ref) {
   if (!state.data) return;
   try {
+    setInspectorContext(ref ? "branch" : "commit", ref ? "branches" : "details");
     state.selectedRef = ref;
     els.searchInput.value = "";
     state.commitDetails.clear();
@@ -8210,9 +8297,13 @@ document.querySelectorAll("[data-action]").forEach((button) => {
 });
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    state.selectedTab = tab.dataset.tab;
-    renderInspector();
+    switchInspectorTab(tab.dataset.tab);
   });
+});
+els.moreInspectorSelect?.addEventListener("change", () => {
+  const tab = els.moreInspectorSelect.value;
+  if (!tab) return;
+  switchInspectorTab(tab);
 });
 document.addEventListener("click", (event) => {
   const commitMenuAction = event.target.closest("[data-commit-action]");

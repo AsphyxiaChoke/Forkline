@@ -51,6 +51,17 @@
         <button class="icon-btn" data-action="pull" title="拉取" type="button">拉取</button>
         <button class="icon-btn" data-action="push" title="推送" type="button">推送</button>
         <button class="icon-btn danger" data-action="forcePushLease" title="安全强推（git push --force-with-lease）" type="button">强推</button>
+        <label class="topbar-more" title="显示更多右侧面板">
+          <span>更多</span>
+          <select id="moreInspectorSelect">
+            <option value="">选择</option>
+            <option value="worktrees">工作树</option>
+            <option value="submodules">子模块</option>
+            <option value="stashes">储藏</option>
+            <option value="recovery">恢复点</option>
+            <option value="logs">操作日志</option>
+          </select>
+        </label>
       </div>
     </header>
 
@@ -181,15 +192,15 @@
           <button class="tab" data-tab="files" type="button">文件</button>
           <button class="tab" data-tab="fileHistory" type="button">历史</button>
           <button class="tab" data-tab="fileBlame" type="button">逐行</button>
-          <button class="tab" data-tab="branches" type="button">分支</button>
+          <button class="tab" data-tab="branches" type="button">分支整理</button>
           <button class="tab" data-tab="worktrees" type="button">工作树</button>
           <button class="tab" data-tab="submodules" type="button">子模块</button>
-          <button class="tab" data-tab="sync" type="button">同步</button>
-          <button class="tab" data-tab="compare" type="button">比较</button>
+          <button class="tab" data-tab="sync" type="button">同步情况</button>
+          <button class="tab" data-tab="compare" type="button">分支比较</button>
           <button class="tab" data-tab="stashes" type="button">储藏</button>
-          <button class="tab" data-tab="tags" type="button">标签</button>
+          <button class="tab" data-tab="tags" type="button">标签列表</button>
           <button class="tab" data-tab="recovery" type="button">恢复点</button>
-          <button class="tab" data-tab="logs" type="button">日志</button>
+          <button class="tab" data-tab="logs" type="button">操作日志</button>
         </div>
 
         <div id="detailBody" class="detail-body"></div>

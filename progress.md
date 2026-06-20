@@ -143,3 +143,41 @@
 - `docs/CONTINUE.md`: updated the graph behavior note to say merge commits use nodes and lines rather than text labels.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/app.js`, `docs/CONTINUE.md`, and `progress.md`.
+
+## 2026-06-20 - Task: align all-branch graph colors with branch colors
+### What was done
+- Updated all-branch graph layout so each lane keeps the branch name it represents and uses that branch's existing color instead of the lane index color.
+- Updated overview lane guides and secondary merge-parent lines to use the represented branch color, keeping graph nodes, labels, and helper lines visually consistent with the branch list.
+- Updated the continuation document so future sessions know graph colors are branch-color based.
+### Testing
+- `node --check public/app.js` passed with the Codex runtime Node.
+- `node --check server.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Logic verification with a constructed branch order confirmed `main` uses `refColor("main")` even when it is rendered on lane 0, and no longer falls back to `laneColor(0)`.
+- Browser verification on `http://127.0.0.1:5301/` confirmed the app renders, the overview graph is present, `main` branch color is `#ff7a67`, the graph `main` label stroke is `#ff7a67`, overview lane guides include `#ff7a67`, and browser console errors/warnings are empty.
+### Notes
+- `public/app.js`: records branch names during all-branch graph layout and derives overview graph colors from branch colors.
+- `docs/CONTINUE.md`: documents that all-branch graph colors now match branch list colors.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/app.js`, `docs/CONTINUE.md`, and `progress.md`; stop any temporary verification service on port 5301 if still running.
+
+## 2026-06-21 - Task: keep top bar fixed and switch inspector tabs by selection context
+### What was done
+- Decoupled the top bar grid from the right inspector width so dragging the inspector only resizes the lower workspace and does not move the repository path area or top-right controls.
+- Added a top-right "更多" selector for worktrees, submodules, stashes, recovery points, and operation logs.
+- Updated the inspector tab rules so commit selection shows only "详情 / 文件 / 标签列表", worktree or staged file selection shows only "历史 / 逐行", and branch selection shows only "分支整理 / 同步情况 / 分支比较".
+- Updated the continuation document with the new top-bar and inspector navigation behavior.
+### Testing
+- `node --check public/app.js` passed with the Codex runtime Node.
+- `node --check server.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Browser verification on `http://127.0.0.1:5303/` confirmed dragging the right inspector changed the workspace grid from `190px 7px 816px 7px 260px` to `190px 7px 666px 7px 410px`, while topbar, repo bar, and actions coordinates stayed stable.
+- Browser verification confirmed commit tabs show `详情, 文件, 标签列表`; file selection shows `历史, 逐行` with "文件历史" active; branch selection shows `分支整理, 同步情况, 分支比较`; selecting `操作日志` from "更多" hides the inspector tab row and opens the operation log panel.
+- Browser page console errors/warnings were empty; the Browser plugin emitted unrelated Statsig network timeout messages outside the app page.
+### Notes
+- `public/index.html`: added the top-right "更多" inspector selector and renamed visible inspector tab labels.
+- `public/app.js`: added inspector context rules, context-aware tab filtering, file/branch/commit selection switching, and "更多" selection handling.
+- `public/styles.css`: fixed the topbar grid, styled the "更多" selector, and hid inspector tabs in more-context panels.
+- `docs/CONTINUE.md`: documented fixed topbar and context-based inspector tabs.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`; stop any temporary verification service on port 5303 if still running.

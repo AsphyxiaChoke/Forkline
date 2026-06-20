@@ -134,7 +134,7 @@ button {
 
 .topbar {
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--inspector-w);
+  grid-template-columns: 240px minmax(0, 1fr) max-content;
   align-items: center;
   border-bottom: 1px solid var(--line);
   background: var(--topbar);
@@ -409,6 +409,7 @@ button {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  min-width: max-content;
   padding: 0 8px;
   border-left: 1px solid var(--line);
 }
@@ -416,6 +417,33 @@ button {
 .actions .icon-btn {
   min-width: 0;
   padding: 0 9px;
+}
+
+.topbar-more {
+  display: inline-grid;
+  grid-template-columns: auto minmax(86px, 112px);
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.topbar-more select {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .btn,
@@ -2016,6 +2044,10 @@ body.resizing .workbench-resizer-y::before {
   border-left: 1px solid var(--line);
 }
 
+.inspector.more-context {
+  grid-template-rows: 74px 0 minmax(0, 1fr);
+}
+
 .detail-head {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -2058,6 +2090,14 @@ body.resizing .workbench-resizer-y::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.inspector.more-context .tabs {
+  display: none;
+}
+
+.tab[hidden] {
+  display: none;
 }
 
 .tab.active {
@@ -5508,7 +5548,7 @@ body.resizing .workbench-resizer-y::before {
 
 @media (max-width: 1240px) {
   .topbar {
-    grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--inspector-w);
+    grid-template-columns: 240px minmax(0, 1fr) max-content;
   }
 
   .repo-bar {
