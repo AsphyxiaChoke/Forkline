@@ -126,3 +126,20 @@
 - `docs/CONTINUE.md`: documents the new all-branch versus single-branch graph behavior.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`.
+
+## 2026-06-20 - Task: remove merge text labels from graph
+### What was done
+- Removed the visible merge text labels from both all-branch and single-branch graph modes, so merge commits no longer show `M2`, `M3`, or "合并" next to the node.
+- Kept merge commit nodes, overview merge curves, dashed secondary-parent lines, and single-branch side merge hints so merge relationships remain visible without extra text.
+- Updated the continuation document to describe that merge commits are represented by nodes and lines instead of text labels.
+### Testing
+- `node --check public/app.js` passed with the Codex runtime Node.
+- `node --check server.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Static assertion confirmed `mergeLabel`, `graph-merge-label`, and merge-label calls are gone from `public/app.js`, while merge nodes and branch merge hints remain.
+- Browser validation was attempted through the in-app browser on `http://127.0.0.1:5296/` and `http://localhost:5296/`, but the browser client blocked localhost navigation with `net::ERR_BLOCKED_BY_CLIENT`; this was not counted as a visual pass.
+### Notes
+- `public/app.js`: removed merge text label rendering and the now-unused helper.
+- `docs/CONTINUE.md`: updated the graph behavior note to say merge commits use nodes and lines rather than text labels.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/app.js`, `docs/CONTINUE.md`, and `progress.md`.

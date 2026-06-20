@@ -2703,7 +2703,6 @@ function renderOverviewGraphSvg(commits, height) {
     nodes += graphNode(x1, y1, color, { primary: isPrimaryNode, merge: isMerge });
     const label = tipLabel(commit.refs);
     if (label) labels += graphLabel(x1, y1, label, color, false);
-    if (isMerge) labels += mergeLabel(x1, y1, parents.length, color);
     if (!parents.length && index < commits.length - 1) {
       const next = commits[index + 1];
       paths += overviewCurve(x1, y1, laneX[next.lane] || laneX[0], (index + 1) * rowH + rowH / 2, color, { primary: isPrimaryNode && next.lane === 0 });
@@ -2745,7 +2744,6 @@ function renderBranchGraphSvg(commits, height, selectedRef) {
     if (isMerge) {
       const mergeX = laneX[2];
       paths += branchMergeHint(x, y, mergeX, color);
-      labels += mergeLabel(mergeX, y, parents.length, color, "合并");
     }
     nodes += graphNode(x, y, color, { focused: true, merge: isMerge });
     if (index === 0) labels += graphLabel(x, y, selectedRef, color, true);
@@ -2909,18 +2907,6 @@ function graphLabel(x, y, label, color, selected) {
     <g class="graph-label">
       <rect x="${labelX}" y="${labelY}" width="${width}" height="20" rx="7" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
       <text x="${labelX + 8}" y="${labelY + 14}" fill="var(--graph-label-text)" font-size="10" font-weight="800" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">${text}</text>
-    </g>
-  `;
-}
-
-function mergeLabel(x, y, count, color, text = `M${count}`) {
-  const labelWidth = text.length > 3 ? 36 : 28;
-  const labelX = Math.min(x + 13, graphWidth - labelWidth - 6);
-  const labelY = y + 8;
-  return `
-    <g class="graph-merge-label">
-      <rect x="${labelX}" y="${labelY}" width="${labelWidth}" height="18" rx="6" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
-      <text x="${labelX + 6}" y="${labelY + 13}" fill="var(--graph-label-text)" font-size="10" font-weight="900" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">${escapeHtml(text)}</text>
     </g>
   `;
 }
