@@ -181,3 +181,16 @@
 - `docs/CONTINUE.md`: documented fixed topbar and context-based inspector tabs.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`; stop any temporary verification service on port 5303 if still running.
+
+## 2026-06-21 - Task: improve dark dropdown readability
+### What was done
+- Updated the top-right "更多" selector so the closed select and its native options use the dark panel background and light text in dark mode.
+- Kept light mode on the browser's light color scheme so the same control remains readable there.
+### Testing
+- Browser verification on `http://127.0.0.1:5304/` confirmed the app loads in dark mode, the "更多" selector can switch to "操作日志", and the right panel changes to the operation log view.
+- Computed style verification confirmed both the select and the "操作日志" option use `rgb(29, 34, 43)` background, `rgb(231, 236, 243)` text, and dark `color-scheme`.
+- Browser page console errors/warnings were empty.
+### Notes
+- `public/styles.css`: changed the "更多" selector and option colors for readable dark-mode dropdown text.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/styles.css` and `progress.md`; stop any temporary verification service on port 5304 if still running.

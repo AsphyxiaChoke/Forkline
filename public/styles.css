@@ -440,10 +440,20 @@ button {
   width: 100%;
   border: 0;
   outline: 0;
-  background: transparent;
+  background: var(--panel-2);
   color: var(--text);
   font-size: 12px;
   font-weight: 800;
+  color-scheme: dark;
+}
+
+.topbar-more select option {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+html[data-theme="light"] .topbar-more select {
+  color-scheme: light;
 }
 
 .btn,
