@@ -208,3 +208,18 @@
 - `public/styles.css`: pins the inspector detail body to the third grid row so hiding the tab row does not collapse the content viewport.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/styles.css` and `progress.md`; stop any temporary verification service on port 5305 if still running.
+
+## 2026-06-21 - Task: remove default worktree file highlight
+### What was done
+- Removed the automatic selection of the first worktree file when rendering the workspace change list.
+- The work diff panel now stays in the "未选择文件" state until the user explicitly clicks a file.
+- Manual file selection still highlights the clicked row, loads its diff, and switches the inspector to file history/blame tabs.
+### Testing
+- Browser verification on `http://127.0.0.1:5306/` confirmed the initial workspace change list has no `.selected` or `.multi-selected` file row.
+- Browser verification confirmed the diff panel initially shows "未选择文件".
+- Browser verification confirmed clicking `src/views/HistoryPanel.tsx` selects only that row, loads `HistoryPanel.tsx · 未暂存`, and opens the file-history inspector tabs.
+- Browser page console errors/warnings were empty.
+### Notes
+- `public/app.js`: stops auto-selecting the first visible worktree file during stage rendering and only loads worktree diff after an explicit selection.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/app.js` and `progress.md`; stop any temporary verification service on port 5306 if still running.

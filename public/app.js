@@ -760,7 +760,7 @@ function renderStage() {
     } else {
       const previousFile = state.selectedFile;
       if (!visibleChangeFiles.some((file) => file.file === state.selectedFile)) {
-        state.selectedFile = visibleChangeFiles[0]?.file || "";
+        state.selectedFile = "";
       }
       if (state.selectedFile !== previousFile) {
         state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(state.selectedFile));
@@ -780,7 +780,10 @@ function renderStage() {
       `;
       bindFileTree(els.changeList, { selectable: true });
       markSelectedFile();
-      if (state.activeDiff?.source !== "history") loadWorkingDiff(state.selectedFile);
+      if (state.activeDiff?.source !== "history") {
+        if (state.selectedFile) loadWorkingDiff(state.selectedFile);
+        else renderWorkDiffEmpty("未选择文件");
+      }
     }
   }
   const counts = countFiles(files);
