@@ -5228,5 +5228,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Forkline Web running at http://127.0.0.1:${PORT}`);
+  const url = `http://127.0.0.1:${PORT}`;
+  console.log(`Forkline Web running at ${url}`);
+  openLocalAppInBrowser(url);
 });
+
+function openLocalAppInBrowser(url) {
+  if (process.platform !== "win32") return;
+  execFile("cmd", ["/c", "start", "", url], { windowsHide: true }, (error) => {
+    if (error) console.warn(`Unable to open browser automatically: ${error.message}`);
+  });
+}

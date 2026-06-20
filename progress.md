@@ -31,3 +31,30 @@
 - `docs/CONTINUE.md`: verified the handoff note includes this feature.
 - `progress.md`: appended this verification record.
 - Rollback: revert this task's edits in `server.js`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`; the live service can then be restarted on port 5177.
+
+## 2026-06-20 - Task: auto-open browser on Windows server start
+### What was done
+- Added Windows-only automatic browser opening after the local server starts.
+- Reused `execFile` through `cmd /c start` and kept non-Windows startup behavior unchanged.
+- Documented the startup behavior in the continuation notes.
+### Testing
+- Pending: run server syntax check and verify the server still starts.
+### Notes
+- `server.js`: opens `http://127.0.0.1:<PORT>` automatically on Windows after `server.listen` succeeds.
+- `docs/CONTINUE.md`: records that Windows startup now opens the local app URL automatically.
+- `progress.md`: appended this implementation record.
+- Rollback: remove `openLocalAppInBrowser` and its call in `server.js`, then remove this startup note from `docs/CONTINUE.md`.
+
+## 2026-06-20 - Task: verify auto-open browser startup
+### What was done
+- Verified the Windows startup change with syntax checks and a temporary service start.
+### Testing
+- `node --check server.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Temporary service `http://127.0.0.1:5290` started successfully, listened on port 5290, and `/api/state` returned sample repo state with `repo.headSha`.
+- Existing service `http://127.0.0.1:5177` remained running while the temporary service was verified.
+### Notes
+- `server.js`: verified the server still starts after adding Windows auto-open.
+- `docs/CONTINUE.md`: startup behavior remains documented.
+- `progress.md`: appended this verification record.
+- Rollback: revert the `server.js`, `docs/CONTINUE.md`, and `progress.md` edits from this task; the temporary 5290 service was stopped.
