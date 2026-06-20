@@ -47,7 +47,7 @@
 - 提交右键菜单和提交详情面板都已加入“还原”和软 / 混合 / 硬重置入口，并在文案旁标注 `git revert`、`git reset --soft`、`git reset --mixed`、`git reset --hard`。还原会创建反向提交；硬重置入口标红且确认文案会提示会丢弃工作区改动。
 - GitKraken 风格学习方向：图谱保持主视觉区域，左栏承载仓库/分支/工作区导航，右栏承载所选提交的上下文详情；右键菜单按动作类别分组，左侧中文动作、右侧灰色等宽 Git 指令提示，危险动作明确标红。
 - 还原冲突体验已补强：`path 'xxx' is unmerged` 会翻译为中文冲突提示；工作区会识别 `REVERT_HEAD` 并显示“还原提交发生冲突”，冲突文件用红色标识，提供“继续还原 (git revert --continue)”和“中止还原 (git revert --abort)”入口。
-- 冲突文件一键取舍已接入：工作区底部 Diff 面板和文件右键菜单会在冲突文件上启用“使用当前版本 / 使用对方版本”，后端新增 `resolveConflictFile`，执行 `git checkout --ours/--theirs -- <文件>` 后自动 `git add <文件>`，用于 merge / cherry-pick / revert / rebase 冲突中的文件级快速解决。
+- 冲突文件一键取舍已接入：工作区冲突提示会按冲突文件显示“当前 --ours / 对方 --theirs”，文件右键菜单也保留“使用当前版本 / 使用对方版本”；后端 `resolveConflictFile` 会执行 `git checkout --ours/--theirs -- <文件>` 后自动 `git add <文件>`，用于 merge / cherry-pick / revert / rebase 冲突中的文件级快速解决。底部 Diff 面板只保留“最大化”入口。
 - “继续还原”现在会先检查是否仍存在 `REVERT_HEAD`；没有正在进行的还原时返回中文提示，不再显示 Git 原始的 `nothing to commit, working tree clean`。
 - Cherry-pick 已接入：提交右键菜单和提交详情面板都有“挑选此提交 / 挑选”入口，并标注 `git cherry-pick`；后端支持 `cherryPickCommit`、`continueCherryPick`、`skipCherryPick`、`abortCherryPick`。遇到 `CHERRY_PICK_HEAD` 时工作区显示“挑选提交发生冲突”，冲突文件用红色标识，并提供“继续挑选 / 跳过挑选 / 中止挑选”。
 - Merge 冲突工作流已接入：遇到 `MERGE_HEAD` 时工作区显示“合并发生冲突”，冲突文件用红色标识，并提供“继续合并 (git merge --continue)”和“中止合并 (git merge --abort)”入口；继续合并使用无交互编辑器，避免 Git 打开编辑器卡住。

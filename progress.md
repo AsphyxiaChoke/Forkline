@@ -237,3 +237,24 @@
 - `public/app.js`: derives the focused worktree file from the current selection after each click, so deselection clears the visual highlight.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/app.js` and `progress.md`; stop any temporary verification service on port 5307 if still running.
+
+## 2026-06-21 - Task: move conflict choice buttons into conflict prompt
+### What was done
+- Removed all bottom Diff panel buttons except "最大化".
+- Moved per-file conflict choice actions into the workspace conflict prompt, showing "当前 --ours" and "对方 --theirs" for each unresolved conflict file.
+- Kept the existing file right-click conflict actions intact.
+### Testing
+- `node --check public/app.js` passed.
+- `node --check server.js` passed.
+- `git diff --check` passed.
+- Search confirmed no visible bottom Diff action/scope selectors remain: `data-work-diff-action`, `data-work-diff-scope`, and `.work-diff-scope` are absent from `public/`.
+- Browser verification on `http://127.0.0.1:5177/` confirmed the bottom Diff panel only has "最大化" and no console warnings/errors.
+- Browser verification with a temporary merge-conflict repo confirmed the workspace conflict prompt renders `conflict.txt` with "当前 --ours" and "对方 --theirs" buttons, while the bottom Diff panel still only has "最大化".
+- The temporary conflict repo was removed, and `http://127.0.0.1:5177/` was restored to `D:/桌面/GitTest` after verification.
+### Notes
+- `public/index.html`: removed the old bottom Diff panel action/scope buttons and kept only the maximize button.
+- `public/app.js`: renders conflict choice buttons inside the conflict prompt and routes them to the existing single-file conflict resolution action.
+- `public/styles.css`: adds compact conflict choice row styling and removes unused bottom scope-button styling.
+- `docs/CONTINUE.md`: updates the conflict-resolution usage note so future work looks for the buttons in the conflict prompt instead of the bottom Diff panel.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

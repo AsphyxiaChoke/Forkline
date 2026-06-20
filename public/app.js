@@ -921,7 +921,30 @@ function renderRepoOperationBanner(files) {
         <strong>${escapeHtml(title)}</strong>
         <span>${escapeHtml(text)}</span>
       </div>
+      ${renderConflictChoiceRows(conflicts)}
       <div class="operation-actions">${actions}</div>
+    </div>
+  `;
+}
+
+function renderConflictChoiceRows(conflicts) {
+  if (!conflicts.length) return "";
+  return `
+    <div class="conflict-choice-list">
+      ${conflicts
+        .map((file) => {
+          const filePath = file.file || "";
+          return `
+            <div class="conflict-choice-row">
+              <span class="conflict-choice-path" title="${escapeAttr(filePath)}">${escapeHtml(filePath)}</span>
+              <div class="conflict-choice-actions">
+                <button class="mini-btn" data-conflict-choice="resolveConflictOurs" data-file="${escapeAttr(filePath)}" type="button"><span>当前</span><span class="command-hint">--ours</span></button>
+                <button class="mini-btn" data-conflict-choice="resolveConflictTheirs" data-file="${escapeAttr(filePath)}" type="button"><span>对方</span><span class="command-hint">--theirs</span></button>
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
     </div>
   `;
 }
@@ -6109,7 +6132,6 @@ function selectWorkingFile(filePath) {
   setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(filePath));
   markSelectedFile();
-  updateWorkDiffActions();
   loadWorkingDiff(filePath);
   openSelectedFileInspector(filePath);
 }
@@ -6196,7 +6218,6 @@ function renderWorkDiffEmpty(message) {
   els.workDiffPath.textContent = "";
   els.workDiffView.className = "work-diff-view empty";
   els.workDiffView.textContent = message;
-  updateWorkDiffActions();
 }
 
 async function loadWorkingDiff(filePath) {
@@ -6212,7 +6233,6 @@ async function loadWorkingDiff(filePath) {
   els.workDiffPath.textContent = filePath;
   els.workDiffView.className = "work-diff-view loading";
   els.workDiffView.textContent = "正在读取差异...";
-  updateWorkDiffActions(filePath);
   try {
     const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(scope)}`);
     if (requestId !== state.diffRequestId) return;
@@ -6231,7 +6251,6 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
   setActiveDiff({ source: "worktree", title, path: filePath, diff, scope, emptyText: "没有可显示的差异" });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = filePath;
-  updateWorkDiffActions(filePath);
   if (!diff.length) {
     els.workDiffView.className = "work-diff-view empty";
     els.workDiffView.textContent = "没有可显示的差异";
@@ -6251,7 +6270,6 @@ function renderHistoryDiffInWorkbench(commit, detail, filePath) {
   els.workDiffPath.textContent = path;
   els.workDiffView.className = "work-diff-view";
   els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的历史改动");
-  updateWorkDiffActions("");
 }
 
 function setActiveDiff(payload) {
@@ -6288,75 +6306,6 @@ function normalizeWorkDiffScopeChoice(scope, fileInfo) {
   if (requested === "staged" && hasStaged) return "staged";
   if (requested === "unstaged" && hasUnstaged) return "unstaged";
   return preferredWorkDiffScope(fileInfo);
-}
-
-function updateWorkDiffActions(filePath = state.selectedFile) {
-  const fileInfo = selectedWorkingFileInfo(filePath);
-  const hasWorktreeFile = Boolean(fileInfo);
-  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
-  const hasConflict = Boolean(fileInfo?.conflict);
-  document.querySelectorAll("[data-work-diff-scope]").forEach((button) => {
-    const scope = button.dataset.workDiffScope;
-    const enabled = hasWorktreeFile && (scope === "unstaged" ? hasUnstaged : scope === "staged" ? hasStaged : false);
-    button.disabled = !enabled;
-    button.classList.toggle("active", enabled && state.workDiffScope === scope);
-    button.title = workDiffScopeTitle(scope, filePath, enabled);
-  });
-  document.querySelectorAll("[data-work-diff-action]").forEach((button) => {
-    const action = button.dataset.workDiffAction;
-    const enabled =
-      hasWorktreeFile &&
-      ((action === "stageFile" || action === "discardWorktreeFile")
-        ? hasUnstaged
-        : action === "unstageFile" || action === "discardStagedFile"
-          ? hasStaged
-          : action === "resolveConflictOurs" || action === "resolveConflictTheirs"
-            ? hasConflict
-            : false);
-    button.disabled = !enabled;
-    button.title = workDiffActionTitle(action, filePath, enabled);
-  });
-}
-
-function workDiffScopeTitle(scope, filePath, enabled) {
-  if (!filePath) return "先选择一个工作区文件";
-  if (!enabled) return scope === "staged" ? "当前文件没有已暂存改动" : "当前文件没有未暂存改动";
-  return scope === "staged" ? `查看已暂存改动：${filePath}` : `查看未暂存改动：${filePath}`;
-}
-
-function workDiffActionTitle(action, filePath, enabled) {
-  if (!filePath) return "先选择一个工作区文件";
-  if (!enabled) return "当前文件没有适用的改动";
-  const titles = {
-    stageFile: `暂存 ${filePath}`,
-    unstageFile: `取消暂存 ${filePath}`,
-    resolveConflictOurs: `使用当前版本解决冲突并暂存：${filePath}`,
-    resolveConflictTheirs: `使用对方版本解决冲突并暂存：${filePath}`,
-    discardWorktreeFile: `丢弃工作区改动：${filePath}`,
-    discardStagedFile: `丢弃已暂存改动：${filePath}`,
-  };
-  return titles[action] || filePath;
-}
-
-async function runWorkDiffFileAction(action, button) {
-  const file = state.selectedFile;
-  if (!file) {
-    toast("请先选择一个工作区文件");
-    return;
-  }
-  if (button) button.disabled = true;
-  try {
-    await runSingleFileAction(action, file);
-  } finally {
-    updateWorkDiffActions();
-  }
-}
-
-async function switchWorkDiffScope(scope, button) {
-  if (!state.selectedFile || button?.disabled) return;
-  state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
-  updateWorkDiffActions();
-  await loadWorkingDiff(state.selectedFile);
 }
 
 async function runWorkDiffHunkAction(action, button) {
@@ -7958,17 +7907,11 @@ els.mainlineModal.addEventListener("click", (event) => {
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
-document.querySelectorAll("[data-work-diff-scope]").forEach((button) => {
-  button.addEventListener("click", () => switchWorkDiffScope(button.dataset.workDiffScope, button).catch((error) => toast(error.message)));
-});
 els.workDiffView.addEventListener("click", (event) => {
   const button = event.target.closest("[data-hunk-action]");
   if (!button) return;
   event.preventDefault();
   if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
-});
-document.querySelectorAll("[data-work-diff-action]").forEach((button) => {
-  button.addEventListener("click", () => runWorkDiffFileAction(button.dataset.workDiffAction, button));
 });
 els.closeDiffModal.addEventListener("click", closeDiffModal);
 els.diffModal.addEventListener("click", (event) => {
@@ -8403,6 +8346,14 @@ document.addEventListener("click", (event) => {
   if (repoOperation) {
     event.stopPropagation();
     runRepoOperation(repoOperation.dataset.repoOperation, repoOperation);
+    return;
+  }
+  const conflictChoice = event.target.closest("[data-conflict-choice]");
+  if (conflictChoice) {
+    event.stopPropagation();
+    if (!conflictChoice.disabled) {
+      runSingleFileAction(conflictChoice.dataset.conflictChoice, conflictChoice.dataset.file || "").catch((error) => toast(error.message));
+    }
     return;
   }
   if (event.target.closest("[data-open-diff-modal]")) openDiffModal();
