@@ -55,9 +55,11 @@ const state = {
   worktreeFilter: "",
   cloneTargetAuto: false,
   commandPaletteIndex: 0,
+  folderBrowse: null,
 };
 
-const laneX = [28, 54, 80, 106, 118, 126, 128];
+const graphWidth = 156;
+const laneX = [28, 58, 88, 118, 136, 146, 150];
 const rowH = 62;
 const els = {
   repoName: $("#repoName"),
@@ -67,6 +69,7 @@ const els = {
   repoInput: $("#repoInput"),
   recentRepoSelect: $("#recentRepoSelect"),
   clearRecentRepos: $("#clearRecentRepos"),
+  browseRepo: $("#browseRepo"),
   cloneRepo: $("#cloneRepo"),
   initRepo: $("#initRepo"),
   openRepo: $("#openRepo"),
@@ -118,6 +121,15 @@ const els = {
   detailBody: $("#detailBody"),
   checkoutModal: $("#checkoutModal"),
   checkoutModalText: $("#checkoutModalText"),
+  folderModal: $("#folderModal"),
+  folderClose: $("#folderClose"),
+  folderPathInput: $("#folderPathInput"),
+  folderGo: $("#folderGo"),
+  folderRoots: $("#folderRoots"),
+  folderList: $("#folderList"),
+  folderParent: $("#folderParent"),
+  folderOpen: $("#folderOpen"),
+  folderCurrentPath: $("#folderCurrentPath"),
   stashRestoreModal: $("#stashRestoreModal"),
   stashRestoreText: $("#stashRestoreText"),
   cloneModal: $("#cloneModal"),
@@ -1096,6 +1108,70 @@ function clearCommitSearch() {
   els.searchInput.focus();
 }
 
+async function openFolderModal() {
+  if (otherModalOpen()) return;
+  els.folderModal.classList.add("show");
+  els.folderModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  await loadFolder(els.repoInput.value.trim() || state.data?.repo?.path || "");
+}
+
+function closeFolderModal() {
+  els.folderModal.classList.remove("show");
+  els.folderModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+}
+
+async function loadFolder(pathValue = "") {
+  els.folderList.innerHTML = `<div class="folder-empty">正在读取目录...</div>`;
+  try {
+    const data = await api(`/api/browse?path=${encodeURIComponent(pathValue || "")}`);
+    state.folderBrowse = data;
+    renderFolderBrowser();
+  } catch (error) {
+    els.folderList.innerHTML = `<div class="folder-empty">${escapeHtml(error.message)}</div>`;
+    toast(error.message);
+  }
+}
+
+function renderFolderBrowser() {
+  const data = state.folderBrowse;
+  if (!data) return;
+  els.folderCurrentPath.textContent = data.current || "";
+  els.folderPathInput.value = data.current || "";
+  els.folderParent.disabled = !data.parent;
+  els.folderOpen.textContent = data.isGit ? "打开 Git 仓库" : "打开此目录";
+  els.folderOpen.title = data.isGit ? "打开当前 Git 仓库" : "把当前目录填入路径并尝试打开";
+  const shortcuts = (data.shortcuts || [])
+    .map((item) => `<button class="folder-root folder-shortcut" type="button" data-folder-path="${escapeAttr(item.path)}">${escapeHtml(item.name)}</button>`)
+    .join("");
+  const roots = (data.roots || [])
+    .map((root) => `<button class="folder-root" type="button" data-folder-path="${escapeAttr(root.path)}">${escapeHtml(root.name)}</button>`)
+    .join("");
+  els.folderRoots.innerHTML = `${shortcuts}${roots}`;
+  els.folderList.innerHTML = (data.entries || []).length
+    ? data.entries
+        .map(
+          (entry) => `
+            <button class="folder-row ${entry.isGit ? "is-git" : ""}" type="button" data-folder-path="${escapeAttr(entry.path)}" title="${escapeAttr(entry.path)}">
+              <span class="folder-icon">${entry.isGit ? "Git" : ""}</span>
+              <span class="folder-name">${escapeHtml(entry.name)}</span>
+              <span class="folder-meta">${entry.isGit ? "仓库" : ""}</span>
+            </button>
+          `
+        )
+        .join("")
+    : `<div class="folder-empty">这个目录下没有可进入的文件夹</div>`;
+}
+
+async function openSelectedFolder() {
+  const target = state.folderBrowse?.current || els.folderPathInput.value.trim();
+  if (!target) return;
+  els.repoInput.value = target;
+  closeFolderModal();
+  await openRepo(target);
+}
+
 function openCommandPalette() {
   if (otherModalOpen()) return;
   hideCommitContextMenu();
@@ -1124,6 +1200,7 @@ function otherModalOpen() {
     els.tagModal,
     els.mainlineModal,
     els.diffModal,
+    els.folderModal,
   ].some((modal) => modal?.classList.contains("show"));
 }
 
@@ -2630,26 +2707,28 @@ function renderGraphSvg(commits, height, selectedRef) {
     const y1 = index * rowH + rowH / 2;
     const color = selectedColor || commit.color;
     const isPrimaryNode = !isFocused && commit.lane === 0;
-    nodes += node(x1, y1, color, isFocused, isPrimaryNode);
+    const parents = commit.parents || [];
+    const isMerge = parents.length > 1;
+    nodes += node(x1, y1, color, isFocused, isPrimaryNode, isMerge);
     const label = selectedRef && index === 0 ? selectedRef : !selectedRef ? tipLabel(commit.refs) : "";
     if (label) labels += graphLabel(x1, y1, label, color, isFocused);
-    const parents = commit.parents || [];
+    if (isMerge) labels += mergeLabel(x1, y1, parents.length, color);
     if (!parents.length && index < commits.length - 1) {
       const next = commits[index + 1];
       paths += curve(x1, y1, laneX[next.lane] || laneX[0], (index + 1) * rowH + rowH / 2, color, isFocused, isPrimaryNode && next.lane === 0);
     }
-    parents.forEach((parentSha) => {
+    parents.forEach((parentSha, parentIndex) => {
       const parent = bySha.get(parentSha) || byShort.get(parentSha.slice(0, 7));
       if (!parent) {
-        paths += curve(x1, y1, x1, Math.min(y1 + rowH, height), color, isFocused, isPrimaryNode);
+        paths += curve(x1, y1, x1, Math.min(y1 + rowH, height), color, isFocused, isPrimaryNode, parentIndex);
         return;
       }
       if (parent.index <= index) return;
-      paths += curve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, color, isFocused, isPrimaryNode && parent.commit.lane === 0);
+      paths += curve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, color, isFocused, isPrimaryNode && parent.commit.lane === 0, parentIndex);
     });
   });
   return `
-    <svg class="graph-lines ${isFocused ? "focus" : "overview"}" height="${height}" viewBox="0 0 132 ${height}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines ${isFocused ? "focus" : "overview"}" height="${height}" viewBox="0 0 ${graphWidth} ${height}" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${guides}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -2739,16 +2818,17 @@ function isPrimaryRef(name, primary) {
   return Boolean(primary) && (name === primary || name.endsWith(`/${primary}`));
 }
 
-function curve(x1, y1, x2, y2, color, selected, primary = false) {
+function curve(x1, y1, x2, y2, color, selected, primary = false, parentIndex = 0) {
   const mid = (y1 + y2) / 2;
   const d = `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
+  const isSecondaryParent = parentIndex > 0;
   if (selected) {
     return `
-      <path d="${d}" stroke="${color}" stroke-width="10" opacity="0.16" />
-      <path d="${d}" stroke="${color}" stroke-width="4.6" opacity="0.98" />
+      <path d="${d}" stroke="${color}" stroke-width="${isSecondaryParent ? 12 : 10}" opacity="${isSecondaryParent ? 0.2 : 0.16}" />
+      <path d="${d}" stroke="${color}" stroke-width="${isSecondaryParent ? 5.4 : 4.6}" opacity="0.98" ${isSecondaryParent ? 'stroke-dasharray="7 5"' : ""} />
     `;
   }
-  return `<path d="${d}" stroke="${color}" stroke-width="${primary ? 4.8 : 3.1}" opacity="${primary ? 0.9 : 0.72}" />`;
+  return `<path d="${d}" stroke="${color}" stroke-width="${isSecondaryParent ? 4.4 : primary ? 4.8 : 3.1}" opacity="${isSecondaryParent ? 0.84 : primary ? 0.9 : 0.72}" ${isSecondaryParent ? 'stroke-dasharray="7 5"' : ""} />`;
 }
 
 function laneGuides(commits, height, selectedColor, selected) {
@@ -2775,13 +2855,13 @@ function laneGuides(commits, height, selectedColor, selected) {
     .join("");
 }
 
-function node(x, y, color, selected, primary = false) {
-  const radius = selected ? 7.4 : primary ? 6.9 : 6.4;
+function node(x, y, color, selected, primary = false, merge = false) {
+  const radius = merge ? 8.2 : selected ? 7.4 : primary ? 6.9 : 6.4;
   return `
-    <circle cx="${x}" cy="${y}" r="${selected ? 15 : primary ? 13 : 12}" fill="${color}" opacity="${selected ? 0.18 : primary ? 0.14 : 0.1}" />
-    <circle cx="${x}" cy="${y}" r="${selected || primary ? 10 : 9}" fill="var(--graph-node-fill)" stroke="var(--graph-node-ring)" stroke-width="3.2" />
-    <circle cx="${x}" cy="${y}" r="${radius}" fill="var(--graph-node-fill)" stroke="${color}" stroke-width="${selected ? 3.6 : primary ? 3.5 : 3.1}" />
-    <circle cx="${x}" cy="${y}" r="2.3" fill="${color}" opacity="0.96" />
+    <circle cx="${x}" cy="${y}" r="${merge ? 17 : selected ? 15 : primary ? 13 : 12}" fill="${color}" opacity="${merge ? 0.22 : selected ? 0.18 : primary ? 0.14 : 0.1}" />
+    <circle cx="${x}" cy="${y}" r="${merge ? 12 : selected || primary ? 10 : 9}" fill="var(--graph-node-fill)" stroke="var(--graph-node-ring)" stroke-width="3.2" />
+    <circle cx="${x}" cy="${y}" r="${radius}" fill="var(--graph-node-fill)" stroke="${color}" stroke-width="${merge ? 4.1 : selected ? 3.6 : primary ? 3.5 : 3.1}" />
+    ${merge ? `<circle cx="${x}" cy="${y}" r="3.1" fill="${color}" opacity="0.98" />` : `<circle cx="${x}" cy="${y}" r="2.3" fill="${color}" opacity="0.96" />`}
   `;
 }
 
@@ -2789,12 +2869,23 @@ function graphLabel(x, y, label, color, selected) {
   const maxChars = selected ? 8 : 7;
   const text = escapeHtml(label.length > maxChars ? `${label.slice(0, maxChars)}...` : label);
   const width = Math.min(76, Math.max(42, [...text].length * 9 + 16));
-  const labelX = Math.min(x + 12, 126 - width);
+  const labelX = Math.min(x + 12, graphWidth - 6 - width);
   const labelY = Math.max(7, y - 25);
   return `
     <g class="graph-label">
       <rect x="${labelX}" y="${labelY}" width="${width}" height="20" rx="7" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
       <text x="${labelX + 8}" y="${labelY + 14}" fill="var(--graph-label-text)" font-size="10" font-weight="800" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">${text}</text>
+    </g>
+  `;
+}
+
+function mergeLabel(x, y, count, color) {
+  const labelX = Math.min(x + 13, graphWidth - 34);
+  const labelY = y + 8;
+  return `
+    <g class="graph-merge-label">
+      <rect x="${labelX}" y="${labelY}" width="28" height="18" rx="6" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
+      <text x="${labelX + 6}" y="${labelY + 13}" fill="var(--graph-label-text)" font-size="10" font-weight="900" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">M${count}</text>
     </g>
   `;
 }
@@ -7665,6 +7756,7 @@ function toast(message) {
 }
 
 els.openRepo.addEventListener("click", openRepo);
+els.browseRepo.addEventListener("click", () => openFolderModal().catch((error) => toast(error.message)));
 els.cloneRepo.addEventListener("click", openCloneModal);
 els.initRepo.addEventListener("click", openInitModal);
 els.openCommandPalette.addEventListener("click", openCommandPalette);
@@ -7675,6 +7767,26 @@ els.recentRepoSelect.addEventListener("change", () => {
   openRecentRepo().catch((error) => toast(error.message));
 });
 els.clearRecentRepos.addEventListener("click", clearRecentRepos);
+els.folderClose.addEventListener("click", closeFolderModal);
+els.folderModal.addEventListener("click", (event) => {
+  if (event.target === els.folderModal) closeFolderModal();
+});
+els.folderGo.addEventListener("click", () => loadFolder(els.folderPathInput.value.trim()));
+els.folderPathInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loadFolder(els.folderPathInput.value.trim());
+});
+els.folderParent.addEventListener("click", () => {
+  if (state.folderBrowse?.parent) loadFolder(state.folderBrowse.parent);
+});
+els.folderOpen.addEventListener("click", () => openSelectedFolder().catch((error) => toast(error.message)));
+els.folderRoots.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-folder-path]");
+  if (button) loadFolder(button.dataset.folderPath || "");
+});
+els.folderList.addEventListener("click", (event) => {
+  const row = event.target.closest("[data-folder-path]");
+  if (row) loadFolder(row.dataset.folderPath || "");
+});
 els.cloneForm.addEventListener("submit", submitCloneForm);
 els.cloneCancel.addEventListener("click", closeCloneModal);
 els.cloneUrlInput.addEventListener("input", syncCloneTargetSuggestion);
@@ -8194,6 +8306,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.cloneModal.classList.contains("show")) closeCloneModal();
   if (event.key === "Escape" && els.initModal.classList.contains("show")) closeInitModal();
   if (event.key === "Escape" && els.patchModal.classList.contains("show")) closePatchModal();
+  if (event.key === "Escape" && els.folderModal.classList.contains("show")) closeFolderModal();
   if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
   if (event.key === "Escape" && els.mainlineModal.classList.contains("show")) closeMainlineModal();

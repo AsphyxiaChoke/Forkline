@@ -27,8 +27,8 @@
   --row-selected: #192831;
   --scroll: #414a5c;
   --badge-text: #111318;
-  --graph-all-bg: linear-gradient(90deg, rgba(92, 169, 255, 0.07) 0 132px, transparent 132px);
-  --graph-focus-bg: linear-gradient(90deg, rgba(35, 199, 183, 0.12) 0 132px, transparent 132px);
+  --graph-all-bg: linear-gradient(90deg, rgba(92, 169, 255, 0.07) 0 var(--graph-w), transparent var(--graph-w));
+  --graph-focus-bg: linear-gradient(90deg, rgba(35, 199, 183, 0.12) 0 var(--graph-w), transparent var(--graph-w));
   --graph-node-fill: #111318;
   --graph-node-ring: #111318;
   --graph-label-bg: rgba(17, 19, 24, 0.92);
@@ -43,7 +43,8 @@
   --changes-w: 370px;
   --stage-h: 300px;
   --commit-form-h: 116px;
-  --history-cols: 132px minmax(0, 1fr) minmax(104px, 150px) minmax(76px, 96px) minmax(70px, 96px);
+  --graph-w: 156px;
+  --history-cols: var(--graph-w) minmax(0, 1fr) minmax(104px, 150px) minmax(76px, 96px) minmax(70px, 96px);
   --row-h: 62px;
   --header-h: 58px;
   font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", Arial, sans-serif;
@@ -70,8 +71,8 @@ html[data-theme="light"] {
   --row-hover: #edf5f5;
   --row-selected: #e1f4f1;
   --scroll: #b7c2d0;
-  --graph-all-bg: linear-gradient(90deg, rgba(53, 120, 190, 0.09) 0 132px, transparent 132px);
-  --graph-focus-bg: linear-gradient(90deg, rgba(19, 140, 130, 0.14) 0 132px, transparent 132px);
+  --graph-all-bg: linear-gradient(90deg, rgba(53, 120, 190, 0.09) 0 var(--graph-w), transparent var(--graph-w));
+  --graph-focus-bg: linear-gradient(90deg, rgba(19, 140, 130, 0.14) 0 var(--graph-w), transparent var(--graph-w));
   --graph-node-fill: #ffffff;
   --graph-node-ring: #ffffff;
   --graph-label-bg: rgba(255, 255, 255, 0.94);
@@ -256,7 +257,7 @@ button {
 
 .path-open {
   display: grid;
-  grid-template-columns: minmax(82px, 1fr) minmax(72px, 112px) 34px 48px 58px 48px;
+  grid-template-columns: minmax(72px, 1fr) minmax(72px, 108px) 34px 48px 48px 58px 48px;
   overflow: hidden;
   background: var(--field);
 }
@@ -305,6 +306,7 @@ button {
   font-weight: 900;
 }
 
+.path-open .browse-repo,
 .path-open .clone-repo,
 .path-open .init-repo {
   min-width: 48px;
@@ -314,6 +316,10 @@ button {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
+}
+
+.path-open .browse-repo {
+  color: var(--text);
 }
 
 .path-open .init-repo {
@@ -1051,7 +1057,7 @@ body.resizing .workspace-resizer::before {
   position: absolute;
   left: 0;
   top: 0;
-  width: 132px;
+  width: var(--graph-w);
   z-index: 2;
   pointer-events: none;
 }
@@ -4958,6 +4964,168 @@ body.resizing .workbench-resizer-y::before {
   width: min(780px, calc(100vw - 32px));
 }
 
+.folder-dialog {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(220px, 46vh) auto;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 44px);
+}
+
+.folder-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.folder-head strong,
+.folder-head span {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-head strong {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.folder-head span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+.folder-jump {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.folder-jump input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--field);
+  color: var(--text);
+}
+
+.folder-roots {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.folder-root {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.folder-root:hover {
+  border-color: rgba(35, 199, 183, 0.7);
+  color: var(--text);
+}
+
+.folder-shortcut {
+  border-color: rgba(35, 199, 183, 0.38);
+  color: var(--text);
+}
+
+.folder-shortcut + .folder-root:not(.folder-shortcut) {
+  margin-left: 8px;
+}
+
+.folder-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.folder-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.folder-row:hover {
+  background: var(--panel-3);
+}
+
+.folder-row.is-git {
+  background: rgba(35, 199, 183, 0.08);
+}
+
+.folder-icon {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--panel-3);
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.folder-row.is-git .folder-icon {
+  background: var(--teal);
+  color: var(--badge-text);
+}
+
+.folder-name {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.folder-empty {
+  padding: 24px 10px;
+  color: var(--quiet);
+  text-align: center;
+}
+
+.folder-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .patch-form-body {
   gap: 12px;
 }
@@ -5352,7 +5520,7 @@ body.resizing .workbench-resizer-y::before {
   }
 
   .repo-bar {
-    grid-template-columns: minmax(170px, 220px) minmax(350px, 1fr);
+    grid-template-columns: minmax(170px, 220px) minmax(382px, 1fr);
     grid-template-rows: 38px 38px;
   }
 

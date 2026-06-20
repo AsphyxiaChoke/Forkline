@@ -31,6 +31,7 @@
             <option value="">最近仓库</option>
           </select>
           <button id="clearRecentRepos" class="btn ghost recent-clear" type="button" title="清除最近仓库">×</button>
+          <button id="browseRepo" class="btn ghost browse-repo" type="button" title="选择本机 Git 仓库目录">选择</button>
           <button id="cloneRepo" class="btn ghost clone-repo" type="button" title="克隆仓库">克隆</button>
           <button id="initRepo" class="btn ghost init-repo" type="button" title="初始化仓库">初始化</button>
           <button id="openRepo" class="btn primary" type="button">打开</button>
@@ -201,6 +202,27 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="folderModal" class="checkout-modal" aria-hidden="true">
+    <div class="checkout-dialog folder-dialog" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle">
+      <div class="folder-head">
+        <div>
+          <strong id="folderModalTitle">选择 Git 仓库目录</strong>
+          <span id="folderCurrentPath">未选择目录</span>
+        </div>
+        <button id="folderClose" class="mini-btn" type="button">关闭</button>
+      </div>
+      <div class="folder-jump">
+        <input id="folderPathInput" autocomplete="off" spellcheck="false" placeholder="输入或粘贴目录路径" />
+        <button id="folderGo" class="mini-btn" type="button">转到</button>
+      </div>
+      <div id="folderRoots" class="folder-roots"></div>
+      <div id="folderList" class="folder-list"></div>
+      <div class="checkout-actions folder-actions">
+        <button id="folderParent" class="checkout-choice" type="button">上一级</button>
+        <button id="folderOpen" class="checkout-choice primary" type="button">打开此目录</button>
+      </div>
+    </div>
+  </div>
   <div id="patchModal" class="checkout-modal" aria-hidden="true">
     <form id="patchForm" class="checkout-dialog patch-dialog" role="dialog" aria-modal="true" aria-labelledby="patchModalTitle">
       <div class="checkout-warning">

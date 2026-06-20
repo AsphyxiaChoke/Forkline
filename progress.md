@@ -58,3 +58,28 @@
 - `docs/CONTINUE.md`: startup behavior remains documented.
 - `progress.md`: appended this verification record.
 - Rollback: revert the `server.js`, `docs/CONTINUE.md`, and `progress.md` edits from this task; the temporary 5290 service was stopped.
+
+## 2026-06-20 - Task: restore folder picker and improve merge graph readability
+### What was done
+- Restored the top-bar "选择" folder picker beside the repository path input.
+- Fixed the path bar grid so the newly restored "选择" button does not force the "打开" button into a hidden second row.
+- Added an internal directory browser modal with path jump, parent navigation, drive roots, and common shortcuts for desktop, downloads, documents, and user home.
+- Added `/api/browse` so the UI can list local directories, identify Git repositories, and hide `.git` from the visible folder list.
+- Widened the commit graph lane area and made merge commits easier to read with larger merge nodes, `M2` / `M3` parent-count labels, and dashed secondary-parent lines.
+- Updated the continuation document so the restored picker and merge graph change are visible to future sessions.
+### Testing
+- `node --check server.js` passed with the Codex runtime Node.
+- `node --check public/app.js` passed with the Codex runtime Node.
+- `git diff --check` passed; Git only reported existing LF-to-CRLF conversion warnings.
+- Temporary HTTP/API verification returned `/api/browse` for `D:\桌面\forkline-web` with `isGit = true`, shortcuts `桌面,下载,文档,用户目录`, no `.git` entry, and the expected modal/button HTML.
+- Browser preview verification on `http://127.0.0.1:5290/` confirmed the "选择" button opens the folder modal, shortcuts render, `.git` is hidden, and the merge graph contains `M2`, a dashed secondary-parent path, and `viewBox = 0 0 156 ...`.
+- Browser layout verification on `http://127.0.0.1:5291/` confirmed `repoInput`, recent repo select, clear, "选择", "克隆", "初始化", and "打开" all remain on one row with no overlapping boxes at desktop width and at 1180px viewport width.
+- Browser console errors/warnings were empty during the preview verification.
+### Notes
+- `server.js`: added the local directory browser helpers and `/api/browse`.
+- `public/index.html`: restored the "选择" button and folder picker modal markup.
+- `public/app.js`: wired folder picker state/events and enhanced merge graph rendering.
+- `public/styles.css`: styled the folder picker and widened the graph column.
+- `docs/CONTINUE.md`: documented the restored folder picker and merge graph readability change.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`; no persistent test data was created.
