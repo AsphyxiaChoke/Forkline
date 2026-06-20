@@ -2116,6 +2116,7 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .detail-body {
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   overflow: auto;

@@ -194,3 +194,17 @@
 - `public/styles.css`: changed the "更多" selector and option colors for readable dark-mode dropdown text.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/styles.css` and `progress.md`; stop any temporary verification service on port 5304 if still running.
+
+## 2026-06-21 - Task: fix more panel clipping in inspector
+### What was done
+- Fixed the right inspector content area so panels opened from the top-right "更多" selector occupy the full remaining inspector height instead of collapsing into the hidden tab row.
+- Kept long "更多" panels scrollable inside the right sidebar, while normal commit detail tabs continue to show their tab row.
+### Testing
+- Browser verification on `http://127.0.0.1:5305/` reproduced the issue before the fix: after selecting "操作日志", `#detailBody` was only `28px` high while the inspector had `588px` of available content space.
+- Browser verification after the fix confirmed "操作日志" and "恢复点" both render with `#detailBody` at `588px` high, with long content scrolling inside the right sidebar.
+- Browser verification confirmed the normal commit detail view still renders the tab row and `#detailBody` at `548px` high.
+- Browser page console errors/warnings were empty.
+### Notes
+- `public/styles.css`: pins the inspector detail body to the third grid row so hiding the tab row does not collapse the content viewport.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/styles.css` and `progress.md`; stop any temporary verification service on port 5305 if still running.
