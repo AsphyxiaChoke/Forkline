@@ -141,10 +141,13 @@ button {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.brand,
-.actions {
+.brand {
   height: 100%;
   border-right: 1px solid var(--line);
+}
+
+.actions {
+  height: 100%;
 }
 
 .brand {
@@ -415,43 +418,107 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   min-width: max-content;
-  padding: 0 8px;
+  padding: 0 12px;
   border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--topbar) 86%, var(--panel-2)), var(--topbar));
 }
 
-.actions .icon-btn {
+.topbar-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--field) 88%, var(--panel-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.topbar-action-group .icon-btn {
+  height: 28px;
   min-width: 0;
   padding: 0 9px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.topbar-action-group .icon-btn:hover {
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--teal) 18%);
+  color: var(--text);
+  transform: none;
+}
+
+.topbar-action-group .icon-btn.danger {
+  border-color: transparent;
+  color: var(--coral);
+}
+
+.topbar-action-group .icon-btn.danger:hover {
+  background: rgba(255, 107, 116, 0.12);
+  color: var(--danger);
+}
+
+.topbar-sync-actions {
+  background: color-mix(in srgb, var(--field) 82%, var(--blue) 18%);
 }
 
 .topbar-more {
-  display: inline-grid;
-  grid-template-columns: auto minmax(86px, 112px);
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
+  height: 34px;
+  min-width: 94px;
+  border: 1px solid var(--line-soft);
   border-radius: 8px;
-  background: var(--panel-2);
+  background: color-mix(in srgb, var(--field) 88%, var(--panel-2));
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.topbar-more::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--quiet);
+  border-bottom: 2px solid var(--quiet);
+  pointer-events: none;
+  transform: translateY(-2px) rotate(45deg);
 }
 
 .topbar-more select {
   min-width: 0;
   width: 100%;
+  height: 28px;
+  padding: 0 26px 0 10px;
   border: 0;
+  border-radius: 6px;
   outline: 0;
-  background: var(--panel-2);
+  appearance: none;
+  background: transparent;
   color: var(--text);
   font-size: 12px;
   font-weight: 800;
   color-scheme: dark;
+  cursor: pointer;
+}
+
+.topbar-more:hover {
+  border-color: rgba(34, 211, 195, 0.58);
+  background: color-mix(in srgb, var(--panel-3) 84%, var(--teal) 16%);
+}
+
+.topbar-more:hover::after {
+  border-color: var(--teal);
 }
 
 .topbar-more select option {
@@ -512,6 +579,13 @@ html[data-theme="light"] .topbar-more select {
   border-color: rgba(240, 99, 99, 0.75);
   background: rgba(240, 99, 99, 0.1);
   color: var(--danger);
+}
+
+.actions .topbar-action-group .icon-btn.danger:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 107, 116, 0.12);
+  color: var(--danger);
+  transform: none;
 }
 
 .theme-toggle {

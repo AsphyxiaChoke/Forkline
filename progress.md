@@ -298,3 +298,23 @@
 - `docs/CONTINUE.md`: documents the additional render-performance and worktree color refinements.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-21 - Task: refine top-right toolbar UI
+### What was done
+- Grouped the top-right actions into compact utility, sync, and more-panel controls instead of leaving every button as a separate loose item.
+- Changed the "more" panel selector into a single button-like select with "更多" as the default label, removing the old "更多 + 选择" double-label layout.
+- Restyled the top-right toolbar area with quieter grouped backgrounds, tighter inner button spacing, clearer hover states, and a softer danger state for force push.
+### Testing
+- `node --check public/app.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- `git diff --check` passed.
+- HTTP verification confirmed `http://127.0.0.1:5177/` returns 200 and includes `topbar-action-group` plus the new "更多" default option.
+- HTTP static resource verification confirmed `/styles.css` returns the new `.topbar-action-group`, `.topbar-sync-actions`, `.topbar-more::after`, and scoped top-right danger-hover styles.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+- In-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session; this task used static checks plus local HTTP/API verification instead.
+### Notes
+- `public/index.html`: wraps right-top actions into grouped toolbar sections and simplifies the more-panel select label.
+- `public/styles.css`: adds grouped toolbar styling, compact nested button states, and polished more-select styling.
+- `docs/CONTINUE.md`: records the right-top toolbar UI cleanup for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

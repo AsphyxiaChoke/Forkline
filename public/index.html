@@ -45,16 +45,19 @@
       </div>
 
       <div class="actions">
-        <button id="openCommandPalette" class="icon-btn" title="打开命令面板" type="button">命令</button>
-        <button id="themeToggle" class="icon-btn theme-toggle" title="切换浅色/深色" type="button">浅色</button>
-        <button class="icon-btn" data-action="fetch" title="抓取" type="button">抓取</button>
-        <button class="icon-btn" data-action="pull" title="拉取" type="button">拉取</button>
-        <button class="icon-btn" data-action="push" title="推送" type="button">推送</button>
-        <button class="icon-btn danger" data-action="forcePushLease" title="安全强推（git push --force-with-lease）" type="button">强推</button>
+        <div class="topbar-action-group topbar-utility-actions">
+          <button id="openCommandPalette" class="icon-btn" title="打开命令面板" type="button">命令</button>
+          <button id="themeToggle" class="icon-btn theme-toggle" title="切换浅色/深色" type="button">浅色</button>
+        </div>
+        <div class="topbar-action-group topbar-sync-actions">
+          <button class="icon-btn" data-action="fetch" title="抓取" type="button">抓取</button>
+          <button class="icon-btn" data-action="pull" title="拉取" type="button">拉取</button>
+          <button class="icon-btn" data-action="push" title="推送" type="button">推送</button>
+          <button class="icon-btn danger" data-action="forcePushLease" title="安全强推（git push --force-with-lease）" type="button">强推</button>
+        </div>
         <label class="topbar-more" title="显示更多右侧面板">
-          <span>更多</span>
-          <select id="moreInspectorSelect">
-            <option value="">选择</option>
+          <select id="moreInspectorSelect" aria-label="显示更多右侧面板">
+            <option value="">更多</option>
             <option value="worktrees">工作树</option>
             <option value="submodules">子模块</option>
             <option value="stashes">储藏</option>
