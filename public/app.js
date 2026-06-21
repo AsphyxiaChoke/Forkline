@@ -67,7 +67,7 @@ const inspectorTabs = {
   commit: ["details", "files", "tags"],
   file: ["fileHistory", "fileBlame"],
   branch: ["branches", "sync", "compare"],
-  more: ["worktrees", "submodules", "stashes", "recovery", "logs"],
+  more: ["worktrees", "submodules", "stashes", "recovery", "logs", "settings"],
 };
 const els = {
   repoName: $("#repoName"),
@@ -1347,6 +1347,7 @@ function commandPaletteItems() {
     commandItem("tabTags", "打开标签", "查看和管理 Tag", "标签", "tag release", hasRepo, () => switchInspectorTab("tags")),
     commandItem("tabRecovery", "打开恢复点", "查看历史编辑和重置前的恢复引用", "恢复点", "recovery reset", hasRepo, () => switchInspectorTab("recovery")),
     commandItem("tabLogs", "打开日志", "查看最近 Git 操作和失败原因", "日志", "operation log", hasRepo, () => switchInspectorTab("logs")),
+    commandItem("tabSettings", "打开设置", "管理主题、最近仓库、恢复点策略和布局偏好", "设置", "settings preference theme recent layout", true, () => switchInspectorTab("settings")),
     commandItem("refreshWorktree", "刷新工作区", "重新读取未提交修改", "git status", "worktree changes", realRepo, () => refreshWorktree(false)),
     commandItem("stageAll", "暂存全部", "把所有工作区改动加入暂存区", "git add", "stage changes", realRepo && hasChanges, () => runAction("stageAll")),
     commandItem("stashAll", "储藏工作区", "把当前未提交改动移入储藏列表", "git stash", "stash changes", realRepo && hasChanges, () => createStashFromSelection(null)),
@@ -3092,6 +3093,10 @@ function renderInspector() {
   }
   if (state.selectedTab === "logs") {
     renderLogsTab();
+    return;
+  }
+  if (state.selectedTab === "settings") {
+    renderSettingsTab();
     return;
   }
   if (state.selectedTab === "sync") {
@@ -5664,6 +5669,103 @@ function renderLogsTab() {
   `;
 }
 
+function renderSettingsTab() {
+  const repos = recentRepos();
+  const policy = normalizedRecoveryPolicy();
+  const policyLabel = recoveryPolicyLabel(policy) || "策略未启用";
+  els.detailTitle.textContent = "设置";
+  els.detailSub.textContent = "本机偏好和界面行为";
+  els.detailNode.style.borderColor = "var(--violet)";
+  setActiveDiff(null);
+  els.detailBody.innerHTML = `
+    <div class="settings-layout">
+      <section class="settings-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>外观</strong>
+            <span>主题会保存在当前浏览器。</span>
+          </div>
+        </div>
+        <div class="settings-choice-row">
+          ${settingsThemeButton("dark", "深色", "适合长时间查看提交图谱")}
+          ${settingsThemeButton("light", "浅色", "适合明亮环境")}
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>最近仓库</strong>
+            <span>${repos.length ? `已保存 ${repos.length} 个本机仓库入口` : "当前没有最近仓库记录"}</span>
+          </div>
+          <button class="mini-btn danger" data-settings-action="clearRecentRepos" type="button" ${repos.length ? "" : "disabled"}>清空</button>
+        </div>
+        <div class="settings-list">
+          ${
+            repos.length
+              ? repos.slice(0, 6).map(settingsRecentRepoRow).join("")
+              : `<div class="empty-panel compact"><span>成功打开真实仓库后，这里会显示最近仓库。</span></div>`
+          }
+        </div>
+        <button class="mini-btn settings-wide-action" data-settings-action="chooseRepo" type="button">选择 Git 仓库目录</button>
+      </section>
+
+      <section class="settings-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>恢复点保留策略</strong>
+            <span>${escapeHtml(policyLabel)}</span>
+          </div>
+        </div>
+        <div class="settings-policy-grid">
+          <label class="recovery-retention-rule">
+            <span>保留最近</span>
+            <input data-recovery-policy="keepDays" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.keepDays)}" />
+            <em>天</em>
+          </label>
+          <label class="recovery-retention-rule">
+            <span>每分支</span>
+            <input data-recovery-policy="maxPerBranch" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.maxPerBranch)}" />
+            <em>个</em>
+          </label>
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>布局</strong>
+            <span>恢复侧栏、右栏、工作区和提交框宽高到默认值。</span>
+          </div>
+          <button class="mini-btn" data-settings-action="resetLayout" type="button">重置布局</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function settingsThemeButton(theme, label, description) {
+  const active = state.theme === theme;
+  return `
+    <button class="settings-choice ${active ? "active" : ""}" data-settings-theme="${escapeAttr(theme)}" type="button">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(description)}</span>
+    </button>
+  `;
+}
+
+function settingsRecentRepoRow(repo) {
+  return `
+    <div class="settings-repo-row">
+      <div>
+        <strong title="${escapeAttr(repo.name || repo.path)}">${escapeHtml(repo.name || repo.path)}</strong>
+        <span title="${escapeAttr(repo.path)}">${escapeHtml(repo.path || "")}</span>
+      </div>
+      <em>${escapeHtml(repo.branch || "未记录分支")}</em>
+    </div>
+  `;
+}
+
 function renderRunningOperationItem(item) {
   const duration = item.elapsed || formatDurationText(item.durationMs);
   return `
@@ -7734,6 +7836,24 @@ function toggleTheme() {
   applyTheme(state.theme === "light" ? "dark" : "light");
 }
 
+function resetLayoutPreferences() {
+  [
+    ["forkline-sidebar-w", "--sidebar-w"],
+    ["forkline-inspector-w", "--inspector-w"],
+    ["forkline-changes-w", "--changes-w"],
+    ["forkline-stage-h", "--stage-h"],
+    ["forkline-commit-form-h", "--commit-form-h"],
+  ].forEach(([store, variable]) => {
+    try {
+      localStorage.removeItem(store);
+    } catch {
+    }
+    document.documentElement.style.removeProperty(variable);
+  });
+  toast("布局已恢复默认");
+  renderInspector();
+}
+
 function initLayoutResizers() {
   const root = document.documentElement;
   const configs = {
@@ -7989,7 +8109,7 @@ els.detailBody.addEventListener("input", (event) => {
     return;
   }
   const policy = event.target.closest("[data-recovery-policy]");
-  if (policy && state.selectedTab === "recovery") {
+  if (policy && (state.selectedTab === "recovery" || state.selectedTab === "settings")) {
     updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
   }
 });
@@ -8012,7 +8132,7 @@ els.detailBody.addEventListener("change", (event) => {
     return;
   }
   const policy = event.target.closest("[data-recovery-policy]");
-  if (policy && state.selectedTab === "recovery") {
+  if (policy && (state.selectedTab === "recovery" || state.selectedTab === "settings")) {
     updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
   }
 });
@@ -8170,6 +8290,35 @@ els.detailBody.addEventListener("click", (event) => {
   if (logRefresh) {
     event.preventDefault();
     refreshLogsTab().catch((error) => toast(error.message));
+    return;
+  }
+  const settingsTheme = event.target.closest("[data-settings-theme]");
+  if (settingsTheme) {
+    event.preventDefault();
+    const theme = normalizeTheme(settingsTheme.dataset.settingsTheme);
+    if (theme) {
+      applyTheme(theme);
+      renderInspector();
+    }
+    return;
+  }
+  const settingsAction = event.target.closest("[data-settings-action]");
+  if (settingsAction) {
+    event.preventDefault();
+    if (settingsAction.disabled) return;
+    const action = settingsAction.dataset.settingsAction;
+    if (action === "chooseRepo") {
+      openFolderModal().catch((error) => toast(error.message));
+      return;
+    }
+    if (action === "clearRecentRepos") {
+      clearRecentRepos();
+      if (state.selectedTab === "settings") renderInspector();
+      return;
+    }
+    if (action === "resetLayout") {
+      resetLayoutPreferences();
+    }
     return;
   }
   const fileHistoryOpen = event.target.closest("[data-file-history-open]");

@@ -338,3 +338,25 @@
 - `docs/CONTINUE.md`: updates the path selector note with the fixed visible chooser and responsive layout behavior.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-21 - Task: add settings panel
+### What was done
+- Added a "设置" entry to the top-right "更多" selector and command palette.
+- Added a right-side settings panel for browser-local preferences: theme selection, recent repository cleanup, repository directory chooser shortcut, recovery retention policy, and layout width/height reset.
+- Wired settings controls to the existing localStorage-backed theme, recent repository, recovery policy, and layout preferences without adding new backend configuration.
+### Testing
+- `node --check public/app.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- `git diff --check` passed.
+- HTTP verification confirmed `http://127.0.0.1:5177/` returns 200 and includes the `settings` option.
+- HTTP static resource verification confirmed `/app.js` returns `renderSettingsTab`, `data-settings-action`, and `tabSettings`.
+- HTTP static resource verification confirmed `/styles.css` returns `.settings-layout`, `.settings-card`, and `.settings-choice`.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+- In-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session; this task used static checks plus local HTTP/API verification instead.
+### Notes
+- `public/index.html`: adds the settings option to the top-right more selector.
+- `public/app.js`: registers the settings tab, renders the settings panel, and handles settings actions.
+- `public/styles.css`: adds compact settings panel layout and row styles.
+- `docs/CONTINUE.md`: documents the settings panel and its current browser-local scope.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

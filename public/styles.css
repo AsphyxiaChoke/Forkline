@@ -2273,6 +2273,135 @@ body.resizing .workbench-resizer-y::before {
   font-weight: 800;
 }
 
+.settings-layout {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-card-head > div {
+  min-width: 0;
+}
+
+.settings-card-head strong,
+.settings-card-head span,
+.settings-repo-row strong,
+.settings-repo-row span,
+.settings-repo-row em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-card-head strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.settings-card-head span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-choice-row,
+.settings-list,
+.settings-policy-grid {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-choice {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+}
+
+.settings-choice:hover,
+.settings-choice.active {
+  border-color: rgba(34, 211, 195, 0.66);
+  background: color-mix(in srgb, var(--panel-3) 84%, var(--teal) 16%);
+}
+
+.settings-choice strong,
+.settings-choice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-choice span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-repo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(56px, auto);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.settings-repo-row > div {
+  min-width: 0;
+}
+
+.settings-repo-row strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-repo-row span,
+.settings-repo-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.settings-repo-row em {
+  text-align: right;
+}
+
+.settings-wide-action {
+  width: 100%;
+}
+
+.settings-policy-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
 .branch-cleanup-layout {
   display: grid;
   gap: 12px;
