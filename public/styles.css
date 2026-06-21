@@ -227,7 +227,7 @@ button {
 
 .repo-bar {
   display: grid;
-  grid-template-columns: 220px minmax(350px, 1fr) minmax(210px, 340px);
+  grid-template-columns: 210px minmax(520px, 1.2fr) minmax(220px, 320px);
   gap: 10px;
   min-width: 0;
   padding: 0 12px;
@@ -261,13 +261,14 @@ button {
 
 .path-open {
   display: grid;
-  grid-template-columns: minmax(72px, 1fr) minmax(72px, 108px) 34px 48px 48px 58px 48px;
-  overflow: hidden;
+  grid-template-columns: minmax(150px, 1fr) minmax(122px, 154px) max-content;
+  gap: 6px;
+  padding: 3px;
   background: var(--field);
 }
 
 .path-open input,
-.path-open select,
+.recent-repo-group select,
 .search input,
 .commit-form > input,
 .commit-form textarea {
@@ -281,59 +282,76 @@ button {
 
 .path-open input {
   height: 100%;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 10px;
 }
 
-.path-open select {
-  height: 100%;
+.recent-repo-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--field) 84%, var(--panel-2));
+}
+
+.recent-repo-group select {
+  height: 30px;
   padding: 0 8px;
-  border-left: 1px solid var(--line-soft);
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-overflow: ellipsis;
 }
 
-.path-open select:disabled,
+.recent-repo-group select:disabled,
 .path-open .recent-clear:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
 .path-open .recent-clear {
-  min-width: 34px;
-  height: 100%;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
   border-left: 1px solid var(--line-soft);
   border-radius: 0;
+  background: transparent;
   color: var(--quiet);
   font-size: 16px;
   font-weight: 900;
 }
 
-.path-open .browse-repo,
-.path-open .clone-repo,
-.path-open .init-repo {
-  min-width: 48px;
-  height: 100%;
-  border-left: 1px solid var(--line-soft);
-  border-radius: 0;
+.path-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: max-content;
+}
+
+.path-actions .btn {
+  height: 30px;
+  min-width: 46px;
+  padding: 0 10px;
+  border-color: var(--line-soft);
+  border-radius: 6px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
 }
 
-.path-open .browse-repo {
+.path-actions .browse-repo {
+  min-width: 54px;
   color: var(--text);
 }
 
-.path-open .init-repo {
-  min-width: 58px;
+.path-actions .init-repo {
+  min-width: 60px;
 }
 
-.path-open .primary {
-  min-width: 48px;
-  height: 100%;
-  border-radius: 0;
+.path-actions .primary {
+  min-width: 50px;
 }
 
 .search {
@@ -5661,21 +5679,110 @@ body.resizing .workbench-resizer-y::before {
   padding-bottom: 5px;
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 1500px) {
+  :root {
+    --header-h: 104px;
+  }
+
   .topbar {
-    grid-template-columns: 240px minmax(0, 1fr) max-content;
+    grid-template-columns: 220px minmax(0, 1fr) max-content;
   }
 
   .repo-bar {
-    grid-template-columns: minmax(170px, 220px) minmax(382px, 1fr);
+    grid-template-columns: minmax(170px, 220px) minmax(470px, 1fr);
     grid-template-rows: 38px 38px;
+    gap: 8px 10px;
   }
 
   .repo-bar .search {
     grid-column: 1 / -1;
   }
+}
+
+@media (max-width: 1280px) {
+  :root {
+    --header-h: 152px;
+  }
+
+  .topbar {
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: 48px 48px 48px;
+  }
+
+  .brand {
+    grid-row: 1 / 4;
+  }
+
+  .repo-bar {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    grid-template-columns: minmax(154px, 196px) minmax(420px, 1fr);
+    grid-template-rows: 38px 38px;
+    align-self: end;
+    padding-right: 10px;
+  }
+
+  .repo-bar .search {
+    display: flex;
+    grid-column: 1 / -1;
+  }
+
+  .actions {
+    grid-column: 2;
+    grid-row: 3;
+    justify-content: flex-start;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 10px 6px;
+    scrollbar-width: none;
+  }
+
+  .actions::-webkit-scrollbar {
+    display: none;
+  }
 
   .workspace {
     grid-template-columns: var(--sidebar-w) 7px minmax(540px, 1fr) 7px var(--inspector-w);
+  }
+}
+
+@media (max-width: 920px) {
+  :root {
+    --header-h: 200px;
+  }
+
+  .topbar {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px 52px 52px 52px;
+  }
+
+  .brand {
+    grid-row: 1;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .repo-bar {
+    grid-column: 1;
+    grid-row: 2 / 4;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 38px 38px;
+    padding: 7px 10px 0;
+  }
+
+  .repo-pill {
+    display: none;
+  }
+
+  .path-open {
+    grid-template-columns: minmax(120px, 1fr) minmax(112px, 142px) max-content;
+  }
+
+  .actions {
+    grid-column: 1;
+    grid-row: 4;
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
   }
 }

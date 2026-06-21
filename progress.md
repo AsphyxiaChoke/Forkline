@@ -318,3 +318,23 @@
 - `docs/CONTINUE.md`: records the right-top toolbar UI cleanup for future continuation.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-21 - Task: keep repository path chooser visible
+### What was done
+- Reworked the top path opener so the path input, recent repository selector, and repository action buttons are separate layout groups.
+- Kept the "选择" directory button as a fixed-width action inside the path button group, so it is not squeezed out by the input or recent repository dropdown.
+- Moved the medium-width topbar breakpoint earlier and added narrower topbar layouts so the path area and top-right actions do not overlap or deform each other.
+### Testing
+- `node --check public/app.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- `git diff --check` passed.
+- HTTP verification confirmed `http://127.0.0.1:5177/` returns 200 and includes `recent-repo-group`, `path-actions`, and `id="browseRepo"`.
+- HTTP static resource verification confirmed `/styles.css` returns `.path-actions`, `.recent-repo-group`, and the earlier responsive topbar breakpoints.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+- Headless browser screenshot verification was unavailable because no browser executable was exposed as `msedge`, `chrome`, or `chromium`; in-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session.
+### Notes
+- `public/index.html`: groups the recent repository controls and path action buttons so the directory chooser remains an explicit button.
+- `public/styles.css`: updates path opener grid columns, button sizing, and topbar responsive breakpoints to prevent overlap and deformation.
+- `docs/CONTINUE.md`: updates the path selector note with the fixed visible chooser and responsive layout behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

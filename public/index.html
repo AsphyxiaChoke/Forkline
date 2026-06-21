@@ -27,14 +27,18 @@
         </div>
         <div class="path-open">
           <input id="repoInput" autocomplete="off" spellcheck="false" placeholder="输入本机 Git 仓库路径，例如 D:\project\demo" />
-          <select id="recentRepoSelect" title="最近仓库">
-            <option value="">最近仓库</option>
-          </select>
-          <button id="clearRecentRepos" class="btn ghost recent-clear" type="button" title="清除最近仓库">×</button>
-          <button id="browseRepo" class="btn ghost browse-repo" type="button" title="选择本机 Git 仓库目录">选择</button>
-          <button id="cloneRepo" class="btn ghost clone-repo" type="button" title="克隆仓库">克隆</button>
-          <button id="initRepo" class="btn ghost init-repo" type="button" title="初始化仓库">初始化</button>
-          <button id="openRepo" class="btn primary" type="button">打开</button>
+          <div class="recent-repo-group">
+            <select id="recentRepoSelect" title="最近仓库">
+              <option value="">最近仓库</option>
+            </select>
+            <button id="clearRecentRepos" class="btn ghost recent-clear" type="button" title="清除最近仓库">×</button>
+          </div>
+          <div class="path-actions">
+            <button id="browseRepo" class="btn ghost browse-repo" type="button" title="选择本机 Git 仓库目录">选择</button>
+            <button id="cloneRepo" class="btn ghost clone-repo" type="button" title="克隆仓库">克隆</button>
+            <button id="initRepo" class="btn ghost init-repo" type="button" title="初始化仓库">初始化</button>
+            <button id="openRepo" class="btn primary" type="button">打开</button>
+          </div>
         </div>
         <label class="search">
           <span class="search-icon" aria-hidden="true"></span>
