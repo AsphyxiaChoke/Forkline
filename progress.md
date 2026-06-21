@@ -258,3 +258,22 @@
 - `docs/CONTINUE.md`: updates the conflict-resolution usage note so future work looks for the buttons in the conflict prompt instead of the bottom Diff panel.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-21 - Task: optimize render performance and UI colors
+### What was done
+- Debounced commit search rendering so rapid typing no longer redraws the commit list and SVG graph on every keypress.
+- Batched commit row insertion with a document fragment to reduce DOM append work on large histories.
+- Refined the dark and light palettes, with clearer panel separation, selected commit rows, current HEAD rows, active branch chips, search focus state, active tabs, and hover states.
+### Testing
+- `node --check public/app.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- `git diff --check` passed.
+- HTTP verification confirmed `http://127.0.0.1:5177/` returns 200 after starting the local service.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns repository state successfully.
+- In-app Browser visual verification was intentionally skipped after repeated 5177 page opens made the Codex session unstable; this task used static checks plus local HTTP/API verification instead.
+### Notes
+- `public/app.js`: adds cancellable delayed commit search rendering and batches commit row DOM insertion.
+- `public/styles.css`: updates color tokens and key active/selected/focus styles for clearer UI hierarchy.
+- `docs/CONTINUE.md`: records the search performance and palette updates for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

@@ -1,43 +1,43 @@
 :root {
   color-scheme: dark;
-  --bg: #111318;
-  --panel: #171a21;
-  --panel-2: #1d222b;
-  --panel-3: #232a36;
-  --line: #303746;
-  --line-soft: #252b36;
-  --text: #e7ecf3;
-  --muted: #9aa6b8;
-  --quiet: #758196;
-  --teal: #23c7b7;
-  --green: #6bd58c;
-  --amber: #f0b85b;
-  --coral: #ff7a67;
-  --blue: #5ca9ff;
-  --violet: #9c7cff;
-  --danger: #f06363;
-  --topbar: #101318;
-  --field: #12161d;
-  --surface: #151922;
-  --card: #1b2029;
-  --primary: #208d84;
-  --row: #111318;
-  --row-alt: #13171e;
-  --row-hover: #181d26;
-  --row-selected: #192831;
-  --scroll: #414a5c;
-  --badge-text: #111318;
-  --graph-all-bg: linear-gradient(90deg, rgba(92, 169, 255, 0.07) 0 var(--graph-w), transparent var(--graph-w));
-  --graph-focus-bg: linear-gradient(90deg, rgba(35, 199, 183, 0.12) 0 var(--graph-w), transparent var(--graph-w));
-  --graph-node-fill: #111318;
-  --graph-node-ring: #111318;
-  --graph-label-bg: rgba(17, 19, 24, 0.92);
-  --graph-label-text: #e7ecf3;
-  --diff-add-bg: rgba(107, 213, 140, 0.12);
-  --diff-add-text: #aef2c0;
-  --diff-del-bg: rgba(240, 99, 99, 0.12);
-  --diff-del-text: #ffb1b1;
-  --toast-bg: rgba(20, 24, 32, 0.97);
+  --bg: #0e1117;
+  --panel: #151923;
+  --panel-2: #1b2130;
+  --panel-3: #263042;
+  --line: #344052;
+  --line-soft: #273141;
+  --text: #edf3fb;
+  --muted: #aab6c8;
+  --quiet: #8190a6;
+  --teal: #22d3c3;
+  --green: #78dc96;
+  --amber: #f3c765;
+  --coral: #ff826f;
+  --blue: #67b7ff;
+  --violet: #b18cff;
+  --danger: #ff6b74;
+  --topbar: #0b0f15;
+  --field: #111722;
+  --surface: #141a25;
+  --card: #1c2331;
+  --primary: #10998f;
+  --row: #10151e;
+  --row-alt: #141a24;
+  --row-hover: #1d2735;
+  --row-selected: #173033;
+  --scroll: #536177;
+  --badge-text: #0e1117;
+  --graph-all-bg: linear-gradient(90deg, rgba(103, 183, 255, 0.08) 0 var(--graph-w), transparent var(--graph-w));
+  --graph-focus-bg: linear-gradient(90deg, rgba(34, 211, 195, 0.14) 0 var(--graph-w), transparent var(--graph-w));
+  --graph-node-fill: #0e1117;
+  --graph-node-ring: #0e1117;
+  --graph-label-bg: rgba(14, 17, 23, 0.94);
+  --graph-label-text: #edf3fb;
+  --diff-add-bg: rgba(120, 220, 150, 0.13);
+  --diff-add-text: #bbf4cb;
+  --diff-del-bg: rgba(255, 107, 116, 0.13);
+  --diff-del-text: #ffc0c4;
+  --toast-bg: rgba(16, 21, 30, 0.98);
   --sidebar-w: 240px;
   --inspector-w: 340px;
   --changes-w: 370px;
@@ -52,35 +52,35 @@
 
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #f3f6fa;
-  --panel: #eef2f7;
+  --bg: #f4f7fb;
+  --panel: #edf2f8;
   --panel-2: #ffffff;
-  --panel-3: #e6edf5;
-  --line: #d6dee8;
-  --line-soft: #e5ebf2;
-  --text: #17202c;
-  --muted: #5f6c7d;
-  --quiet: #7e899a;
+  --panel-3: #e4edf7;
+  --line: #d1dce9;
+  --line-soft: #e1e8f1;
+  --text: #152131;
+  --muted: #5b687a;
+  --quiet: #7d899b;
   --topbar: #fbfcfe;
   --field: #ffffff;
-  --surface: #f8fafc;
+  --surface: #f8fbfe;
   --card: #ffffff;
-  --primary: #138c82;
+  --primary: #0d8f86;
   --row: #ffffff;
   --row-alt: #f7f9fc;
-  --row-hover: #edf5f5;
-  --row-selected: #e1f4f1;
-  --scroll: #b7c2d0;
-  --graph-all-bg: linear-gradient(90deg, rgba(53, 120, 190, 0.09) 0 var(--graph-w), transparent var(--graph-w));
-  --graph-focus-bg: linear-gradient(90deg, rgba(19, 140, 130, 0.14) 0 var(--graph-w), transparent var(--graph-w));
+  --row-hover: #edf6f8;
+  --row-selected: #def5f1;
+  --scroll: #aebbcc;
+  --graph-all-bg: linear-gradient(90deg, rgba(53, 120, 190, 0.1) 0 var(--graph-w), transparent var(--graph-w));
+  --graph-focus-bg: linear-gradient(90deg, rgba(13, 143, 134, 0.15) 0 var(--graph-w), transparent var(--graph-w));
   --graph-node-fill: #ffffff;
   --graph-node-ring: #ffffff;
   --graph-label-bg: rgba(255, 255, 255, 0.94);
-  --graph-label-text: #17202c;
-  --diff-add-bg: #e4f6e9;
-  --diff-add-text: #227443;
-  --diff-del-bg: #fde8e8;
-  --diff-del-text: #a33636;
+  --graph-label-text: #152131;
+  --diff-add-bg: #e3f7ea;
+  --diff-add-text: #1f7242;
+  --diff-del-bg: #fde7e9;
+  --diff-del-text: #a8323b;
   --toast-bg: rgba(255, 255, 255, 0.96);
 }
 
@@ -138,6 +138,7 @@ button {
   align-items: center;
   border-bottom: 1px solid var(--line);
   background: var(--topbar);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .brand,
@@ -236,7 +237,7 @@ button {
   align-items: center;
   min-width: 0;
   height: 38px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--panel-2);
 }
@@ -337,6 +338,12 @@ button {
   gap: 6px;
   padding: 0 6px 0 38px;
   background: var(--field);
+}
+
+.search.active,
+.search:focus-within {
+  border-color: rgba(34, 211, 195, 0.62);
+  background: color-mix(in srgb, var(--field) 78%, var(--teal));
 }
 
 .search input {
@@ -480,8 +487,9 @@ html[data-theme="light"] .topbar-more select {
 }
 
 .btn.primary {
-  border-color: rgba(35, 199, 183, 0.7);
+  border-color: rgba(34, 211, 195, 0.78);
   background: var(--primary);
+  color: #f4fffd;
 }
 
 .mini-btn.danger {
@@ -515,7 +523,7 @@ html[data-theme="light"] .topbar-more select {
 .mini-btn:hover,
 .branch-chip:hover,
 .nav-item:hover {
-  border-color: rgba(35, 199, 183, 0.75);
+  border-color: rgba(34, 211, 195, 0.72);
   background: var(--panel-3);
 }
 
@@ -822,8 +830,8 @@ body.resizing .workspace-resizer::before {
 }
 
 .branch-row.current-branch .branch-checkout {
-  border-color: rgba(35, 199, 183, 0.55);
-  background: rgba(35, 199, 183, 0.1);
+  border-color: rgba(34, 211, 195, 0.58);
+  background: rgba(34, 211, 195, 0.12);
   color: var(--teal);
   opacity: 1;
 }
@@ -847,18 +855,18 @@ body.resizing .workspace-resizer::before {
 }
 
 .nav-item.active {
-  border-color: rgba(35, 199, 183, 0.75);
-  background: rgba(35, 199, 183, 0.11);
+  border-color: rgba(34, 211, 195, 0.78);
+  background: rgba(34, 211, 195, 0.12);
 }
 
 .nav-item.current-branch {
-  border-color: rgba(35, 199, 183, 0.62);
+  border-color: rgba(34, 211, 195, 0.66);
   box-shadow: inset 3px 0 0 var(--teal);
 }
 
 .nav-item.active.current-branch {
-  border-color: rgba(35, 199, 183, 0.92);
-  background: rgba(35, 199, 183, 0.15);
+  border-color: rgba(34, 211, 195, 0.92);
+  background: rgba(34, 211, 195, 0.17);
 }
 
 .branch-dot {
@@ -940,8 +948,8 @@ body.resizing .workspace-resizer::before {
 }
 
 .branch-badge.current {
-  border-color: rgba(35, 199, 183, 0.42);
-  background: rgba(35, 199, 183, 0.16);
+  border-color: rgba(34, 211, 195, 0.5);
+  background: rgba(34, 211, 195, 0.18);
   color: var(--teal);
 }
 
@@ -988,17 +996,17 @@ body.resizing .workspace-resizer::before {
 }
 
 .branch-chip.active {
-  border-color: rgba(35, 199, 183, 0.85);
-  background: rgba(35, 199, 183, 0.12);
+  border-color: rgba(34, 211, 195, 0.88);
+  background: rgba(34, 211, 195, 0.13);
 }
 
 .branch-chip.current-branch {
-  border-color: rgba(35, 199, 183, 0.75);
+  border-color: rgba(34, 211, 195, 0.78);
   box-shadow: inset 0 -3px 0 var(--teal);
 }
 
 .branch-chip.active.current-branch {
-  background: rgba(35, 199, 183, 0.16);
+  background: rgba(34, 211, 195, 0.18);
 }
 
 .history {
@@ -1050,7 +1058,8 @@ body.resizing .workspace-resizer::before {
   overflow: hidden;
   max-width: 76px;
   padding: 2px 6px;
-  border: 1px solid rgba(35, 199, 183, 0.4);
+  border: 1px solid rgba(34, 211, 195, 0.48);
+  background: rgba(34, 211, 195, 0.08);
   border-radius: 999px;
   color: var(--text);
   font-style: normal;
@@ -1111,22 +1120,22 @@ body.resizing .workspace-resizer::before {
 }
 
 .commit-row.selected {
-  background: var(--row-selected);
-  box-shadow: inset 4px 0 0 var(--teal);
+  background: linear-gradient(90deg, rgba(34, 211, 195, 0.17), transparent 54%), var(--row-selected);
+  box-shadow: inset 4px 0 0 var(--teal), inset 0 1px 0 rgba(34, 211, 195, 0.14);
 }
 
 .commit-row.current-head {
-  background: linear-gradient(90deg, rgba(92, 169, 255, 0.14), rgba(92, 169, 255, 0.03) 42%, transparent), var(--row);
+  background: linear-gradient(90deg, rgba(103, 183, 255, 0.18), rgba(103, 183, 255, 0.04) 42%, transparent), var(--row);
   box-shadow: inset 4px 0 0 var(--blue);
 }
 
 .commit-row.current-head:nth-child(odd) {
-  background: linear-gradient(90deg, rgba(92, 169, 255, 0.14), rgba(92, 169, 255, 0.03) 42%, transparent), var(--row-alt);
+  background: linear-gradient(90deg, rgba(103, 183, 255, 0.18), rgba(103, 183, 255, 0.04) 42%, transparent), var(--row-alt);
 }
 
 .commit-row.current-head.selected {
-  background: linear-gradient(90deg, rgba(35, 199, 183, 0.16), rgba(92, 169, 255, 0.08) 48%, transparent), var(--row-selected);
-  box-shadow: inset 4px 0 0 var(--teal), inset 8px 0 0 rgba(92, 169, 255, 0.82);
+  background: linear-gradient(90deg, rgba(34, 211, 195, 0.2), rgba(103, 183, 255, 0.1) 48%, transparent), var(--row-selected);
+  box-shadow: inset 4px 0 0 var(--teal), inset 8px 0 0 rgba(103, 183, 255, 0.86);
 }
 
 .graph-cell {
@@ -2129,6 +2138,7 @@ body.resizing .workbench-resizer-y::before {
 
 .tab.active {
   color: var(--text);
+  background: color-mix(in srgb, var(--field) 82%, var(--teal));
   box-shadow: inset 0 -2px 0 var(--teal);
 }
 

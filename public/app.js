@@ -54,6 +54,7 @@ const state = {
   lastChangeSelection: null,
   branchFilter: "",
   worktreeFilter: "",
+  commitSearchRenderTimer: 0,
   cloneTargetAuto: false,
   commandPaletteIndex: 0,
   folderBrowse: null,
@@ -235,6 +236,7 @@ async function init() {
 }
 
 function renderAll() {
+  cancelScheduledCommitRender();
   renderRepo();
   renderBranches();
   renderWorkingFiles();
@@ -1007,6 +1009,7 @@ function pruneSelectedChanges(groups) {
 }
 
 function renderCommits() {
+  cancelScheduledCommitRender();
   const terms = commitSearchTerms();
   state.filtered = !terms.length
     ? state.data.commits
@@ -1038,6 +1041,7 @@ function renderCommits() {
     return;
   }
 
+  const rows = document.createDocumentFragment();
   state.filtered.forEach((commit) => {
     const headCommit = isHeadCommit(commit);
     const row = document.createElement("button");
@@ -1066,9 +1070,24 @@ function renderCommits() {
       await selectCommit(commit.sha);
       showCommitContextMenu(event, commit);
     });
-    els.commitGraph.appendChild(row);
+    rows.appendChild(row);
   });
+  els.commitGraph.appendChild(rows);
   renderInspector();
+}
+
+function scheduleCommitRender(delay = 90) {
+  cancelScheduledCommitRender();
+  state.commitSearchRenderTimer = window.setTimeout(() => {
+    state.commitSearchRenderTimer = 0;
+    renderCommits();
+  }, delay);
+}
+
+function cancelScheduledCommitRender() {
+  if (!state.commitSearchRenderTimer) return;
+  window.clearTimeout(state.commitSearchRenderTimer);
+  state.commitSearchRenderTimer = 0;
 }
 
 function commitSearchTerms() {
@@ -7875,7 +7894,7 @@ els.branchFilterInput.addEventListener("input", () => updateBranchFilter(els.bra
 els.clearBranchFilter.addEventListener("click", clearBranchFilter);
 els.worktreeFilterInput.addEventListener("input", () => updateWorktreeFilter(els.worktreeFilterInput.value));
 els.clearWorktreeFilter.addEventListener("click", clearWorktreeFilter);
-els.searchInput.addEventListener("input", renderCommits);
+els.searchInput.addEventListener("input", () => scheduleCommitRender());
 els.clearSearch.addEventListener("click", clearCommitSearch);
 els.themeToggle.addEventListener("click", toggleTheme);
 els.newBranch.addEventListener("click", openBranchModal);
