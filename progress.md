@@ -277,3 +277,24 @@
 - `docs/CONTINUE.md`: records the search performance and palette updates for future continuation.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-21 - Task: continue performance and UI color polish
+### What was done
+- Reduced redundant inspector rendering during commit list refreshes: full refresh and commit clicks now avoid double-rendering the right panel, and search refreshes only update the inspector when the selected commit actually changes.
+- Reused one compiled commit-search highlight pattern per render instead of rebuilding the same regular expression for every highlighted commit field.
+- Strengthened worktree file-row colors so hover, current file, multi-selected file, current multi-selected file, and conflict states are easier to distinguish.
+### Testing
+- `node --check public/app.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- `git diff --check` passed.
+- HTTP verification confirmed `http://127.0.0.1:5177/` returns 200.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+- HTTP static resource verification confirmed `/app.js` contains `renderCommitInspector` and `commitSearchPattern`.
+- HTTP static resource verification confirmed `/styles.css` contains the updated multi-selected and conflict file-row color rules.
+- In-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session; this task used static checks plus local HTTP/API verification instead.
+### Notes
+- `public/app.js`: avoids redundant inspector refreshes on commit renders and reuses the commit-search highlight regex for each render.
+- `public/styles.css`: updates worktree file-row hover, selected, multi-selected, selected-multi, and conflict color states.
+- `docs/CONTINUE.md`: documents the additional render-performance and worktree color refinements.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

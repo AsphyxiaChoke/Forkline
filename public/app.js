@@ -241,7 +241,7 @@ function renderAll() {
   renderBranches();
   renderWorkingFiles();
   renderStage();
-  renderCommits();
+  renderCommits({ inspector: "never" });
   renderInspector();
 }
 
@@ -1008,9 +1008,12 @@ function pruneSelectedChanges(groups) {
   }
 }
 
-function renderCommits() {
+function renderCommits(options = {}) {
   cancelScheduledCommitRender();
+  const previousSelectedSha = state.selectedSha;
+  const inspectorMode = options.inspector || "always";
   const terms = commitSearchTerms();
+  const highlightPattern = commitSearchPattern(terms);
   state.filtered = !terms.length
     ? state.data.commits
     : state.data.commits.filter((commit) => commitMatchesSearch(commit, terms));
@@ -1037,7 +1040,7 @@ function renderCommits() {
       "beforeend",
       `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>${emptyTitle}</strong><span>${emptySub}</span></div></div>`
     );
-    renderInspector();
+    renderCommitInspector(inspectorMode, previousSelectedSha);
     return;
   }
 
@@ -1052,15 +1055,15 @@ function renderCommits() {
       <div class="graph-cell">
       </div>
       <div class="message">
-        <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, terms)}</strong>
-        <span class="commit-ref-line" title="${escapeAttr(commit.refs || "提交历史")}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || "提交历史", terms)}</span></span>
+        <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, highlightPattern)}</strong>
+        <span class="commit-ref-line" title="${escapeAttr(commit.refs || "提交历史")}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || "提交历史", highlightPattern)}</span></span>
       </div>
       <div class="author">
         <span class="author-badge" style="--avatar:${commit.color}">${initials(commit.author)}</span>
-        <span title="${escapeAttr(commit.author)}">${highlightSearchText(commit.author, terms)}</span>
+        <span title="${escapeAttr(commit.author)}">${highlightSearchText(commit.author, highlightPattern)}</span>
       </div>
       <div class="time">${escapeHtml(commit.time)}</div>
-      <div class="sha" title="${escapeAttr(commit.sha)}">${highlightSearchText(commit.short, terms)}</div>
+      <div class="sha" title="${escapeAttr(commit.sha)}">${highlightSearchText(commit.short, highlightPattern)}</div>
     `;
     row.addEventListener("click", async () => {
       await selectCommit(commit.sha);
@@ -1073,6 +1076,12 @@ function renderCommits() {
     rows.appendChild(row);
   });
   els.commitGraph.appendChild(rows);
+  renderCommitInspector(inspectorMode, previousSelectedSha);
+}
+
+function renderCommitInspector(mode, previousSelectedSha) {
+  if (mode === "never") return;
+  if (mode === "selection-change" && previousSelectedSha === state.selectedSha) return;
   renderInspector();
 }
 
@@ -1080,7 +1089,7 @@ function scheduleCommitRender(delay = 90) {
   cancelScheduledCommitRender();
   state.commitSearchRenderTimer = window.setTimeout(() => {
     state.commitSearchRenderTimer = 0;
-    renderCommits();
+    renderCommits({ inspector: "selection-change" });
   }, delay);
 }
 
@@ -1125,11 +1134,15 @@ function updateCommitSearchMeta(terms, visibleCount, totalCount) {
   els.searchInput.closest(".search")?.classList.toggle("active", active);
 }
 
-function highlightSearchText(value, terms) {
-  const text = String(value || "");
-  if (!terms.length || !text) return escapeHtml(text);
+function commitSearchPattern(terms) {
+  if (!terms.length) return null;
   const unique = [...new Set(terms)].sort((a, b) => b.length - a.length);
-  const pattern = new RegExp(`(${unique.map(escapeRegExp).join("|")})`, "gi");
+  return new RegExp(`(${unique.map(escapeRegExp).join("|")})`, "gi");
+}
+
+function highlightSearchText(value, pattern) {
+  const text = String(value || "");
+  if (!pattern || !text) return escapeHtml(text);
   let result = "";
   let cursor = 0;
   text.replace(pattern, (match, _group, offset) => {
@@ -1148,7 +1161,7 @@ function escapeRegExp(value) {
 function clearCommitSearch() {
   if (!els.searchInput.value) return;
   els.searchInput.value = "";
-  renderCommits();
+  renderCommits({ inspector: "selection-change" });
   els.searchInput.focus();
 }
 
@@ -1479,7 +1492,7 @@ async function selectCommit(sha) {
   if (state.historyPlan?.sha !== sha) state.historyPlan = null;
   setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
   state.selectedSha = sha;
-  renderCommits();
+  renderCommits({ inspector: "never" });
   await loadCommit(sha);
   renderInspector();
 }
