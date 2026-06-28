@@ -360,3 +360,30 @@
 - `docs/CONTINUE.md`: documents the settings panel and its current browser-local scope.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-28 - Task: split frontend framework files
+### What was done
+- Split the previous single frontend script into ordered framework layers: `public/js/core.js`, `public/js/api.js`, existing `public/app.js`, and `public/js/bootstrap.js`.
+- Moved shared state, DOM handles, constants, API wrapper, and startup sequence out of the legacy feature file while keeping existing feature behavior in place.
+- Added the `window.Forkline` namespace so later modules can depend on a stable framework object instead of adding new globals.
+- Added `docs/ARCHITECTURE.md` to document the loading order and next split targets.
+### Testing
+- `node --check public/js/core.js` passed using the bundled Node executable.
+- `node --check public/js/api.js` passed using the bundled Node executable.
+- `node --check public/app.js` passed using the bundled Node executable.
+- `node --check public/js/bootstrap.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- `git diff --check` passed.
+- Started the local service and confirmed `http://127.0.0.1:5177/` returns 200 with the new `core.js`, `api.js`, and `bootstrap.js` script order.
+- HTTP static resource checks confirmed `/js/core.js`, `/js/api.js`, and `/js/bootstrap.js` return the expected framework markers.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+### Notes
+- `public/index.html`: now loads frontend scripts in framework order before startup.
+- `public/js/core.js`: contains shared state, constants, DOM handles, and `window.Forkline`.
+- `public/js/api.js`: contains the shared API wrapper and exposes `Forkline.api`.
+- `public/app.js`: keeps the existing feature implementation and no longer owns shared state, API setup, or startup calls.
+- `public/js/bootstrap.js`: owns the startup sequence and exposes `Forkline.start`.
+- `docs/ARCHITECTURE.md`: documents the frontend layers, loading order, and next migration targets.
+- `docs/CONTINUE.md`: records the framework split for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/js/core.js`, `public/js/api.js`, `public/js/bootstrap.js`, `docs/ARCHITECTURE.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
