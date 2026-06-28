@@ -387,3 +387,42 @@
 - `docs/CONTINUE.md`: records the framework split for future continuation.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/js/core.js`, `public/js/api.js`, `public/js/bootstrap.js`, `docs/ARCHITECTURE.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-28 - Task: complete frontend module split
+### What was done
+- Split the remaining legacy frontend feature code out of `public/app.js` into ordered `public/js/app/`, `public/js/features/`, and `public/js/panels/` modules.
+- Updated `public/index.html` so the direct browser loading model now loads all feature and panel modules before the compatibility placeholder and bootstrap script.
+- Kept `public/app.js` as a small compatibility file only, so new feature work has clear module locations.
+- Updated architecture and continuation notes to describe the final split, loading order, and future file placement rules.
+### Testing
+- `node --check` passed for all 21 frontend JavaScript files under `public/` using the bundled Node executable.
+- `git diff --check` passed; Git only reported CRLF normalization warnings for touched text files.
+- Static entry verification confirmed all 21 `<script>` paths in `public/index.html` exist on disk.
+- HTTP verification confirmed `http://127.0.0.1:5177/` returns 200 and includes the new module script paths.
+- HTTP static resource checks confirmed `/js/app/init.js`, `/js/features/branches.js`, `/js/panels/recovery-settings.js`, `/js/features/diff-workbench.js`, `/js/app/events.js`, and `/js/bootstrap.js` return 200.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+- In-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session; this task used syntax, static entry, local HTTP, and API verification instead.
+### Notes
+- `public/index.html`: loads all split frontend modules in dependency order before startup.
+- `public/app.js`: now only documents legacy compatibility and no longer contains feature code.
+- `public/js/app/init.js`: contains initial data loading and top-level render orchestration.
+- `public/js/app/layout-utils.js`: contains theme, layout resizing, escaping, initials, and toast helpers.
+- `public/js/app/events.js`: contains DOM event binding and top-level delegated handlers.
+- `public/js/features/branches.js`: contains branch list rendering and branch create/rename/delete helpers.
+- `public/js/features/worktree-changes.js`: contains worktree, stage, conflict banner, and change-list rendering.
+- `public/js/features/history-list.js`: contains commit list rendering and commit search helpers.
+- `public/js/features/folder-command.js`: contains directory picker, command palette, and inspector-tab switching helpers.
+- `public/js/features/context-menus.js`: contains commit, branch, file, tag, remote, and reflog context menus.
+- `public/js/features/commit-actions.js`: contains commit tools, history rewrite queue, cherry-pick, revert, reset, tag, patch, and remote-link actions.
+- `public/js/features/graph.js`: contains commit graph rendering and commit-detail loading.
+- `public/js/features/diff-workbench.js`: contains file tree, diff selection, workbench diff rendering, hunk actions, and worktree auto-refresh.
+- `public/js/features/repositories.js`: contains recent repositories, clone, init, patch, and repository-open workflows.
+- `public/js/features/git-actions.js`: contains ref checkout, merge, rebase, topbar Git actions, stash creation, file actions, and commit submit flows.
+- `public/js/panels/inspector.js`: contains commit details, files, file history, file blame, and history rewrite panel rendering.
+- `public/js/panels/workspaces.js`: contains branch cleanup, worktree, and submodule panels.
+- `public/js/panels/sync.js`: contains stash, sync, compare, remote, auth, and diagnosis panels.
+- `public/js/panels/recovery-settings.js`: contains tags, recovery points, reflog, logs, settings, and recovery-policy flows.
+- `docs/ARCHITECTURE.md`: documents the final frontend layers, script order, and module placement rules.
+- `docs/CONTINUE.md`: records that the frontend feature split is complete.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/js/app/`, `public/js/features/`, `public/js/panels/`, `docs/ARCHITECTURE.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
