@@ -473,3 +473,24 @@
 - `docs/CONTINUE.md`: records that both bottom and maximized Diff support selected-line staging.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `public/js/app/events.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-28 - Task: unstage selected diff lines
+### What was done
+- Added selected-line unstaging for the staged Diff view, using the same bottom and maximized Diff selection behavior.
+- Changed the selected-line toolbar so unstaged Diff shows "暂存所选行" and staged Diff shows "取消暂存所选行".
+- After selected-line staging, the workbench now switches to the staged Diff when staged content exists, making the newly staged lines visible immediately.
+- After selected-line unstaging, the workbench switches back to the unstaged Diff when worktree content exists.
+### Testing
+- `node --check server.js` passed using the bundled Node executable.
+- `node --check public/js/features/diff-workbench.js` passed using the bundled Node executable.
+- `node --check public/js/app/events.js` passed using the bundled Node executable.
+- Temporary Git repository API verification passed: selected only the staged `line5 added` row and confirmed it moved back to the worktree while the staged `line2 changed` modification remained staged.
+- Temporary Git repository API verification passed: selected the staged delete/add pair for `line2 changed` and confirmed the cached diff became empty while both changes were present in the worktree diff.
+- Restarted `http://127.0.0.1:5177/` with `FORKLINE_NO_OPEN=1`; HTTP static verification confirmed `/js/features/diff-workbench.js` contains `unstageSelectedLines`, `取消暂存所选行`, and `selectedDiffLineAction`.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+### Notes
+- `server.js`: adds `unstageSelectedLines` and selected-line patch generation mode for reversing staged lines safely.
+- `public/js/features/diff-workbench.js`: chooses the correct selected-line action by Diff scope and switches views after staging or unstaging.
+- `docs/CONTINUE.md`: records the staged selected-line unstaging behavior and automatic view switch.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

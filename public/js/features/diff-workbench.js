@@ -296,7 +296,7 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
     return;
   }
   els.workDiffView.className = "work-diff-view";
-  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, lineActions: canStageSelectedDiffLines(filePath, scope), filePath, scope });
+  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, lineAction: selectedDiffLineAction(filePath, scope), filePath, scope });
   updateDiffLineSelectionToolbar();
 }
 
@@ -406,8 +406,8 @@ function closeDiffModal() {
 function renderSideDiff(diff, emptyText, options = {}) {
   if (!diff?.length) return `<div class="diff-empty">${escapeHtml(emptyText)}</div>`;
   return `
-    <div class="side-diff ${options.lineActions ? "line-selectable" : ""}">
-      ${options.lineActions ? renderDiffLineToolbar() : ""}
+    <div class="side-diff ${options.lineAction ? "line-selectable" : ""}">
+      ${options.lineAction ? renderDiffLineToolbar(options.lineAction) : ""}
       <div class="side-diff-head"><span>旧版本</span><span>新版本</span></div>
       ${sideBySideRows(diff, options)}
     </div>
@@ -418,7 +418,7 @@ function diffModalOptions() {
   const active = state.activeDiff || {};
   if (active.source !== "worktree") return {};
   return {
-    lineActions: canStageSelectedDiffLines(active.path, active.scope),
+    lineAction: selectedDiffLineAction(active.path, active.scope),
     filePath: active.path,
     scope: active.scope,
   };
@@ -517,7 +517,7 @@ function nextHunkLineIndex(line, current) {
 }
 
 function diffLineKeys(options, lines) {
-  if (!options.lineActions) return [];
+  if (!options.lineAction) return [];
   return lines
     .filter((line) => Number.isInteger(line.hunkIndex) && Number.isInteger(line.lineIndex) && line.lineIndex >= 0)
     .map((line) => diffLineKey(line.hunkIndex, line.lineIndex));
@@ -527,11 +527,11 @@ function diffLineKey(hunkIndex, lineIndex) {
   return `${hunkIndex}:${lineIndex}`;
 }
 
-function renderDiffLineToolbar() {
+function renderDiffLineToolbar(action) {
   return `
     <div class="diff-line-toolbar">
       <span data-selected-line-count>未选择行</span>
-      <button class="mini-btn" data-line-action="stageSelectedLines" type="button" disabled title="暂存当前 Diff 中选中的行">暂存所选行</button>
+      <button class="mini-btn" data-line-action="${escapeAttr(action.action)}" type="button" disabled title="${escapeAttr(action.title)}">${escapeHtml(action.label)}</button>
     </div>
   `;
 }
@@ -604,11 +604,16 @@ function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass, optio
   `;
 }
 
-function canStageSelectedDiffLines(filePath, scope) {
+function selectedDiffLineAction(filePath, scope) {
   const fileInfo = selectedWorkingFileInfo(filePath);
-  if (!fileInfo || fileInfo.conflict || !fileInfo.unstaged) return false;
-  if (scope === "unstaged") return true;
-  return scope === "untracked" && isUntrackedFile(fileInfo);
+  if (!fileInfo || fileInfo.conflict) return null;
+  if ((scope === "unstaged" || (scope === "untracked" && isUntrackedFile(fileInfo))) && fileInfo.unstaged) {
+    return { action: "stageSelectedLines", label: "暂存所选行", title: "暂存当前 Diff 中选中的行" };
+  }
+  if (scope === "staged" && fileInfo.staged) {
+    return { action: "unstageSelectedLines", label: "取消暂存所选行", title: "把已暂存 Diff 中选中的行退回工作区" };
+  }
+  return null;
 }
 
 function resetDiffLineSelection(update = true) {
@@ -661,7 +666,7 @@ function syncDiffLineSelectionRows() {
 
 function updateDiffLineSelectionToolbar(root = els.workDiffView) {
   const countNode = root.querySelector("[data-selected-line-count]");
-  const button = root.querySelector('[data-line-action="stageSelectedLines"]');
+  const button = root.querySelector("[data-line-action]");
   if (!countNode || !button) return;
   const selectedRows = root.querySelectorAll(".diff-line-selectable.selected").length;
   countNode.textContent = selectedRows ? `已选 ${selectedRows} 行` : "未选择行";
@@ -678,15 +683,21 @@ function selectedDiffLinePayload() {
 async function runWorkDiffLineAction(button) {
   const file = state.selectedFile;
   const scope = state.activeDiff?.scope || "unstaged";
+  const action = button?.dataset?.lineAction || "";
   const lines = selectedDiffLinePayload();
   if (!file || !lines.length) {
-    toast("请选择要暂存的行");
+    toast("请选择要操作的行");
     return;
   }
-  if (scope !== "unstaged" && scope !== "untracked") {
+  if (action === "stageSelectedLines" && scope !== "unstaged" && scope !== "untracked") {
     toast("只能暂存工作区中未暂存的行");
     return;
   }
+  if (action === "unstageSelectedLines" && scope !== "staged") {
+    toast("只能在已暂存 Diff 中取消暂存所选行");
+    return;
+  }
+  if (action !== "stageSelectedLines" && action !== "unstageSelectedLines") return;
   const buttons = document.querySelectorAll(".work-diff-view [data-line-action], .work-diff-view [data-hunk-action], .diff-modal-body [data-line-action], .diff-modal-body [data-hunk-action]");
   buttons.forEach((item) => {
     item.disabled = true;
@@ -694,13 +705,16 @@ async function runWorkDiffLineAction(button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "stageSelectedLines", file, scope, lines }),
+      body: JSON.stringify({ action, file, scope, lines }),
     });
-    toast(result.output || "已暂存所选行");
+    toast(result.output || "所选行操作完成");
     resetDiffLineSelection(false);
     await refreshWorktree(true);
     if (state.selectedFile) {
-      state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
+      const nextFileInfo = selectedWorkingFileInfo(state.selectedFile);
+      if (action === "stageSelectedLines" && nextFileInfo?.staged) state.workDiffScope = "staged";
+      else if (action === "unstageSelectedLines" && nextFileInfo?.unstaged) state.workDiffScope = "unstaged";
+      else state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, nextFileInfo);
       await loadWorkingDiff(state.selectedFile);
       if (els.diffModal.classList.contains("show")) {
         if (state.activeDiff?.diff?.length) openDiffModal();

@@ -1005,6 +1005,9 @@ async function runAction(body) {
   if (action === "stageSelectedLines") {
     return commandResult(await stageSelectedLines(body));
   }
+  if (action === "unstageSelectedLines") {
+    return commandResult(await unstageSelectedLines(body));
+  }
   if (action === "unstageHunk") {
     return commandResult(await applyWorktreeHunk(body, "unstage"));
   }
@@ -1179,6 +1182,7 @@ function actionLabel(body = {}) {
     resolveConflictFile: file ? `解决冲突文件 ${file}` : "解决冲突文件",
     stageHunk: file ? `暂存改动块 ${file}` : "暂存改动块",
     stageSelectedLines: file ? `暂存所选行 ${file}` : "暂存所选行",
+    unstageSelectedLines: file ? `取消暂存所选行 ${file}` : "取消暂存所选行",
     unstageHunk: file ? `取消暂存改动块 ${file}` : "取消暂存改动块",
     discardWorktreeHunk: file ? `丢弃改动块 ${file}` : "丢弃改动块",
     discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
@@ -2125,7 +2129,7 @@ async function stageSelectedLines(body) {
   if (scope !== "unstaged" && scope !== "untracked") throw new Error("只能暂存工作区中未暂存的行。");
 
   const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, "unstaged");
-  const patch = extractSelectedLinePatch(diffOutput, selectedLines);
+  const patch = extractSelectedLinePatch(diffOutput, selectedLines, "stage");
   const patchFile = writeTempFile("forkline-lines-", patch, ".patch");
   try {
     await git(currentRepo, ["apply", "--cached", "--whitespace=nowarn", "--recount", patchFile], { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
@@ -2135,6 +2139,30 @@ async function stageSelectedLines(body) {
     removeQuietly(patchFile);
   }
   return `已暂存所选 ${selectedLines.length} 行`;
+}
+
+async function unstageSelectedLines(body) {
+  const file = normalizeRepoFile(body.file);
+  const selectedLines = normalizeDiffLineSelections(body.lines);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  if (!target) throw new Error("这个文件当前没有可操作的改动。");
+  if (target.conflict) throw new Error("冲突文件暂不支持按行取消暂存，请先解决冲突。");
+  if (!target.staged) throw new Error("这个文件没有可取消暂存的已暂存改动。");
+  const scope = normalizeDiffScope(body.scope || "staged");
+  if (scope !== "staged") throw new Error("只能在已暂存 Diff 中取消暂存所选行。");
+
+  const diffOutput = await readWorktreeDiffOutput(file, "staged");
+  const patch = extractSelectedLinePatch(diffOutput, selectedLines, "unstage");
+  const patchFile = writeTempFile("forkline-lines-", patch, ".patch");
+  try {
+    await git(currentRepo, ["apply", "--cached", "--reverse", "--whitespace=nowarn", "--recount", patchFile], { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
+  } catch (error) {
+    throw new Error(`按行取消暂存失败：${friendlyErrorMessage(error, { body: { action: "unstageSelectedLines" } })}`);
+  } finally {
+    removeQuietly(patchFile);
+  }
+  return `已取消暂存所选 ${selectedLines.length} 行`;
 }
 
 async function readWorktreeDiffOutput(file, scope) {
@@ -2163,7 +2191,7 @@ function normalizeDiffLineSelections(value) {
   return lines;
 }
 
-function extractSelectedLinePatch(diffOutput, selectedLines) {
+function extractSelectedLinePatch(diffOutput, selectedLines, mode = "stage") {
   const text = String(diffOutput || "").replace(/\r\n/g, "\n");
   if (!text.trim()) throw new Error("没有可操作的 Diff 行。");
   const selectedKeys = new Set(selectedLines.map((line) => line.key));
@@ -2190,7 +2218,7 @@ function extractSelectedLinePatch(diffOutput, selectedLines) {
   if (current) hunks.push(current);
   if (!header.length || !hunks.length) throw new Error("没有可操作的 Diff 行。");
   const selectedHunks = hunks
-    .map((hunk) => buildSelectedLineHunk(hunk, selectedKeys, matchedKeys))
+    .map((hunk) => buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode))
     .filter(Boolean);
   if (!selectedHunks.length) throw new Error("请选择新增或删除行，普通上下文行不能单独暂存。");
   if (matchedKeys.size !== selectedKeys.size) throw new Error("部分 Diff 行已经变化，请刷新后再试。");
@@ -2208,7 +2236,7 @@ function parseUnifiedHunkHeader(line) {
   };
 }
 
-function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys) {
+function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode = "stage") {
   const lines = [];
   let changed = false;
   hunk.lines.forEach((line, lineIndex) => {
@@ -2219,6 +2247,8 @@ function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys) {
         lines.push(line);
         matchedKeys.add(key);
         changed = true;
+      } else if (mode === "unstage") {
+        lines.push(` ${line.slice(1)}`);
       }
       return;
     }
@@ -2228,7 +2258,7 @@ function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys) {
         matchedKeys.add(key);
         changed = true;
       } else {
-        lines.push(` ${line.slice(1)}`);
+        if (mode === "stage") lines.push(` ${line.slice(1)}`);
       }
       return;
     }
