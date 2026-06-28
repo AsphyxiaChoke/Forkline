@@ -454,3 +454,22 @@
 - `docs/CONTINUE.md`: records that Diff selected-line staging is available and content editing remains out of scope.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `public/js/core.js`, `public/js/features/diff-workbench.js`, `public/js/app/events.js`, `public/styles.css`, `docs/ARCHITECTURE.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-28 - Task: enable selected-line staging in maximized diff
+### What was done
+- Added selected-line staging controls to the maximized Diff modal for worktree diffs.
+- Reused the same selected-line state between the bottom Diff and maximized Diff so row highlights stay in sync.
+- Updated the maximized Diff after a selected-line staging action; if no diff remains, the modal closes instead of showing stale content.
+### Testing
+- `node --check public/js/features/diff-workbench.js` passed using the bundled Node executable.
+- `node --check public/js/app/events.js` passed using the bundled Node executable.
+- `node --check server.js` passed using the bundled Node executable.
+- HTTP static resource verification confirmed `/js/features/diff-workbench.js` contains `diffModalOptions`, `syncDiffLineSelectionRows`, and `stageSelectedLines`.
+- HTTP static resource verification confirmed `/js/app/events.js` contains the `diffModalBody` selected-line click handler.
+- In-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session; this task used syntax and local HTTP static verification instead.
+### Notes
+- `public/js/features/diff-workbench.js`: passes line-selection options into the maximized worktree Diff and synchronizes selected rows across both Diff containers.
+- `public/js/app/events.js`: handles selected-line clicks and "暂存所选行" inside the maximized Diff body.
+- `docs/CONTINUE.md`: records that both bottom and maximized Diff support selected-line staging.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `public/js/app/events.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

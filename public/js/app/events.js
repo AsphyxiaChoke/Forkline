@@ -114,6 +114,19 @@ els.closeDiffModal.addEventListener("click", closeDiffModal);
 els.diffModal.addEventListener("click", (event) => {
   if (event.target === els.diffModal) closeDiffModal();
 });
+els.diffModalBody.addEventListener("click", (event) => {
+  const lineButton = event.target.closest("[data-line-action]");
+  if (lineButton) {
+    event.preventDefault();
+    if (!lineButton.disabled) runWorkDiffLineAction(lineButton).catch((error) => toast(error.message));
+    return;
+  }
+  const lineRow = event.target.closest("[data-diff-line-keys]");
+  if (lineRow) {
+    event.preventDefault();
+    handleDiffLineSelection(lineRow, event, els.diffModalBody);
+  }
+});
 els.stashChanges.addEventListener("click", () => createStashFromSelection(null));
 els.stageAll.addEventListener("click", () => runAction("stageAll"));
 els.discardAll.addEventListener("click", () => runAction("discardAll"));

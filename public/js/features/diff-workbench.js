@@ -390,7 +390,8 @@ function openDiffModal() {
   }
   els.diffModalTitle.textContent = state.activeDiff.title || "变更对照";
   els.diffModalPath.textContent = state.activeDiff.path || "";
-  els.diffModalBody.innerHTML = renderSideDiff(state.activeDiff.diff, state.activeDiff.emptyText || "没有可显示的差异");
+  els.diffModalBody.innerHTML = renderSideDiff(state.activeDiff.diff, state.activeDiff.emptyText || "没有可显示的差异", diffModalOptions());
+  syncDiffLineSelectionRows();
   els.diffModal.classList.add("show");
   els.diffModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -411,6 +412,16 @@ function renderSideDiff(diff, emptyText, options = {}) {
       ${sideBySideRows(diff, options)}
     </div>
   `;
+}
+
+function diffModalOptions() {
+  const active = state.activeDiff || {};
+  if (active.source !== "worktree") return {};
+  return {
+    lineActions: canStageSelectedDiffLines(active.path, active.scope),
+    filePath: active.path,
+    scope: active.scope,
+  };
 }
 
 function diffForFile(diff, filePath) {
@@ -606,8 +617,8 @@ function resetDiffLineSelection(update = true) {
   if (update) syncDiffLineSelectionRows();
 }
 
-function handleDiffLineSelection(row, event = {}) {
-  const rows = Array.from(els.workDiffView.querySelectorAll(".diff-line-selectable[data-diff-line-key]"));
+function handleDiffLineSelection(row, event = {}, root = els.workDiffView) {
+  const rows = Array.from(root.querySelectorAll(".diff-line-selectable[data-diff-line-key]"));
   const rowIndex = rows.indexOf(row);
   if (rowIndex < 0) return;
   const rowKeys = diffRowLineKeys(row);
@@ -638,19 +649,21 @@ function diffRowLineKeys(row) {
 }
 
 function syncDiffLineSelectionRows() {
-  const rows = Array.from(els.workDiffView.querySelectorAll(".diff-line-selectable[data-diff-line-keys]"));
-  rows.forEach((row) => {
-    const selected = diffRowLineKeys(row).some((key) => state.selectedDiffLines.has(key));
-    row.classList.toggle("selected", selected);
+  [els.workDiffView, els.diffModalBody].forEach((root) => {
+    const rows = Array.from(root.querySelectorAll(".diff-line-selectable[data-diff-line-keys]"));
+    rows.forEach((row) => {
+      const selected = diffRowLineKeys(row).some((key) => state.selectedDiffLines.has(key));
+      row.classList.toggle("selected", selected);
+    });
+    updateDiffLineSelectionToolbar(root);
   });
-  updateDiffLineSelectionToolbar();
 }
 
-function updateDiffLineSelectionToolbar() {
-  const countNode = els.workDiffView.querySelector("[data-selected-line-count]");
-  const button = els.workDiffView.querySelector('[data-line-action="stageSelectedLines"]');
+function updateDiffLineSelectionToolbar(root = els.workDiffView) {
+  const countNode = root.querySelector("[data-selected-line-count]");
+  const button = root.querySelector('[data-line-action="stageSelectedLines"]');
   if (!countNode || !button) return;
-  const selectedRows = els.workDiffView.querySelectorAll(".diff-line-selectable.selected").length;
+  const selectedRows = root.querySelectorAll(".diff-line-selectable.selected").length;
   countNode.textContent = selectedRows ? `已选 ${selectedRows} 行` : "未选择行";
   button.disabled = selectedRows === 0;
 }
@@ -674,7 +687,7 @@ async function runWorkDiffLineAction(button) {
     toast("只能暂存工作区中未暂存的行");
     return;
   }
-  const buttons = els.workDiffView.querySelectorAll("[data-line-action], [data-hunk-action]");
+  const buttons = document.querySelectorAll(".work-diff-view [data-line-action], .work-diff-view [data-hunk-action], .diff-modal-body [data-line-action], .diff-modal-body [data-hunk-action]");
   buttons.forEach((item) => {
     item.disabled = true;
   });
@@ -689,16 +702,20 @@ async function runWorkDiffLineAction(button) {
     if (state.selectedFile) {
       state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
       await loadWorkingDiff(state.selectedFile);
+      if (els.diffModal.classList.contains("show")) {
+        if (state.activeDiff?.diff?.length) openDiffModal();
+        else closeDiffModal();
+      }
     }
   } catch (error) {
     toast(error.message);
     await refreshWorktree(true);
-    updateDiffLineSelectionToolbar();
+    syncDiffLineSelectionRows();
   } finally {
     buttons.forEach((item) => {
       if (item !== button) item.disabled = false;
     });
-    updateDiffLineSelectionToolbar();
+    syncDiffLineSelectionRows();
   }
 }
 
