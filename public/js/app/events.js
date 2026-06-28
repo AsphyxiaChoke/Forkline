@@ -92,10 +92,23 @@ els.mainlineModal.addEventListener("click", (event) => {
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.maximizeDiff.addEventListener("click", openDiffModal);
 els.workDiffView.addEventListener("click", (event) => {
+  const lineButton = event.target.closest("[data-line-action]");
+  if (lineButton) {
+    event.preventDefault();
+    if (!lineButton.disabled) runWorkDiffLineAction(lineButton).catch((error) => toast(error.message));
+    return;
+  }
   const button = event.target.closest("[data-hunk-action]");
-  if (!button) return;
-  event.preventDefault();
-  if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
+  if (button) {
+    event.preventDefault();
+    if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
+    return;
+  }
+  const lineRow = event.target.closest("[data-diff-line-keys]");
+  if (lineRow) {
+    event.preventDefault();
+    handleDiffLineSelection(lineRow, event);
+  }
 });
 els.closeDiffModal.addEventListener("click", closeDiffModal);
 els.diffModal.addEventListener("click", (event) => {

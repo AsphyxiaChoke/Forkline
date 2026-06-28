@@ -1002,6 +1002,9 @@ async function runAction(body) {
   if (action === "stageHunk") {
     return commandResult(await applyWorktreeHunk(body, "stage"));
   }
+  if (action === "stageSelectedLines") {
+    return commandResult(await stageSelectedLines(body));
+  }
   if (action === "unstageHunk") {
     return commandResult(await applyWorktreeHunk(body, "unstage"));
   }
@@ -1175,6 +1178,7 @@ function actionLabel(body = {}) {
     unstageFile: file ? `取消暂存文件 ${file}` : "取消暂存文件",
     resolveConflictFile: file ? `解决冲突文件 ${file}` : "解决冲突文件",
     stageHunk: file ? `暂存改动块 ${file}` : "暂存改动块",
+    stageSelectedLines: file ? `暂存所选行 ${file}` : "暂存所选行",
     unstageHunk: file ? `取消暂存改动块 ${file}` : "取消暂存改动块",
     discardWorktreeHunk: file ? `丢弃改动块 ${file}` : "丢弃改动块",
     discardWorktreeFile: file ? `丢弃工作区文件 ${file}` : "丢弃工作区文件",
@@ -2106,12 +2110,155 @@ async function applyWorktreeHunk(body, kind) {
   return "工作区改动块已丢弃";
 }
 
+async function stageSelectedLines(body) {
+  const file = normalizeRepoFile(body.file);
+  const selectedLines = normalizeDiffLineSelections(body.lines);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  if (!target) throw new Error("这个文件当前没有可操作的改动。");
+  if (target.conflict) throw new Error("冲突文件暂不支持按行暂存，请先解决冲突。");
+  if (!target.unstaged) throw new Error("这个文件没有可暂存的工作区改动。");
+
+  const isUntracked = target.indexStatus === "?";
+  const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
+  const scope = isUntracked && requestedScope === "untracked" ? "untracked" : normalizeDiffScope(requestedScope);
+  if (scope !== "unstaged" && scope !== "untracked") throw new Error("只能暂存工作区中未暂存的行。");
+
+  const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, "unstaged");
+  const patch = extractSelectedLinePatch(diffOutput, selectedLines);
+  const patchFile = writeTempFile("forkline-lines-", patch, ".patch");
+  try {
+    await git(currentRepo, ["apply", "--cached", "--whitespace=nowarn", "--recount", patchFile], { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
+  } catch (error) {
+    throw new Error(`按行暂存失败：${friendlyErrorMessage(error, { body: { action: "stageSelectedLines" } })}`);
+  } finally {
+    removeQuietly(patchFile);
+  }
+  return `已暂存所选 ${selectedLines.length} 行`;
+}
+
 async function readWorktreeDiffOutput(file, scope) {
   const diffScope = normalizeDiffScope(scope);
   const args = diffScope === "staged"
     ? ["diff", "--cached", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file]
     : ["diff", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file];
   return git(currentRepo, args, { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
+}
+
+function normalizeDiffLineSelections(value) {
+  if (!Array.isArray(value) || !value.length) throw new Error("请选择要暂存的 Diff 行。");
+  if (value.length > 300) throw new Error("一次最多暂存 300 行，请分批操作。");
+  const seen = new Set();
+  const lines = [];
+  for (const item of value) {
+    const hunkIndex = normalizeHunkIndex(item?.hunkIndex);
+    const lineIndex = Number.parseInt(String(item?.lineIndex ?? ""), 10);
+    if (!Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex > 10000) throw new Error("Diff 行号不合法，请刷新后再试。");
+    const key = `${hunkIndex}:${lineIndex}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push({ hunkIndex, lineIndex, key });
+  }
+  if (!lines.length) throw new Error("请选择要暂存的 Diff 行。");
+  return lines;
+}
+
+function extractSelectedLinePatch(diffOutput, selectedLines) {
+  const text = String(diffOutput || "").replace(/\r\n/g, "\n");
+  if (!text.trim()) throw new Error("没有可操作的 Diff 行。");
+  const selectedKeys = new Set(selectedLines.map((line) => line.key));
+  const matchedKeys = new Set();
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  const header = [];
+  const hunks = [];
+  let current = null;
+  let hunkIndex = -1;
+  for (const line of lines) {
+    if (line.startsWith("@@ ")) {
+      if (current) hunks.push(current);
+      hunkIndex += 1;
+      current = { ...parseUnifiedHunkHeader(line), index: hunkIndex, lines: [] };
+      continue;
+    }
+    if (current) {
+      current.lines.push(line);
+      continue;
+    }
+    if (line) header.push(line);
+  }
+  if (current) hunks.push(current);
+  if (!header.length || !hunks.length) throw new Error("没有可操作的 Diff 行。");
+  const selectedHunks = hunks
+    .map((hunk) => buildSelectedLineHunk(hunk, selectedKeys, matchedKeys))
+    .filter(Boolean);
+  if (!selectedHunks.length) throw new Error("请选择新增或删除行，普通上下文行不能单独暂存。");
+  if (matchedKeys.size !== selectedKeys.size) throw new Error("部分 Diff 行已经变化，请刷新后再试。");
+  return [...header, ...selectedHunks].join("\n").replace(/\n*$/, "\n");
+}
+
+function parseUnifiedHunkHeader(line) {
+  const match = String(line || "").match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+  if (!match) throw new Error("Diff 块头不合法，请刷新后再试。");
+  return {
+    oldStart: Number(match[1]),
+    oldCount: match[2] === undefined ? 1 : Number(match[2]),
+    newStart: Number(match[3]),
+    newCount: match[4] === undefined ? 1 : Number(match[4]),
+  };
+}
+
+function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys) {
+  const lines = [];
+  let changed = false;
+  hunk.lines.forEach((line, lineIndex) => {
+    const key = `${hunk.index}:${lineIndex}`;
+    const selected = selectedKeys.has(key);
+    if (line.startsWith("+")) {
+      if (selected) {
+        lines.push(line);
+        matchedKeys.add(key);
+        changed = true;
+      }
+      return;
+    }
+    if (line.startsWith("-")) {
+      if (selected) {
+        lines.push(line);
+        matchedKeys.add(key);
+        changed = true;
+      } else {
+        lines.push(` ${line.slice(1)}`);
+      }
+      return;
+    }
+    if (selected) matchedKeys.add(key);
+    lines.push(line);
+  });
+  if (!changed) return "";
+  const counts = countUnifiedHunkLines(lines);
+  const newStart = hunk.oldStart === 0 ? hunk.newStart : hunk.oldStart;
+  return [
+    `@@ -${formatUnifiedRange(hunk.oldStart, counts.oldCount)} +${formatUnifiedRange(newStart, counts.newCount)} @@`,
+    ...lines,
+  ].join("\n");
+}
+
+function countUnifiedHunkLines(lines) {
+  return lines.reduce((counts, line) => {
+    if (line.startsWith("\\")) return counts;
+    if (line.startsWith("+")) counts.newCount += 1;
+    else if (line.startsWith("-")) counts.oldCount += 1;
+    else {
+      counts.oldCount += 1;
+      counts.newCount += 1;
+    }
+    return counts;
+  }, { oldCount: 0, newCount: 0 });
+}
+
+function formatUnifiedRange(start, count) {
+  return count === 1 ? String(start) : `${start},${count}`;
 }
 
 function extractSingleHunkPatch(diffOutput, targetHunkIndex) {
@@ -5376,6 +5523,7 @@ server.listen(PORT, "127.0.0.1", () => {
 
 function openLocalAppInBrowser(url) {
   if (process.platform !== "win32") return;
+  if (process.env.FORKLINE_NO_OPEN === "1") return;
   execFile("cmd", ["/c", "start", "", url], { windowsHide: true }, (error) => {
     if (error) console.warn(`Unable to open browser automatically: ${error.message}`);
   });

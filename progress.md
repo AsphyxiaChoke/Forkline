@@ -426,3 +426,31 @@
 - `docs/CONTINUE.md`: records that the frontend feature split is complete.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/index.html`, `public/app.js`, `public/js/app/`, `public/js/features/`, `public/js/panels/`, `docs/ARCHITECTURE.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-28 - Task: stage selected diff lines
+### What was done
+- Added line selection to the bottom worktree Diff so added/deleted Diff rows can be selected without checkboxes.
+- Added a "暂存所选行" action that stages only selected unstaged Diff rows; paired modification rows stage the delete/add pair together.
+- Added a backend `stageSelectedLines` action that rereads the real repository Diff and builds a minimal patch for selected lines before applying it to the index.
+- Added `FORKLINE_NO_OPEN=1` for local verification runs that should restart the service without opening a browser automatically.
+### Testing
+- `node --check server.js` passed using the bundled Node executable.
+- `node --check` passed for all 21 frontend JavaScript files under `public/` using the bundled Node executable.
+- `git diff --check` passed; Git only reported CRLF normalization warnings for touched text files.
+- Temporary Git repository API verification passed: selected only the added `line5 added` row and confirmed the cached diff contained that addition while the `line2 changed` modification remained unstaged.
+- Temporary Git repository API verification passed: selected the paired delete/add rows for `line2 changed` and confirmed both remaining selected lines moved into the cached diff, leaving no unstaged diff.
+- Temporary Git repository API verification passed for an untracked file: selected only the `three` row and confirmed the index contained that selected line without staging the other new-file rows.
+- Restarted `http://127.0.0.1:5177/` with `FORKLINE_NO_OPEN=1`; HTTP verification confirmed the page returns 200 without opening a browser automatically.
+- HTTP static resource checks confirmed `/js/features/diff-workbench.js`, `/js/app/events.js`, and `/styles.css` return the new line-selection markers.
+- API verification confirmed `http://127.0.0.1:5177/api/state` returns 200.
+- In-app Browser visual verification was intentionally skipped because repeated localhost opens can destabilize the Codex session; this task used syntax, local HTTP/API, and temporary Git repository behavior verification instead.
+### Notes
+- `server.js`: adds `stageSelectedLines`, selected-line patch generation, operation labeling, and the `FORKLINE_NO_OPEN=1` local startup guard.
+- `public/js/core.js`: stores selected Diff line state.
+- `public/js/features/diff-workbench.js`: renders the selected-line toolbar, selectable Diff rows, selection state, and selected-line staging request.
+- `public/js/app/events.js`: routes Diff row clicks and selected-line staging button clicks.
+- `public/styles.css`: styles the selected-line toolbar, hover state, and selected Diff rows.
+- `docs/ARCHITECTURE.md`: documents the local no-auto-open verification environment variable.
+- `docs/CONTINUE.md`: records that Diff selected-line staging is available and content editing remains out of scope.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/core.js`, `public/js/features/diff-workbench.js`, `public/js/app/events.js`, `public/styles.css`, `docs/ARCHITECTURE.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

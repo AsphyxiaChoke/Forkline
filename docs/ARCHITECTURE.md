@@ -47,3 +47,8 @@ The frontend still uses classic browser globals because the app is served direct
 - Put shared startup/layout/event glue in `public/js/app/`.
 - Keep `public/app.js` as a compatibility file only.
 - If a new file is added, update `public/index.html`, this document, and `progress.md`.
+
+## Local Service
+
+- `node server.js` starts Forkline on `127.0.0.1:5177` by default and opens the app on Windows.
+- Set `FORKLINE_NO_OPEN=1` when running local verification that should not open a browser window automatically.

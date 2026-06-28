@@ -250,6 +250,7 @@ function markSyncPreviewFile() {
 }
 
 function renderWorkDiffEmpty(message) {
+  resetDiffLineSelection(false);
   setActiveDiff(null);
   els.workDiffTitle.textContent = "变更对照";
   els.workDiffPath.textContent = "";
@@ -282,6 +283,7 @@ async function loadWorkingDiff(filePath) {
 }
 
 function renderWorkDiff(filePath, diff, scope = "unstaged") {
+  resetDiffLineSelection(false);
   const scopeLabel = workDiffScopeLabel(scope);
   const title = `${shortFileName(filePath)} · ${scopeLabel}`;
   state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
@@ -294,10 +296,12 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
     return;
   }
   els.workDiffView.className = "work-diff-view";
-  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, filePath, scope });
+  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, lineActions: canStageSelectedDiffLines(filePath, scope), filePath, scope });
+  updateDiffLineSelectionToolbar();
 }
 
 function renderHistoryDiffInWorkbench(commit, detail, filePath) {
+  resetDiffLineSelection(false);
   const diff = diffForFile(detail.diff || [], filePath);
   const title = `${shortFileName(filePath)} · 历史提交`;
   const path = `${commit.short} · ${filePath}`;
@@ -401,7 +405,8 @@ function closeDiffModal() {
 function renderSideDiff(diff, emptyText, options = {}) {
   if (!diff?.length) return `<div class="diff-empty">${escapeHtml(emptyText)}</div>`;
   return `
-    <div class="side-diff">
+    <div class="side-diff ${options.lineActions ? "line-selectable" : ""}">
+      ${options.lineActions ? renderDiffLineToolbar() : ""}
       <div class="side-diff-head"><span>旧版本</span><span>新版本</span></div>
       ${sideBySideRows(diff, options)}
     </div>
@@ -442,6 +447,7 @@ function sideBySideRows(diff, options = {}) {
   const rows = [];
   let oldLine = 0;
   let newLine = 0;
+  let hunkLineIndex = -1;
   for (let index = 0; index < diff.length; index++) {
     const line = diff[index];
     const text = String(line.text || "");
@@ -450,32 +456,73 @@ function sideBySideRows(diff, options = {}) {
       if (hunk) {
         oldLine = Number(hunk[1]) - 1;
         newLine = Number(hunk[2]) - 1;
+        hunkLineIndex = -1;
       }
       rows.push(renderSideMetaRow(line, text, options));
       continue;
     }
     if (line.type === "del" && diff[index + 1]?.type === "add") {
+      const delLineIndex = nextHunkLineIndex(line, hunkLineIndex);
+      hunkLineIndex = delLineIndex;
+      const addLineIndex = nextHunkLineIndex(diff[index + 1], hunkLineIndex);
+      hunkLineIndex = addLineIndex;
       oldLine += 1;
       newLine += 1;
-      rows.push(sideRow("mod", oldLine, trimDiffPrefix(text), "del", newLine, trimDiffPrefix(diff[index + 1].text), "add"));
+      rows.push(sideRow("mod", oldLine, trimDiffPrefix(text), "del", newLine, trimDiffPrefix(diff[index + 1].text), "add", {
+        lineKeys: diffLineKeys(options, [
+          { hunkIndex: line.hunkIndex, lineIndex: delLineIndex },
+          { hunkIndex: diff[index + 1].hunkIndex, lineIndex: addLineIndex },
+        ]),
+      }));
       index += 1;
       continue;
     }
     if (line.type === "del") {
+      hunkLineIndex = nextHunkLineIndex(line, hunkLineIndex);
       oldLine += 1;
-      rows.push(sideRow("del", oldLine, trimDiffPrefix(text), "del", "", "", "blank"));
+      rows.push(sideRow("del", oldLine, trimDiffPrefix(text), "del", "", "", "blank", {
+        lineKeys: diffLineKeys(options, [{ hunkIndex: line.hunkIndex, lineIndex: hunkLineIndex }]),
+      }));
       continue;
     }
     if (line.type === "add") {
+      hunkLineIndex = nextHunkLineIndex(line, hunkLineIndex);
       newLine += 1;
-      rows.push(sideRow("add", "", "", "blank", newLine, trimDiffPrefix(text), "add"));
+      rows.push(sideRow("add", "", "", "blank", newLine, trimDiffPrefix(text), "add", {
+        lineKeys: diffLineKeys(options, [{ hunkIndex: line.hunkIndex, lineIndex: hunkLineIndex }]),
+      }));
       continue;
     }
+    hunkLineIndex = nextHunkLineIndex(line, hunkLineIndex);
     oldLine += 1;
     newLine += 1;
     rows.push(sideRow("ctx", oldLine, trimDiffPrefix(text), "", newLine, trimDiffPrefix(text), ""));
   }
   return rows.join("");
+}
+
+function nextHunkLineIndex(line, current) {
+  return Number.isInteger(line?.hunkIndex) ? current + 1 : current;
+}
+
+function diffLineKeys(options, lines) {
+  if (!options.lineActions) return [];
+  return lines
+    .filter((line) => Number.isInteger(line.hunkIndex) && Number.isInteger(line.lineIndex) && line.lineIndex >= 0)
+    .map((line) => diffLineKey(line.hunkIndex, line.lineIndex));
+}
+
+function diffLineKey(hunkIndex, lineIndex) {
+  return `${hunkIndex}:${lineIndex}`;
+}
+
+function renderDiffLineToolbar() {
+  return `
+    <div class="diff-line-toolbar">
+      <span data-selected-line-count>未选择行</span>
+      <button class="mini-btn" data-line-action="stageSelectedLines" type="button" disabled title="暂存当前 Diff 中选中的行">暂存所选行</button>
+    </div>
+  `;
 }
 
 function renderSideMetaRow(line, text, options = {}) {
@@ -528,9 +575,14 @@ function workDiffScopeLabel(scope) {
   return "未暂存";
 }
 
-function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass) {
+function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass, options = {}) {
+  const lineKeys = options.lineKeys || [];
+  const selected = lineKeys.some((key) => state.selectedDiffLines.has(key));
+  const attrs = lineKeys.length
+    ? ` data-diff-line-key="${escapeAttr(lineKeys[0])}" data-diff-line-keys="${escapeAttr(lineKeys.join(","))}"`
+    : "";
   return `
-    <div class="side-row ${type}">
+    <div class="side-row ${type} ${lineKeys.length ? "diff-line-selectable" : ""} ${selected ? "selected" : ""}"${attrs}>
       <div class="side-cell old ${oldClass}">
         <span class="ln">${escapeHtml(oldNo)}</span><code>${escapeHtml(oldText)}</code>
       </div>
@@ -539,6 +591,115 @@ function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass) {
       </div>
     </div>
   `;
+}
+
+function canStageSelectedDiffLines(filePath, scope) {
+  const fileInfo = selectedWorkingFileInfo(filePath);
+  if (!fileInfo || fileInfo.conflict || !fileInfo.unstaged) return false;
+  if (scope === "unstaged") return true;
+  return scope === "untracked" && isUntrackedFile(fileInfo);
+}
+
+function resetDiffLineSelection(update = true) {
+  state.selectedDiffLines.clear();
+  state.lastDiffLineKey = "";
+  if (update) syncDiffLineSelectionRows();
+}
+
+function handleDiffLineSelection(row, event = {}) {
+  const rows = Array.from(els.workDiffView.querySelectorAll(".diff-line-selectable[data-diff-line-key]"));
+  const rowIndex = rows.indexOf(row);
+  if (rowIndex < 0) return;
+  const rowKeys = diffRowLineKeys(row);
+  if (!rowKeys.length) return;
+  const lastIndex = rows.findIndex((item) => item.dataset.diffLineKey === state.lastDiffLineKey);
+  const additive = event.ctrlKey || event.metaKey;
+  if (event.shiftKey && lastIndex >= 0) {
+    if (!additive) state.selectedDiffLines.clear();
+    const [start, end] = [lastIndex, rowIndex].sort((left, right) => left - right);
+    rows.slice(start, end + 1).forEach((item) => diffRowLineKeys(item).forEach((key) => state.selectedDiffLines.add(key)));
+  } else if (additive) {
+    const selected = rowKeys.every((key) => state.selectedDiffLines.has(key));
+    rowKeys.forEach((key) => {
+      if (selected) state.selectedDiffLines.delete(key);
+      else state.selectedDiffLines.add(key);
+    });
+  } else {
+    const onlyThisRow = state.selectedDiffLines.size === rowKeys.length && rowKeys.every((key) => state.selectedDiffLines.has(key));
+    state.selectedDiffLines.clear();
+    if (!onlyThisRow) rowKeys.forEach((key) => state.selectedDiffLines.add(key));
+  }
+  state.lastDiffLineKey = row.dataset.diffLineKey || "";
+  syncDiffLineSelectionRows();
+}
+
+function diffRowLineKeys(row) {
+  return String(row?.dataset?.diffLineKeys || "").split(",").filter(Boolean);
+}
+
+function syncDiffLineSelectionRows() {
+  const rows = Array.from(els.workDiffView.querySelectorAll(".diff-line-selectable[data-diff-line-keys]"));
+  rows.forEach((row) => {
+    const selected = diffRowLineKeys(row).some((key) => state.selectedDiffLines.has(key));
+    row.classList.toggle("selected", selected);
+  });
+  updateDiffLineSelectionToolbar();
+}
+
+function updateDiffLineSelectionToolbar() {
+  const countNode = els.workDiffView.querySelector("[data-selected-line-count]");
+  const button = els.workDiffView.querySelector('[data-line-action="stageSelectedLines"]');
+  if (!countNode || !button) return;
+  const selectedRows = els.workDiffView.querySelectorAll(".diff-line-selectable.selected").length;
+  countNode.textContent = selectedRows ? `已选 ${selectedRows} 行` : "未选择行";
+  button.disabled = selectedRows === 0;
+}
+
+function selectedDiffLinePayload() {
+  return Array.from(state.selectedDiffLines).map((key) => {
+    const [hunkIndex, lineIndex] = key.split(":").map((part) => Number.parseInt(part, 10));
+    return { hunkIndex, lineIndex };
+  }).filter((line) => Number.isInteger(line.hunkIndex) && Number.isInteger(line.lineIndex));
+}
+
+async function runWorkDiffLineAction(button) {
+  const file = state.selectedFile;
+  const scope = state.activeDiff?.scope || "unstaged";
+  const lines = selectedDiffLinePayload();
+  if (!file || !lines.length) {
+    toast("请选择要暂存的行");
+    return;
+  }
+  if (scope !== "unstaged" && scope !== "untracked") {
+    toast("只能暂存工作区中未暂存的行");
+    return;
+  }
+  const buttons = els.workDiffView.querySelectorAll("[data-line-action], [data-hunk-action]");
+  buttons.forEach((item) => {
+    item.disabled = true;
+  });
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "stageSelectedLines", file, scope, lines }),
+    });
+    toast(result.output || "已暂存所选行");
+    resetDiffLineSelection(false);
+    await refreshWorktree(true);
+    if (state.selectedFile) {
+      state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
+      await loadWorkingDiff(state.selectedFile);
+    }
+  } catch (error) {
+    toast(error.message);
+    await refreshWorktree(true);
+    updateDiffLineSelectionToolbar();
+  } finally {
+    buttons.forEach((item) => {
+      if (item !== button) item.disabled = false;
+    });
+    updateDiffLineSelectionToolbar();
+  }
 }
 
 function trimDiffPrefix(text) {
