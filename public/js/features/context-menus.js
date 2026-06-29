@@ -219,7 +219,7 @@ function showFileContextMenu(event, filePath, scope = "") {
   hideTagContextMenu();
   hideRemoteContextMenu();
   hideReflogContextMenu();
-  const fileInfo = state.data?.workingFiles?.find((file) => file.file === filePath);
+  const fileInfo = contextWorkingFileInfo(filePath, scope);
   if (!fileInfo) return;
   const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
   state.contextFile = { file: filePath, scope: resolvedScope };
@@ -253,6 +253,13 @@ function showFileContextMenu(event, filePath, scope = "") {
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
   positionContextMenu(menu, event, 330);
+}
+
+function contextWorkingFileInfo(filePath, scope = "") {
+  const matches = (state.data?.workingFiles || []).filter((file) => file.file === filePath);
+  if (scope === "staged") return matches.find((file) => file.staged) || matches[0] || null;
+  if (scope === "unstaged" || scope === "untracked") return matches.find((file) => file.unstaged || (!file.staged && file.unstaged !== false)) || matches[0] || null;
+  return matches.find((file) => file.unstaged || (!file.staged && file.unstaged !== false)) || matches.find((file) => file.staged) || matches[0] || null;
 }
 
 function hideFileContextMenu() {

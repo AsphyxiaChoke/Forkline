@@ -1715,13 +1715,24 @@ button.file-row {
 
 .file-extra {
   overflow: hidden;
-  max-width: 64px;
+  max-width: 76px;
   color: var(--quiet);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
+  font-weight: 700;
   line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-extra.scope-unstaged {
+  color: var(--amber);
+  font-family: inherit;
+}
+
+.file-extra.scope-staged {
+  color: var(--blue);
+  font-family: inherit;
 }
 
 .file-name {

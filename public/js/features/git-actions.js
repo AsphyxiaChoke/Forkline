@@ -668,6 +668,7 @@ async function runSingleFileAction(action, file) {
     const data = await api("/api/worktree");
     state.data.workingFiles = data.workingFiles || [];
     state.data.repo.operation = data.operation || null;
+    syncFileSelectionAfterAction(action, [file], state.data.workingFiles);
     renderWorkingFiles();
     renderStage();
   } catch (error) {
@@ -679,6 +680,40 @@ function singleFileActionPayload(action, file) {
   if (action === "resolveConflictOurs") return { action: "resolveConflictFile", side: "ours", file };
   if (action === "resolveConflictTheirs") return { action: "resolveConflictFile", side: "theirs", file };
   return { action, file };
+}
+
+function syncFileSelectionAfterAction(action, files, nextFiles) {
+  let fallback = null;
+  for (const file of files) {
+    state.selectedChanges.delete(changeKey("unstaged", file));
+    state.selectedChanges.delete(changeKey("staged", file));
+    const scope = nextScopeAfterFileAction(action, file, nextFiles);
+    if (!scope) continue;
+    state.selectedChanges.add(changeKey(scope, file));
+    fallback = fallback || { file, scope };
+    if (state.selectedFile === file) {
+      state.selectedFile = file;
+      state.workDiffScope = scope;
+    }
+  }
+  if (files.includes(state.selectedFile) && !nextScopeAfterFileAction(action, state.selectedFile, nextFiles)) {
+    state.selectedFile = fallback?.file || "";
+    state.workDiffScope = fallback?.scope || "unstaged";
+  } else if (!state.selectedFile && fallback) {
+    state.selectedFile = fallback.file;
+    state.workDiffScope = fallback.scope;
+  }
+}
+
+function nextScopeAfterFileAction(action, file, nextFiles) {
+  const matches = (nextFiles || []).filter((item) => item.file === file);
+  const hasStaged = matches.some((item) => item.staged);
+  const hasUnstaged = matches.some((item) => item.unstaged || (!item.staged && item.unstaged !== false));
+  if (action === "stageFile" || isConflictResolveAction(action)) return hasStaged ? "staged" : hasUnstaged ? "unstaged" : "";
+  if (action === "unstageFile") return hasUnstaged ? "unstaged" : hasStaged ? "staged" : "";
+  if (action === "discardWorktreeFile") return hasStaged ? "staged" : "";
+  if (action === "discardStagedFile") return hasUnstaged ? "unstaged" : "";
+  return "";
 }
 
 function isConflictResolveAction(action) {
@@ -711,6 +746,7 @@ async function runFileBatchAction(action, scope, button) {
     const data = await api("/api/worktree");
     state.data.workingFiles = data.workingFiles || [];
     state.data.repo.operation = data.operation || null;
+    syncFileSelectionAfterAction(action, files, state.data.workingFiles);
     renderWorkingFiles();
     renderStage();
   } catch (error) {

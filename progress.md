@@ -494,3 +494,139 @@
 - `docs/CONTINUE.md`: records the staged selected-line unstaging behavior and automatic view switch.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: pull remote and keep right detail order
+### What was done
+- Pulled `origin/main` from `d87f396` to `e32a801`.
+- Preserved the local right detail panel layout intent after the remote frontend module split by moving the selected commit message section above the operation section in the new inspector module.
+- Kept the existing operation buttons, history editing area, edit queue, and diff preview behavior unchanged.
+### Testing
+- `node --check public/js/panels/inspector.js` passed.
+- `node --check public/app.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+### Notes
+- `public/js/panels/inspector.js`: reorders the detail tab markup so commit information appears before commit operations.
+- `public/app.js`: kept the remote compatibility placeholder from the module split.
+- `progress.md`: resolved the pull/stash conflict and appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/panels/inspector.js` and `progress.md`, or reset back to the pre-pull commit `d87f396` if the remote pull itself must be undone.
+
+## 2026-06-29 - Task: keep selected-line diff view after action
+### What was done
+- Changed selected-line staging and unstaging so the bottom or maximized Diff stays in the user's current view after the action.
+- Kept the automatic fallback to the other Diff side when the current side has no remaining changes.
+### Testing
+- `node --check public/js/features/diff-workbench.js` passed.
+- Browser verification on a temporary repository confirmed staging one selected line kept the bottom Diff at `view-stay.txt · 未暂存` while unselected lines remained visible.
+- Browser verification on a temporary repository confirmed cancelling one selected staged line kept the bottom Diff at `staged-view.txt · 已暂存` while the remaining staged line stayed visible.
+### Notes
+- `public/js/features/diff-workbench.js`: preserves the active Diff scope after selected-line staging or unstaging instead of jumping to the result side.
+- `docs/CONTINUE.md`: records the current selected-line view retention behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: avoid empty diff after staging a hunk
+### What was done
+- Added a fallback when loading a worktree Diff: if the requested side returns no lines but the same file still has changes on the other side, Forkline now loads that other side instead.
+- This fixes staging the last visible hunk showing "没有可显示的差异" while the file is still present in the change list.
+### Testing
+- `node --check public/js/features/diff-workbench.js` passed.
+- API verification on a temporary repository confirmed staging the only unstaged hunk makes `scope=unstaged` return 0 Diff lines while `scope=staged` returns the staged Diff with the selected change.
+- HTTP verification confirmed the local service still returns 200 for `/` and `/api/state`.
+- In-app Browser verification was attempted, but the Browser control connection timed out while loading localhost; API/HTTP verification covered the bug condition directly.
+### Notes
+- `public/js/features/diff-workbench.js`: retries the opposite worktree Diff scope when the requested scope is empty and the file still has changes there.
+- `docs/CONTINUE.md`: records the empty-Diff fallback behavior after hunk operations.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: refresh staged and unstaged file state accurately
+### What was done
+- Updated the worktree refresh signature so it distinguishes index status, worktree status, and staged/unstaged flags instead of only the combined display status.
+- Changed change-list rows to render scope-specific status text, so a partially staged file can show `工作区 M` in the worktree section and `暂存区 A` or `暂存区 M` in the staged section.
+### Testing
+- `node --check public/js/features/diff-workbench.js` passed.
+- Frontend function regression check confirmed an unstaged `M` file and staged `M` file now produce different refresh signatures.
+- Frontend function regression check confirmed an `AM` file renders as `工作区 M` in the unstaged section and `暂存区 A` in the staged section.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+### Notes
+- `public/js/features/diff-workbench.js`: includes index/worktree status in refresh signatures and renders scope-specific file row status.
+- `docs/CONTINUE.md`: records the more accurate staged/unstaged refresh and display behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: prevent stale diff fallback without file state
+### What was done
+- Fixed `fileChangeFlags` so a missing selected file no longer defaults to `hasUnstaged = true`.
+- This prevents stale Diff fallback from switching to an unstaged view after the selected file disappears from the working file list.
+### Testing
+- Boundary regression check confirmed missing file state now returns `hasUnstaged = false`, `hasStaged = false`, and no fallback scope.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- Frontend diff-state regression checks confirmed `AM` files still render differently by section and staged/unstaged `M` files still produce different refresh signatures.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+### Notes
+- `public/js/features/diff-workbench.js`: guards `fileChangeFlags` against missing file state.
+- `docs/CONTINUE.md`: records the missing-file fallback guard.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: keep file selection aligned after staging
+### What was done
+- Changed file-row status text to show the section identity directly as `未暂存`, `已暂存`, or `未跟踪`, so the same path in both change sections no longer looks identical.
+- Added post-action selection sync for single-file and multi-file staging actions: after staging, unstaging, or discarding, Forkline reselects the file in the latest valid section.
+- Kept the existing backend Git state behavior unchanged; this change only fixes the frontend selection and display after refresh.
+### Testing
+- `node --check public/js/features/diff-workbench.js` passed.
+- `node --check public/js/features/git-actions.js` passed.
+- `node --check server.js` passed.
+- Frontend logic regression check passed: `stageFile` moves selection from `unstaged:<file>` to `staged:<file>`, `unstageFile` moves it back to `unstaged:<file>`, and `MM` status renders different `未暂存` / `已暂存` labels.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+### Notes
+- `public/js/features/diff-workbench.js`: changed scoped file-row labels from raw status text to clearer section labels.
+- `public/js/features/git-actions.js`: added selection synchronization after single and batch file actions.
+- `public/styles.css`: makes scoped file-row labels visually distinct by section.
+- `README.md`: documents that staging actions keep the selected file aligned with its latest section.
+- `docs/CONTINUE.md`: records the current staged/unstaged display and selection behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `public/js/features/git-actions.js`, `public/styles.css`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: keep selected row after stage all refresh
+### What was done
+- Found a remaining selection bug in the top-level "暂存全部" path: the selected file's Diff scope changed to staged, but the change-list selection key was pruned and not recreated.
+- Added a render-layer guard so any still-visible `selectedFile` is reattached to the current valid change section after refresh.
+- This makes full refreshes, including "暂存全部", keep the list highlight aligned with the bottom Diff.
+### Testing
+- Reproduction check failed before the fix: rendering a file that moved from `unstaged:a.txt` to staged-only left `selectedChanges = []`.
+- Regression check passed after the fix: the same render now leaves `workDiffScope = staged` and `selectedChanges = ['staged:a.txt']`.
+- `node --check public/js/features/worktree-changes.js` passed.
+- `node --check public/js/features/diff-workbench.js` passed.
+- `node --check public/js/features/git-actions.js` passed.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+- HTTP static verification confirmed `/js/features/worktree-changes.js` contains `ensureSelectedFileChangeKey`.
+### Notes
+- `public/js/features/worktree-changes.js`: reattaches the selected file to the current valid staged/unstaged section after pruning stale selection keys.
+- `docs/CONTINUE.md`: records that single-file, batch, and stage-all paths keep selection aligned.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/worktree-changes.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-29 - Task: scope file context menu for duplicate paths
+### What was done
+- Found a right-click menu bug for the Git state where the same path appears twice, such as staged deletion plus untracked recreation.
+- Changed the file context menu to choose the working-file record that matches the row scope, instead of always taking the first record with the same path.
+- This keeps "暂存 / 丢弃" enabled on the worktree row and "取消暂存 / 丢弃已暂存" enabled on the staged row for the duplicate-path case.
+### Testing
+- Reproduction check failed before the fix: right-clicking the `unstaged` row for duplicate `same.txt` left "暂存" disabled because the menu used the staged deletion record.
+- Regression check passed after the fix: the `unstaged` row enables stage/discard worktree and ignore-file actions, while the `staged` row enables unstage/discard-staged and does not expose the untracked ignore action.
+- API verification on a temporary Git repository confirmed Git/Forkline returns two `same.txt` records for staged deletion plus untracked recreation.
+- `node --check public/js/features/context-menus.js` passed.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+- HTTP static verification confirmed `/js/features/context-menus.js` contains `contextWorkingFileInfo`.
+### Notes
+- `public/js/features/context-menus.js`: resolves file information by the row scope before enabling file-menu actions.
+- `docs/CONTINUE.md`: records duplicate-path context-menu behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/context-menus.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

@@ -39,6 +39,7 @@ function renderStage() {
       } else {
         state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
       }
+      ensureSelectedFileChangeKey();
       els.changeList.innerHTML = `
         ${operationBanner}
         ${renderChangeSection("unstaged", "工作区", groups.unstaged, [
@@ -62,6 +63,13 @@ function renderStage() {
   const groups = changeGroups(files);
   const filterText = terms.length ? ` · 筛选 ${visibleFiles.length}/${files.length}` : "";
   els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除${filterText}`;
+}
+
+function ensureSelectedFileChangeKey() {
+  if (!state.selectedFile) return;
+  const scope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
+  state.workDiffScope = scope;
+  state.selectedChanges.add(changeKey(scope, state.selectedFile));
 }
 
 function worktreeFilterTerms() {

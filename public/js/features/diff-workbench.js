@@ -62,13 +62,29 @@ function fileLeafRowHtml(file, depth, options = {}) {
   const selectionScope = options.selectionScope || "";
   const selected = selectionScope && state.selectedChanges.has(changeKey(selectionScope, file.raw));
   const conflict = Boolean(file.conflict);
+  const status = scopedFileStatus(file, selectionScope);
   return `
     <button class="file-row leaf-row ${selected ? "multi-selected" : ""} ${conflict ? "conflict" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" style="--depth:${depth}" title="${escapeAttr(conflict ? `${file.raw} · 冲突未解决` : file.raw)}">
-      <span class="badge ${file.state}">${conflict ? "!" : file.state}</span>
+      <span class="badge ${status.state}">${status.badge}</span>
       <span class="file-leaf">${escapeHtml(file.leaf)}</span>
-      <span class="file-extra">${escapeHtml(conflict ? "冲突" : file.extra || "")}</span>
+      <span class="file-extra ${status.scope ? `scope-${status.scope}` : ""}">${escapeHtml(status.extra)}</span>
     </button>
   `;
+}
+
+function scopedFileStatus(file, scope = "") {
+  if (file.conflict) return { state: "C", badge: "!", extra: "冲突", scope: "" };
+  const indexStatus = String(file.indexStatus || "");
+  const worktreeStatus = String(file.worktreeStatus || "");
+  const rawCode = scope === "staged" ? indexStatus : scope === "unstaged" ? (indexStatus === "?" ? "?" : worktreeStatus) : worktreeStatus || indexStatus || file.state || "M";
+  const state = rawCode === "A" || rawCode === "?" ? "A" : rawCode === "D" ? "D" : "M";
+  if (scope === "staged") {
+    return { state, badge: state, extra: rawCode ? "已暂存" : "", scope: "staged" };
+  }
+  if (scope === "unstaged") {
+    return { state, badge: state, extra: rawCode === "?" ? "未跟踪" : rawCode ? "未暂存" : "", scope: "unstaged" };
+  }
+  return { state, badge: state, extra: file.extra || "", scope: "" };
 }
 
 function bindFileTree(root, options = {}) {
@@ -121,6 +137,7 @@ function selectChangeFile(filePath, scope, event) {
   const selected = state.selectedChanges.has(changeKey(scope, filePath));
   state.selectedFile = selected ? filePath : "";
   if (selected) {
+    state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
     setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   }
   renderStage();
@@ -184,7 +201,9 @@ function openSelectedFileInspector(filePath) {
 
 function markSelectedFile() {
   document.querySelectorAll("[data-select-file]").forEach((row) => {
-    row.classList.toggle("selected", row.dataset.file === state.selectedFile);
+    const scope = row.dataset.scope || "";
+    const selected = row.dataset.file === state.selectedFile && (!scope || state.selectedChanges.has(changeKey(scope, row.dataset.file || "")));
+    row.classList.toggle("selected", selected);
   });
 }
 
@@ -274,6 +293,15 @@ async function loadWorkingDiff(filePath) {
   try {
     const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(scope)}`);
     if (requestId !== state.diffRequestId) return;
+    const fallbackScope = fallbackWorkDiffScope(data.scope || scope, fileInfo, data.diff || []);
+    if (fallbackScope) {
+      const fallback = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(fallbackScope)}`);
+      if (requestId !== state.diffRequestId) return;
+      if (fallback.diff?.length) {
+        renderWorkDiff(fallback.file || filePath, fallback.diff, fallback.scope || fallbackScope);
+        return;
+      }
+    }
     renderWorkDiff(data.file || filePath, data.diff || [], data.scope || "unstaged");
   } catch (error) {
     if (requestId !== state.diffRequestId) return;
@@ -318,12 +346,16 @@ function setActiveDiff(payload) {
   if (els.maximizeDiff) els.maximizeDiff.disabled = !payload?.diff?.length;
 }
 
-function selectedWorkingFileInfo(filePath = state.selectedFile) {
+function selectedWorkingFileInfo(filePath = state.selectedFile, scope = state.workDiffScope) {
   if (!filePath) return null;
-  return (state.data?.workingFiles || []).find((file) => file.file === filePath) || null;
+  const matches = (state.data?.workingFiles || []).filter((file) => file.file === filePath);
+  if (scope === "staged") return matches.find((file) => file.staged) || matches[0] || null;
+  if (scope === "unstaged" || scope === "untracked") return matches.find((file) => file.unstaged) || matches[0] || null;
+  return matches[0] || null;
 }
 
 function fileChangeFlags(fileInfo) {
+  if (!fileInfo) return { hasUnstaged: false, hasStaged: false };
   return {
     hasUnstaged: Boolean(fileInfo?.unstaged || (!fileInfo?.staged && fileInfo?.unstaged !== false)),
     hasStaged: Boolean(fileInfo?.staged),
@@ -347,6 +379,15 @@ function normalizeWorkDiffScopeChoice(scope, fileInfo) {
   if (requested === "staged" && hasStaged) return "staged";
   if (requested === "unstaged" && hasUnstaged) return "unstaged";
   return preferredWorkDiffScope(fileInfo);
+}
+
+function fallbackWorkDiffScope(scope, fileInfo, diff) {
+  if (diff?.length) return "";
+  const requested = scope === "staged" ? "staged" : "unstaged";
+  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  if (requested === "unstaged" && hasStaged) return "staged";
+  if (requested === "staged" && hasUnstaged) return "unstaged";
+  return "";
 }
 
 async function runWorkDiffHunkAction(action, button) {
@@ -711,10 +752,7 @@ async function runWorkDiffLineAction(button) {
     resetDiffLineSelection(false);
     await refreshWorktree(true);
     if (state.selectedFile) {
-      const nextFileInfo = selectedWorkingFileInfo(state.selectedFile);
-      if (action === "stageSelectedLines" && nextFileInfo?.staged) state.workDiffScope = "staged";
-      else if (action === "unstageSelectedLines" && nextFileInfo?.unstaged) state.workDiffScope = "unstaged";
-      else state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, nextFileInfo);
+      state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
       await loadWorkingDiff(state.selectedFile);
       if (els.diffModal.classList.contains("show")) {
         if (state.activeDiff?.diff?.length) openDiffModal();
@@ -747,7 +785,20 @@ function remoteCheckoutBranch(remoteRef) {
 }
 
 function worktreeSignature(files) {
-  return (files || []).map((file) => `${file.state}:${file.file}:${file.extra || ""}:${file.conflict ? "conflict" : ""}`).join("|");
+  return (files || [])
+    .map((file) =>
+      [
+        file.state,
+        file.file,
+        file.extra || "",
+        file.indexStatus || "",
+        file.worktreeStatus || "",
+        file.staged ? "staged" : "",
+        file.unstaged ? "unstaged" : "",
+        file.conflict ? "conflict" : "",
+      ].join(":")
+    )
+    .join("|");
 }
 
 function worktreeStateSignature(files, operation) {

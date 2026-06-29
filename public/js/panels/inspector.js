@@ -78,6 +78,21 @@ function renderDetailsTab(commit, detail) {
       <span>父提交</span><div class="meta-value">${escapeHtml(commit.parents?.length ? commit.parents.map((p) => p.slice(0, 7)).join(", ") : "根提交")}</div>
       <span>引用</span><div class="meta-value">${escapeHtml(commit.refs || "无")}</div>
     </div>
+    <div class="detail-section-title">提交信息</div>
+    <form class="reword-form" data-reword-form data-sha="${escapeAttr(commit.sha)}">
+      <label class="edit-field">
+        <span>摘要</span>
+        <input name="summary" autocomplete="off" value="${escapeAttr(message.summary)}" ${isMergeCommit ? "disabled" : ""} />
+      </label>
+      <label class="edit-field">
+        <span>正文</span>
+        <textarea name="body" ${isMergeCommit ? "disabled" : ""}>${escapeHtml(message.body)}</textarea>
+      </label>
+      <div class="reword-actions">
+        <span class="rewrite-note">${isMergeCommit ? "merge 提交暂不支持自动修改" : "保存会重写此提交之后的历史 SHA"}</span>
+        <button class="mini-btn" type="submit" ${isMergeCommit ? "disabled" : ""}>保存信息</button>
+      </div>
+    </form>
     <div class="detail-section-title">提交操作</div>
     <div class="commit-tools">
       <button class="mini-btn" data-commit-tool="branch" data-sha="${escapeAttr(commit.sha)}" type="button" title="git branch：从此提交创建本地分支"><span>新建分支</span><span class="command-hint">git branch</span></button>
@@ -105,21 +120,6 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn danger" data-commit-tool="queueDrop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${canDrop ? "加入历史编辑队列，执行时丢弃此提交" : "此提交不能加入丢弃队列"}"><span>加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
     </div>
     ${renderHistoryRewriteQueue()}
-    <div class="detail-section-title">提交信息</div>
-    <form class="reword-form" data-reword-form data-sha="${escapeAttr(commit.sha)}">
-      <label class="edit-field">
-        <span>摘要</span>
-        <input name="summary" autocomplete="off" value="${escapeAttr(message.summary)}" ${isMergeCommit ? "disabled" : ""} />
-      </label>
-      <label class="edit-field">
-        <span>正文</span>
-        <textarea name="body" ${isMergeCommit ? "disabled" : ""}>${escapeHtml(message.body)}</textarea>
-      </label>
-      <div class="reword-actions">
-        <span class="rewrite-note">${isMergeCommit ? "merge 提交暂不支持自动修改" : "保存会重写此提交之后的历史 SHA"}</span>
-        <button class="mini-btn" type="submit" ${isMergeCommit ? "disabled" : ""}>保存信息</button>
-      </div>
-    </form>
     <div class="detail-section-title">DIFF 预览</div>
     ${renderDiff(detail.diff)}
   `;
