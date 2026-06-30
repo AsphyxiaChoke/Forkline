@@ -39,7 +39,7 @@ function git(repoPath, args, options = {}) {
           reject(new Error(output.trim() || error.message));
           return;
         }
-        resolve(output);
+        resolve(options.stdoutOnly ? stdout : output);
       }
     );
   });
@@ -2108,6 +2108,7 @@ async function applyWorktreeHunk(body, kind) {
     if (kind === "discard") args.push("--reverse");
     args.push(patchFile);
     await git(currentRepo, args, { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
+    if (kind === "discard") await refreshIndexStatForFile(file);
   } catch (error) {
     throw new Error(`改动块操作失败：${friendlyErrorMessage(error, { body: { action: `${kind}Hunk` } })}`);
   } finally {
@@ -2133,7 +2134,8 @@ async function stageSelectedLines(body) {
   if (scope !== "unstaged" && scope !== "untracked") throw new Error("只能暂存工作区中未暂存的行。");
 
   const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, "unstaged");
-  const patch = extractSelectedLinePatch(diffOutput, selectedLines, "stage");
+  const patchMode = isDeletedFileDiffOutput(diffOutput) ? "stage-deleted-file" : "stage";
+  const patch = extractSelectedLinePatch(diffOutput, selectedLines, patchMode);
   const patchFile = writeTempFile("forkline-lines-", patch, ".patch");
   try {
     await git(currentRepo, ["apply", "--cached", "--whitespace=nowarn", "--recount", patchFile], { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
@@ -2157,10 +2159,14 @@ async function unstageSelectedLines(body) {
   if (scope !== "staged") throw new Error("只能在已暂存 Diff 中取消暂存所选行。");
 
   const diffOutput = await readWorktreeDiffOutput(file, "staged");
-  const patch = extractSelectedLinePatch(diffOutput, selectedLines, "unstage");
+  const patchMode = isNewFileDiffOutput(diffOutput) ? "unstage-new-file" : "unstage";
+  const patch = extractSelectedLinePatch(diffOutput, selectedLines, patchMode);
   const patchFile = writeTempFile("forkline-lines-", patch, ".patch");
   try {
-    await git(currentRepo, ["apply", "--cached", "--reverse", "--whitespace=nowarn", "--recount", patchFile], { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
+    const args = ["apply", "--cached", "--whitespace=nowarn", "--recount"];
+    if (patchMode === "unstage") args.push("--reverse");
+    args.push(patchFile);
+    await git(currentRepo, args, { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
   } catch (error) {
     throw new Error(`按行取消暂存失败：${friendlyErrorMessage(error, { body: { action: "unstageSelectedLines" } })}`);
   } finally {
@@ -2174,7 +2180,7 @@ async function readWorktreeDiffOutput(file, scope) {
   const args = diffScope === "staged"
     ? ["diff", "--cached", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file]
     : ["diff", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file];
-  return git(currentRepo, args, { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
+  return git(currentRepo, args, { maxBuffer: 1024 * 1024 * 8, stdoutOnly: true }).catch(() => "");
 }
 
 function normalizeDiffLineSelections(value) {
@@ -2221,6 +2227,12 @@ function extractSelectedLinePatch(diffOutput, selectedLines, mode = "stage") {
   }
   if (current) hunks.push(current);
   if (!header.length || !hunks.length) throw new Error("没有可操作的 Diff 行。");
+  if (mode === "stage-deleted-file") {
+    return extractDeletedFileStageLinePatch(header, hunks, selectedKeys, matchedKeys);
+  }
+  if (mode === "unstage-new-file") {
+    return extractNewFileUnstageLinePatch(header, hunks, selectedKeys, matchedKeys);
+  }
   const selectedHunks = hunks
     .map((hunk) => buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode))
     .filter(Boolean);
@@ -2238,6 +2250,156 @@ function parseUnifiedHunkHeader(line) {
     newStart: Number(match[3]),
     newCount: match[4] === undefined ? 1 : Number(match[4]),
   };
+}
+
+function isNewFileDiffOutput(diffOutput) {
+  return /(?:^|\n)--- \/dev\/null\n\+\+\+ /.test(String(diffOutput || "").replace(/\r\n/g, "\n"));
+}
+
+function isDeletedFileDiffOutput(diffOutput) {
+  return /(?:^|\n)--- .+\n\+\+\+ \/dev\/null/.test(String(diffOutput || "").replace(/\r\n/g, "\n"));
+}
+
+function extractDeletedFileStageLinePatch(header, hunks, selectedKeys, matchedKeys) {
+  const delKeys = collectSelectableDelLineKeys(hunks);
+  const selectedDelKeys = delKeys.filter((key) => selectedKeys.has(key));
+  if (!selectedDelKeys.length) throw new Error("请选择删除行，普通上下文行不能单独暂存。");
+  const allDeletedLinesSelected = selectedDelKeys.length === delKeys.length;
+  const patchHeader = deletedFileStagePatchHeader(header, allDeletedLinesSelected);
+  const selectedHunks = hunks
+    .map((hunk) => buildDeletedFileStageLineHunk(hunk, selectedKeys, matchedKeys, allDeletedLinesSelected))
+    .filter(Boolean);
+  if (!selectedHunks.length) throw new Error("请选择删除行，普通上下文行不能单独暂存。");
+  if (matchedKeys.size !== selectedKeys.size) throw new Error("部分 Diff 行已经变化，请刷新后再试。");
+  return [...patchHeader, ...selectedHunks].join("\n").replace(/\n*$/, "\n");
+}
+
+function extractNewFileUnstageLinePatch(header, hunks, selectedKeys, matchedKeys) {
+  const addKeys = collectSelectableAddLineKeys(hunks);
+  const selectedAddKeys = addKeys.filter((key) => selectedKeys.has(key));
+  if (!selectedAddKeys.length) throw new Error("请选择新增行，普通上下文行不能单独取消暂存。");
+  const allAddedLinesSelected = selectedAddKeys.length === addKeys.length;
+  const patchHeader = newFileUnstagePatchHeader(header, allAddedLinesSelected);
+  const selectedHunks = hunks
+    .map((hunk) => buildNewFileUnstageLineHunk(hunk, selectedKeys, matchedKeys, allAddedLinesSelected))
+    .filter(Boolean);
+  if (!selectedHunks.length) throw new Error("请选择新增行，普通上下文行不能单独取消暂存。");
+  if (matchedKeys.size !== selectedKeys.size) throw new Error("部分 Diff 行已经变化，请刷新后再试。");
+  return [...patchHeader, ...selectedHunks].join("\n").replace(/\n*$/, "\n");
+}
+
+function collectSelectableAddLineKeys(hunks) {
+  const keys = [];
+  hunks.forEach((hunk) => {
+    let selectableLineIndex = -1;
+    hunk.lines.forEach((line) => {
+      if (line.startsWith("\\")) return;
+      selectableLineIndex += 1;
+      if (line.startsWith("+")) keys.push(`${hunk.index}:${selectableLineIndex}`);
+    });
+  });
+  return keys;
+}
+
+function collectSelectableDelLineKeys(hunks) {
+  const keys = [];
+  hunks.forEach((hunk) => {
+    let selectableLineIndex = -1;
+    hunk.lines.forEach((line) => {
+      if (line.startsWith("\\")) return;
+      selectableLineIndex += 1;
+      if (line.startsWith("-")) keys.push(`${hunk.index}:${selectableLineIndex}`);
+    });
+  });
+  return keys;
+}
+
+function deletedFileStagePatchHeader(header, deleteFile = false) {
+  const diffLine = header.find((line) => line.startsWith("diff --git ")) || header[0];
+  const oldPathLine = header.find((line) => line.startsWith("--- "));
+  if (!oldPathLine || oldPathLine === "--- /dev/null") throw new Error("删除文件 Diff 头不完整，请刷新后再试。");
+  const oldPath = oldPathLine.slice(4);
+  const newPath = oldPath.startsWith("a/") ? `b/${oldPath.slice(2)}` : oldPath;
+  const modeLine = header.find((line) => line.startsWith("deleted file mode "));
+  if (deleteFile) {
+    return [diffLine, modeLine || "", oldPathLine, "+++ /dev/null"].filter(Boolean);
+  }
+  return [diffLine, oldPathLine, `+++ ${newPath}`];
+}
+
+function newFileUnstagePatchHeader(header, deleteFile = false) {
+  const diffLine = header.find((line) => line.startsWith("diff --git ")) || header[0];
+  const newPathLine = header.find((line) => line.startsWith("+++ "));
+  if (!newPathLine || newPathLine === "+++ /dev/null") throw new Error("新文件 Diff 头不完整，请刷新后再试。");
+  const newPath = newPathLine.slice(4);
+  const oldPath = newPath.startsWith("b/") ? `a/${newPath.slice(2)}` : newPath;
+  const modeLine = header.find((line) => line.startsWith("new file mode "));
+  if (deleteFile) {
+    return [diffLine, modeLine ? `deleted file mode ${modeLine.slice("new file mode ".length)}` : "", `--- ${oldPath}`, "+++ /dev/null"].filter(Boolean);
+  }
+  return [diffLine, `--- ${oldPath}`, newPathLine];
+}
+
+function buildDeletedFileStageLineHunk(hunk, selectedKeys, matchedKeys, deleteFile = false) {
+  const lines = [];
+  let changed = false;
+  let selectableLineIndex = -1;
+  hunk.lines.forEach((line) => {
+    const selectable = !line.startsWith("\\");
+    if (selectable) selectableLineIndex += 1;
+    const key = selectable ? `${hunk.index}:${selectableLineIndex}` : "";
+    const selected = selectedKeys.has(key);
+    if (line.startsWith("-")) {
+      if (selected || deleteFile) {
+        lines.push(line);
+        if (selected) matchedKeys.add(key);
+        changed = true;
+      } else {
+        lines.push(` ${line.slice(1)}`);
+      }
+      return;
+    }
+    if (line.startsWith("\\")) lines.push(line);
+  });
+  if (!changed) return "";
+  const counts = countUnifiedHunkLines(lines);
+  const newStart = deleteFile ? 0 : hunk.oldStart;
+  const newCount = deleteFile ? 0 : counts.newCount;
+  return [
+    `@@ -${formatUnifiedRange(hunk.oldStart, counts.oldCount)} +${formatUnifiedRange(newStart, newCount)} @@`,
+    ...lines,
+  ].join("\n");
+}
+
+function buildNewFileUnstageLineHunk(hunk, selectedKeys, matchedKeys, deleteFile = false) {
+  const lines = [];
+  let changed = false;
+  let selectableLineIndex = -1;
+  hunk.lines.forEach((line) => {
+    const selectable = !line.startsWith("\\");
+    if (selectable) selectableLineIndex += 1;
+    const key = selectable ? `${hunk.index}:${selectableLineIndex}` : "";
+    const selected = selectedKeys.has(key);
+    if (line.startsWith("+")) {
+      if (selected || deleteFile) {
+        lines.push(`-${line.slice(1)}`);
+        if (selected) matchedKeys.add(key);
+        changed = true;
+      } else {
+        lines.push(` ${line.slice(1)}`);
+      }
+      return;
+    }
+    if (line.startsWith("\\")) lines.push(line);
+  });
+  if (!changed) return "";
+  const counts = countUnifiedHunkLines(lines);
+  const newStart = deleteFile ? 0 : hunk.newStart;
+  const newCount = deleteFile ? 0 : counts.newCount;
+  return [
+    `@@ -${formatUnifiedRange(hunk.newStart, counts.oldCount)} +${formatUnifiedRange(newStart, newCount)} @@`,
+    ...lines,
+  ].join("\n");
 }
 
 function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode = "stage") {
@@ -2296,6 +2458,10 @@ function countUnifiedHunkLines(lines) {
 
 function formatUnifiedRange(start, count) {
   return count === 1 ? String(start) : `${start},${count}`;
+}
+
+async function refreshIndexStatForFile(file) {
+  await git(currentRepo, ["update-index", "--refresh", "--", file], { timeout: 60000 }).catch(() => "");
 }
 
 function extractSingleHunkPatch(diffOutput, targetHunkIndex) {

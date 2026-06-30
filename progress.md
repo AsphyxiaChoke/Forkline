@@ -840,3 +840,54 @@
 - `docs/CONTINUE.md`: records no-newline selected-line behavior.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: clear false dirty state after discarding a hunk
+### What was done
+- Found a worktree Diff bug where `discardWorktreeHunk` could report success but leave the file visible as modified while `git diff` was already empty.
+- The reproduced case was a tracked text file without a trailing newline on Windows with `core.autocrlf=true`; after reverse-applying the hunk, Git's index stat remained stale.
+- Updated the hunk discard path to refresh the file's index stat after a successful worktree hunk discard, without changing stage or unstage behavior.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/no-newline-discard-status-20260630`: before the fix, `discardWorktreeHunk` returned success, `git diff -- <file>` was empty, but `git status --short -- <file>` still returned ` M ...`; running `git update-index --refresh -- <file>` cleared it.
+- Regression passed after the fix on temporary branch `forkline/no-newline-discard-fixed-20260630`: `discardWorktreeHunk` returned `工作区改动块已丢弃`, `statusAfterAction` was empty, and `diffEmpty = true`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+- Confirmed the restarted local service is open on `D:/桌面/GitTest`, branch `123`, dirty count `0`.
+### Notes
+- `server.js`: refreshes index stat for the affected file after successful worktree hunk discard.
+- `docs/CONTINUE.md`: records that hunk discard now clears the false modified/no-diff state.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: support selected-line unstage for staged new files
+### What was done
+- Found a selected-line unstage bug for staged new files: selecting one line in the staged Diff and running `unstageSelectedLines` returned `error: new file ... depends on old contents`.
+- Added a dedicated patch generation path for staged new-file diffs so selected lines are removed from the index as normal file edits instead of reverse-applying a `/dev/null -> file` new-file patch.
+- Preserved the full-file behavior: if every added line is selected, the file is removed from the index and returns to untracked status.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/unstage-lines-new-file-error-20260630`: a staged three-line new file failed with HTTP 400 and `new file ... depends on old contents`.
+- Regression passed on temporary branch `forkline/unstage-lines-new-file-fixed-20260630`: selecting only line 2 returned `已取消暂存所选 1 行`, left status `AM`, kept `line 1` and `line 3` staged, and moved `line 2` to the worktree Diff.
+- Batch regression passed on temporary branch `forkline/unstage-lines-regression-20260630`: partial new-file unstage, all-line new-file unstage, and normal modified-file unstage all produced the expected index/worktree split.
+- No-trailing-newline regression passed on temporary branch `forkline/unstage-new-file-no-newline-20260630`: selected line was removed from the index, unselected line stayed staged, and the worktree Diff retained the `No newline` metadata.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: detects staged new-file diffs and generates file-to-file or file-to-null cached patches for selected-line unstage.
+- `docs/CONTINUE.md`: records that staged new files support selected-line unstage.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: support selected-line stage for worktree deleted files
+### What was done
+- Found a selected-line staging bug for files deleted in the worktree: selecting one deleted line and running `stageSelectedLines` returned `error: deleted file ... still has contents`.
+- Added a dedicated patch generation path for deleted-file diffs so selected deleted lines are staged as normal file edits; selecting every deleted line still stages the full file deletion.
+- Found and fixed a related patch contamination bug: successful `git diff` commands could append stderr CRLF warnings into the generated patch, producing `corrupt patch` during selected-line staging.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/stage-lines-deleted-file-scan-20260630`: deleting a three-line file and staging only line 2 failed with HTTP 400 and `deleted file ... still has contents`.
+- Regression passed on temporary branch `forkline/stage-lines-deleted-file-fixed-20260630`: staging only line 2 returned `已暂存所选 1 行`, left status `MD`, put `-line 2` in cached Diff, and left `-line 1` / `-line 3` in worktree Diff.
+- Batch regression passed on temporary branch `forkline/stage-lines-deleted-regression-20260630b`: all-line deleted-file staging produced `D`, no-trailing-newline deleted-file staging produced the expected `MD` split, and normal modified-file selected-line staging still produced a clean cached change.
+- Confirmed adjacent cases: staged deleted-file selected-line unstage, staged new-file hunk unstage, and untracked all-line selected staging behaved correctly.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: detects deleted-file diffs and generates file-to-file or file-to-null cached patches for selected-line stage; diff-reading for worktree/staged patches now uses stdout only on successful Git commands.
+- `docs/CONTINUE.md`: records selected-line support for deleted files and the stdout-only Diff patch behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
