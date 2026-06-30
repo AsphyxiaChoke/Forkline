@@ -712,3 +712,131 @@
 - `docs/CONTINUE.md`: records that duplicate-path Diff buttons follow the active Diff section.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: fix duplicate-path worktree diff backend
+### What was done
+- Found a backend bug where the same path could appear as both a staged deletion and an untracked recreation.
+- The worktree Diff API and block/line operations previously selected the first status record for the path, so the unstaged side could show an empty Diff or operate on the wrong side.
+- Added scope-aware status selection for worktree Diff, ignore, discard, conflict resolution, hunk actions, and selected-line actions.
+- Fixed virtual untracked-file Diff generation so a file ending with a newline no longer creates an extra blank added line.
+### Testing
+- Reproduced the failure on `C:\tmp\forkline-duplicate-path-diff-20260630`: `/api/worktree-diff?file=same.txt&scope=unstaged` returned `scope = unstaged` with `diff = []` while the staged side returned the deletion Diff.
+- Regression check passed after the fix: the same unstaged request returns `scope = untracked`, one `+recreated` line, and no extra blank added line; the staged request still returns `scope = staged` with `-original`.
+- Hunk action verification passed on `C:\tmp\forkline-duplicate-path-action2-20260630`: `stageHunk` with `scope = untracked` returned “已暂存此未跟踪文件改动块”, `git status --short` became `M  same.txt`, and `git diff -- same.txt` was empty.
+- Selected-line verification passed on `C:\tmp\forkline-duplicate-path-lines-20260630`: `stageSelectedLines` with `scope = untracked` returned “已暂存所选 1 行”, `git status --short` became `M  same.txt`, and `git diff -- same.txt` was empty.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: selects status records by requested worktree scope and fixes trailing-newline handling in virtual untracked-file Diff generation.
+- `docs/CONTINUE.md`: records the backend duplicate-path and trailing-newline behavior for worktree Diff operations.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: preserve duplicate-path recreation when discarding staged side
+### What was done
+- Found a follow-up data-loss bug in the duplicate-path state: staged deletion plus untracked recreation.
+- `discardStagedFile` restored both index and worktree, so clicking "丢弃已暂存" on the staged deletion overwrote the untracked recreated file with the HEAD version.
+- Changed the duplicate-path branch to restore only the staged index entry when an untracked twin exists, preserving the worktree recreation.
+### Testing
+- Reproduction check failed before the fix: `discardStagedFile` on duplicate `same.txt` left the repo clean and changed the file content back to `original`.
+- Regression check passed after the fix: `discardStagedFile` on duplicate `same.txt` returns “已暂存改动已丢弃”, leaves `git status --short` as `M same.txt`, preserves file content `recreated`, and leaves cached diff empty.
+- Control check passed for a plain staged deletion without untracked twin: `discardStagedFile` still restores the file to `original` and leaves the repo clean.
+- Adjacent duplicate-path check passed for `ignoreWorktreePath`: it appends `/same.txt` to `.gitignore` and keeps the staged deletion.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: protects duplicate-path staged discard from overwriting the untracked recreation.
+- `docs/CONTINUE.md`: records the staged-discard behavior for duplicate-path recreation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: preserve unstaged content when discarding staged added files
+### What was done
+- Found another staged-discard data-loss case: a new file staged as `A` and then edited in the worktree as `AM`.
+- `discardStagedFile` used `git rm -f` for every staged add, which deleted the worktree file and lost the unstaged edit.
+- Changed staged-add discard to use `git rm --cached -f` when the same file also has a worktree status, preserving the worktree file as untracked.
+### Testing
+- Reproduction check failed before the fix: `AM new.txt` with content `worktree` became clean and the file was deleted after `discardStagedFile`.
+- Regression check passed after the fix: `AM new.txt` becomes `?? new.txt`, keeps content `worktree`, and has no cached diff.
+- Control check passed for plain staged add `A new.txt`: `discardStagedFile` still deletes the file and leaves the repo clean.
+- Control check passed for staged add then worktree delete `AD new.txt`: `discardStagedFile` removes the staged entry and leaves the repo clean.
+- Duplicate-path stage checks passed: `stageFile` and `stageAll` both convert staged deletion plus untracked recreation into one staged modification with no worktree diff.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: preserves worktree-side edits when discarding the staged side of an added file.
+- `docs/CONTINUE.md`: records the staged-add discard behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: clarify staged discard confirmation
+### What was done
+- Found that the frontend confirmation for "丢弃已暂存" still claimed the operation would also discard related worktree content.
+- That message no longer matched the backend behavior for duplicate-path recreation or staged-add-plus-worktree-edit cases, where Forkline preserves unstaged content.
+- Updated the confirmation copy to say staged content is discarded, unstaged content is kept when present, and only files without unstaged content may be restored to HEAD or deleted.
+### Testing
+- `node --check public/js/features/git-actions.js` passed.
+- HTTP static verification confirmed `/js/features/git-actions.js` contains the updated confirmation text "如果同一文件还有未暂存内容，会保留在工作区".
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+### Notes
+- `public/js/features/git-actions.js`: updates the staged-discard confirmation message to match the protected backend behavior.
+- `docs/CONTINUE.md`: records that the confirmation explains unstaged content preservation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/git-actions.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: keep git diff metadata out of content rows
+### What was done
+- Found a side-by-side Diff rendering bug during browser verification: Git metadata such as `index ...` and `\ No newline at end of file` was treated as file content, so it appeared with line numbers like normal code.
+- Classified common Git patch metadata lines as Diff metadata in the backend parser.
+- Limited hunk action buttons to actual `@@` hunk header rows so metadata rows do not gain block-operation buttons.
+- Removed trailing empty split rows from parsed Diff output so the side-by-side view no longer renders a fake blank content row.
+### Testing
+- Playwright UI verification on `C:\tmp\forkline-ui-stage-all-selection-20260630` reproduced the issue before the fix: the staged Diff rendered metadata in content rows and produced an extra blank content row.
+- API verification after the fix confirmed `/api/worktree-diff?file=file.txt&scope=staged` returns `index ...` and `\ No newline at end of file` as `type = meta`, with no empty `ctx` row.
+- Playwright UI verification after the fix confirmed content rows only contain the real `before` and `after` file lines; `index ...` and `\ No newline at end of file` appear only in metadata rows; hunk actions appear only on the `@@` row.
+- Playwright UI hunk-flow verification passed: bottom Diff kept `unstaged:file.txt` selected after staging one hunk, and maximized Diff switched to `staged:file.txt` after staging the final hunk.
+- Playwright UI stage-all verification passed: selecting an unstaged file and clicking "暂存全部" moved selection to `staged:file.txt` and kept the bottom Diff on the staged view.
+- `node --check server.js` passed.
+- `node --check public/js/features/diff-workbench.js` passed.
+### Notes
+- `server.js`: classifies Git patch metadata and removes trailing empty parsed Diff rows.
+- `public/js/features/diff-workbench.js`: shows hunk action buttons only on real hunk headers.
+- `docs/CONTINUE.md`: records that Git metadata stays out of line-numbered content rows.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: render binary diff as metadata only
+### What was done
+- Found a follow-up Diff rendering bug for binary files: `Binary files ... differ` was still parsed as a normal content row.
+- Classified binary patch lines such as `Binary files ... differ`, `GIT binary patch`, `literal`, and `delta` as Diff metadata.
+- Hid the selected-line toolbar when the current Diff has no selectable added/deleted lines, so binary and metadata-only Diff views do not show unusable "暂存所选行" actions.
+### Testing
+- Reproduced the issue on `C:\tmp\forkline-binary-diff-20260630`: `/api/worktree-diff?file=blob.bin&scope=unstaged` returned `Binary files a/blob.bin and b/blob.bin differ` as `type = ctx`.
+- API regression passed after the fix: the same line is returned as `type = meta`.
+- Playwright UI verification passed: the binary Diff renders no content rows, shows `Binary files ... differ` only in metadata rows, shows no hunk actions, and hides the selected-line toolbar.
+- `node --check server.js` passed.
+- `node --check public/js/features/diff-workbench.js` passed.
+### Notes
+- `server.js`: classifies binary patch output as Diff metadata.
+- `public/js/features/diff-workbench.js`: renders selected-line controls only when a Diff contains selectable add/delete lines.
+- `docs/CONTINUE.md`: records binary and metadata-only Diff behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: align no-newline selected-line indexes
+### What was done
+- Found a selected-line staging bug for files without trailing newlines.
+- The frontend skipped `\ No newline at end of file` metadata when assigning selectable line keys, but the backend counted those metadata lines when matching selected line indexes.
+- This made clicking the visible added line send an index that the backend interpreted as metadata; after a partial fix it could produce an invalid staged patch such as `beforeafter`.
+- Updated backend selected-line matching to skip backslash metadata lines, and updated side-by-side rendering to pair delete/add lines even when `No newline` metadata sits between them.
+### Testing
+- Reproduction check failed before the fix: selecting the visible `+after` line in a no-newline diff returned “请选择新增或删除行”.
+- Follow-up reproduction confirmed the unsafe partial behavior: staging only the shifted add index produced `beforeafter` in the index.
+- API regression passed after the fix: selecting line indexes `0` and `1` for `before -> after` stages the correct patch, leaves no worktree diff, and keeps file content `after`.
+- Playwright UI regression passed: the no-newline modification row exposes one selectable row with keys `0:0,0:1`; clicking it selects both sides; “暂存所选行” succeeds and moves the selected file to the staged view.
+- `node --check server.js` passed.
+- `node --check public/js/features/diff-workbench.js` passed.
+### Notes
+- `server.js`: ignores `\ No newline at end of file` metadata when matching selected line indexes.
+- `public/js/features/diff-workbench.js`: pairs modified lines across no-newline metadata so a replacement is selected as one row.
+- `docs/CONTINUE.md`: records no-newline selected-line behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

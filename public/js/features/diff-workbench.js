@@ -451,13 +451,18 @@ function closeDiffModal() {
 
 function renderSideDiff(diff, emptyText, options = {}) {
   if (!diff?.length) return `<div class="diff-empty">${escapeHtml(emptyText)}</div>`;
+  const lineAction = options.lineAction && diffHasSelectableLines(diff) ? options.lineAction : null;
   return `
-    <div class="side-diff ${options.lineAction ? "line-selectable" : ""}">
-      ${options.lineAction ? renderDiffLineToolbar(options.lineAction) : ""}
+    <div class="side-diff ${lineAction ? "line-selectable" : ""}">
+      ${lineAction ? renderDiffLineToolbar(lineAction) : ""}
       <div class="side-diff-head"><span>旧版本</span><span>新版本</span></div>
-      ${sideBySideRows(diff, options)}
+      ${sideBySideRows(diff, { ...options, lineAction })}
     </div>
   `;
+}
+
+function diffHasSelectableLines(diff) {
+  return (diff || []).some((line) => (line.type === "add" || line.type === "del") && Number.isInteger(line.hunkIndex));
 }
 
 function diffModalOptions() {
@@ -519,20 +524,30 @@ function sideBySideRows(diff, options = {}) {
       rows.push(renderSideMetaRow(line, text, options));
       continue;
     }
-    if (line.type === "del" && diff[index + 1]?.type === "add") {
+    const pairedAddIndex = pairedAddLineIndex(diff, index);
+    if (line.type === "del" && pairedAddIndex > index) {
+      const addLine = diff[pairedAddIndex];
       const delLineIndex = nextHunkLineIndex(line, hunkLineIndex);
       hunkLineIndex = delLineIndex;
-      const addLineIndex = nextHunkLineIndex(diff[index + 1], hunkLineIndex);
+      const addLineIndex = nextHunkLineIndex(addLine, hunkLineIndex);
       hunkLineIndex = addLineIndex;
       oldLine += 1;
       newLine += 1;
-      rows.push(sideRow("mod", oldLine, trimDiffPrefix(text), "del", newLine, trimDiffPrefix(diff[index + 1].text), "add", {
+      rows.push(sideRow("mod", oldLine, trimDiffPrefix(text), "del", newLine, trimDiffPrefix(addLine.text), "add", {
         lineKeys: diffLineKeys(options, [
           { hunkIndex: line.hunkIndex, lineIndex: delLineIndex },
-          { hunkIndex: diff[index + 1].hunkIndex, lineIndex: addLineIndex },
+          { hunkIndex: addLine.hunkIndex, lineIndex: addLineIndex },
         ]),
       }));
-      index += 1;
+      for (let metaIndex = index + 1; metaIndex < pairedAddIndex; metaIndex += 1) {
+        rows.push(renderSideMetaRow(diff[metaIndex], String(diff[metaIndex].text || ""), options));
+      }
+      if (diff[pairedAddIndex + 1] && isNoNewlineMeta(diff[pairedAddIndex + 1])) {
+        rows.push(renderSideMetaRow(diff[pairedAddIndex + 1], String(diff[pairedAddIndex + 1].text || ""), options));
+        index = pairedAddIndex + 1;
+      } else {
+        index = pairedAddIndex;
+      }
       continue;
     }
     if (line.type === "del") {
@@ -557,6 +572,17 @@ function sideBySideRows(diff, options = {}) {
     rows.push(sideRow("ctx", oldLine, trimDiffPrefix(text), "", newLine, trimDiffPrefix(text), ""));
   }
   return rows.join("");
+}
+
+function pairedAddLineIndex(diff, delIndex) {
+  if (diff[delIndex]?.type !== "del") return -1;
+  if (diff[delIndex + 1]?.type === "add") return delIndex + 1;
+  if (isNoNewlineMeta(diff[delIndex + 1]) && diff[delIndex + 2]?.type === "add") return delIndex + 2;
+  return -1;
+}
+
+function isNoNewlineMeta(line) {
+  return line?.type === "meta" && String(line.text || "").startsWith("\\ No newline at end of file");
 }
 
 function nextHunkLineIndex(line, current) {
@@ -584,7 +610,7 @@ function renderDiffLineToolbar(action) {
 }
 
 function renderSideMetaRow(line, text, options = {}) {
-  const actions = options.hunkActions ? workDiffHunkActionButtons(options.filePath, options.scope, line.hunkIndex) : "";
+  const actions = options.hunkActions && text.startsWith("@@ ") ? workDiffHunkActionButtons(options.filePath, options.scope, line.hunkIndex) : "";
   return `
     <div class="side-row meta ${actions ? "has-actions" : ""}">
       <div class="side-meta">

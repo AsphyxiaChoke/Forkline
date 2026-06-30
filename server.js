@@ -764,17 +764,17 @@ async function readWorkingDiff(filePath, rawScope = "auto") {
   const requestedScope = normalizeWorktreeDiffRequestScope(rawScope);
   let scope = requestedScope === "auto" ? "unstaged" : requestedScope;
   let output = await readWorktreeDiffOutput(file, scope);
-  if (!output && requestedScope === "auto") {
-    scope = "staged";
-    output = await readWorktreeDiffOutput(file, scope);
-  }
-  if (!output) {
+  if (!output && requestedScope !== "staged") {
     const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]).catch(() => "");
-    const target = parseStatus(statusOutput).find((item) => item.file === file);
-    if (target?.indexStatus === "?" && requestedScope !== "staged") {
+    const target = selectStatusFile(parseStatus(statusOutput), file, "unstaged");
+    if (target?.indexStatus === "?") {
       scope = "untracked";
       output = readNewFileDiff(file);
     }
+  }
+  if (!output && requestedScope === "auto") {
+    scope = "staged";
+    output = await readWorktreeDiffOutput(file, scope);
   }
   return { file, scope, requestedScope, diff: parseDiff(output) };
 }
@@ -1984,7 +1984,7 @@ async function ignoreWorktreePath(body) {
   const file = normalizeRepoFile(body.file);
   const mode = normalizeIgnoreMode(body.mode);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const target = selectStatusFile(parseStatus(statusOutput), file, "untracked");
   if (!target || target.indexStatus !== "?" || target.worktreeStatus !== "?") {
     throw new Error("只能把未跟踪文件加入 .gitignore。已跟踪文件需要先从 Git 索引中移除后才能忽略。");
   }
@@ -2043,7 +2043,7 @@ async function findForklineStash(branch, message = "") {
 async function discardWorktreeFile(body) {
   const file = normalizeRepoFile(body.file);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const target = selectStatusFile(parseStatus(statusOutput), file, "unstaged");
   if (!target?.unstaged) throw new Error("这个文件没有可丢弃的工作区改动");
   if (target.indexStatus === "?") {
     await git(currentRepo, ["clean", "-f", "--", file], { timeout: 60000 });
@@ -2056,10 +2056,14 @@ async function discardWorktreeFile(body) {
 async function discardStagedFile(body) {
   const file = normalizeRepoFile(body.file);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const statusFiles = parseStatus(statusOutput);
+  const target = selectStatusFile(statusFiles, file, "staged");
   if (!target?.staged) throw new Error("这个文件没有可丢弃的已暂存改动");
   if (target.indexStatus === "A") {
-    await git(currentRepo, ["rm", "-f", "--", file], { timeout: 60000 });
+    const args = target.worktreeStatus ? ["rm", "--cached", "-f", "--", file] : ["rm", "-f", "--", file];
+    await git(currentRepo, args, { timeout: 60000 });
+  } else if (statusFiles.some((item) => item.file === file && item.indexStatus === "?")) {
+    await git(currentRepo, ["restore", "--staged", "--", file], { timeout: 60000 });
   } else {
     await git(currentRepo, ["restore", "--source=HEAD", "--staged", "--worktree", "--", file], { timeout: 60000 });
   }
@@ -2070,7 +2074,7 @@ async function resolveConflictFile(body) {
   const file = normalizeRepoFile(body.file);
   const side = normalizeConflictSide(body.side);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const target = selectStatusFile(parseStatus(statusOutput), file, "conflict");
   if (!target?.conflict) throw new Error("这个文件当前没有未解决冲突。");
   await git(currentRepo, ["checkout", `--${side}`, "--", file], { timeout: 60000 });
   await git(currentRepo, ["add", "--", file], { timeout: 60000 });
@@ -2080,12 +2084,12 @@ async function resolveConflictFile(body) {
 async function applyWorktreeHunk(body, kind) {
   const file = normalizeRepoFile(body.file);
   const hunkIndex = normalizeHunkIndex(body.hunkIndex);
+  const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const target = selectStatusFile(parseStatus(statusOutput), file, worktreeActionTargetScope(kind, requestedScope));
   if (!target) throw new Error("这个文件当前没有可操作的改动。");
   if (target.conflict) throw new Error("冲突文件暂不支持按块操作，请先解决冲突。");
   const isUntracked = target.indexStatus === "?";
-  const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
   const scope = isUntracked && requestedScope === "untracked" ? "untracked" : normalizeDiffScope(requestedScope);
   if (isUntracked && kind !== "stage") throw new Error("未跟踪文件只支持按块暂存；如果要删除内容，请在编辑器里修改文件。");
   if (kind === "stage" && scope !== "unstaged" && scope !== "untracked") throw new Error("只能暂存未暂存的改动块。");
@@ -2117,14 +2121,14 @@ async function applyWorktreeHunk(body, kind) {
 async function stageSelectedLines(body) {
   const file = normalizeRepoFile(body.file);
   const selectedLines = normalizeDiffLineSelections(body.lines);
+  const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const target = selectStatusFile(parseStatus(statusOutput), file, requestedScope === "untracked" ? "untracked" : "unstaged");
   if (!target) throw new Error("这个文件当前没有可操作的改动。");
   if (target.conflict) throw new Error("冲突文件暂不支持按行暂存，请先解决冲突。");
   if (!target.unstaged) throw new Error("这个文件没有可暂存的工作区改动。");
 
   const isUntracked = target.indexStatus === "?";
-  const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
   const scope = isUntracked && requestedScope === "untracked" ? "untracked" : normalizeDiffScope(requestedScope);
   if (scope !== "unstaged" && scope !== "untracked") throw new Error("只能暂存工作区中未暂存的行。");
 
@@ -2145,7 +2149,7 @@ async function unstageSelectedLines(body) {
   const file = normalizeRepoFile(body.file);
   const selectedLines = normalizeDiffLineSelections(body.lines);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
-  const target = parseStatus(statusOutput).find((item) => item.file === file);
+  const target = selectStatusFile(parseStatus(statusOutput), file, "staged");
   if (!target) throw new Error("这个文件当前没有可操作的改动。");
   if (target.conflict) throw new Error("冲突文件暂不支持按行取消暂存，请先解决冲突。");
   if (!target.staged) throw new Error("这个文件没有可取消暂存的已暂存改动。");
@@ -2239,8 +2243,11 @@ function parseUnifiedHunkHeader(line) {
 function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode = "stage") {
   const lines = [];
   let changed = false;
-  hunk.lines.forEach((line, lineIndex) => {
-    const key = `${hunk.index}:${lineIndex}`;
+  let selectableLineIndex = -1;
+  hunk.lines.forEach((line) => {
+    const selectable = !line.startsWith("\\");
+    if (selectable) selectableLineIndex += 1;
+    const key = selectable ? `${hunk.index}:${selectableLineIndex}` : "";
     const selected = selectedKeys.has(key);
     if (line.startsWith("+")) {
       if (selected) {
@@ -4073,15 +4080,18 @@ function readNewFileDiff(file) {
   if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) return "";
   const buffer = fs.readFileSync(fullPath);
   if (buffer.includes(0)) return "";
-  const lines = buffer.toString("utf8").replace(/\r\n/g, "\n").split("\n").slice(0, 420);
+  const text = buffer.toString("utf8").replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+  if (text.endsWith("\n")) lines.pop();
+  const previewLines = lines.slice(0, 420);
   const diffLines = [
     `diff --git a/${file} b/${file}`,
     "new file mode 100644",
     "--- /dev/null",
     `+++ b/${file}`,
   ];
-  for (let index = 0; index < lines.length; index += UNTRACKED_DIFF_HUNK_SIZE) {
-    const chunk = lines.slice(index, index + UNTRACKED_DIFF_HUNK_SIZE);
+  for (let index = 0; index < previewLines.length; index += UNTRACKED_DIFF_HUNK_SIZE) {
+    const chunk = previewLines.slice(index, index + UNTRACKED_DIFF_HUNK_SIZE);
     diffLines.push(`@@ -0,0 +${index + 1},${chunk.length} @@`);
     diffLines.push(...chunk.map((line) => `+${line}`));
   }
@@ -4257,6 +4267,22 @@ function statusFile(indexStatus, worktreeStatus, status, file) {
   };
 }
 
+function selectStatusFile(files, file, scope = "any") {
+  const matches = files.filter((item) => item.file === file);
+  if (!matches.length) return null;
+  if (scope === "conflict") return matches.find((item) => item.conflict) || null;
+  if (scope === "staged") return matches.find((item) => item.staged) || null;
+  if (scope === "untracked") return matches.find((item) => item.indexStatus === "?") || null;
+  if (scope === "unstaged") return matches.find((item) => item.unstaged) || null;
+  return matches[0];
+}
+
+function worktreeActionTargetScope(kind, requestedScope) {
+  if (kind === "unstage") return "staged";
+  if (requestedScope === "untracked") return "untracked";
+  return "unstaged";
+}
+
 function parseStatusPath(value) {
   const text = String(value || "").trim();
   if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
@@ -4312,13 +4338,14 @@ function parseNameStatus(output) {
 function parseDiff(output) {
   if (!String(output || "").trim()) return [];
   let hunkIndex = -1;
-  return output
-    .split(/\r?\n/)
+  const lines = output.split(/\r?\n/);
+  while (lines[lines.length - 1] === "") lines.pop();
+  return lines
     .slice(0, 320)
     .map((line) => {
       let type = "ctx";
       if (line.startsWith("diff --git ")) hunkIndex = -1;
-      if (/^(diff --git|@@|\+\+\+|---)/.test(line)) type = "meta";
+      if (/^(diff --git|@@|\+\+\+|---|index |new file mode |deleted file mode |old mode |new mode |similarity index |rename from |rename to |copy from |copy to |Binary files |GIT binary patch|literal |delta |\\ No newline at end of file)/.test(line)) type = "meta";
       else if (line.startsWith("+")) type = "add";
       else if (line.startsWith("-")) type = "del";
       if (line.startsWith("@@ ")) hunkIndex += 1;

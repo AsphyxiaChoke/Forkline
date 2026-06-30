@@ -763,7 +763,9 @@ function isDiscardAction(action) {
 function discardConfirmMessage(action, files) {
   const count = files.length;
   const target = count === 1 ? files[0] : `${count} 个文件`;
-  if (action === "discardStagedFile") return `确认丢弃已暂存改动：${target}？此操作会同时丢弃相关工作区内容，无法撤销。`;
+  if (action === "discardStagedFile") {
+    return `确认丢弃已暂存改动：${target}？\n\n这会丢弃暂存区里的改动；如果同一文件还有未暂存内容，会保留在工作区。没有未暂存内容时，文件可能被恢复到 HEAD 或删除，无法撤销。`;
+  }
   return `确认丢弃工作区改动：${target}？此操作无法撤销。`;
 }
 
