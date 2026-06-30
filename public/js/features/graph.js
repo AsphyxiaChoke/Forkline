@@ -135,14 +135,29 @@ function primaryBranchName() {
   const branches = state.data?.branches || [];
   if (branches.includes("main")) return "main";
   if (branches.includes("master")) return "master";
+  const remotePrimary = primaryRemoteBranchName();
+  if (remotePrimary) return remotePrimary;
   const current = state.data?.repo?.branch || "";
   if (branches.includes(current)) return current;
   return branches[0] || current || "";
 }
 
+function primaryRemoteBranchName() {
+  const remotes = state.data?.remotes || [];
+  const remoteNames = state.data?.repo?.remoteNames || [];
+  const candidates = [];
+  const preferredRemotes = remoteNames.length ? remoteNames : ["origin", "upstream"];
+  preferredRemotes.forEach((remote) => {
+    candidates.push(`${remote}/main`, `${remote}/master`);
+  });
+  candidates.push(...remotes.filter((name) => /\/(main|master)$/.test(name)));
+  return candidates.find((name) => remotes.includes(name)) || "";
+}
+
 function primaryLineSet(commits, primary) {
   const bySha = new Map(commits.map((commit) => [commit.sha, commit]));
-  const tip = commits.find((commit) => refNames(commit.refs).some((name) => isPrimaryRef(name, primary)));
+  const tip = commits.find((commit) => refNames(commit.refs).includes(primary))
+    || commits.find((commit) => refNames(commit.refs).some((name) => isPrimaryRemoteRef(name, primary)));
   const line = new Set();
   let cursor = tip;
   while (cursor && !line.has(cursor.sha)) {
@@ -171,7 +186,14 @@ function refNames(refs) {
 }
 
 function isPrimaryRef(name, primary) {
-  return Boolean(primary) && (name === primary || name.endsWith(`/${primary}`));
+  return Boolean(primary) && (name === primary || isPrimaryRemoteRef(name, primary));
+}
+
+function isPrimaryRemoteRef(name, primary) {
+  if (!primary) return false;
+  const remoteNames = state.data?.repo?.remoteNames || [];
+  if (!remoteNames.length) return name === `origin/${primary}` || name === `upstream/${primary}`;
+  return remoteNames.some((remote) => name === `${remote}/${primary}`);
 }
 
 function overviewCurve(x1, y1, x2, y2, color, options = {}) {

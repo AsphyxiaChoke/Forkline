@@ -309,9 +309,9 @@ async function deleteRemoteBranch(remoteRef) {
 }
 
 function remoteDeleteCommand(remoteRef) {
-  const parts = String(remoteRef || "").split("/").filter(Boolean);
-  if (parts.length < 2) return "git push <远端> --delete <分支>";
-  return `git push ${parts[0]} --delete ${parts.slice(1).join("/")}`;
+  const parsed = splitRemoteBranchRef(remoteRef);
+  if (!parsed.remote || !parsed.branch) return "git push <远端> --delete <分支>";
+  return `git push ${parsed.remote} --delete ${parsed.branch}`;
 }
 
 async function cleanupStaleWorktree(branch, button, options = {}) {

@@ -1300,12 +1300,13 @@ async function checkoutRemoteBranch(body) {
   const remoteRef = normalizeRefName(body.ref, "远端分支");
   const mode = normalizeCheckoutMode(body.mode);
   const sourceBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const remoteNames = await readRemoteNames();
   const remoteBranches = (await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]))
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter((item) => item && !item.endsWith("/HEAD"));
   if (!remoteBranches.includes(remoteRef)) throw new Error("远端分支不存在，请先抓取远端后再试");
-  const localBranch = normalizeRemoteCheckoutBranch(remoteRef);
+  const localBranch = normalizeRemoteCheckoutBranch(remoteRef, remoteNames);
   const localBranches = (await git(currentRepo, ["branch", "--format=%(refname:short)"]))
     .split(/\r?\n/)
     .map((item) => item.trim())
@@ -3441,9 +3442,7 @@ function normalizeRefName(value, label = "分支起点") {
 }
 
 function normalizeRemoteName(value) {
-  const remote = normalizeRefName(value, "远端名");
-  if (remote.includes("/")) throw new Error("远端名不能包含 /");
-  return remote;
+  return normalizeRefName(value, "远端名");
 }
 
 function normalizeRemoteUrl(value) {
@@ -3493,10 +3492,8 @@ function normalizeExistingWorktreePath(value) {
   return resolved;
 }
 
-function normalizeRemoteCheckoutBranch(remoteRef) {
-  const parts = String(remoteRef || "").split("/").filter(Boolean);
-  if (parts.length < 2) throw new Error("远端分支不合法");
-  return normalizeBranchName(parts.slice(1).join("/"));
+function normalizeRemoteCheckoutBranch(remoteRef, remoteNames = []) {
+  return splitRemoteBranchRef(remoteRef, remoteNames).branch;
 }
 
 async function readRemoteNames() {
@@ -5131,7 +5128,8 @@ function preferredWebRemote(remotes = []) {
 
 async function inferPullRequestTarget(branch, syncState = {}) {
   const localBranches = parseSimpleLines(await git(currentRepo, ["branch", "--format=%(refname:short)"]).catch(() => ""));
-  const upstreamBranch = syncState.upstream ? syncState.upstream.split("/").slice(1).join("/") : "";
+  const remoteNames = await readRemoteNames();
+  const upstreamBranch = syncState.upstream ? splitRemoteBranchRef(syncState.upstream, remoteNames).branch : "";
   if (upstreamBranch && upstreamBranch !== branch) return upstreamBranch;
   const preferred = ["main", "master", "develop", "development", "dev", "trunk"];
   const preferredMatch = preferred.find((name) => localBranches.includes(name) && name !== branch);

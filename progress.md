@@ -1213,3 +1213,95 @@
 - `docs/CONTINUE.md`: records the missing-stash reference behavior for follow-up development.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: keep overview graph primary line on exact main branch
+### What was done
+- Found that the overview commit graph treated any ref ending in `/main` as the primary `main` branch.
+- Reproduced the issue with a temporary local branch named `forkline/main`: the graph primary-line selector chose `forkline/main` instead of the real local `main`.
+- Updated the graph primary-ref check so local primary refs must match `main` / `master` exactly, while remote primary refs must match a known remote name such as `origin/main`.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by creating temporary branch `forkline/main`; the old selector chose `HEAD -> forkline/main` as the primary tip while the exact `main` tip was `5c1167c`.
+- Regression passed with the patched `public/js/features/graph.js`: in the same temporary `forkline/main` scenario, the real `main` commit stayed on lane `0`, and `forkline/main` moved to lane `1`.
+- `node --check public/js/features/graph.js` passed.
+- `node --check public/app.js` passed.
+- `git diff --check` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after the repro and regression checks.
+### Notes
+- `public/js/features/graph.js`: primary-line detection now distinguishes exact local primary refs from remote primary refs and no longer uses broad suffix matching.
+- `README.md`: documents that overview graph primary detection only treats exact local or known remote main/master refs as primary.
+- `docs/CONTINUE.md`: records the graph primary-line fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/graph.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: handle slash-containing remote names
+### What was done
+- Found that Git allows remote names containing `/`, such as `team/origin`.
+- Reproduced that signing out `team/origin/forkline/slash-remote-checkout-20260630` created the wrong local branch `origin/forkline/slash-remote-checkout-20260630`.
+- Updated backend remote checkout parsing to split remote branch refs using the real `git remote` names, matching the existing remote-delete backend parser.
+- Updated frontend remote branch helpers so checkout labels and delete confirmation commands also use the real remote name.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with a temporary bare remote at `C:\tmp\forkline-slash-remote.git` and temporary remote name `team/origin`; before the fix, Forkline checked out local branch `origin/forkline/slash-remote-checkout-20260630`.
+- Regression passed after restarting the temporary service: the same remote ref checked out local branch `forkline/slash-remote-checkout-20260630`, and the incorrect `origin/forkline/...` branch was not created.
+- Frontend helper regression passed in a Node VM: `remoteCheckoutBranch("team/origin/forkline/slash-remote-checkout-20260630")` returned `forkline/slash-remote-checkout-20260630`, and the delete command rendered as `git push team/origin --delete forkline/slash-remote-checkout-20260630`.
+- `node --check server.js`, `node --check public/js/features/branches.js`, and `node --check public/js/features/diff-workbench.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree, and the temporary remote and bare repository were removed.
+### Notes
+- `server.js`: remote checkout now derives the local branch by splitting with known remote names.
+- `public/js/features/diff-workbench.js`: adds a shared frontend remote-branch splitter that respects `repo.remoteNames`.
+- `public/js/features/branches.js`: delete confirmation command now uses the shared frontend splitter.
+- `README.md`: documents slash-containing remote name handling for branch operations.
+- `docs/CONTINUE.md`: records the remote-name parsing fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `public/js/features/branches.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: infer PR target with slash-containing remote names
+### What was done
+- Found another slash-remote parsing path in PR/MR link generation.
+- Reproduced that a current branch tracking `team/origin/main` generated a Pull Request target of `origin/main` instead of `main`.
+- Updated PR target inference to split the upstream ref using the real `git remote` names, matching the remote checkout and delete parsing rules.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by temporarily adding web remote `team/origin`, creating `refs/remotes/team/origin/main`, and setting temporary branch `forkline/slash-pr-source-20260630` to track `team/origin/main`; before the fix, Forkline generated target `origin/main` and URL `compare/origin%2Fmain...`.
+- Regression passed after restarting the temporary service: the same setup generated target `main` and URL `https://github.com/AsphyxiaChoke/Forkline/compare/main...forkline%2Fslash-pr-source-20260630?expand=1`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree, and the temporary remote and tracking ref were removed.
+### Notes
+- `server.js`: PR/MR target inference now derives the upstream branch with `splitRemoteBranchRef`.
+- `README.md`: documents correct PR target inference for slash-containing remote names.
+- `docs/CONTINUE.md`: records the PR/MR upstream parsing fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: use remote main when local main is absent
+### What was done
+- Found that the overview graph only considered local branch names when choosing the primary line.
+- Reproduced that deleting local `main` while keeping `origin/main` made the graph choose current branch `123` as the primary branch, putting `origin/main` on lane `1`.
+- Updated primary branch selection so exact local `main` / `master` still wins, but a known remote `main` / `master` is used when the local primary branch is absent.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by temporarily deleting local `main` while keeping `origin/main`; before the fix, `origin/main` was lane `1` and the current branch `123` was chosen as primary.
+- Regression passed with the patched `public/js/features/graph.js`: with local `main` temporarily absent, `primaryBranchName()` returned `origin/main` and the `origin/main` commit was lane `0`.
+- Re-ran the previous `forkline/main` regression: with local `main` restored and a temporary `forkline/main` branch present, `primaryBranchName()` returned `main`, real `main` stayed lane `0`, and `forkline/main` stayed lane `1`.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after both checks.
+### Notes
+- `public/js/features/graph.js`: primary branch selection now falls back to known remote `main` / `master` refs when no local primary branch exists.
+- `README.md`: clarifies local primary branches win and remote primary branches are used only as fallback.
+- `docs/CONTINUE.md`: records the remote-main fallback behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/graph.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: allow slash-containing remote names in remote management
+### What was done
+- Found that Git allows remote names containing `/`, but Forkline rejected them during remote management with `远端名不能包含 /`.
+- Removed the extra slash-specific remote-name rejection while keeping existing ref-name validation.
+- This lets add, edit, test, and delete slash-containing remotes work consistently with checkout, delete, and PR parsing fixes.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary bare remote `C:\tmp\forkline-add-slash-remote.git`: `addRemote team/origin` returned `远端名不能包含 /`.
+- Regression passed on temporary service `http://127.0.0.1:5288`: `addRemote team/origin`, `setRemoteUrl team/origin`, `testRemote team/origin`, and `deleteRemote team/origin` all succeeded.
+- Confirmed `git remote` returned only original `origin` after cleanup.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree and temporary bare repos removed.
+### Notes
+- `server.js`: `normalizeRemoteName` now allows slash-containing names that pass existing ref-name validation.
+- `README.md`: documents slash-containing remote names in remote management.
+- `docs/CONTINUE.md`: records the remote-management fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
