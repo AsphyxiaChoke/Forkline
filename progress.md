@@ -1076,3 +1076,140 @@
 - `docs/CONTINUE.md`: records the mixed staged/unstaged discard behavior.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: block stash duplicate path states
+### What was done
+- Found that Git can create an unusable stash when the same path has both a staged deletion and an untracked recreation.
+- `git stash push -u` reported success, but `git stash show --include-untracked` failed with `worktree and untracked commit have duplicate entries`.
+- Added a backend stash preflight that rejects full stash and selected stash before invoking Git when that duplicate-path state is present.
+- Kept the existing selected staged-rename guard intact.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/bughunt-rename-worktree-20260630`: staged deletion plus untracked recreation of `forkline-fixtures/rename-old.txt` created a stash that `git stash show --include-untracked` could not unpack.
+- Regression passed on temporary service `http://127.0.0.1:5281`: full `createStash` returned a Chinese duplicate-path error, status stayed `D` plus `??`, and no stash was created.
+- Selected stash regression passed: `createStash` with `files = ["forkline-fixtures/rename-old.txt"]` returned the same Chinese duplicate-path error without creating a stash.
+- Normal stash regression passed: a regular modified tracked file still created a stash, `git stash show --name-status` could read it, and the temporary stash was dropped.
+- Existing selected staged-rename regression passed: selecting only the new path of a staged rename still returns the staged-rename explanation and leaves the status unchanged.
+### Notes
+- `server.js`: `createStash` now parses status once and rejects stash requests that would create duplicate untracked/worktree entries.
+- `docs/CONTINUE.md`: records the duplicate-path stash protection.
+- `README.md`: documents why Forkline refuses that stash state and what the user should do.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, `README.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: explain existing duplicate-entry stashes
+### What was done
+- Found that a duplicate-entry stash created by an older Forkline build or manual `git stash -u` still appears in the stash list, but opening its detail returned raw English Git output.
+- Added a unified friendly error translation for `duplicate entries` plus `failed to unpack trees`, so stash detail, apply, and pop failures explain the problem in Chinese.
+- The message explains that Git cannot expand the stash because the same path exists as both worktree and untracked records, and suggests deleting the stash after confirming it is no longer needed.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/bughunt-bad-stash-detail-20260630`: created a duplicate-entry stash and `/api/stash?ref=stash@{0}` returned raw `worktree and untracked commit have duplicate entries`.
+- Regression passed after restarting local service `http://127.0.0.1:5177`: the same `/api/stash` request returned a Chinese duplicate-entry explanation naming `forkline-fixtures/bad-stash.txt`.
+- Normal stash detail regression passed: a regular modified tracked file stash returned `files = 1`, non-empty diff, and `ref = stash@{0}`.
+### Notes
+- `server.js`: translates existing duplicate-entry stash unpack failures into Chinese guidance.
+- `docs/CONTINUE.md`: records the existing bad-stash explanation behavior.
+- `README.md`: documents what happens when a repository already contains this kind of bad stash.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, `README.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: protect stash-and-checkout from duplicate path stashes
+### What was done
+- Found that the earlier duplicate-path stash protection only covered the explicit stash action.
+- The “储藏并签出” paths for local and remote branch checkout still called `git stash push -u` directly, so they could create the same unusable duplicate-entry stash and then report checkout success.
+- Updated both checkout paths to parse the current status and run the same stash preflight before invoking Git.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/bughunt-checkout-stash-20260630`: `checkoutBranch` with `mode = stash` created a stash, switched to `123`, and `git stash show --include-untracked` failed with duplicate entries.
+- Local checkout regression passed after the fix: the same `checkoutBranch` request returned the Chinese duplicate-path error, stash count stayed `0`, and the current branch stayed on the temporary source branch.
+- Remote checkout regression passed: `checkoutRemoteBranch` with `ref = origin/main` and `mode = stash` returned the same Chinese duplicate-path error, stash count stayed `0`, and the branch did not switch.
+- Normal checkout stash regression passed: a regular tracked-file modification still created one readable stash, switched to `123`, and the temporary stash was dropped afterward.
+### Notes
+- `server.js`: local and remote stash-and-checkout now share the duplicate-path stash preflight before running `git stash push -u`.
+- `docs/CONTINUE.md`: records that stash-and-checkout uses the same duplicate-path protection.
+- `README.md`: documents that this protection also applies to stash-and-checkout.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, `README.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: prefer duplicate-path stash warning for selected rename targets
+### What was done
+- Found a misleading message in the staged-rename plus old-path recreation case.
+- Selecting the renamed new path for “储藏所选” was blocked as a partial staged rename and told the user to try “储藏全部”, but full stash is also unsafe in this exact state.
+- Updated the duplicate-path preflight so a selected staged-rename target is treated as related to its old path. Forkline now shows the same duplicate-path warning when the old path was recreated.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/bughunt-rename-old-recreate-20260630`: staged rename `rename-old-path.txt -> rename-new-path.txt` plus untracked `rename-old-path.txt`.
+- Full stash returned the duplicate-path warning and did not create a stash.
+- Selected old path returned the duplicate-path warning and did not create a stash.
+- Selected new path regression passed after the fix: it also returned the duplicate-path warning instead of the partial-rename “use full stash” suggestion, and stash count stayed `0`.
+- Unrelated selected path was not blocked by the duplicate-path preflight.
+### Notes
+- `server.js`: duplicate-path stash detection now treats a selected staged-rename target and its old path as related.
+- `docs/CONTINUE.md`: records the selected renamed-path warning behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: clarify stash apply overwrite errors
+### What was done
+- Found that applying or popping a stash over local worktree modifications reused the generic overwrite warning.
+- The old text mentioned branch switching and force checkout, which is not useful when the user is restoring a stash.
+- Added a stash-specific friendly error for `applyStash`, `popStash`, and `restoreCheckoutStash` when Git reports local changes would be overwritten.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/bughunt-stash-apply-conflict-20260630`: `applyStash` over a local edit returned the generic “这个操作会覆盖本地修改...如果是切换分支...” message.
+- Regression passed after restarting `http://127.0.0.1:5177`: both `applyStash` and `popStash` returned the stash-specific Chinese warning and stash count stayed `1`.
+- Normal flow regression passed: on a clean worktree, `applyStash` applied the change and kept the stash, while `popStash` applied the change and dropped the stash.
+### Notes
+- `server.js`: stash apply/pop/checkout-stash restore overwrite errors now use a stash-specific Chinese message.
+- `docs/CONTINUE.md`: records the stash overwrite warning behavior.
+- `README.md`: documents the user-facing warning.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, `README.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: reject selected stash when selected files are unchanged
+### What was done
+- Found that “储藏所选” could report success when the selected files had no actual changes, as long as some other file in the worktree was dirty.
+- Git returned `No local changes to save`, Forkline marked the operation as success, and no stash was created.
+- Added a backend preflight for selected stashes: at least one selected path, or its rename counterpart, must appear in the current Git status before Forkline runs `git stash push`.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/bughunt-selected-stash-empty-20260630`: only `stash-dirty.txt` was modified, but `createStash` selected unchanged `stash-clean.txt`.
+- Before the fix, the API returned `ok = true` with `No local changes to save`, stash count stayed `0`, and the dirty file remained modified.
+- Regression passed after restarting `http://127.0.0.1:5177`: selecting unchanged `stash-clean.txt` returned the Chinese “所选文件没有可储藏的改动” error and stash count stayed `0`.
+- Normal selected stash regression passed: selecting modified `stash-dirty.txt` created one readable stash, then the temporary stash was dropped.
+### Notes
+- `server.js`: selected stash requests now reject stale or unchanged selected paths before invoking Git.
+- `docs/CONTINUE.md`: records the selected-stash stale-selection behavior.
+- `README.md`: documents the user-facing message.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, `README.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: clear stale checkout-stash restore reminders
+### What was done
+- Found that the browser can keep a stale `forkline-checkout-stashes` record after the underlying stash was deleted manually or by another path.
+- When the user returned to the original branch, Forkline still prompted to restore that stash; clicking restore failed with “没有找到可恢复的 Forkline 储藏”, but the stale record stayed in localStorage and would prompt again later.
+- Updated the frontend restore error path to forget the remembered checkout stash and ignore it for the current session when the missing-stash error is returned.
+### Testing
+- Reproduced in the in-app browser on `http://127.0.0.1:5177`: injected a stale checkout-stash record for `D:/桌面/GitTest` and branch `123`, triggered `maybeRestoreCheckoutStash("123")`, and clicked “恢复更改”.
+- Before the fix, localStorage still contained the stale record after the missing-stash error.
+- Regression passed after reloading the page: the same flow showed the restore modal, returned the missing-stash toast, and `forkline-checkout-stashes` became `[]`.
+- `node --check public/js/features/git-actions.js` passed.
+### Notes
+- `public/js/features/git-actions.js`: missing checkout-stash restore errors now clear the stale remembered record.
+- `docs/CONTINUE.md`: records stale checkout-stash reminder cleanup.
+- `README.md`: documents the user-facing behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/git-actions.js`, `docs/CONTINUE.md`, `README.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: translate missing stash references
+### What was done
+- Found that stale stash references returned raw English Git errors such as `stash@{0} is not a valid reference`.
+- Added a friendly Chinese error for missing stash references, covering stale stash detail, apply, pop, and branch-from-stash flows.
+- Documented that users should refresh the stash list and reselect when a stash has already been popped, deleted, or cleared externally.
+### Testing
+- `node --check server.js` passed.
+- `node --check public/js/features/git-actions.js` passed.
+- `git diff --check` passed.
+- Verified on temporary service `http://127.0.0.1:5283` with `D:\桌面\GitTest` open and an empty stash list: `applyStash`, `popStash`, `branchFromStash`, and `/api/stash?ref=stash@{0}` all returned the Chinese missing-stash message.
+- Confirmed `branchFromStash` did not create `forkline/missing-stash-result`, and GitTest stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: translates missing `stash@{n}` references into a Chinese refresh-and-reselect message.
+- `README.md`: documents stale stash-list behavior for users.
+- `docs/CONTINUE.md`: records the missing-stash reference behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

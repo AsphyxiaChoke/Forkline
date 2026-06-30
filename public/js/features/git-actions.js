@@ -236,8 +236,16 @@ async function maybeRestoreCheckoutStash(branch) {
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
   } catch (error) {
+    if (isMissingCheckoutStashError(error)) {
+      forgetCheckoutStash(stash);
+      state.ignoredCheckoutStashes.add(stash.message);
+    }
     toast(error.message);
   }
+}
+
+function isMissingCheckoutStashError(error) {
+  return String(error?.message || error || "").includes("没有找到可恢复的 Forkline 储藏");
 }
 
 function chooseStashRestore(stash) {

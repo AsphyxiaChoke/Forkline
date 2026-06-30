@@ -1274,9 +1274,10 @@ async function checkoutBranch(body) {
     throw new Error(`分支 ${branch} 已在其他工作树签出：${info.worktreePath}${suffix}`);
   }
   if (mode === "stash") {
-    const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+    const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     let stash = null;
     if (dirty.trim()) {
+      validateStashFiles(parseStatus(dirty), []);
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${branch} ${stamp}`;
       await git(currentRepo, ["stash", "push", "-u", "-m", message], { timeout: 120000 });
@@ -1319,9 +1320,10 @@ async function checkoutRemoteBranch(body) {
 
   const switchArgs = localExists ? ["switch", localBranch] : ["switch", "--track", "-c", localBranch, remoteRef];
   if (mode === "stash") {
-    const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+    const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     let stash = null;
     if (dirty.trim()) {
+      validateStashFiles(parseStatus(dirty), []);
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${localBranch} ${stamp}`;
       await git(currentRepo, ["stash", "push", "-u", "-m", message], { timeout: 120000 });
@@ -1966,26 +1968,55 @@ async function restoreCheckoutStash(body) {
 
 async function createStash(body) {
   const message = normalizeStashMessage(body.message);
-  const files = await validateSelectedStashFiles(normalizeStashFiles(body.files));
-  const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
-  if (!dirty.trim()) throw new Error("没有可储藏的未提交更改");
+  const files = normalizeStashFiles(body.files);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+  if (!statusOutput.trim()) throw new Error("没有可储藏的未提交更改");
+  validateStashFiles(parseStatus(statusOutput), files);
   const args = ["stash", "push", "-u", "-m", message];
   if (files.length) args.push("--", ...files);
   const output = await git(currentRepo, args, { timeout: 120000 });
   return commandResult(output || `已创建储藏：${message}`);
 }
 
-async function validateSelectedStashFiles(files) {
-  if (!files.length) return files;
-  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
-  const statusFiles = parseStatus(statusOutput);
+function validateStashFiles(statusFiles, files) {
+  const duplicate = findUnsafeStashDuplicatePath(statusFiles, files);
+  if (duplicate) {
+    throw new Error(`当前路径 ${duplicate.path} 同时存在“已暂存删除/重命名旧路径”和“未跟踪重建”。Git stash -u 会生成无法查看或应用的储藏。请先取消暂存删除，或把重建文件改名后再储藏。`);
+  }
+  if (!files.length) return;
+  if (!selectedStashFilesHaveChanges(statusFiles, files)) {
+    throw new Error("所选文件没有可储藏的改动。请刷新工作区后重新选择有改动的文件。");
+  }
   for (const file of files) {
     const moved = statusFiles.find((item) => item.previousFile && (item.file === file || item.previousFile === file));
     if (moved) {
       throw new Error(`所选文件包含已暂存重命名：${moved.previousFile} -> ${moved.file}。Git 不支持只储藏这个重命名的一部分，请改用“储藏全部”，或先取消暂存后再选择要储藏的文件。`);
     }
   }
-  return files;
+}
+
+function findUnsafeStashDuplicatePath(statusFiles, files = []) {
+  const selected = new Set(files);
+  const includesAny = (paths) => !selected.size || paths.some((file) => selected.has(file));
+  const untracked = new Set(statusFiles.filter((item) => item.indexStatus === "?").map((item) => item.file));
+  for (const item of statusFiles) {
+    if (!item.staged) continue;
+    const stagedRemovedPaths = [];
+    if (item.indexStatus === "D") stagedRemovedPaths.push({ path: item.file, related: [item.file] });
+    if (item.previousFile && item.indexStatus === "R") stagedRemovedPaths.push({ path: item.previousFile, related: [item.previousFile, item.file] });
+    for (const entry of stagedRemovedPaths) {
+      if (untracked.has(entry.path) && includesAny(entry.related)) return { path: entry.path };
+    }
+  }
+  return null;
+}
+
+function selectedStashFilesHaveChanges(statusFiles, files) {
+  const selected = new Set(files);
+  return statusFiles.some((item) => {
+    if (selected.has(item.file)) return true;
+    return Boolean(item.previousFile && selected.has(item.previousFile));
+  });
 }
 
 async function branchFromStash(body) {
@@ -5530,7 +5561,18 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("patch failed") || lower.includes("does not apply") || lower.includes("corrupt patch") || lower.includes("error: patch")) {
     return `补丁无法应用。常见原因是当前分支内容和补丁生成时不一致、补丁已经应用过，或补丁内容不完整。\n\nGit 输出：${shortText(text, 1200)}`;
   }
+  if (lower.includes("duplicate entries") && lower.includes("failed to unpack trees")) {
+    const file = text.match(/duplicate entries:\s*(.+)/i)?.[1]?.split(/\r?\n/)[0]?.trim() || "";
+    const target = file ? `路径 ${file} ` : "这条储藏 ";
+    return `${target}在储藏中同时存在工作区记录和未跟踪记录，Git 无法正常展开。通常是旧版本或手动执行 git stash -u 时，遇到了“已暂存删除/重命名旧路径 + 未跟踪重建”的同名文件。请先确认这条储藏是否还需要；如果不需要，可以删除该储藏。`;
+  }
+  if (isMissingStashReferenceError(lower)) {
+    return "这条储藏已经不存在，可能已被弹出、删除，或储藏列表还没有刷新。请刷新储藏列表后重新选择。";
+  }
   if (lower.includes("your local changes") && lower.includes("would be overwritten")) {
+    if (isStashApplyAction(context.body?.action)) {
+      return "应用储藏会覆盖当前工作区的本地修改。请先提交、储藏或丢弃这些本地修改后再恢复这条储藏；原储藏仍保留在列表中。";
+    }
     return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
   }
   if (lower.includes("is already checked out at")) {
@@ -5677,6 +5719,22 @@ function actionOperationKind(action) {
   if (value.includes("merge")) return "merge";
   if (value.includes("rebase")) return "rebase";
   return "";
+}
+
+function isStashApplyAction(action) {
+  return ["applystash", "popstash", "restorecheckoutstash"].includes(String(action || "").toLowerCase());
+}
+
+function isMissingStashReferenceError(lower) {
+  return (
+    lower.includes("stash@{")
+    && (
+      lower.includes("is not a valid reference")
+      || lower.includes("not a valid stash")
+      || lower.includes("not a stash-like commit")
+      || lower.includes("log for refs/stash is empty")
+    )
+  );
 }
 
 function indexLockMessage(text, context = {}) {
