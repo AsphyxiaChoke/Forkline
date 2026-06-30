@@ -816,7 +816,7 @@ function countFiles(files) {
       acc[file.state] = (acc[file.state] || 0) + 1;
       return acc;
     },
-    { M: 0, A: 0, D: 0, C: 0 }
+    { M: 0, A: 0, D: 0, R: 0, C: 0 }
   );
 }
 

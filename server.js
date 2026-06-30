@@ -342,6 +342,7 @@ async function readFileHistory(filePath, refInput = "") {
   }
   const ref = refInput ? normalizeCompareRef(refInput, "文件历史引用") : "HEAD";
   await resolveCommitRef(ref, "文件历史引用");
+  const historyFile = await resolveRefFileForWorktreePath(file, ref);
   const output = await git(
     currentRepo,
     [
@@ -354,16 +355,18 @@ async function readFileHistory(filePath, refInput = "") {
       "--name-status",
       ref,
       "--",
-      file,
+      historyFile.file,
     ],
     { maxBuffer: 1024 * 1024 * 4 }
   );
   return {
     ok: true,
     file,
+    historyFile: historyFile.file,
+    previousFile: historyFile.previousFile,
     ref,
-    commits: parseFileHistoryLog(output, file),
-    command: `git log --follow ${ref} -- ${file}`,
+    commits: parseFileHistoryLog(output, historyFile.file),
+    command: `git log --follow ${ref} -- ${historyFile.file}`,
   };
 }
 
@@ -392,16 +395,53 @@ async function readFileBlame(filePath, refInput = "") {
   }
   const ref = refInput ? normalizeCompareRef(refInput, "逐行追踪引用") : "HEAD";
   await resolveCommitRef(ref, "逐行追踪引用");
-  const output = await git(currentRepo, ["blame", "--line-porcelain", ref, "--", file], { maxBuffer: 1024 * 1024 * 10 });
+  const blameFile = await resolveBlameFileForRef(file, ref);
+  const output = await git(currentRepo, ["blame", "--line-porcelain", blameFile.ref, "--", blameFile.file], { maxBuffer: 1024 * 1024 * 10 });
   const parsed = parseBlamePorcelain(output, 600);
   return {
     ok: true,
     file,
+    historyFile: blameFile.file,
+    previousFile: blameFile.previousFile,
     ref,
+    blameRef: blameFile.ref,
     lines: parsed.lines,
     truncated: parsed.truncated,
-    command: `git blame --line-porcelain ${ref} -- ${file}`,
+    command: `git blame --line-porcelain ${blameFile.ref} -- ${blameFile.file}`,
   };
+}
+
+async function resolveBlameFileForRef(file, ref) {
+  const resolved = await resolveRefFileForWorktreePath(file, ref);
+  if (await refContainsFile(ref, resolved.file)) return { ...resolved, ref };
+  const parentRef = await findParentRefContainingFile(ref, resolved.file);
+  if (parentRef) return { ...resolved, ref: parentRef };
+  return { ...resolved, ref };
+}
+
+async function resolveRefFileForWorktreePath(file, ref) {
+  const currentFile = normalizeRepoFile(file);
+  if (await refContainsFile(ref, currentFile)) return { file: currentFile, previousFile: "" };
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  const target = selectStatusFile(parseStatus(statusOutput), currentFile, "any");
+  const previousFile = target?.previousFile ? normalizeRepoFile(target.previousFile) : "";
+  if (previousFile && await refContainsFile(ref, previousFile)) {
+    return { file: previousFile, previousFile };
+  }
+  return { file: currentFile, previousFile: "" };
+}
+
+async function refContainsFile(ref, file) {
+  return Boolean(await git(currentRepo, ["cat-file", "-e", `${ref}:${file}`], { timeout: 60000 }).then(() => "1").catch(() => ""));
+}
+
+async function findParentRefContainingFile(ref, file) {
+  const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", ref]).catch(() => "")).trim();
+  const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
+  for (const parent of parents) {
+    if (await refContainsFile(parent, file)) return parent;
+  }
+  return "";
 }
 
 async function readCompare(baseInput, headInput) {
@@ -763,10 +803,10 @@ async function readWorkingDiff(filePath, rawScope = "auto") {
   const file = normalizeRepoFile(filePath);
   const requestedScope = normalizeWorktreeDiffRequestScope(rawScope);
   let scope = requestedScope === "auto" ? "unstaged" : requestedScope;
-  let output = await readWorktreeDiffOutput(file, scope);
+  let target = await readStatusFileForDiff(file, scope);
+  let output = await readWorktreeDiffOutput(file, scope, target);
   if (!output && requestedScope !== "staged") {
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]).catch(() => "");
-    const target = selectStatusFile(parseStatus(statusOutput), file, "unstaged");
+    target = target || await readStatusFileForDiff(file, "unstaged");
     if (target?.indexStatus === "?") {
       scope = "untracked";
       output = readNewFileDiff(file);
@@ -774,9 +814,10 @@ async function readWorkingDiff(filePath, rawScope = "auto") {
   }
   if (!output && requestedScope === "auto") {
     scope = "staged";
-    output = await readWorktreeDiffOutput(file, scope);
+    target = await readStatusFileForDiff(file, scope);
+    output = await readWorktreeDiffOutput(file, scope, target);
   }
-  return { file, scope, requestedScope, diff: parseDiff(output) };
+  return { file, previousFile: target?.previousFile || "", scope, requestedScope, diff: parseDiff(output) };
 }
 
 async function readStash(ref) {
@@ -993,8 +1034,7 @@ async function runAction(body) {
     return commandResult(await ignoreWorktreePath(body));
   }
   if (action === "unstageFile") {
-    const file = normalizeRepoFile(body.file);
-    return commandResult(await git(currentRepo, ["reset", "-q", "--", file], { timeout: 60000 }));
+    return commandResult(await unstageFile(body));
   }
   if (action === "resolveConflictFile") {
     return commandResult(await resolveConflictFile(body));
@@ -1926,13 +1966,26 @@ async function restoreCheckoutStash(body) {
 
 async function createStash(body) {
   const message = normalizeStashMessage(body.message);
-  const files = normalizeStashFiles(body.files);
+  const files = await validateSelectedStashFiles(normalizeStashFiles(body.files));
   const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
   if (!dirty.trim()) throw new Error("没有可储藏的未提交更改");
   const args = ["stash", "push", "-u", "-m", message];
   if (files.length) args.push("--", ...files);
   const output = await git(currentRepo, args, { timeout: 120000 });
   return commandResult(output || `已创建储藏：${message}`);
+}
+
+async function validateSelectedStashFiles(files) {
+  if (!files.length) return files;
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  const statusFiles = parseStatus(statusOutput);
+  for (const file of files) {
+    const moved = statusFiles.find((item) => item.previousFile && (item.file === file || item.previousFile === file));
+    if (moved) {
+      throw new Error(`所选文件包含已暂存重命名：${moved.previousFile} -> ${moved.file}。Git 不支持只储藏这个重命名的一部分，请改用“储藏全部”，或先取消暂存后再选择要储藏的文件。`);
+    }
+  }
+  return files;
 }
 
 async function branchFromStash(body) {
@@ -2053,17 +2106,32 @@ async function discardWorktreeFile(body) {
   return "工作区改动已丢弃";
 }
 
+async function unstageFile(body) {
+  const file = normalizeRepoFile(body.file);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+  const target = selectStatusFile(parseStatus(statusOutput), file, "staged");
+  if (!target?.staged) throw new Error("这个文件没有可取消暂存的改动");
+  const paths = target.previousFile ? [target.previousFile, file] : [file];
+  return git(currentRepo, ["reset", "-q", "--", ...paths], { timeout: 60000 });
+}
+
 async function discardStagedFile(body) {
   const file = normalizeRepoFile(body.file);
-  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
   const statusFiles = parseStatus(statusOutput);
   const target = selectStatusFile(statusFiles, file, "staged");
   if (!target?.staged) throw new Error("这个文件没有可丢弃的已暂存改动");
-  if (target.indexStatus === "A") {
+  if (target.previousFile && target.worktreeStatus) {
+    await git(currentRepo, ["reset", "-q", "--", target.previousFile, file], { timeout: 60000 });
+  } else if (target.previousFile) {
+    await git(currentRepo, ["restore", "--source=HEAD", "--staged", "--worktree", "--", target.previousFile, file], { timeout: 60000 });
+  } else if (target.indexStatus === "A") {
     const args = target.worktreeStatus ? ["rm", "--cached", "-f", "--", file] : ["rm", "-f", "--", file];
     await git(currentRepo, args, { timeout: 60000 });
   } else if (statusFiles.some((item) => item.file === file && item.indexStatus === "?")) {
     await git(currentRepo, ["restore", "--staged", "--", file], { timeout: 60000 });
+  } else if (target.worktreeStatus) {
+    await git(currentRepo, ["restore", "--source=HEAD", "--staged", "--", file], { timeout: 60000 });
   } else {
     await git(currentRepo, ["restore", "--source=HEAD", "--staged", "--worktree", "--", file], { timeout: 60000 });
   }
@@ -2099,12 +2167,16 @@ async function applyWorktreeHunk(body, kind) {
   if (kind === "unstage" && !target.staged) throw new Error("这个文件没有已暂存改动块。");
 
   const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, scope);
-  const patch = extractSingleHunkPatch(diffOutput, hunkIndex);
+  const movedFileUnstage = kind === "unstage" && isMovedFileDiffOutput(diffOutput);
+  const patch = movedFileUnstage ? extractMovedFileUnstageHunkPatch(diffOutput, hunkIndex) : extractSingleHunkPatch(diffOutput, hunkIndex);
   const patchFile = writeTempFile("forkline-hunk-", patch, ".patch");
   try {
     const args = ["apply", "--whitespace=nowarn"];
     if (kind === "stage") args.push("--cached");
-    if (kind === "unstage") args.push("--cached", "--reverse");
+    if (kind === "unstage") {
+      args.push("--cached");
+      if (!movedFileUnstage) args.push("--reverse");
+    }
     if (kind === "discard") args.push("--reverse");
     args.push(patchFile);
     await git(currentRepo, args, { timeout: 60000, maxBuffer: 1024 * 1024 * 8 });
@@ -2159,7 +2231,7 @@ async function unstageSelectedLines(body) {
   if (scope !== "staged") throw new Error("只能在已暂存 Diff 中取消暂存所选行。");
 
   const diffOutput = await readWorktreeDiffOutput(file, "staged");
-  const patchMode = isNewFileDiffOutput(diffOutput) ? "unstage-new-file" : "unstage";
+  const patchMode = isNewFileDiffOutput(diffOutput) ? "unstage-new-file" : isMovedFileDiffOutput(diffOutput) ? "unstage-moved-file" : "unstage";
   const patch = extractSelectedLinePatch(diffOutput, selectedLines, patchMode);
   const patchFile = writeTempFile("forkline-lines-", patch, ".patch");
   try {
@@ -2175,12 +2247,28 @@ async function unstageSelectedLines(body) {
   return `已取消暂存所选 ${selectedLines.length} 行`;
 }
 
-async function readWorktreeDiffOutput(file, scope) {
+async function readWorktreeDiffOutput(file, scope, fileInfo = null) {
   const diffScope = normalizeDiffScope(scope);
+  const target = fileInfo || await readStatusFileForDiff(file, diffScope === "staged" ? "staged" : "unstaged");
+  const pathspecs = worktreeDiffPathspecs(file, target);
   const args = diffScope === "staged"
-    ? ["diff", "--cached", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file]
-    : ["diff", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", file];
+    ? ["diff", "--cached", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", ...pathspecs]
+    : ["diff", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", ...pathspecs];
   return git(currentRepo, args, { maxBuffer: 1024 * 1024 * 8, stdoutOnly: true }).catch(() => "");
+}
+
+async function readStatusFileForDiff(file, scope = "any") {
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  return selectStatusFile(parseStatus(statusOutput), file, scope);
+}
+
+function worktreeDiffPathspecs(file, target) {
+  const currentFile = normalizeRepoFile(file);
+  const previousFile = target?.previousFile ? normalizeRepoFile(target.previousFile) : "";
+  if (previousFile && (target.indexStatus === "R" || target.indexStatus === "C")) {
+    return [previousFile, currentFile];
+  }
+  return [currentFile];
 }
 
 function normalizeDiffLineSelections(value) {
@@ -2233,6 +2321,9 @@ function extractSelectedLinePatch(diffOutput, selectedLines, mode = "stage") {
   if (mode === "unstage-new-file") {
     return extractNewFileUnstageLinePatch(header, hunks, selectedKeys, matchedKeys);
   }
+  if (mode === "unstage-moved-file") {
+    return extractMovedFileUnstageLinePatch(header, hunks, selectedKeys, matchedKeys);
+  }
   const selectedHunks = hunks
     .map((hunk) => buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode))
     .filter(Boolean);
@@ -2260,6 +2351,10 @@ function isDeletedFileDiffOutput(diffOutput) {
   return /(?:^|\n)--- .+\n\+\+\+ \/dev\/null/.test(String(diffOutput || "").replace(/\r\n/g, "\n"));
 }
 
+function isMovedFileDiffOutput(diffOutput) {
+  return /(?:^|\n)(rename|copy) (from|to) /.test(String(diffOutput || "").replace(/\r\n/g, "\n"));
+}
+
 function extractDeletedFileStageLinePatch(header, hunks, selectedKeys, matchedKeys) {
   const delKeys = collectSelectableDelLineKeys(hunks);
   const selectedDelKeys = delKeys.filter((key) => selectedKeys.has(key));
@@ -2284,6 +2379,20 @@ function extractNewFileUnstageLinePatch(header, hunks, selectedKeys, matchedKeys
     .map((hunk) => buildNewFileUnstageLineHunk(hunk, selectedKeys, matchedKeys, allAddedLinesSelected))
     .filter(Boolean);
   if (!selectedHunks.length) throw new Error("请选择新增行，普通上下文行不能单独取消暂存。");
+  if (matchedKeys.size !== selectedKeys.size) throw new Error("部分 Diff 行已经变化，请刷新后再试。");
+  return [...patchHeader, ...selectedHunks].join("\n").replace(/\n*$/, "\n");
+}
+
+function extractMovedFileUnstageLinePatch(header, hunks, selectedKeys, matchedKeys) {
+  const selectedChangeKeys = collectSelectableAddLineKeys(hunks)
+    .concat(collectSelectableDelLineKeys(hunks))
+    .filter((key) => selectedKeys.has(key));
+  if (!selectedChangeKeys.length) throw new Error("请选择新增或删除行，普通上下文行不能单独取消暂存。");
+  const patchHeader = movedFileUnstagePatchHeader(header);
+  const selectedHunks = hunks
+    .map((hunk) => buildMovedFileUnstageLineHunk(hunk, selectedKeys, matchedKeys))
+    .filter(Boolean);
+  if (!selectedHunks.length) throw new Error("请选择新增或删除行，普通上下文行不能单独取消暂存。");
   if (matchedKeys.size !== selectedKeys.size) throw new Error("部分 Diff 行已经变化，请刷新后再试。");
   return [...patchHeader, ...selectedHunks].join("\n").replace(/\n*$/, "\n");
 }
@@ -2338,6 +2447,18 @@ function newFileUnstagePatchHeader(header, deleteFile = false) {
     return [diffLine, modeLine ? `deleted file mode ${modeLine.slice("new file mode ".length)}` : "", `--- ${oldPath}`, "+++ /dev/null"].filter(Boolean);
   }
   return [diffLine, `--- ${oldPath}`, newPathLine];
+}
+
+function movedFileUnstagePatchHeader(header) {
+  const newPathLine = header.find((line) => line.startsWith("+++ "));
+  if (!newPathLine || newPathLine === "+++ /dev/null") throw new Error("重命名文件 Diff 头不完整，请刷新后再试。");
+  const newPath = stripDiffPathSuffix(newPathLine.slice(4));
+  const oldPath = newPath.startsWith("b/") ? `a/${newPath.slice(2)}` : newPath;
+  return [`diff --git ${oldPath} ${newPath}`, `--- ${oldPath}`, `+++ ${newPath}`];
+}
+
+function stripDiffPathSuffix(value) {
+  return String(value || "").replace(/\t.*$/, "");
 }
 
 function buildDeletedFileStageLineHunk(hunk, selectedKeys, matchedKeys, deleteFile = false) {
@@ -2398,6 +2519,44 @@ function buildNewFileUnstageLineHunk(hunk, selectedKeys, matchedKeys, deleteFile
   const newCount = deleteFile ? 0 : counts.newCount;
   return [
     `@@ -${formatUnifiedRange(hunk.newStart, counts.oldCount)} +${formatUnifiedRange(newStart, newCount)} @@`,
+    ...lines,
+  ].join("\n");
+}
+
+function buildMovedFileUnstageLineHunk(hunk, selectedKeys, matchedKeys) {
+  const lines = [];
+  let changed = false;
+  let selectableLineIndex = -1;
+  hunk.lines.forEach((line) => {
+    const selectable = !line.startsWith("\\");
+    if (selectable) selectableLineIndex += 1;
+    const key = selectable ? `${hunk.index}:${selectableLineIndex}` : "";
+    const selected = selectedKeys.has(key);
+    if (line.startsWith("+")) {
+      if (selected) {
+        lines.push(`-${line.slice(1)}`);
+        matchedKeys.add(key);
+        changed = true;
+      } else {
+        lines.push(` ${line.slice(1)}`);
+      }
+      return;
+    }
+    if (line.startsWith("-")) {
+      if (selected) {
+        lines.push(`+${line.slice(1)}`);
+        matchedKeys.add(key);
+        changed = true;
+      }
+      return;
+    }
+    if (selected) matchedKeys.add(key);
+    lines.push(line);
+  });
+  if (!changed) return "";
+  const counts = countUnifiedHunkLines(lines);
+  return [
+    `@@ -${formatUnifiedRange(hunk.newStart, counts.oldCount)} +${formatUnifiedRange(hunk.newStart, counts.newCount)} @@`,
     ...lines,
   ].join("\n");
 }
@@ -2487,6 +2646,55 @@ function extractSingleHunkPatch(diffOutput, targetHunkIndex) {
   }
   if (!hunk.length) throw new Error("找不到这个改动块，请刷新后再试。");
   return [...header, ...hunk].join("\n").replace(/\n*$/, "\n");
+}
+
+function extractMovedFileUnstageHunkPatch(diffOutput, targetHunkIndex) {
+  const lines = String(diffOutput || "").replace(/\r\n/g, "\n").split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  if (!lines.length || !String(diffOutput || "").trim()) throw new Error("没有可操作的 Diff 块。");
+  const header = [];
+  const hunk = [];
+  let hunkHeader = "";
+  let currentHunk = -1;
+  let collecting = false;
+  for (const line of lines) {
+    if (line.startsWith("diff --git ") && currentHunk >= 0) break;
+    if (line.startsWith("@@ ")) {
+      currentHunk += 1;
+      collecting = currentHunk === targetHunkIndex;
+      if (collecting) hunkHeader = line;
+      continue;
+    }
+    if (currentHunk < 0) {
+      if (line !== "") header.push(line);
+      continue;
+    }
+    if (collecting) hunk.push(line);
+  }
+  if (!hunkHeader) throw new Error("找不到这个改动块，请刷新后再试。");
+  const parsed = parseUnifiedHunkHeader(hunkHeader);
+  const linesForNewPath = [];
+  let changed = false;
+  hunk.forEach((line) => {
+    if (line.startsWith("+")) {
+      linesForNewPath.push(`-${line.slice(1)}`);
+      changed = true;
+      return;
+    }
+    if (line.startsWith("-")) {
+      linesForNewPath.push(`+${line.slice(1)}`);
+      changed = true;
+      return;
+    }
+    linesForNewPath.push(line);
+  });
+  if (!changed) throw new Error("这个改动块没有可取消暂存的内容行。");
+  const counts = countUnifiedHunkLines(linesForNewPath);
+  return [
+    ...movedFileUnstagePatchHeader(header),
+    `@@ -${formatUnifiedRange(parsed.newStart, counts.oldCount)} +${formatUnifiedRange(parsed.newStart, counts.newCount)} @@`,
+    ...linesForNewPath,
+  ].join("\n").replace(/\n*$/, "\n");
 }
 
 async function rewordCommit(body) {
@@ -4395,8 +4603,11 @@ function parseStatus(output) {
       const indexStatus = line[0] || " ";
       const worktreeStatus = line[1] || " ";
       const status = `${indexStatus}${worktreeStatus}`.trim() || "M";
-      const file = parseStatusPath(line.slice(3).trim().split(" -> ").pop());
-      return statusFile(indexStatus, worktreeStatus, status, file);
+      const rawPath = line.slice(3).trim();
+      const renameParts = rawPath.split(" -> ");
+      const file = parseStatusPath(renameParts.length > 1 ? renameParts[renameParts.length - 1] : rawPath);
+      const previousFile = renameParts.length > 1 ? parseStatusPath(renameParts.slice(0, -1).join(" -> ")) : "";
+      return statusFile(indexStatus, worktreeStatus, status, file, previousFile);
     });
 }
 
@@ -4409,18 +4620,20 @@ function parseStatusRecords(records) {
     const worktreeStatus = record[1] || " ";
     const status = `${indexStatus}${worktreeStatus}`.trim() || "M";
     const file = record.slice(3);
-    files.push(statusFile(indexStatus, worktreeStatus, status, file));
-    if ((indexStatus === "R" || indexStatus === "C") && records[index + 1]) index += 1;
+    const hasPreviousFile = (indexStatus === "R" || indexStatus === "C") && records[index + 1];
+    const previousFile = hasPreviousFile ? records[index + 1] : "";
+    files.push(statusFile(indexStatus, worktreeStatus, status, file, previousFile));
+    if (hasPreviousFile) index += 1;
   }
   return files;
 }
 
-function statusFile(indexStatus, worktreeStatus, status, file) {
+function statusFile(indexStatus, worktreeStatus, status, file, previousFile = "") {
   const conflict = indexStatus === "U" || worktreeStatus === "U" || ["AA", "AU", "UD", "DU", "UA", "UU", "DD"].includes(status);
   const staged = indexStatus !== " " && indexStatus !== "?";
   const unstaged = worktreeStatus !== " " || indexStatus === "?";
   const displayStatus = worktreeStatus !== " " ? worktreeStatus : indexStatus;
-  const state = conflict ? "C" : displayStatus === "A" || displayStatus === "?" ? "A" : displayStatus === "D" ? "D" : "M";
+  const state = conflict ? "C" : displayStatus === "A" || displayStatus === "?" ? "A" : displayStatus === "D" ? "D" : displayStatus === "R" ? "R" : "M";
   return {
     state,
     file,
@@ -4430,6 +4643,7 @@ function statusFile(indexStatus, worktreeStatus, status, file) {
     unstaged,
     indexStatus: indexStatus.trim(),
     worktreeStatus: worktreeStatus.trim(),
+    previousFile,
   };
 }
 
@@ -4495,9 +4709,12 @@ function parseNameStatus(output) {
     .slice(0, 160)
     .map((line) => {
       const parts = line.split("\t");
-      const status = (parts[0] || "M").slice(0, 1);
-      const state = status === "A" ? "A" : status === "D" ? "D" : "M";
-      return { state, file: parts[parts.length - 1] || line, extra: status };
+      const extra = parts[0] || "M";
+      const code = extra.slice(0, 1);
+      const state = code === "A" ? "A" : code === "D" ? "D" : code === "R" ? "R" : code === "C" ? "C" : "M";
+      const file = parts[parts.length - 1] || line;
+      const previousFile = parts.length > 2 ? parts[1] : "";
+      return { state, file, previousFile, extra };
     });
 }
 

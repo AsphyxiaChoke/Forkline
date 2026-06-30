@@ -77,14 +77,19 @@ function scopedFileStatus(file, scope = "") {
   const indexStatus = String(file.indexStatus || "");
   const worktreeStatus = String(file.worktreeStatus || "");
   const rawCode = scope === "staged" ? indexStatus : scope === "unstaged" ? (indexStatus === "?" ? "?" : worktreeStatus) : worktreeStatus || indexStatus || file.state || "M";
-  const state = rawCode === "A" || rawCode === "?" ? "A" : rawCode === "D" ? "D" : "M";
+  const code = rawCode.slice(0, 1);
+  const renamed = code === "R" || file.state === "R";
+  const copied = code === "C" || file.state === "C";
+  const state = rawCode === "A" || rawCode === "?" ? "A" : code === "D" ? "D" : renamed || copied ? "R" : "M";
+  const badge = renamed ? "R" : copied ? "C" : state;
+  const changeText = renamed ? "重命名" : copied ? "复制" : "";
   if (scope === "staged") {
-    return { state, badge: state, extra: rawCode ? "已暂存" : "", scope: "staged" };
+    return { state, badge, extra: changeText || (rawCode ? "已暂存" : ""), scope: "staged" };
   }
   if (scope === "unstaged") {
-    return { state, badge: state, extra: rawCode === "?" ? "未跟踪" : rawCode ? "未暂存" : "", scope: "unstaged" };
+    return { state, badge, extra: changeText || (rawCode === "?" ? "未跟踪" : rawCode ? "未暂存" : ""), scope: "unstaged" };
   }
-  return { state, badge: state, extra: file.extra || "", scope: "" };
+  return { state, badge, extra: changeText || file.extra || "", scope: "" };
 }
 
 function bindFileTree(root, options = {}) {

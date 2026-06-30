@@ -891,3 +891,188 @@
 - `docs/CONTINUE.md`: records selected-line support for deleted files and the stdout-only Diff patch behavior.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: preserve rename metadata in worktree Diff
+### What was done
+- Found a worktree Diff bug for staged renames: Forkline parsed `git status -z` as only the new path, so `/api/worktree-diff` queried Git with only that path.
+- Git then returned a `new file mode` patch for the renamed file instead of rename metadata, making the UI look like a new file was added.
+- Updated status parsing to keep the old path as `previousFile` for rename/copy records, and updated worktree Diff reads to pass both old and new paths with rename/copy detection enabled.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/rename-diff-repro-20260630`: `git mv forkline-fixtures/rename old.txt forkline-fixtures/rename new.txt` produced raw status `R  new\0old\0`, but Forkline returned no `previousFile` and showed `new file mode`.
+- Regression passed after the fix: `/api/worktree` returned `previousFile: "forkline-fixtures/rename old.txt"`, and `/api/worktree-diff?scope=auto` plus `scope=staged` returned `rename from` / `rename to` metadata instead of a new-file patch.
+- Ordinary modified-file Diff regression passed by opening the Forkline repo in the local service and reading `/api/worktree-diff?file=server.js&scope=unstaged`; it returned a normal `diff --git a/server.js b/server.js` patch with no `previousFile`.
+- `node --check server.js` passed.
+- `git diff --check` passed with only the existing LF/CRLF warning.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree, and the restarted local service is pointed back to `D:/桌面/GitTest`.
+### Notes
+- `server.js`: keeps rename/copy previous paths in status objects and uses both paths when reading worktree Diff for renamed/copied files.
+- `docs/CONTINUE.md`: records the rename/copy worktree Diff behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: discard staged rename without losing the old file
+### What was done
+- Found a destructive edge case in `discardStagedFile`: staged renames were looked up with a path-limited `git status`, which made Git report the new path as `A` instead of `R`.
+- The old behavior ran the staged-new-file discard path, deleted the new file, and left the old file staged as deleted.
+- Updated staged discard to use full status parsing and, when `previousFile` exists, restore both old and new paths from `HEAD` in one operation.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/discard-staged-rename-repro-20260630`: after `git mv old new`, calling `/api/action` with `discardStagedFile` returned success but left status `D  old` and both old/new files missing.
+- Regression passed after the fix: the same action returned `已暂存改动已丢弃`, left `git status --short` empty, restored the old file, and removed the new path.
+- Ordinary staged-new-file discard regression passed: a staged new file was removed and status stayed clean.
+- Ordinary staged-modified-file discard regression passed: the tracked file content returned to the committed version and status stayed clean.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: uses full status for staged discard and restores rename/copy pairs with both `previousFile` and current file path.
+- `docs/CONTINUE.md`: records the staged rename discard behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: keep rename metadata when unstaging
+### What was done
+- Found a staged rename unstage bug: `unstageFile` reset only the new path, which left the old path as a staged deletion and the new path as untracked.
+- Updated full-file unstage to read full status and reset both `previousFile` and current file when the selected file is a staged rename/copy.
+- Found a related selected-line bug: unstaging one staged content line from a rename+edit diff also unstaged the whole rename.
+- Added a rename/copy-aware selected-line unstage patch path that applies a file-to-file cached patch against the new path, so only selected content lines move back to the worktree.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/unstage-rename-repro-20260630`: after `git mv old new`, calling `/api/action` with `unstageFile` returned success but left `D  old` staged and `?? new` untracked.
+- Regression passed after the fix: full-file unstage returned success and left ` D old` plus `?? new`, meaning the rename was fully moved out of the index and kept in the worktree.
+- Ordinary staged-new-file and staged-modified-file unstage regressions passed: the new file became untracked, and the modified file became an unstaged modification.
+- Reproduced the selected-line issue on the same branch with staged rename+content: unstaging only the content line previously removed the whole rename from the index.
+- Regression passed for selected added and deleted lines: staged Diff stayed as pure `rename from` / `rename to`, while the selected content change moved back to the unstaged Diff.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: full-file unstage now handles rename/copy path pairs; selected-line unstage now preserves rename/copy metadata while moving only selected content lines.
+- `docs/CONTINUE.md`: records full-file and selected-line unstage behavior for staged renames.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: follow uncommitted renames in file history and blame
+### What was done
+- Found that the right-side “历史 / 逐行” views could not follow a staged-but-uncommitted rename.
+- `/api/file-history` for the new path returned zero commits because `HEAD` still only contained the old path.
+- `/api/file-blame` for the new path returned a 400 “文件 ... 在 HEAD 中不存在” error even though the status row had `previousFile`.
+- Added a shared ref-file resolver for history and blame: if the selected path is not present at the requested ref, Forkline checks the current worktree status and falls back to `previousFile` when that old path exists at the ref.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/worktree-rename-copy-scan-20260630`: a staged rename from `forkline-fixtures/worktree old.txt` to `forkline-fixtures/worktree new.txt` made `/api/file-history?file=new` return `0` commits, while `/api/file-history?file=old` returned the fixture commit.
+- Reproduced the matching blame failure: `/api/file-blame?file=new` returned HTTP 400 before the fix.
+- Regression passed after the fix: `/api/file-history?file=new` returned `historyFile: "forkline-fixtures/worktree old.txt"`, `previousFile: "forkline-fixtures/worktree old.txt"`, and one historical commit.
+- Blame regression passed after the fix: `/api/file-blame?file=new` returned two lines from the old path with `historyFile` and `previousFile` populated.
+- Ordinary old-path history/blame regression passed with `historyFile` equal to the requested file and no `previousFile`.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: history and blame now resolve staged rename/copy previous paths when the selected path does not exist in the requested ref.
+- `docs/CONTINUE.md`: records the uncommitted rename fallback for “历史 / 逐行”.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: keep rename metadata when unstaging hunks
+### What was done
+- Found that `unstageHunk` still treated staged rename+content diffs as one full reverse patch.
+- Unstaging only one content hunk from a staged rename removed the entire rename from the index, leaving the old file as a worktree deletion and the new file untracked.
+- Added a rename/copy-aware hunk unstage patch path that rewrites the selected hunk as a file-to-file cached patch against the new path, so only the selected content hunk moves back to the worktree.
+- Normalized moved-file patch path headers and skipped the split trailing blank line so paths with spaces do not produce corrupt patches.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/unstage-hunk-rename-repro-20260630`: after staging a rename+content hunk, `/api/action` `unstageHunk` returned success but left `D old` plus `?? new`.
+- Regression passed for an added-line hunk: after `stageHunk` then `unstageHunk`, status stayed `RM`, staged Diff contained only `rename from` / `rename to`, and the added line moved to the unstaged Diff.
+- Regression passed for a deleted-line hunk with the same expected split: staged Diff stayed pure rename and the deleted line moved to unstaged Diff.
+- Ordinary modified-file hunk staging/unstaging regression passed: the final status was a normal unstaged modification.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: `unstageHunk` now preserves rename/copy metadata while moving only selected content hunks back to the worktree.
+- `docs/CONTINUE.md`: records that staged rename content can be cancelled by line or hunk without cancelling the rename.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: blame deleted files from their parent commit
+### What was done
+- Found that commit-detail “逐行追踪” failed for files deleted by the selected commit.
+- `/api/file-history` correctly showed the delete commit and earlier add commit, but `/api/file-blame` used the delete commit itself, where the file no longer exists, and returned HTTP 400.
+- Added a blame-only fallback: if the requested ref does not contain the selected file and no worktree rename fallback applies, Forkline checks the commit parents and uses the first parent that still contains the file for `git blame`.
+- The response now keeps `ref` as the user-requested commit and adds `blameRef` for the actual commit used by the blame command.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/deleted-file-blame-repro-20260630`: after adding and then deleting `forkline-fixtures/deleted blame.txt`, `/api/file-blame?file=...&ref=<deleteSha>` returned HTTP 400 before the fix.
+- Regression passed after the fix: the same request returned two blame lines, kept `ref` as the delete commit, and reported `blameRef` as the parent add commit.
+- Existing-file blame regression passed: requesting the parent add commit returned `blameRef` equal to the requested `ref`.
+- Committed-rename blame regression passed on temporary branch `forkline/committed-rename-blame-regression-20260630`: a renamed file still blamed at the rename commit itself and did not incorrectly fall back to a parent.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: `readFileBlame` now resolves a parent blame ref for deleted files while preserving the requested ref in the response.
+- `docs/CONTINUE.md`: records the deleted-file blame fallback.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: show committed renames as renames in file lists
+### What was done
+- Found that `/api/commit` parsed `git show --name-status --find-renames` too coarsely.
+- A committed rename such as `R100 old -> new` was returned as `{ state: "M", file: "new", extra: "R" }`, so the right-side commit file list could label it as a normal modification and had no old path.
+- Updated name-status parsing to preserve R/C states, `previousFile`, and the full status text such as `R100`.
+- Updated the shared file tree status mapping to render R/C badges and Chinese labels instead of collapsing them to M.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/commit-rename-status-repro-20260630`: a rename commit returned `state: "M"` and no `previousFile` before the fix.
+- Regression passed after the fix: `/api/commit?sha=<renameSha>` returned `state: "R"`, `file: "forkline-fixtures/commit new.txt"`, `previousFile: "forkline-fixtures/commit old.txt"`, and `extra: "R100"`.
+- Add/delete commit parsing regressions passed: add still returned `A`, delete still returned `D`.
+- `node --check server.js` passed.
+- `node --check public/js/features/diff-workbench.js` passed.
+### Notes
+- `server.js`: `parseNameStatus` now preserves rename/copy metadata from Git name-status output.
+- `public/js/features/diff-workbench.js`: file tree status mapping now recognizes rename/copy rows.
+- `public/styles.css`: adds a badge color for rename/copy rows.
+- `docs/CONTINUE.md`: records committed rename/copy file list behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/diff-workbench.js`, `public/styles.css`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: count worktree renames as renames
+### What was done
+- Found that staged worktree renames were still reported as `state: "M"` even though `indexStatus` and `extra` were `R`.
+- This made the bottom worktree summary count a rename as a normal modification and omitted it from rename-specific status labels.
+- Updated status parsing to return `state: "R"` for rename rows, and updated the frontend worktree summary/count helpers to include a rename count.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/worktree-rename-state-repro-20260630`: after `git mv old new`, `/api/worktree` returned `state: "M"`, `extra: "R"`, and `previousFile`.
+- Regression passed after the fix: the same staged rename returned `state: "R"` with the same `previousFile`.
+- Ordinary worktree state regressions passed: modified files returned `M`, untracked files returned `A`, and deleted files returned `D`.
+- `node --check server.js` passed.
+- `node --check public/js/features/git-actions.js` passed.
+- `node --check public/js/features/worktree-changes.js` passed.
+### Notes
+- `server.js`: returns rename state for worktree status rows.
+- `public/js/features/git-actions.js`: initializes rename counts in file state summaries.
+- `public/js/features/worktree-changes.js`: includes rename count and rename search labels in the worktree summary/filter data.
+- `docs/CONTINUE.md`: records worktree rename counting behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/features/git-actions.js`, `public/js/features/worktree-changes.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: block selected stash for staged renames
+### What was done
+- Found that “储藏所选” on a staged rename passed only the selected new path to `git stash push`.
+- Git then created a stash for the new path but left the old path deletion behind, or produced a half-success pathspec error when both old and new paths were passed.
+- Added a backend preflight for selected stashes: if the selected path belongs to a staged rename/copy pair, Forkline now stops before running Git and returns a Chinese explanation telling the user to use “储藏全部” or unstage first.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/stash-selected-rename-repro-20260630`: selecting only `forkline-fixtures/stash new.txt` and running `createStash` left `D  forkline-fixtures/stash old.txt` in the worktree.
+- Verified Git's native behavior: `git stash push -- old new` can create a stash and still report a pathspec error, so automatic path expansion is unsafe.
+- Regression passed after the fix: the same API call returned HTTP 400 with a Chinese staged-rename explanation, stash count stayed unchanged, and status remained the original staged rename.
+- Full stash regression passed: `createStash` without selected files saved the staged rename as `R100 old -> new` and left the worktree clean.
+- Ordinary selected-file stash regression passed: a normal modified file could still be stashed by selected path and left the worktree clean.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: selected stash requests now reject staged rename/copy pairs before invoking `git stash push`.
+- `docs/CONTINUE.md`: records the selected-stash staged rename protection.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: preserve worktree content when discarding staged changes
+### What was done
+- Found a broader data-loss bug in `discardStagedFile`: a normal file with both staged and unstaged edits (`MM`) lost the worktree edit when discarding the staged side.
+- This contradicted the existing confirmation text and previous protections for staged-add plus worktree-edit and staged-delete plus untracked recreation.
+- Updated staged discard so files with a worktree-side status clear only the index side and leave the current worktree content untouched.
+- Applied the same rule to staged renames with additional worktree edits: the staged rename is moved back to the worktree instead of deleting the new file content.
+### Testing
+- Reproduced on `D:\桌面\GitTest` using temporary branch `forkline/discard-staged-preserve-worktree-repro-20260630`: an `MM` file with staged `one -> ONE` and unstaged `two -> TWO` became clean and reverted to `one/two/three` after `discardStagedFile`.
+- Regression passed after the fix: the same action leaves status ` M`, clears cached diff, and preserves current worktree content `ONE/TWO/three`.
+- Rename+worktree-edit regression passed: staged rename plus unstaged added line becomes worktree `D old` plus `?? new`, preserving the new file content.
+- Control checks passed: pure staged modification still restores the HEAD content and leaves the repo clean; pure staged rename still restores the old path, removes the new path, and leaves the repo clean.
+- `node --check server.js` passed.
+### Notes
+- `server.js`: `discardStagedFile` now preserves worktree-side content when the same file also has unstaged changes, including staged rename rows with worktree edits.
+- `docs/CONTINUE.md`: records the mixed staged/unstaged discard behavior.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

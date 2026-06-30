@@ -62,7 +62,7 @@ function renderStage() {
   const counts = countFiles(files);
   const groups = changeGroups(files);
   const filterText = terms.length ? ` · 筛选 ${visibleFiles.length}/${files.length}` : "";
-  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除${filterText}`;
+  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除，${counts.R} 个重命名${filterText}`;
 }
 
 function ensureSelectedFileChangeKey() {
@@ -119,6 +119,7 @@ function worktreeStateLabel(stateCode) {
     C: "冲突 unmerged conflict",
     D: "删除 deleted delete removed remove",
     M: "修改 modified change changed",
+    R: "重命名 renamed rename moved move",
   };
   return labels[stateCode] || "";
 }

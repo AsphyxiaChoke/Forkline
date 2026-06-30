@@ -1709,6 +1709,10 @@ button.file-row {
   background: var(--danger);
 }
 
+.badge.R {
+  background: var(--blue);
+}
+
 .badge.C {
   background: var(--danger);
 }
