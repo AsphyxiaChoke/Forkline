@@ -4626,7 +4626,6 @@ function parseStatus(output) {
   return output
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(0, 120)
     .map((line) => {
       const indexStatus = line[0] || " ";
       const worktreeStatus = line[1] || " ";
@@ -4641,7 +4640,7 @@ function parseStatus(output) {
 
 function parseStatusRecords(records) {
   const files = [];
-  for (let index = 0; index < records.length && files.length < 120; index++) {
+  for (let index = 0; index < records.length; index++) {
     const record = records[index];
     if (record.length < 3) continue;
     const indexStatus = record[0] || " ";
@@ -4734,7 +4733,6 @@ function parseNameStatus(output) {
   return output
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(0, 160)
     .map((line) => {
       const parts = line.split("\t");
       const extra = parts[0] || "M";
@@ -4752,7 +4750,6 @@ function parseDiff(output) {
   const lines = output.split(/\r?\n/);
   while (lines[lines.length - 1] === "") lines.pop();
   return lines
-    .slice(0, 320)
     .map((line) => {
       let type = "ctx";
       if (line.startsWith("diff --git ")) hunkIndex = -1;

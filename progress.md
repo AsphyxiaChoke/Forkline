@@ -1305,3 +1305,54 @@
 - `docs/CONTINUE.md`: records the remote-management fix for follow-up development.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: stop truncating worktree file status at 120 entries
+### What was done
+- Found that Forkline parsed only the first 120 `git status` records, so worktree panels could miss files when a repository had many unstaged or untracked changes.
+- Removed the hardcoded 120-file cap from both plain and NUL-delimited status parsers.
+- Documented that worktree file lists are no longer silently capped at the backend parser.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by creating 130 temporary untracked files under `forkline-status-limit-repro-20260630`; before the fix, `/api/worktree` returned `api_count=120`, ended at `file-120.txt`, and did not include `file-130.txt`.
+- Regression passed on temporary service `http://127.0.0.1:5293`: the same 130-file setup returned `api_count=130`, included `file-130.txt`, and ended at `file-130.txt`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after cleanup.
+### Notes
+- `server.js`: removed the 120-entry cap in `parseStatus` and `parseStatusRecords`.
+- `README.md`: documents that large worktree change lists are not silently truncated.
+- `docs/CONTINUE.md`: records the status parser behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: keep later files visible in large commit diffs
+### What was done
+- Found that Forkline parsed only the first 320 lines of any Git diff.
+- Reproduced that a commit with a 360-line first file and a second small file listed both files, but `/api/commit` returned no diff block for the second file.
+- Removed the global 320-line parser cap so file-specific historical diff lookup can still find later files in the same commit.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary branch `forkline/diff-cap-repro-20260630`: `/api/commit` returned `files_count=2`, `diff_count=320`, `late_file_listed=1`, `late_diff_present=0`, and the last diff line was `+big line 314`.
+- Regression passed on temporary service `http://127.0.0.1:5295`: the same setup returned `files_count=2`, `diff_count=373`, `late_file_listed=1`, `late_diff_present=2`, and the last diff line was `+late file should still have diff`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after cleanup.
+### Notes
+- `server.js`: removed the global 320-line cap in `parseDiff`.
+- `README.md`: documents that later files in large historical diffs remain viewable.
+- `docs/CONTINUE.md`: records the large-commit diff visibility fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: stop truncating name-status file lists at 160 entries
+### What was done
+- Found that Forkline parsed only the first 160 `git show --name-status` / `git diff --name-status` entries.
+- Reproduced that a commit touching 170 files returned only the first 160 files in `/api/commit`, so later files disappeared from the commit file list.
+- Removed the hardcoded 160-entry cap from `parseNameStatus`, which also benefits compare and stash file lists that use the same parser.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary branch `forkline/name-status-cap-repro-20260630`: `/api/commit` returned `files_count=160`, `contains_file_170=0`, and ended at `forkline-name-status-cap-repro-20260630/file-160.txt`.
+- Regression passed on temporary service `http://127.0.0.1:5297`: the same 170-file setup returned `files_count=170`, `contains_file_170=1`, and ended at `forkline-name-status-cap-repro-20260630/file-170.txt`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after cleanup.
+### Notes
+- `server.js`: removed the 160-entry cap in `parseNameStatus`.
+- `README.md`: documents that large historical file lists remain viewable.
+- `docs/CONTINUE.md`: records the name-status parser behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
