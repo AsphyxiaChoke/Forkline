@@ -349,6 +349,7 @@ async function runFileContextAction(action) {
   if (!context?.file) return;
   if (action === "diff") {
     state.selectedFile = context.file;
+    if (context.scope) state.workDiffScope = context.scope === "staged" ? "staged" : "unstaged";
     loadWorkingDiff(context.file);
     return;
   }

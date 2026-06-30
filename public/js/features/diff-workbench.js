@@ -391,15 +391,16 @@ function fallbackWorkDiffScope(scope, fileInfo, diff) {
 }
 
 async function runWorkDiffHunkAction(action, button) {
-  const file = state.selectedFile;
+  const file = activeWorktreeDiffFile();
   const hunkIndex = Number.parseInt(button?.dataset.hunkIndex || "", 10);
   const scope = button?.dataset.hunkScope || state.activeDiff?.scope || "unstaged";
   if (!file || !Number.isInteger(hunkIndex) || hunkIndex < 0) {
     toast("请选择要操作的改动块");
     return;
   }
+  state.selectedFile = file;
   if (action === "discardWorktreeHunk" && !state.data?.repo?.isSample && !confirm(`确认丢弃这个改动块？\n\n文件：${file}\n此操作无法撤销。`)) return;
-  const buttons = els.workDiffView.querySelectorAll("[data-hunk-action]");
+  const buttons = document.querySelectorAll(".work-diff-view [data-hunk-action], .diff-modal-body [data-hunk-action]");
   buttons.forEach((item) => {
     item.disabled = true;
   });
@@ -413,6 +414,10 @@ async function runWorkDiffHunkAction(action, button) {
     if (state.selectedFile) {
       state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
       await loadWorkingDiff(state.selectedFile);
+      if (els.diffModal.classList.contains("show")) {
+        if (state.activeDiff?.diff?.length) openDiffModal();
+        else closeDiffModal();
+      }
     }
   } catch (error) {
     toast(error.message);
@@ -459,6 +464,7 @@ function diffModalOptions() {
   const active = state.activeDiff || {};
   if (active.source !== "worktree") return {};
   return {
+    hunkActions: true,
     lineAction: selectedDiffLineAction(active.path, active.scope),
     filePath: active.path,
     scope: active.scope,
@@ -591,7 +597,7 @@ function renderSideMetaRow(line, text, options = {}) {
 
 function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
   if (!Number.isInteger(hunkIndex)) return "";
-  const fileInfo = selectedWorkingFileInfo(filePath);
+  const fileInfo = selectedWorkingFileInfo(filePath, scope);
   if (!fileInfo || fileInfo.conflict) return "";
   const untracked = isUntrackedFile(fileInfo);
   const normalizedScope = scope === "staged" ? "staged" : scope === "untracked" ? "untracked" : scope === "unstaged" ? "unstaged" : "";
@@ -646,7 +652,7 @@ function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass, optio
 }
 
 function selectedDiffLineAction(filePath, scope) {
-  const fileInfo = selectedWorkingFileInfo(filePath);
+  const fileInfo = selectedWorkingFileInfo(filePath, scope);
   if (!fileInfo || fileInfo.conflict) return null;
   if ((scope === "unstaged" || (scope === "untracked" && isUntrackedFile(fileInfo))) && fileInfo.unstaged) {
     return { action: "stageSelectedLines", label: "暂存所选行", title: "暂存当前 Diff 中选中的行" };
@@ -722,7 +728,7 @@ function selectedDiffLinePayload() {
 }
 
 async function runWorkDiffLineAction(button) {
-  const file = state.selectedFile;
+  const file = activeWorktreeDiffFile();
   const scope = state.activeDiff?.scope || "unstaged";
   const action = button?.dataset?.lineAction || "";
   const lines = selectedDiffLinePayload();
@@ -730,6 +736,7 @@ async function runWorkDiffLineAction(button) {
     toast("请选择要操作的行");
     return;
   }
+  state.selectedFile = file;
   if (action === "stageSelectedLines" && scope !== "unstaged" && scope !== "untracked") {
     toast("只能暂存工作区中未暂存的行");
     return;
@@ -769,6 +776,11 @@ async function runWorkDiffLineAction(button) {
     });
     syncDiffLineSelectionRows();
   }
+}
+
+function activeWorktreeDiffFile() {
+  if (state.activeDiff?.source === "worktree" && state.activeDiff?.path) return state.activeDiff.path;
+  return state.selectedFile;
 }
 
 function trimDiffPrefix(text) {

@@ -630,3 +630,85 @@
 - `docs/CONTINUE.md`: records duplicate-path context-menu behavior.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/js/features/context-menus.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: open context diff in the clicked file section
+### What was done
+- Found a right-click "查看对照" bug for files that have both unstaged and staged changes.
+- The context menu previously selected the file but kept the old Diff scope, so right-clicking an already-staged row could still open the unstaged Diff.
+- Updated the file context menu Diff action to inherit the clicked row scope before loading the worktree Diff.
+### Testing
+- Reproduction check failed before the fix: `runFileContextAction('diff')` with `context.scope = staged` loaded `scope = unstaged`.
+- Regression check passed after the fix: the staged context row loads `scope = staged`.
+- Regression check also passed for the reverse case: the unstaged context row loads `scope = unstaged` even if the previous Diff scope was staged.
+- `node --check public/js/features/context-menus.js` passed.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+- HTTP static verification confirmed `/js/features/context-menus.js` contains the scope handoff for context Diff.
+### Notes
+- `public/js/features/context-menus.js`: sets `state.workDiffScope` from the clicked row scope before loading file Diff from the context menu.
+- `docs/CONTINUE.md`: records that right-click "查看对照" opens the corresponding staged or unstaged Diff.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/context-menus.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: enable hunk actions in maximized diff
+### What was done
+- Found that maximized worktree Diff reused selected-line controls but did not expose the same hunk actions shown in the bottom Diff.
+- Added hunk actions to maximized worktree Diff rendering.
+- Routed hunk-action clicks inside the maximized Diff body through the existing hunk operation flow, and refreshes or closes the modal after the action.
+### Testing
+- Reproduction check failed before the fix: `diffModalOptions()` for a worktree Diff did not include `hunkActions`.
+- Regression check passed after the fix: maximized worktree Diff options include `hunkActions = true`.
+- Render regression check passed: maximized unstaged Diff HTML contains `data-hunk-action="stageHunk"` and `暂存此块`.
+- `node --check public/js/features/diff-workbench.js` passed.
+- `node --check public/js/app/events.js` passed.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+- HTTP static verification confirmed `/js/features/diff-workbench.js` contains `hunkActions: true` and `/js/app/events.js` handles modal hunk-action clicks.
+### Notes
+- `public/js/features/diff-workbench.js`: adds hunk actions to maximized worktree Diff and refreshes the modal after hunk operations.
+- `public/js/app/events.js`: handles hunk-action clicks inside the maximized Diff body.
+- `docs/CONTINUE.md`: records that maximized Diff supports both hunk and selected-line operations.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `public/js/app/events.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: use modal file for maximized diff operations
+### What was done
+- Found a follow-up edge case in maximized Diff operations: hunk and selected-line actions depended on global `selectedFile`.
+- Added a shared file resolver that prefers the current worktree `activeDiff.path`, then falls back to `selectedFile`.
+- The operation now reselects the modal file before calling the existing hunk or selected-line action flow.
+### Testing
+- Reproduction check failed before the fix: maximized hunk action with `activeDiff.path = modal-file.txt` and empty `selectedFile` did not send `modal-file.txt` to the API.
+- Regression check passed after the fix: maximized hunk action sends `file = modal-file.txt` and updates `selectedFile`.
+- Regression check passed for maximized selected-line action: it sends `file = modal-lines.txt` and updates `selectedFile`.
+- `node --check public/js/features/diff-workbench.js` passed.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+- HTTP static verification confirmed `/js/features/diff-workbench.js` contains `activeWorktreeDiffFile`.
+### Notes
+- `public/js/features/diff-workbench.js`: resolves maximized hunk and selected-line operations from the active worktree Diff path before falling back to the selected file.
+- `docs/CONTINUE.md`: records that maximized Diff operations use the current modal file.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-06-30 - Task: render diff actions by current scope
+### What was done
+- Found a duplicate-path rendering bug for staged deletion plus untracked recreation.
+- Hunk and selected-line buttons were looking up file state through the global `workDiffScope`, so rendering a staged Diff while the global scope was unstaged could hide `取消暂存此块`.
+- Changed hunk and selected-line action rendering to resolve file state using the Diff scope currently being rendered.
+### Testing
+- Reproduction check failed before the fix: `workDiffHunkActionButtons('same.txt', 'staged', 0)` returned no staged hunk action when global scope was unstaged.
+- Regression check passed after the fix: staged Diff renders `data-hunk-action="unstageHunk"` and untracked Diff renders `data-hunk-action="stageHunk"`.
+- Regression check passed for selected-line actions: staged Diff returns `unstageSelectedLines`, untracked Diff returns `stageSelectedLines`.
+- `node --check public/js/features/diff-workbench.js` passed.
+- `node --check` passed for all 21 frontend JavaScript files under `public/`.
+- `node --check server.js` passed.
+- `git diff --check` passed, with only Windows LF/CRLF notices.
+- HTTP static verification confirmed `/js/features/diff-workbench.js` resolves selected file info with the current render scope.
+### Notes
+- `public/js/features/diff-workbench.js`: renders hunk and selected-line actions from the current Diff scope instead of the global worktree scope.
+- `docs/CONTINUE.md`: records that duplicate-path Diff buttons follow the active Diff section.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

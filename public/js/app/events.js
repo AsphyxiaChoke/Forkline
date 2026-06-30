@@ -121,6 +121,12 @@ els.diffModalBody.addEventListener("click", (event) => {
     if (!lineButton.disabled) runWorkDiffLineAction(lineButton).catch((error) => toast(error.message));
     return;
   }
+  const button = event.target.closest("[data-hunk-action]");
+  if (button) {
+    event.preventDefault();
+    if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
+    return;
+  }
   const lineRow = event.target.closest("[data-diff-line-keys]");
   if (lineRow) {
     event.preventDefault();
