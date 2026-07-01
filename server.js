@@ -125,7 +125,7 @@ async function readState(ref = "") {
     git(currentRepo, ["remote"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
     git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
-    git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
@@ -272,9 +272,16 @@ async function readCommit(sha) {
     const commit = sample.commits.find((item) => item.sha === sha) || sample.commits[0];
     return { files: commit.files, diff: commit.diff };
   }
+  const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", sha]).catch(() => "")).trim();
+  const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
+  const diffBase = parents.length > 1 ? parents[0] : "";
   const [filesOutput, diffOutput, messageOutput] = await Promise.all([
-    git(currentRepo, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
-    git(currentRepo, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 }),
+    diffBase
+      ? git(currentRepo, ["diff", "--name-status", "--find-renames", diffBase, sha], { maxBuffer: 1024 * 1024 * 2 })
+      : git(currentRepo, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
+    diffBase
+      ? git(currentRepo, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
+      : git(currentRepo, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 }),
     git(currentRepo, ["show", "-s", "--format=%B", sha], { maxBuffer: 1024 * 256 }),
   ]);
   return {
@@ -1760,7 +1767,7 @@ async function pruneAllWorktrees() {
 
 async function initSubmodules() {
   const submodules = parseSubmodules(
-    await git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    await git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
   );
   if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
@@ -1774,11 +1781,11 @@ async function initSubmodules() {
 
 async function updateSubmodules(body) {
   const submodules = parseSubmodules(
-    await git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    await git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
   );
   if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
-  const submodulePath = String(body.path || "").trim();
+  const submodulePath = body.path === undefined || body.path === null ? "" : String(body.path);
   const args = ["submodule", "update", "--init", "--recursive"];
   let label = "所有子模块";
   if (submodulePath) {
@@ -1796,7 +1803,7 @@ async function updateSubmodules(body) {
 
 async function syncSubmodules() {
   const submodules = parseSubmodules(
-    await git(currentRepo, ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"]).catch(() => ""),
+    await git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
   );
   if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
@@ -4091,15 +4098,14 @@ async function enrichWorktreeList(rows) {
   }));
 }
 
+function submoduleConfigArgs() {
+  return ["config", "-z", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"];
+}
+
 function parseSubmodules(configOutput, statusOutput) {
   const byName = new Map();
-  for (const line of String(configOutput || "").split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    const match = line.match(/^submodule\.(.+)\.(path|url|branch)\s+(.+)$/);
-    if (!match) continue;
-    const [, rawName, key, rawValue] = match;
-    const name = rawName.trim();
-    const value = rawValue.trim();
+  for (const entry of parseSubmoduleConfigEntries(configOutput)) {
+    const { name, key, value } = entry;
     if (!name || !value) continue;
     const item = byName.get(name) || { name, path: "", url: "", branch: "" };
     item[key] = value;
@@ -4107,9 +4113,10 @@ function parseSubmodules(configOutput, statusOutput) {
   }
 
   const byPath = new Map([...byName.values()].filter((item) => item.path).map((item) => [normalizePathKey(item.path), item]));
+  const configuredPaths = [...byName.values()].map((item) => item.path).filter(Boolean);
   for (const line of String(statusOutput || "").split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const parsed = parseSubmoduleStatusLine(line);
+    const parsed = parseSubmoduleStatusLine(line, configuredPaths);
     if (!parsed.path) continue;
     const key = normalizePathKey(parsed.path);
     const item = byPath.get(key) || { name: parsed.path, path: parsed.path, url: "", branch: "" };
@@ -4137,13 +4144,48 @@ function parseSubmodules(configOutput, statusOutput) {
     }));
 }
 
-function parseSubmoduleStatusLine(line) {
+function parseSubmoduleConfigEntries(output) {
+  const text = String(output || "");
+  if (text.includes("\0")) {
+    return text.split("\0").filter(Boolean).map((record) => {
+      const separator = record.indexOf("\n");
+      if (separator === -1) return null;
+      return submoduleConfigEntry(record.slice(0, separator), record.slice(separator + 1));
+    }).filter(Boolean);
+  }
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line) => {
+      const match = line.match(/^(submodule\..+\.(?:path|url|branch))\s+(.+)$/);
+      if (!match) return null;
+      return submoduleConfigEntry(match[1], match[2].trim());
+    })
+    .filter(Boolean);
+}
+
+function submoduleConfigEntry(rawKey, rawValue) {
+  const match = String(rawKey || "").match(/^submodule\.(.+)\.(path|url|branch)$/);
+  if (!match) return null;
+  const [, name, key] = match;
+  const value = key === "path" ? String(rawValue || "") : String(rawValue || "").trim();
+  return { name, key, value };
+}
+
+function parseSubmoduleStatusLine(line, configuredPaths = []) {
   const prefix = line[0] || " ";
-  const rest = line.slice(1).trim();
-  const parts = rest.split(/\s+/);
-  const sha = parts.shift() || "";
-  const subPath = parts.shift() || "";
-  const summary = parts.join(" ").replace(/^\((.*)\)$/, "$1");
+  const rest = line.slice(1).trimEnd();
+  const firstSpace = rest.search(/\s/);
+  const sha = firstSpace === -1 ? rest : rest.slice(0, firstSpace);
+  const tail = firstSpace === -1 ? "" : rest.slice(firstSpace + 1);
+  const knownPath = configuredPaths
+    .slice()
+    .sort((left, right) => right.length - left.length)
+    .find((candidate) => tail === candidate || tail.startsWith(`${candidate} `));
+  const fallbackParts = knownPath ? [] : tail.trim().split(/\s+/);
+  const subPath = knownPath || fallbackParts.shift() || "";
+  const summarySource = knownPath ? tail.slice(knownPath.length).trim() : fallbackParts.join(" ");
+  const summary = summarySource.replace(/^\((.*)\)$/, "$1");
   const status = prefix === "-" ? "uninitialized" : prefix === "+" ? "changed" : prefix === "U" ? "conflict" : "ok";
   return { sha, path: subPath, summary, status };
 }
@@ -4762,11 +4804,19 @@ function parseDiff(output) {
   return lines
     .map((line) => {
       let type = "ctx";
-      if (line.startsWith("diff --git ")) hunkIndex = -1;
-      if (/^(diff --git|@@|\+\+\+|---|index |new file mode |deleted file mode |old mode |new mode |similarity index |rename from |rename to |copy from |copy to |Binary files |GIT binary patch|literal |delta |\\ No newline at end of file)/.test(line)) type = "meta";
-      else if (line.startsWith("+")) type = "add";
-      else if (line.startsWith("-")) type = "del";
-      if (line.startsWith("@@ ")) hunkIndex += 1;
+      if (line.startsWith("diff --git ")) {
+        hunkIndex = -1;
+        type = "meta";
+      } else if (line.startsWith("@@ ")) {
+        hunkIndex += 1;
+        type = "meta";
+      } else if (hunkIndex >= 0) {
+        if (line.startsWith("\\ No newline at end of file")) type = "meta";
+        else if (line.startsWith("+")) type = "add";
+        else if (line.startsWith("-")) type = "del";
+      } else if (/^(\+\+\+|---|index |new file mode |deleted file mode |old mode |new mode |similarity index |rename from |rename to |copy from |copy to |Binary files |GIT binary patch|literal |delta |\\ No newline at end of file)/.test(line)) {
+        type = "meta";
+      }
       return { type, text: line, hunkIndex: hunkIndex >= 0 ? hunkIndex : null };
     });
 }

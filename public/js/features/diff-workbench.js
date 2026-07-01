@@ -500,11 +500,29 @@ function diffForFile(diff, filePath) {
 }
 
 function diffBlockMatchesFile(block, target) {
-  return block.some((line) => {
-    const text = String(line.text || "");
-    const normalized = normalizeDiffPath(text);
-    return normalized.includes(` a/${target}`) || normalized.includes(` b/${target}`) || normalized.endsWith(`a/${target}`) || normalized.endsWith(`b/${target}`);
-  });
+  return block.some((line) => diffLinePaths(line).some((filePath) => filePath === target));
+}
+
+function diffLinePaths(line) {
+  const text = String(line?.text || "");
+  if (text.startsWith("diff --git ")) return diffHeaderPaths(text);
+  if (text.startsWith("--- ") || text.startsWith("+++ ")) return [normalizeDiffPathToken(text.slice(4))].filter(Boolean);
+  if (text.startsWith("rename from ")) return [normalizeDiffPath(text.slice("rename from ".length))].filter(Boolean);
+  if (text.startsWith("rename to ")) return [normalizeDiffPath(text.slice("rename to ".length))].filter(Boolean);
+  if (text.startsWith("copy from ")) return [normalizeDiffPath(text.slice("copy from ".length))].filter(Boolean);
+  if (text.startsWith("copy to ")) return [normalizeDiffPath(text.slice("copy to ".length))].filter(Boolean);
+  return [];
+}
+
+function diffHeaderPaths(text) {
+  const match = String(text || "").match(/^diff --git a\/(.+) b\/\1$/);
+  return match ? [normalizeDiffPath(match[1])] : [];
+}
+
+function normalizeDiffPathToken(value) {
+  const normalized = normalizeDiffPath(value).replace(/\t.*$/, "");
+  if (!normalized || normalized === "/dev/null") return "";
+  return normalized.replace(/^[ab]\//, "");
 }
 
 function normalizeDiffPath(value) {

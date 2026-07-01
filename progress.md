@@ -1602,3 +1602,105 @@
 - `docs/CONTINUE.md`: records the static path boundary hardening for follow-up development.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: keep plus-prefixed diff content selectable
+### What was done
+- Found that Forkline's Diff parser treated every line beginning with `+++` or `---` as metadata.
+- Reproduced that an untracked file containing a real added line `++PLUS_PREFIX_SHOULD_BE_ADD` returned that Diff row as `meta` instead of `add`, leaving it unavailable for line selection.
+- Changed Diff parsing so file headers are detected outside hunks, while lines inside hunks are classified first by their real Diff prefix.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary file `forkline-plus-prefix-20260701.txt`; before the fix, `/api/worktree-diff?scope=unstaged` returned scope `untracked`, but the row `+++PLUS_PREFIX_SHOULD_BE_ADD` was classified as `meta` and only one line was selectable as `add`.
+- Regression passed on temporary service `http://127.0.0.1:5335`: the same row was classified as `add`, `hunkIndex = 0`, selectable add line count became `2`, and `stageSelectedLines` staged only `++PLUS_PREFIX_SHOULD_BE_ADD` into the index.
+- Regression passed on temporary service `http://127.0.0.1:5336`: a staged new file with the worktree line `--MINUS_PREFIX_SHOULD_BE_DEL` removed returned the Diff row `---MINUS_PREFIX_SHOULD_BE_DEL` as `del`, `hunkIndex = 0`, with one selectable delete line.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `parseDiff` now gives hunk content lines priority over file-header metadata patterns.
+- `README.md`: documents that content lines producing `+++...` / `---...` Diff text remain selectable.
+- `docs/CONTINUE.md`: records the Diff line classification fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve spaces in submodule status paths
+### What was done
+- Found that Forkline parsed `git submodule status --recursive` by splitting the status line on whitespace.
+- Reproduced that a configured submodule at `forkline-fixtures/submodule space 20260701` appeared as two records: the real configured path stuck at `configured`, plus a fake truncated path `forkline-fixtures/submodule` marked `ok`.
+- Updated submodule status parsing to use paths already read from `.gitmodules` as known path boundaries before falling back to whitespace parsing.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary local submodule source `C:\tmp\forkline-submodule-space-source-20260701` and submodule path `forkline-fixtures/submodule space 20260701`; before the fix, Forkline API returned two submodules, including bogus path `forkline-fixtures/submodule`.
+- Regression passed on temporary service `http://127.0.0.1:5338`: Forkline API returned exactly one submodule with path `forkline-fixtures/submodule space 20260701`, `status = ok`, `statusLabel = 已就绪`, `exists = true`, and `initialized = true`.
+- Cleaned the temporary submodule, `.gitmodules` changes, gitlink, `.git/modules` metadata, and temporary source repository.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `parseSubmoduleStatusLine` now accepts configured submodule paths and matches the longest known path before using whitespace fallback parsing.
+- `README.md`: documents that submodule paths containing spaces merge with their status correctly.
+- `docs/CONTINUE.md`: records the submodule path parsing fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve leading spaces in submodule paths
+### What was done
+- Found that Forkline read `.gitmodules` with plain `git config --get-regexp` text output and trimmed config values.
+- Reproduced that a submodule path starting with a space, ` leading-submodule-20260701`, was displayed as `leading-submodule-20260701` and marked `exists = false` even though the real submodule directory existed.
+- Switched `.gitmodules` reads to `git config -z` and added NUL-record parsing so path values keep leading spaces; status parsing now keeps the path tail's leading space for configured-path matching.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary local submodule source `C:\tmp\forkline-submodule-leading-space-source-20260701` and submodule path ` leading-submodule-20260701`; before the fix, Forkline API returned path `leading-submodule-20260701`, `status = ok`, but `exists = false` and `initialized = false`.
+- Regression passed on temporary service `http://127.0.0.1:5340`: Forkline API returned exactly one submodule with path ` leading-submodule-20260701`, `status = ok`, `statusLabel = 已就绪`, `exists = true`, and `initialized = true`.
+- Cleaned the temporary submodule, `.gitmodules` changes, gitlink, `.git/modules` metadata, and temporary source repository.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `.gitmodules` reads now use `submoduleConfigArgs()` with `git config -z`, and `parseSubmoduleConfigEntries` preserves path leading spaces.
+- `README.md`: documents that submodule paths with leading spaces are preserved.
+- `docs/CONTINUE.md`: records the leading-space submodule path parsing fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: keep leading-space submodule paths during single update
+### What was done
+- Found that after preserving leading spaces in the submodule list, the single-submodule update action still trimmed `body.path`.
+- Reproduced that Forkline listed ` leading-update-submodule-20260701`, but calling `updateSubmodules` for that listed path failed with “子模块不存在：leading-update-submodule-20260701”.
+- Removed trimming from the single-submodule update path so the Git pathspec receives the exact configured submodule path.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary local submodule source `C:\tmp\forkline-submodule-update-leading-space-source-20260701` and submodule path ` leading-update-submodule-20260701`; before the fix, the update action failed after trimming the path.
+- Regression passed on temporary service `http://127.0.0.1:5342`: `updateSubmodules` with path ` leading-update-submodule-20260701` returned `已更新 leading-update-submodule-20260701`, and the returned state kept path ` leading-update-submodule-20260701`, `exists = true`, `initialized = true`.
+- Cleaned the temporary submodule, `.gitmodules` changes, gitlink, `.git/modules` metadata, and temporary source repository.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `updateSubmodules` now preserves the exact `body.path` string instead of trimming it.
+- `README.md`: documents that single-submodule update path arguments preserve leading spaces.
+- `docs/CONTINUE.md`: records the single-submodule update path fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: avoid prefix collisions when selecting a file diff
+### What was done
+- Found that the front-end `diffForFile` helper matched diff blocks with string `includes`.
+- Reproduced that when one commit changed both `dir a/foo.txt` and `foo.txt`, selecting `foo.txt` matched the earlier `dir a/foo.txt` block and showed the wrong file's content.
+- Changed diff block matching to extract candidate paths from `diff --git`, `---/+++`, `rename from/to`, and `copy from/to` lines, then compare paths exactly.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary commit `Forkline diff path match repro 20260701` adding `dir a/foo.txt` and `foo.txt`; before the fix, the same matching logic selected header `diff --git a/dir a/foo.txt b/dir a/foo.txt` and add line `+nested misleading diff` for target `foo.txt`.
+- Regression passed on temporary service `http://127.0.0.1:5346`: selecting target `foo.txt` matched header `diff --git a/foo.txt b/foo.txt` and add line `+root target diff`.
+- Rolled back the temporary commit with `git reset --hard HEAD~1` and cleaned temporary files.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `public/js/features/diff-workbench.js`: `diffBlockMatchesFile` now uses exact path candidates instead of substring matching.
+- `README.md`: documents that single-file history/sync/compare diffs avoid prefix path collisions.
+- `docs/CONTINUE.md`: records the exact diff path matching fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/diff-workbench.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: show file changes for merge commit details
+### What was done
+- Found that Forkline's commit detail endpoint used plain `git show` for merge commits.
+- Reproduced that a two-parent no-ff merge commit bringing in `forkline-merge-diff-20260701.txt` returned `filesCount = 0` and `diffCount = 0`, so the UI would show no merge commit changes.
+- Updated `readCommit` to detect multi-parent commits and build the file list and Diff with `git diff <first-parent> <merge-commit>`.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary branch `forkline/merge-diff-repro-20260701` and a no-ff merge into `123`; before the fix, `/api/commit?sha=<merge>` returned no files and no Diff.
+- Regression passed on temporary service `http://127.0.0.1:5351`: the merge commit returned `filesCount = 1`, `diffCount = 7`, file `forkline-merge-diff-20260701.txt`, and add line `+merge diff content`.
+- Rolled back the temporary merge commit, deleted the temporary branch, and cleaned temporary files.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readCommit` now compares merge commits against their first parent for commit detail files and Diff.
+- `README.md`: documents that merge commit details show changes introduced relative to the first parent.
+- `docs/CONTINUE.md`: records the merge commit detail Diff fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
