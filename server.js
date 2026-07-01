@@ -183,12 +183,12 @@ async function readState(ref = "") {
       operation: detectRepoOperation(currentRepo),
       remoteNames,
     },
-    branches: branches.slice(0, 32),
+    branches,
     branchInfo,
     branchCleanup,
     worktrees,
     submodules,
-    remotes: remotes.slice(0, 32),
+    remotes,
     sync,
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
@@ -3980,7 +3980,7 @@ function normalizeStashMessage(value) {
 
 function normalizeStashFiles(value) {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.map((file) => normalizeRepoFile(file)))].slice(0, 120);
+  return [...new Set(value.map((file) => normalizeRepoFile(file)))];
 }
 
 function normalizeTagName(value) {
@@ -4449,7 +4449,6 @@ function parseTags(output) {
   return String(output || "")
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(0, 160)
     .map((line) => {
       const [name = "", object = "", time = "", subject = "", type = ""] = line.split("\t");
       return {
@@ -4704,7 +4703,6 @@ function parseStashList(output) {
   return String(output || "")
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(0, 80)
     .map((line) => {
       const [ref, subject = "", time = ""] = line.split("\x1f");
       const parsed = parseStashSubject(subject);
@@ -4757,7 +4755,7 @@ function parseDiff(output) {
       else if (line.startsWith("+")) type = "add";
       else if (line.startsWith("-")) type = "del";
       if (line.startsWith("@@ ")) hunkIndex += 1;
-      return { type, text: line.slice(0, 280), hunkIndex: hunkIndex >= 0 ? hunkIndex : null };
+      return { type, text: line, hunkIndex: hunkIndex >= 0 ? hunkIndex : null };
     });
 }
 

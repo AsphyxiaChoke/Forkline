@@ -1356,3 +1356,89 @@
 - `docs/CONTINUE.md`: records the name-status parser behavior for follow-up development.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: stop truncating branch lists at 32 entries
+### What was done
+- Found that `/api/state` returned only the first 32 local branches and first 32 remote branches.
+- Reproduced that repositories with many branches could hide later branches from the left branch list and related actions.
+- Removed the hardcoded 32-entry caps for local and remote branch arrays while keeping existing branch parsing and filtering behavior.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by creating 40 temporary local branches named `zzzz/forkline-branch-cap-20260701-*`; before the fix, `/api/state` returned `api_branch_count=32`, `contains_branch_040=0`, and ended at `zzzz/forkline-branch-cap-20260701-028`.
+- Regression passed on temporary service `http://127.0.0.1:5299`: the same local branch setup returned `api_branch_count=44`, `contains_branch_040=1`, and ended at `zzzz/forkline-branch-cap-20260701-040`.
+- Remote branch regression passed on temporary service `http://127.0.0.1:5300` with 40 temporary `refs/remotes/origin/zzzz/forkline-remote-cap-20260701-*` refs: `/api/state` returned `api_remote_count=44` and `contains_remote_040=1`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after cleanup.
+### Notes
+- `server.js`: `/api/state` now returns full `branches` and `remotes` arrays instead of slicing them to 32 entries.
+- `README.md`: documents that large local/remote branch lists are not silently truncated.
+- `docs/CONTINUE.md`: records the branch list behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: stop truncating tag lists at 160 entries
+### What was done
+- Found that Forkline parsed only the first 160 local Tag refs.
+- Reproduced that repositories with many Tags could hide older Tags from the right-side Tag panel and related actions.
+- Removed the hardcoded 160-entry cap from `parseTags` while keeping existing Tag sorting and metadata parsing behavior.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by creating 170 temporary annotated Tags named `forkline-tag-cap-20260701-*` with stable tagger dates; before the fix, `/api/state` returned `api_tag_count=160`, `matching_tag_count=160`, `contains_tag_001=0`, and the oldest matching returned Tag was `forkline-tag-cap-20260701-011`.
+- Regression passed on temporary service `http://127.0.0.1:5302`: the same Tag setup returned `api_tag_count=171`, `matching_tag_count=170`, `contains_tag_001=1`, and the oldest matching Tag was `forkline-tag-cap-20260701-001`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after cleanup.
+### Notes
+- `server.js`: `parseTags` now returns all parsed Tag refs instead of slicing to 160 entries.
+- `README.md`: documents that large local Tag lists are not silently truncated.
+- `docs/CONTINUE.md`: records the Tag list behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: stop truncating stash lists at 80 entries
+### What was done
+- Found that Forkline parsed only the first 80 stash entries.
+- Reproduced that repositories with many stashes could hide older stashes from the right-side stash panel and related recovery actions.
+- Removed the hardcoded 80-entry cap from `parseStashList` while keeping existing stash subject parsing behavior.
+### Testing
+- Reproduced on `D:\桌面\GitTest` by creating 85 temporary stashes named `Forkline stash cap repro 20260701-*`; before the fix, `/api/state` returned `api_stash_count=80`, `matching_stash_count=80`, `contains_stash_001=0`, and the oldest matching stash was `On 123: Forkline stash cap repro 20260701-006`.
+- Regression passed on temporary service `http://127.0.0.1:5304`: the same stash setup returned `api_stash_count=85`, `matching_stash_count=85`, `contains_stash_001=1`, and the oldest matching stash was `On 123: Forkline stash cap repro 20260701-001`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree and no matching temporary stashes left after cleanup.
+### Notes
+- `server.js`: `parseStashList` now returns all parsed stash entries instead of slicing to 80 entries.
+- `README.md`: documents that large stash lists are not silently truncated.
+- `docs/CONTINUE.md`: records the stash list behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve full long lines in diff output
+### What was done
+- Found that Forkline truncated every parsed diff line to 280 characters.
+- Reproduced that a changed line longer than 280 characters lost its tail in `/api/commit`, hiding the end of long configuration or JSON-style lines.
+- Removed the per-line diff text truncation so the API returns complete diff line text.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary branch `forkline/diff-long-line-repro-20260701`: a committed line with trailing marker `TAIL_MARKER_20260701` returned `add_text_length=280`, `contains_tail=False`, and a suffix of only `x` characters.
+- Regression passed on temporary service `http://127.0.0.1:5306`: the same long line returned `add_text_length=381`, `contains_tail=True`, and suffix `xxxxxxxxxxxxTAIL_MARKER_20260701`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree after cleanup.
+### Notes
+- `server.js`: `parseDiff` now keeps full diff line text instead of slicing each line to 280 characters.
+- `README.md`: documents that long diff lines remain fully visible.
+- `docs/CONTINUE.md`: records the long-line diff behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: stop truncating selected stash files at 120 entries
+### What was done
+- Found that Forkline silently kept only the first 120 selected files when creating a selected-file stash.
+- Reproduced that selecting 130 files created a stash but left files 121-130 in the worktree.
+- Removed the 120-file cap from selected stash file normalization while keeping path normalization and de-duplication.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with 130 temporary untracked files under `forkline-stash-selected-cap-20260701`; before the fix, `requested_files=130`, `remaining_file_count=10`, with remaining files from `file-121.txt` to `file-130.txt`.
+- Regression passed on temporary service `http://127.0.0.1:5309`: the same setup returned `requested_files=130` and `remaining_file_count=0`.
+- `node --check server.js` passed.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree and no matching temporary stashes left after cleanup.
+### Notes
+- `server.js`: `normalizeStashFiles` now keeps all selected files after normalization and de-duplication instead of slicing to 120.
+- `README.md`: documents that selected-file stash does not silently drop later selected files.
+- `docs/CONTINUE.md`: records the selected-stash behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
