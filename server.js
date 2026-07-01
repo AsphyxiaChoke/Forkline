@@ -2322,7 +2322,7 @@ function normalizeDiffLineSelections(value) {
 }
 
 function extractSelectedLinePatch(diffOutput, selectedLines, mode = "stage") {
-  const text = String(diffOutput || "").replace(/\r\n/g, "\n");
+  const text = String(diffOutput || "");
   if (!text.trim()) throw new Error("没有可操作的 Diff 行。");
   const selectedKeys = new Set(selectedLines.map((line) => line.key));
   const matchedKeys = new Set();
@@ -2656,7 +2656,7 @@ async function refreshIndexStatForFile(file) {
 }
 
 function extractSingleHunkPatch(diffOutput, targetHunkIndex) {
-  const lines = String(diffOutput || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = String(diffOutput || "").split("\n");
   if (!lines.length || !String(diffOutput || "").trim()) throw new Error("没有可操作的 Diff 块。");
   const header = [];
   const hunk = [];
@@ -2681,7 +2681,7 @@ function extractSingleHunkPatch(diffOutput, targetHunkIndex) {
 }
 
 function extractMovedFileUnstageHunkPatch(diffOutput, targetHunkIndex) {
-  const lines = String(diffOutput || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = String(diffOutput || "").split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   if (!lines.length || !String(diffOutput || "").trim()) throw new Error("没有可操作的 Diff 块。");
   const header = [];
@@ -3374,7 +3374,7 @@ function removeQuietly(filePath) {
 }
 
 function normalizeRepoFile(filePath) {
-  const value = String(filePath || "").replaceAll("\\", "/").trim();
+  const value = String(filePath || "").replaceAll("\\", "/");
   if (!value || value.includes("\0")) throw new Error("请选择要对照的文件");
   if (path.isAbsolute(value) || value.split("/").includes("..")) throw new Error("文件路径不合法");
   return value;
@@ -4481,22 +4481,34 @@ function readNewFileDiff(file) {
   if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) return "";
   const buffer = fs.readFileSync(fullPath);
   if (buffer.includes(0)) return "";
-  const text = buffer.toString("utf8").replace(/\r\n/g, "\n");
-  const lines = text.split("\n");
+  const decoded = decodeUtf8Strict(buffer);
+  if (decoded === null) return "";
+  const text = decoded;
+  const lines = text ? text.split("\n") : [];
   if (text.endsWith("\n")) lines.pop();
-  const previewLines = lines.slice(0, 420);
   const diffLines = [
     `diff --git a/${file} b/${file}`,
     "new file mode 100644",
     "--- /dev/null",
     `+++ b/${file}`,
   ];
-  for (let index = 0; index < previewLines.length; index += UNTRACKED_DIFF_HUNK_SIZE) {
-    const chunk = previewLines.slice(index, index + UNTRACKED_DIFF_HUNK_SIZE);
+  for (let index = 0; index < lines.length; index += UNTRACKED_DIFF_HUNK_SIZE) {
+    const chunk = lines.slice(index, index + UNTRACKED_DIFF_HUNK_SIZE);
     diffLines.push(`@@ -0,0 +${index + 1},${chunk.length} @@`);
     diffLines.push(...chunk.map((line) => `+${line}`));
+    if (!text.endsWith("\n") && index + chunk.length >= lines.length) {
+      diffLines.push("\\ No newline at end of file");
+    }
   }
   return diffLines.join("\n");
+}
+
+function decodeUtf8Strict(buffer) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer);
+  } catch (_error) {
+    return null;
+  }
 }
 
 function commandResult(output) {
@@ -5895,8 +5907,9 @@ function shortText(value, maxLength = 120) {
 function serveStatic(req, res) {
   const urlPath = decodeURIComponent(new URL(req.url, `http://localhost:${PORT}`).pathname);
   const relative = urlPath === "/" ? "index.html" : urlPath.replace(/^\/+/, "");
-  const filePath = path.normalize(path.join(PUBLIC_DIR, relative));
-  if (!filePath.startsWith(PUBLIC_DIR)) {
+  const publicRoot = path.resolve(PUBLIC_DIR);
+  const filePath = path.resolve(publicRoot, relative);
+  if (filePath !== publicRoot && !filePath.startsWith(publicRoot + path.sep)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;

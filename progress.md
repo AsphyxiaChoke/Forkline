@@ -1442,3 +1442,163 @@
 - `docs/CONTINUE.md`: records the selected-stash behavior for follow-up development.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: stop truncating untracked text file virtual diffs at 420 lines
+### What was done
+- Found that Forkline generated virtual Diff blocks for untracked text files from only the first 420 lines.
+- Reproduced that a 430-line untracked file lost its tail line in `/api/worktree-diff`, so the user could not see or select that content from the Diff panel.
+- Removed the 420-line cap while keeping the existing 40-line virtual hunk size.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary file `forkline-untracked-long-20260701.txt` containing 430 lines and tail marker `LINE_430_TAIL_MARKER_20260701`; before the fix, temporary service `http://127.0.0.1:5311` returned `add_count=420`, `contains_tail=false`, and `last_add=+line-420`.
+- Regression passed on temporary service `http://127.0.0.1:5312`: the same file returned `add_count=430`, `contains_tail=true`, and `last_add=+LINE_430_TAIL_MARKER_20260701`.
+- `node --check server.js` passed.
+- Stopped both temporary services and deleted the temporary file.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readNewFileDiff` now builds virtual hunks from all text lines instead of slicing to the first 420.
+- `README.md`: documents that untracked text file virtual Diff content is complete.
+- `docs/CONTINUE.md`: records the untracked virtual Diff behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: keep empty untracked files from becoming fake blank-line diffs
+### What was done
+- Found that Forkline's virtual Diff for an empty untracked text file generated one fake added blank line.
+- Reproduced that running hunk staging on that fake line created a 1-byte staged blob while the worktree file stayed 0 bytes, leaving the file as `AM`.
+- Changed virtual Diff line splitting so a truly empty file has no content hunks, while files that actually contain a newline still show that blank line.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary empty file `forkline-empty-untracked-20260701.txt`; before the fix, `/api/worktree-diff` on temporary service `http://127.0.0.1:5313` returned `diff_count=6`, `add_count=1`, and `add_texts=+`.
+- Confirmed the bad operation before the fix: `stageHunk` on the fake hunk produced status `AM` and a cached blob size of `1`.
+- Regression passed on temporary service `http://127.0.0.1:5314`: the same empty file returned `diff_count=4`, `add_count=0`, and a forced `stageHunk` call left status as `??`.
+- Full-file staging regression passed: `stageFile` staged the empty file as status `A` with cached blob size `0`.
+- `node --check server.js` passed.
+- Stopped temporary services and deleted the temporary file.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readNewFileDiff` now treats empty file text as zero lines instead of one empty line.
+- `README.md`: documents that empty untracked files do not render fake added blank lines.
+- `docs/CONTINUE.md`: records the empty untracked file virtual Diff behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve missing trailing newlines in untracked virtual diffs
+### What was done
+- Found that Forkline's virtual Diff for untracked text files without a trailing newline did not include the standard `No newline at end of file` marker.
+- Reproduced that hunk staging such a file added a newline to the staged blob, leaving the worktree file unchanged and the path in `AM` state.
+- Added the missing no-newline marker to the final virtual hunk when the source file really has no trailing newline.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary file `forkline-no-newline-untracked-20260701.txt` containing `NO_NEWLINE_TAIL_20260701` with no trailing newline; before the fix, temporary service `http://127.0.0.1:5315` returned `no_newline_marker_count=0`.
+- Confirmed the bad operation before the fix: `stageHunk` returned success, status became `AM`, worktree size was `24`, and cached blob size was `25`.
+- Regression passed on temporary service `http://127.0.0.1:5316`: the same virtual Diff returned `marker_count=1`.
+- Hunk staging regression passed: cached blob size stayed `24` and status was `A`.
+- Selected-line staging regression passed: cached blob size stayed `24` and status was `A`.
+- `node --check server.js` passed.
+- Stopped temporary services and deleted the temporary file.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readNewFileDiff` now appends `\ No newline at end of file` to the final virtual hunk for untracked text files that lack a trailing newline.
+- `README.md`: documents that hunk and line staging do not add a trailing newline to untracked files.
+- `docs/CONTINUE.md`: records the no-trailing-newline virtual Diff behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: avoid corrupting non-UTF-8 untracked files in virtual diffs
+### What was done
+- Found that Forkline decoded untracked files with `Buffer.toString("utf8")` before building virtual Diff hunks.
+- Reproduced that a GBK/ANSI-style file without NUL bytes was displayed with replacement characters and could be staged through hunk actions as corrupted UTF-8 content.
+- Added strict UTF-8 decoding for virtual untracked text diffs; files that cannot be decoded safely no longer generate selectable virtual content hunks.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary GBK file `forkline-gbk-untracked-20260701.txt`; before the fix, temporary service `http://127.0.0.1:5317` returned an added line containing replacement characters.
+- Confirmed the bad operation before the fix: `stageHunk` returned success, status became `AM`, original file size was `13`, and cached blob size became `29`.
+- Regression passed on temporary service `http://127.0.0.1:5318`: the same GBK file returned `gbk_add_count=0`; a forced hunk action left status as `??`.
+- Selected-line forced call regression passed: the GBK file stayed untracked and was not added to the index.
+- Full-file staging regression passed: `stageFile` still staged the GBK file with cached blob size `13`, preserving original bytes.
+- UTF-8 untracked file regression passed: a normal UTF-8 file still staged through `stageHunk` as status `A`.
+- `node --check server.js` passed.
+- Stopped the temporary service and deleted the temporary files.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readNewFileDiff` now uses strict UTF-8 decoding and skips virtual content hunks when decoding fails.
+- `README.md`: documents that non-UTF-8 untracked files are protected from virtual hunk/line staging corruption.
+- `docs/CONTINUE.md`: records the strict UTF-8 virtual Diff behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve UTF-8 BOM bytes in untracked virtual diffs
+### What was done
+- Found that strict UTF-8 virtual Diff decoding still used TextDecoder's default BOM handling, which removed the UTF-8 BOM from untracked file content.
+- Reproduced that hunk staging a BOM-prefixed untracked file silently dropped the first three bytes and left the path in `AM` state.
+- Updated strict UTF-8 decoding to keep BOM bytes as content when building virtual Diff hunks.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary file `forkline-bom-untracked-20260701.txt` containing UTF-8 BOM plus `BOM_TEXT`; before the fix, temporary service `http://127.0.0.1:5319` returned first content codepoint `66`, staged hunk status `AM`, original size `11`, and cached blob size `8`.
+- Regression passed on temporary service `http://127.0.0.1:5320`: virtual Diff first content codepoint was `65279`, proving the BOM was preserved.
+- Hunk staging regression passed: cached blob size stayed `11` and status was `A`.
+- Selected-line staging regression passed: cached blob size stayed `11` and status was `A`.
+- Non-UTF-8 guard regression passed with temporary GBK file `forkline-gbk-bom-regression-20260701.txt`: `gbk_add_count=0` and forced hunk staging left status `??`.
+- `node --check server.js` passed.
+- Stopped the temporary service and deleted the temporary files.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: strict UTF-8 decoding now uses `ignoreBOM: true` so BOM bytes remain part of virtual Diff content.
+- `README.md`: documents that UTF-8 BOM is preserved during untracked virtual hunk/line staging.
+- `docs/CONTINUE.md`: records the BOM-preserving virtual Diff behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve CRLF bytes in untracked virtual patches
+### What was done
+- Found that Forkline normalized CRLF to LF while generating and extracting virtual Diff patches for untracked text files.
+- Reproduced that when `.gitattributes` marked a new file as `-text`, hunk staging a CRLF file staged LF content instead of the original CRLF bytes.
+- Removed CRLF normalization from virtual Diff generation and patch extraction so carriage returns in file content stay part of the generated patch.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary `.gitattributes` rule `forkline-crlf-raw-20260701.txt -text` and CRLF file `forkline-crlf-raw-20260701.txt`; before the fix, temporary service `http://127.0.0.1:5321` staged hunk status `AM`, original size `12`, and cached blob size `10`.
+- First attempted fix only changed patch extraction and still failed on temporary service `http://127.0.0.1:5322`, proving virtual Diff generation was also normalizing CRLF.
+- Regression passed on temporary service `http://127.0.0.1:5323`: hunk staging kept cached blob size `12` and status `A`.
+- Selected-line staging regression passed: selected-line staging kept cached blob size `12` and status `A`.
+- Adjacent regressions passed: UTF-8 LF untracked hunk staging still worked, UTF-8 BOM stayed preserved, and GBK/non-UTF-8 files still produced no virtual add lines.
+- `node --check server.js` passed.
+- Stopped temporary services and deleted temporary `.gitattributes` and test files.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readNewFileDiff`, `extractSingleHunkPatch`, `extractMovedFileUnstageHunkPatch`, and `extractSelectedLinePatch` no longer normalize CRLF to LF while building patches.
+- `README.md`: documents that `-text` CRLF untracked files do not lose CR bytes during hunk/line staging.
+- `docs/CONTINUE.md`: records the CRLF-preserving virtual patch behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve leading spaces in repository file paths
+### What was done
+- Found that `normalizeRepoFile` trimmed file paths before using them for worktree Diff and hunk actions.
+- Reproduced that a valid Windows file whose name starts with a space lost that leading space in `/api/worktree-diff`, so Forkline showed an empty Diff and hunk staging could not find the file.
+- Removed path trimming from repository file normalization while keeping absolute path, NUL byte, and `..` path rejection.
+### Testing
+- Reproduced on `D:\桌面\GitTest` with temporary file ` forkline-leading-space-20260701.txt`; before the fix, temporary service `http://127.0.0.1:5326` returned `diff_file_returned=forkline-leading-space-20260701.txt`, `diff_count=0`, and hunk staging failed with “这个文件当前没有可操作的改动。”
+- Regression passed on temporary service `http://127.0.0.1:5327`: the same file returned `diff_file_returned= forkline-leading-space-20260701.txt`, `diff_count=6`, `add_count=1`, and hunk staging produced status `A`.
+- Normal path regression passed with `forkline-normal-path-regression-20260701.txt`, which still staged as status `A`.
+- `node --check server.js` passed.
+- Stopped temporary services and deleted the temporary files.
+- Confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `normalizeRepoFile` no longer trims leading or trailing whitespace from repository-relative paths.
+- `README.md`: documents that leading spaces in filenames are preserved.
+- `docs/CONTINUE.md`: records the leading-space path behavior for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: block encoded backslash traversal in static file serving
+### What was done
+- Found that the local static file server checked `filePath.startsWith(PUBLIC_DIR)` after joining and normalizing the requested path.
+- Reproduced that on Windows an encoded backslash traversal URL could read a file next to `public/`.
+- Changed static serving to resolve both the public root and requested file to absolute paths, then require the target to equal the public root or start with the public root plus a path separator.
+### Testing
+- Reproduced with temporary file `public-leak-20260701.txt` containing `FORKLINE_STATIC_LEAK_20260701`: before the fix, temporary service `http://127.0.0.1:5328/%2e%2e%5cpublic-leak-20260701.txt` returned `200` and the file body.
+- Regression passed on temporary service `http://127.0.0.1:5329`: the same traversal URL returned `403`, while `http://127.0.0.1:5329/` returned `200` and contained `Forkline`.
+- `node --check server.js` passed.
+- Stopped the temporary service and removed the temporary leak file.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: `serveStatic` now checks static file paths with resolved absolute paths and a path-separator boundary.
+- `README.md`: documents that static serving is restricted to `public/` and traversal requests return `403`.
+- `docs/CONTINUE.md`: records the static path boundary hardening for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
