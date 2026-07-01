@@ -270,12 +270,12 @@ async function readCommit(sha) {
   if (!currentRepo) {
     const sample = sampleState();
     const commit = sample.commits.find((item) => item.sha === sha) || sample.commits[0];
-    return { files: commit.files, diff: commit.diff };
+    return { ...commit, files: commit.files, diff: commit.diff };
   }
   const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", sha]).catch(() => "")).trim();
   const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
   const diffBase = parents.length > 1 ? parents[0] : "";
-  const [filesOutput, diffOutput, messageOutput] = await Promise.all([
+  const [filesOutput, diffOutput, messageOutput, basicCommit] = await Promise.all([
     diffBase
       ? git(currentRepo, ["diff", "--name-status", "--find-renames", diffBase, sha], { maxBuffer: 1024 * 1024 * 2 })
       : git(currentRepo, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
@@ -283,8 +283,11 @@ async function readCommit(sha) {
       ? git(currentRepo, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
       : git(currentRepo, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 }),
     git(currentRepo, ["show", "-s", "--format=%B", sha], { maxBuffer: 1024 * 256 }),
+    readBasicCommit(sha),
   ]);
   return {
+    ...basicCommit,
+    summary: basicCommit.message,
     files: parseNameStatus(filesOutput),
     diff: parseDiff(diffOutput),
     message: messageOutput.trimEnd(),

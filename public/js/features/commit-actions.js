@@ -35,7 +35,7 @@ async function refreshCompare() {
 }
 
 async function runCommitContextAction(action) {
-  const commit = state.data?.commits.find((item) => item.sha === state.contextCommitSha || item.sha === state.selectedSha);
+  const commit = commitRecordForSha(state.contextCommitSha) || commitRecordForSha(state.selectedSha);
   hideCommitContextMenu();
   if (!commit) return;
   if (action === "details") {
@@ -106,7 +106,7 @@ async function runCommitContextAction(action) {
 }
 
 async function runCommitToolAction(action, sha) {
-  const commit = state.data?.commits.find((item) => item.sha === sha || item.sha === state.selectedSha);
+  const commit = commitRecordForSha(sha) || commitRecordForSha(state.selectedSha);
   if (!commit) return;
   const queueMode = historyQueueModeFromAction(action);
   if (queueMode) {
@@ -423,7 +423,7 @@ async function openHistoryRewritePlan(commit, mode) {
 async function runHistoryRewritePlan(action, button) {
   const plan = state.historyPlan;
   if (!plan) return;
-  const commit = state.data?.commits.find((item) => item.sha === plan.sha || item.sha === state.selectedSha);
+  const commit = commitRecordForSha(plan.sha) || commitRecordForSha(state.selectedSha);
   if (action === "cancel") {
     state.historyPlan = null;
     renderInspector();
@@ -570,7 +570,7 @@ function closeMainlineModal() {
 
 async function submitMainlineForm(event) {
   event.preventDefault();
-  const commit = state.data?.commits.find((item) => item.sha === state.mainlineCommitSha);
+  const commit = commitRecordForSha(state.mainlineCommitSha);
   const action = state.mainlineAction;
   const selected = Number.parseInt(els.mainlineOptions.querySelector("input[name='mainline']:checked")?.value || "", 10);
   if (!commit || !Number.isInteger(selected)) {

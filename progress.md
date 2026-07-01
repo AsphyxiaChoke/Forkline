@@ -1704,3 +1704,133 @@
 - `docs/CONTINUE.md`: records the merge commit detail Diff fix for follow-up development.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: open file-history commits outside the graph
+### What was done
+- Fixed file history actions so commits returned by `git log --follow` can open in the right details panel even when they are not present in the currently loaded commit graph.
+- The graph render now preserves a selected file-history commit that is outside the graph, and the inspector can use the file-history record as a temporary commit summary while `/api/commit` loads the real file list and Diff.
+- Updated the README and continuation notes for this file history behavior.
+### Testing
+- Forkline API on `http://127.0.0.1:5281` opened `D:\桌面\GitTest` on branch `123`; `/api/state?ref=123` returned 12 graph commits, while `/api/file-history?file=配置文件3.txt&ref=123` returned 5 file-history commits, including 2 commits missing from the graph.
+- Verified `/api/commit` for graph-missing commit `7dd4c624dd9bbee6615e7cd2910805f5bdf90307` returned 1 changed file, 10 Diff lines, and message `移除功能`.
+- HTTP static resource check confirmed latest `history-list.js` contains `selectedLoadedInGraph`, and latest `inspector.js` contains `commitRecordForSha` plus `openHistoryCommit`.
+- `node --check public\js\features\history-list.js` passed.
+- `node --check public\js\panels\inspector.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+### Notes
+- `public/js/features/history-list.js`: avoids forcing a graph-missing file-history commit back to the first visible graph commit during graph rerender.
+- `public/js/panels/inspector.js`: adds a temporary detail source for file-history commits and lets "查看提交 / 文件改动" open graph-missing commits by SHA.
+- `README.md`: documents that file-history commits outside the current graph can still open in the right details panel.
+- `docs/CONTINUE.md`: records the file-history jump fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/history-list.js`, `public/js/panels/inspector.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: open file-blame commits outside the graph
+### What was done
+- Found that the file blame row action still required the clicked commit to exist in the currently loaded commit graph.
+- Reproduced with `D:\桌面\GitTest`: `.gitignore` blame contains commit `9e97a7e46d993e6f47d4ec8db9201685e0f2d85c`, while the current `123` first-parent graph does not include that SHA.
+- Extended the inspector commit fallback so blame rows can supply a temporary commit summary, then open the real commit detail by SHA.
+### Testing
+- Scanned `D:\桌面\GitTest` on branch `123` and confirmed `.gitignore` has a blame line from graph-missing commit `9e97a7e`.
+- Verified the latest static `inspector.js` contains the blame fallback path and routes blame row clicks through `openHistoryCommit`.
+- `node --check public\js\panels\inspector.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `public/js/panels/inspector.js`: file blame rows now use the shared graph-missing commit fallback instead of failing when the SHA is not in `state.data.commits`.
+- `README.md`: documents that blame-line commits outside the current graph can still open in the right details panel.
+- `docs/CONTINUE.md`: records the file-blame jump fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/panels/inspector.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: keep graph-missing commit tools working
+### What was done
+- Found that graph-missing commits opened from file history or file blame could render in the right details panel, but commit tools still looked up commits only in `state.data.commits`.
+- Updated commit tool actions and the reword form to resolve commits through the shared `commitRecordForSha` fallback before acting.
+- Updated the README and continuation notes so the documented file history / blame behavior covers opening details and using the existing commit tools.
+### Testing
+- Front-end function harness loaded `inspector.js`, `commit-actions.js`, and `git-actions.js` with an empty graph commit list plus one file-history commit; `runCommitToolAction("copyPatch", sha)` copied a patch for the graph-missing SHA, and `rewordSelectedCommit` sent `rewordCommit` for the same graph-missing SHA.
+- This covers the previous failure mode where both paths returned before reaching the action because the SHA was not in `state.data.commits`.
+- `node --check public\js\features\commit-actions.js` passed.
+- `node --check public\js\features\git-actions.js` passed.
+- `node --check public\js\panels\inspector.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `public/js/features/commit-actions.js`: commit context/tool/history-plan actions now resolve graph-missing commits through `commitRecordForSha`.
+- `public/js/features/git-actions.js`: the commit message reword form now uses the same fallback and avoids negative-index reselection after reload.
+- `README.md`: clarifies that file history and blame commits outside the current graph can still use commit actions.
+- `docs/CONTINUE.md`: records the graph-missing commit tool fix for follow-up development.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/commit-actions.js`, `public/js/features/git-actions.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: keep graph-missing branch starts exact
+### What was done
+- Found that "新建分支" from a graph-missing commit could open the branch modal but then resolve the start commit only from `state.data.commits`.
+- Fixed the branch modal to use `commitRecordForSha`, so graph-missing commits opened from file history or blame keep their SHA as the branch start.
+- Updated the command palette selected-commit helper to use the same fallback, keeping the "新建分支" hint aligned with the actual start commit.
+### Testing
+- Front-end function harness loaded `inspector.js`, `branches.js`, and `folder-command.js` with an empty graph commit list plus one file-history commit; `openBranchModal()` set `state.branchStartSha` to `7dd4c624dd9bbee6615e7cd2910805f5bdf90307` and rendered text for `7dd4c62`.
+- The same harness verified `selectedCommandCommit()` returns the graph-missing file-history commit instead of falling back to the first graph commit or HEAD.
+- `node --check public\js\features\branches.js` passed.
+- `node --check public\js\features\folder-command.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `public/js/features/branches.js`: branch creation modal now resolves graph-missing selected commits through `commitRecordForSha`.
+- `public/js/features/folder-command.js`: command palette branch hint now uses the same selected commit fallback.
+- `docs/CONTINUE.md`: records the graph-missing branch start fix.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/branches.js`, `public/js/features/folder-command.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: keep graph-missing merge mainline submit working
+### What was done
+- Found that graph-missing merge commits could open the cherry-pick/revert mainline modal, but submitting the modal looked up the commit only in `state.data.commits`.
+- Updated mainline submission to resolve the commit through `commitRecordForSha`, matching the modal open path and other graph-missing commit tools.
+### Testing
+- Front-end function harness loaded `inspector.js` and `commit-actions.js` with an empty graph commit list plus one file-history merge commit; `submitMainlineForm()` sent `revertCommit` for the graph-missing merge SHA with `mainline = 2`.
+- This covers the previous failure mode where the same submit path saw no commit and only showed “请选择主线”.
+- `node --check public\js\features\commit-actions.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `public/js/features/commit-actions.js`: mainline modal submit now uses the same graph-missing commit fallback as the rest of the commit tool path.
+- `docs/CONTINUE.md`: records the graph-missing merge mainline submit fix.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/features/commit-actions.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: return metadata for graph-missing commit details
+### What was done
+- Found that `/api/commit` returned only `files`, `diff`, and full `message`.
+- Reproduced with `D:\桌面\GitTest`: graph-missing blame commit `9e97a7e46d993e6f47d4ec8db9201685e0f2d85c` has real parent `1d2f5d6a8fa9c781ce69cf443ee895100c7d732b`, but the API response had no `parents`, so the right details panel could present it as a root commit.
+- Added basic commit metadata to `/api/commit` and kept full message separate from the summary used by temporary graph-missing commit records.
+### Testing
+- Current API before the fix returned keys `diff,files,message` for `9e97a7e`, while `git rev-list --parents -n 1` showed a real parent.
+- After the fix, `/api/commit?sha=9e97a7e...` returned parent metadata and summary while preserving the full message field.
+- `node --check server.js` passed.
+- `node --check public\js\panels\inspector.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: `readCommit` now returns `sha`, `short`, `author`, `time`, `parents`, and `summary` alongside files, diff, and full message.
+- `public/js/panels/inspector.js`: graph-missing file-history/blame commit records merge loaded metadata without replacing their one-line title with the full commit body.
+- `docs/CONTINUE.md`: records the graph-missing commit metadata fix.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `public/js/panels/inspector.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: clear stale file selection for empty commits
+### What was done
+- Found that the commit files tab preserved `state.selectedCommitFile` when the selected commit had no changed files.
+- Reproduced with a front-end harness: rendering an empty commit after `old.txt` was selected kept `old.txt` selected and rendered the old file path into the history workbench.
+- Updated the files tab to clear the selected commit file when `detail.files` is empty, and to render the bottom diff area as an explicit empty commit state.
+### Testing
+- Front-end harness passed: `renderFilesTab()` for an empty commit clears `state.selectedCommitFile`, does not call stale `diffForFile` / `renderHistoryDiffInWorkbench`, and sends “这个提交没有文件改动” to the workbench.
+- Real GitTest repro passed: temporary branch `forkline/empty-commit-repro-*` created an `--allow-empty` commit; `/api/commit?sha=<empty>` returned `files=0`, `diff=0`, and the empty commit message. The temporary branch was deleted and GitTest returned to `123`.
+- `node --check public\js\panels\inspector.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `public/js/panels/inspector.js`: empty commit file tabs now clear stale file selection and show an explicit empty workbench message.
+- `docs/CONTINUE.md`: records the empty commit file-tab fix.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `public/js/panels/inspector.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.

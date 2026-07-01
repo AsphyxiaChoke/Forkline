@@ -50,7 +50,7 @@ function renderInspector() {
     renderSubmodulesTab();
     return;
   }
-  const commit = state.data?.commits.find((item) => item.sha === state.selectedSha);
+  const commit = commitRecordForSha(state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = "没有提交";
     els.detailSub.textContent = "当前列表为空";
@@ -63,6 +63,47 @@ function renderInspector() {
   els.detailSub.textContent = `${commit.short} · ${commit.author} · ${commit.time}`;
   if (state.selectedTab === "files") renderFilesTab(commit, detail);
   else renderDetailsTab(commit, detail);
+}
+
+function commitRecordForSha(sha) {
+  if (!sha) return null;
+  const graphCommit = state.data?.commits.find((item) => item.sha === sha);
+  if (graphCommit) return graphCommit;
+  const loadedDetail = state.commitDetails.get(sha) || {};
+  const historyCommit = state.fileHistory?.data?.commits?.find((item) => item.sha === sha);
+  if (historyCommit) {
+    return {
+      ...historyCommit,
+      ...loadedDetail,
+      sha: historyCommit.sha,
+      short: historyCommit.short || loadedDetail.short || String(historyCommit.sha || "").slice(0, 7),
+      author: loadedDetail.author || historyCommit.author,
+      time: loadedDetail.time || historyCommit.time,
+      message: historyCommit.message || loadedDetail.summary || loadedDetail.message,
+      parents: loadedDetail.parents || historyCommit.parents || [],
+      refs: historyCommit.refs || "文件历史",
+      color: historyCommit.color || "#23c7b7",
+    };
+  }
+  const blameLine = state.fileBlame?.data?.lines?.find((item) => item.sha === sha);
+  if (!blameLine) return null;
+  return {
+    ...loadedDetail,
+    sha: blameLine.sha,
+    short: blameLine.short || loadedDetail.short || String(blameLine.sha || "").slice(0, 7),
+    author: loadedDetail.author || blameLine.author || "unknown",
+    time: loadedDetail.time || blameLine.time || "",
+    message: blameLine.summary || loadedDetail.summary || loadedDetail.message || "(无提交信息)",
+    refs: "逐行追踪",
+    parents: loadedDetail.parents || [],
+    files: [],
+    diff: [],
+    color: "#5ca9ff",
+  };
+}
+
+function isGraphCommitLoaded(sha) {
+  return Boolean(sha && state.data?.commits?.some((item) => item.sha === sha));
 }
 
 function renderDetailsTab(commit, detail) {
@@ -335,11 +376,16 @@ function commitMessageParts(commit, detail) {
 
 function renderFilesTab(commit, detail) {
   const files = detail.files || [];
-  if (files.length && !files.some((file) => file.file === state.selectedCommitFile)) {
-    state.selectedCommitFile = files[0].file;
+  if (files.length) {
+    if (!files.some((file) => file.file === state.selectedCommitFile)) {
+      state.selectedCommitFile = files[0].file;
+    }
+  } else {
+    state.selectedCommitFile = "";
   }
-  const selectedDiff = state.selectedCommitFile ? diffForFile(detail.diff || [], state.selectedCommitFile) : detail.diff || [];
+  const selectedDiff = state.selectedCommitFile ? diffForFile(detail.diff || [], state.selectedCommitFile) : [];
   if (state.selectedCommitFile) renderHistoryDiffInWorkbench(commit, detail, state.selectedCommitFile);
+  else renderWorkDiffEmpty("这个提交没有文件改动");
   els.detailBody.innerHTML = `
     <div class="detail-section-title">变更文件</div>
     <div class="commit-file-view">
@@ -514,15 +560,15 @@ async function openFileBlame(filePath, ref = "") {
 async function runFileBlameAction(action, button) {
   const sha = button.dataset.sha || "";
   if (!sha) return;
-  const commit = state.data?.commits.find((item) => item.sha === sha);
+  const commit = commitRecordForSha(sha);
   if (!commit) {
-    toast("这个提交不在当前图谱列表中，请清空过滤或切换到包含它的分支后再试。");
+    toast("这条逐行追踪记录已经过期，请刷新逐行追踪后再试。");
     return;
   }
   if (action === "view") {
     els.searchInput.value = "";
     state.selectedTab = "details";
-    await selectCommit(sha);
+    await openHistoryCommit(sha);
   }
 }
 
@@ -552,21 +598,33 @@ async function runFileHistoryAction(action, button) {
   const sha = button.dataset.sha || "";
   const file = button.dataset.file || state.fileHistory.file || "";
   if (!sha) return;
-  const commit = state.data?.commits.find((item) => item.sha === sha);
+  const commit = commitRecordForSha(sha);
   if (!commit) {
-    toast("这个提交不在当前图谱列表中，请清空过滤或切换到包含它的分支后再试。");
+    toast("这条文件历史记录已经过期，请刷新文件历史后再试。");
     return;
   }
   els.searchInput.value = "";
   if (action === "view") {
     state.selectedTab = "details";
-    await selectCommit(sha);
+    await openHistoryCommit(sha);
     return;
   }
   if (action === "file") {
     state.selectedCommitFile = file;
     state.selectedTab = "files";
-    await selectCommit(sha);
+    await openHistoryCommit(sha);
   }
+}
+
+async function openHistoryCommit(sha) {
+  if (isGraphCommitLoaded(sha)) {
+    await selectCommit(sha);
+    return;
+  }
+  setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
+  state.selectedSha = sha;
+  renderCommits({ inspector: "never" });
+  await loadCommit(sha);
+  renderInspector();
 }
 

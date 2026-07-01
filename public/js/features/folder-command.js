@@ -222,7 +222,7 @@ function commandItem(id, title, description, hint, keywords, enabled, run, dange
 }
 
 function selectedCommandCommit() {
-  return state.data?.commits.find((commit) => commit.sha === state.selectedSha) || state.data?.commits?.[0] || null;
+  return commitRecordForSha(state.selectedSha) || state.data?.commits?.[0] || null;
 }
 
 function switchInspectorTab(tab) {

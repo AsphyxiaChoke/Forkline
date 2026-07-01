@@ -780,7 +780,7 @@ function discardConfirmMessage(action, files) {
 async function rewordSelectedCommit(form) {
   if (!state.data) return;
   const sha = form.dataset.sha || state.selectedSha;
-  const commit = state.data.commits.find((item) => item.sha === sha);
+  const commit = commitRecordForSha(sha);
   if (!commit) return;
   const summary = form.elements.summary.value.trim();
   const body = form.elements.body.value.trim();
@@ -805,7 +805,7 @@ async function rewordSelectedCommit(form) {
     state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     const sameCommit = state.data.commits.find((item) => item.sha === sha);
-    state.selectedSha = sameCommit?.sha || state.data.commits[previousIndex]?.sha || state.data.commits[0]?.sha || "";
+    state.selectedSha = sameCommit?.sha || state.data.commits[Math.max(previousIndex, 0)]?.sha || state.data.commits[0]?.sha || "";
     renderAll();
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);

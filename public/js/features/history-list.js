@@ -10,7 +10,9 @@ function renderCommits(options = {}) {
     : state.data.commits.filter((commit) => commitMatchesSearch(commit, terms));
   updateCommitSearchMeta(terms, state.filtered.length, state.data.commits.length);
 
-  if (state.filtered.length && !state.filtered.some((commit) => commit.sha === state.selectedSha)) {
+  const selectedVisible = state.filtered.some((commit) => commit.sha === state.selectedSha);
+  const selectedLoadedInGraph = isGraphCommitLoaded(state.selectedSha);
+  if (state.filtered.length && !selectedVisible && (!state.selectedSha || selectedLoadedInGraph)) {
     state.selectedSha = state.filtered[0].sha;
   }
 

@@ -339,7 +339,7 @@ async function cleanupStaleWorktree(branch, button, options = {}) {
 
 function openBranchModal() {
   if (!state.data) return;
-  const commit = state.data.commits.find((item) => item.sha === state.selectedSha);
+  const commit = commitRecordForSha(state.selectedSha);
   state.branchModalMode = "create";
   state.branchRenameOld = "";
   state.branchStartSha = commit?.sha || "";
