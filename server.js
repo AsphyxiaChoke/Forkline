@@ -8,6 +8,7 @@ const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const GIT_BIN = findGitExecutable();
 const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
+const ZERO_OID = "0000000000000000000000000000000000000000";
 const WORKTREE_DIFF_CONTEXT = "8";
 const UNTRACKED_DIFF_HUNK_SIZE = 40;
 const BRANCH_STALE_DAYS = 30;
@@ -131,7 +132,7 @@ async function readState(ref = "") {
     git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => ""),
     git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
-    git(currentRepo, ["stash", "list", "--format=%gd%x1f%gs%x1f%cr"]).catch(() => ""),
+    git(currentRepo, ["stash", "list", "--format=%gd%x00%gs%x00%cr"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
     readReflogOutput().catch(() => ""),
     git(currentRepo, logArgs(ref)).catch(() => ""),
@@ -364,7 +365,7 @@ async function readFileHistory(filePath, refInput = "") {
       "--find-renames",
       "--max-count=80",
       "--date=relative",
-      `--format=%x1e${BASIC_COMMIT_LOG_FORMAT}`,
+      `--format=${BASIC_COMMIT_LOG_FORMAT}`,
       "--name-status",
       ref,
       "--",
@@ -2123,11 +2124,11 @@ function gitignorePattern(patternPath, mode) {
 }
 
 async function findForklineStash(branch, message = "") {
-  const output = await git(currentRepo, ["stash", "list", "--format=%gd%x1f%s"]).catch(() => "");
+  const output = await git(currentRepo, ["stash", "list", "--format=%gd%x00%s"]).catch(() => "");
   const rows = output
     .split(/\r?\n/)
     .map((line) => {
-      const [ref, subject] = line.split("\x1f");
+      const [ref, subject] = line.split(GIT_LOG_FIELD_SEPARATOR);
       return { ref: (ref || "").trim(), subject: (subject || "").trim() };
     })
     .filter((item) => item.ref && item.subject);
@@ -2777,6 +2778,9 @@ async function rewordCommit(body) {
   const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
   const parents = parentLine.split(/\s+/).slice(1);
   if (parents.length > 1) throw new Error("暂不支持自动修改 merge 提交信息");
+  if ((await git(currentRepo, ["rev-parse", "HEAD"])).trim() !== target) {
+    await ensureLinearRewriteRange(parents.length ? `${target}^` : "--root", "reword");
+  }
   const messageFile = writeTempFile("forkline-message-", `${summary}${detail ? `\n\n${detail}` : ""}\n`);
   const recovery = await createRecoveryPoint("reword");
   try {
@@ -3112,29 +3116,50 @@ function parseBasicCommits(output) {
 }
 
 function parseFileHistoryLog(output, trackedFile) {
-  return String(output || "")
-    .split("\x1e")
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .map((block) => {
-      const lines = block.split(/\r?\n/).filter(Boolean);
-      const parts = (lines.shift() || "").split(GIT_LOG_FIELD_SEPARATOR);
-      if (parts.length < 6) return null;
-      const files = parseHistoryNameStatus(lines);
-      const primary = fileHistoryPrimaryChange(files, trackedFile);
-      return {
-        sha: parts[0],
-        short: parts[1],
-        author: parts[2] || "unknown",
-        time: parts[3] || "",
-        message: parts[4] || "(无提交信息)",
-        parents: parts[5] ? parts[5].split(" ").filter(Boolean) : [],
-        files,
-        change: primary?.state || "",
-        previousFile: primary?.previousFile || "",
-      };
-    })
-    .filter(Boolean);
+  const commits = [];
+  let current = null;
+  const pushCurrent = () => {
+    if (!current) return;
+    const files = parseHistoryNameStatus(current.fileLines);
+    const primary = fileHistoryPrimaryChange(files, trackedFile);
+    commits.push({
+      sha: current.sha,
+      short: current.short,
+      author: current.author,
+      time: current.time,
+      message: current.message,
+      parents: current.parents,
+      files,
+      change: primary?.state || "",
+      previousFile: primary?.previousFile || "",
+    });
+  };
+
+  for (const rawLine of String(output || "").split(/\r?\n/)) {
+    if (!rawLine) continue;
+    const header = parseFileHistoryHeader(rawLine);
+    if (header) {
+      pushCurrent();
+      current = { ...header, fileLines: [] };
+      continue;
+    }
+    if (current) current.fileLines.push(rawLine);
+  }
+  pushCurrent();
+  return commits;
+}
+
+function parseFileHistoryHeader(line) {
+  const parts = String(line || "").split(GIT_LOG_FIELD_SEPARATOR);
+  if (parts.length < 6 || !/^[0-9a-f]{40}$/i.test(parts[0] || "")) return null;
+  return {
+    sha: parts[0],
+    short: parts[1],
+    author: parts[2] || "unknown",
+    time: parts[3] || "",
+    message: parts[4] || "(无提交信息)",
+    parents: parts[5] ? parts[5].split(" ").filter(Boolean) : [],
+  };
 }
 
 function parseHistoryNameStatus(lines) {
@@ -3560,10 +3585,20 @@ async function createRecoveryPointForCommit(actionKey, targetRef = "HEAD", branc
   const sha = (await git(currentRepo, ["rev-parse", "--verify", `${targetRef}^{commit}`])).trim();
   const short = (await git(currentRepo, ["rev-parse", "--short", sha])).trim();
   const timestamp = recoveryTimestamp();
-  const ref = `${RECOVERY_REF_PREFIX}/${timestamp}/${recoverySlug(branchOverride || branch, "HEAD")}/${recoverySlug(actionKey, "operation")}`;
-  await git(currentRepo, ["check-ref-format", ref], { timeout: 60000 });
-  await git(currentRepo, ["update-ref", ref, sha], { timeout: 60000 });
-  return recoveryPointFromParts(ref, sha, short);
+  const baseRef = `${RECOVERY_REF_PREFIX}/${timestamp}/${recoverySlug(branchOverride || branch, "HEAD")}/${recoverySlug(actionKey, "operation")}`;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const ref = attempt ? `${baseRef}-${attempt + 1}` : baseRef;
+    await git(currentRepo, ["check-ref-format", ref], { timeout: 60000 });
+    try {
+      await git(currentRepo, ["update-ref", ref, sha, ZERO_OID], { timeout: 60000 });
+      return recoveryPointFromParts(ref, sha, short);
+    } catch (error) {
+      const exists = await git(currentRepo, ["rev-parse", "--verify", ref], { timeout: 60000 }).then(() => true).catch(() => false);
+      if (exists) continue;
+      throw error;
+    }
+  }
+  throw new Error("同一秒内恢复点过多，请稍后重试。");
 }
 
 function appendRecoveryLine(result, recovery) {
@@ -3670,7 +3705,7 @@ function readReflogOutput(maxCount = 80) {
     "-g",
     `--max-count=${count}`,
     "--date=iso-strict",
-    "--format=%H%x1f%h%x1f%gd%x1f%gs%x1f%an%x1f%ad",
+    "--format=%H%x00%h%x00%gd%x00%gs%x00%an%x00%ad",
     "HEAD",
   ], { maxBuffer: 1024 * 1024 * 2 });
 }
@@ -3787,9 +3822,9 @@ function parseRecoveryPoints(output) {
 function parseReflogEntries(output) {
   return String(output || "")
     .split(/\r?\n/)
-    .filter((line) => line.includes("\x1f"))
+    .filter((line) => line.includes(GIT_LOG_FIELD_SEPARATOR))
     .map((line, index) => {
-      const [sha, short, rawSelector, rawMessage, author, rawTime] = line.split("\x1f");
+      const [sha, short, rawSelector, rawMessage, author, rawTime] = line.split(GIT_LOG_FIELD_SEPARATOR);
       if (!sha) return null;
       const selector = rawSelector || `HEAD@{${index}}`;
       const message = reflogMessage(rawMessage);
@@ -3854,7 +3889,7 @@ function recoveryPointFromParts(ref, sha, short, subject = "") {
   const parts = shortRef.split("/");
   const timestamp = parts[0] || "";
   const branch = parts[1] || "HEAD";
-  const action = parts[2] || "operation";
+  const action = (parts[2] || "operation").replace(/-\d+$/, "");
   return {
     ref,
     shortRef,
@@ -4790,7 +4825,7 @@ function parseStashList(output) {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [ref, subject = "", time = ""] = line.split("\x1f");
+      const [ref, subject = "", time = ""] = line.split(GIT_LOG_FIELD_SEPARATOR);
       const parsed = parseStashSubject(subject);
       return {
         ref,

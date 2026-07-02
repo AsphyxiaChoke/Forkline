@@ -1944,3 +1944,86 @@
 - `docs/CONTINUE.md`: records the commit subject separator parsing fix for future continuation.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+## 2026-07-02 - Task: 修复储藏列表和引用日志内部控制分隔符解析错位
+### What was done
+- 复现并修复 HEAD reflog 说明里包含内部控制分隔符时的解析错位：之前会把提交标题后半段误当作者，把作者误当时间。
+- 将 reflog 和 stash 列表的 Git 输出字段分隔符从 `0x1f` 改为 NUL，避免用户提交标题或储藏说明中的控制字符冲断字段。
+- 同步 README 和继续开发文档，说明储藏列表、引用日志在异常说明文本下不会错位。
+
+### Testing
+- `node --check server.js` 通过。
+- `git diff --check` 通过；仅提示 Windows 工作区 LF 将被 CRLF 替换。
+- 在 `D:\桌面\GitTest` 临时分支 `forkline/reflog-separator-20260702` 创建标题为 `forkline-reflog\x1fsubject` 的空提交；修复前 `/api/state` 的首条 reflog 显示 `message = commit: forkline-reflog`、`author = subject`、`time = Forkline Tester`，确认 bug 可复现。
+- 修复后用临时服务 `http://127.0.0.1:5293` 打开 GitTest，`/api/state` 的首条 reflog 返回 `message = commit: forkline-reflog\x1fsubject`、`author = Forkline Tester`、`time = 2026-07-02 10:16:43`。
+- 用 Git 索引临时加入 `forkline-fixtures/stash-separator-index-20260702.txt` 并创建说明为 `forkline-stash\x1fsubject` 的临时 stash；`/api/state` 的 `stashes[0].message` 保留完整说明，`time` 仍为正常相对时间。
+- 调用 `/api/action` 的 `findCheckoutStash`，使用同一条 `forkline-stash\x1fsubject` 能正确找到 `stash@{0}`。
+- 已删除临时 stash、切回 `123` 并删除临时分支；`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：将 stash 列表、签出储藏查找、reflog 读取和对应解析统一改为 NUL 字段分隔。
+- `README.md`：补充储藏列表和引用日志对内部控制分隔符的可靠性说明。
+- `docs/CONTINUE.md`：补充本轮解析边界修复与验证背景，便于后续继续排查同类问题。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 修复同秒同类恢复点被覆盖
+### What was done
+- 复现并修复恢复点 ref 只由秒级时间、分支和动作组成导致的覆盖问题：同一秒内连续执行两次同类危险操作时，第二个恢复点会覆盖第一个。
+- 恢复点创建改为只在 ref 不存在时写入；若同秒同分支同动作已存在，则使用同级后缀 `-2`、`-3` 等继续创建，保留所有恢复点。
+- 恢复点解析会把 `reset-hard-2` 这类后缀识别回原动作 `reset-hard`，右侧标签仍显示“硬重置前”。
+- 同步 README 和继续开发文档，说明同秒连续危险操作不会覆盖更早恢复点。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时分支 `forkline/recovery-collision-20260702` 创建 A/B/C 三个空提交。
+- 修复前用临时服务 `http://127.0.0.1:5300` 连续调用两次 `resetToCommit` hard：先从 C 重置到 B，再从 B 重置到 A。两次响应都返回同一个恢复点 ref `.../reset-hard`，第二次把 ref 从 `eca5c5f` 覆盖为 `b839200`，最终只剩 1 个恢复点。
+- 修复后用临时服务 `http://127.0.0.1:5302` 重复同样两次 reset，响应分别返回 `.../reset-hard`（`eca5c5f`）和 `.../reset-hard-2`（`b839200`），`for-each-ref refs/forkline/recovery` 同时列出两条恢复点。
+- `/api/state` 返回两条恢复点的 `action = reset-hard`、`actionLabel = 硬重置前`，证明带后缀的恢复点仍按原动作显示。
+- `node --check server.js` 通过。
+- 已删除测试恢复点、切回 `123` 并删除临时分支；`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，`refs/forkline/recovery` 为空。
+
+### Notes
+- `server.js`：新增恢复点唯一创建逻辑，同秒冲突时使用同级后缀，且解析动作时忽略数字后缀。
+- `README.md`：补充同秒同类危险操作会保留多个恢复点。
+- `docs/CONTINUE.md`：记录恢复点同秒覆盖修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 拦截修改旧提交信息时跨 merge 重放导致拓扑被展平
+### What was done
+- 复现并修复单个“修改提交信息”执行入口缺少 merge 范围检查的问题：目标提交本身不是 merge，但它后面的重放范围包含 merge 时，旧代码会直接执行 `git rebase -i` 并把 merge 拓扑展平成单父历史。
+- 给 `rewordCommit` 增加与历史编辑预检一致的线性范围检查；修改 HEAD 提交仍走 amend，不受影响。
+- 同步 README 和继续开发文档，说明修改旧提交信息会拦截包含 merge 的重放范围。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时分支 `forkline/reword-merge-range-20260702` 构造 `A -> B -> merge(side)`，目标 A 为非 merge 提交，`A^..HEAD` 内有 1 个 merge。
+- 修复前用临时服务 `http://127.0.0.1:5297` 调用 `/api/action` 的 `rewordCommit` 修改 A，API 返回成功；随后 HEAD 从双父 merge 变成单父提交，全仓库 merge 数从 4 变成 3，确认拓扑被展平。
+- 修复后重新构造同样历史，用临时服务 `http://127.0.0.1:5298` 调用相同 `rewordCommit`，API 返回中文错误“这段历史里包含 merge 提交 34df391...”，HEAD 仍为双父 merge，`A^..HEAD` 内 merge 数仍为 1。
+- `node --check server.js` 通过。
+- 已删除临时恢复点、临时分支 `forkline/reword-merge-range-20260702` / `forkline/reword-merge-side-20260702`，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，`refs/forkline/recovery` 为空。
+
+### Notes
+- `server.js`：`rewordCommit` 在非 HEAD 目标上执行前调用 `ensureLinearRewriteRange`，阻止跨 merge 的普通 rebase reword。
+- `README.md`：补充修改旧提交信息会保护分支拓扑。
+- `docs/CONTINUE.md`：记录单个 reword 执行入口的 merge 范围保护。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 修复文件历史提交标题内部记录分隔符导致记录丢失
+### What was done
+- 复现并修复文件历史解析中使用 `0x1e` 分隔提交记录的问题：当提交标题本身包含该控制字符时，`/api/file-history` 会把一条提交拆成两段并丢弃。
+- 将文件历史解析改为逐行识别提交头行，不再依赖可能出现在提交标题中的记录分隔符。
+- 同步 README 和继续开发文档，说明文件历史不会因为提交标题中的内部记录分隔符漏掉提交。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时分支 `forkline/file-history-separator-20260702` 创建提交 `82df96e`，标题为 `forkline-file-history\x1esubject`，并修改 `.gitignore`。
+- 修复前临时服务 `http://127.0.0.1:5294` 打开 GitTest 后，请求 `/api/file-history?file=.gitignore` 只返回更早的 `9e97a7e`、`6db540c`，没有最新的 `82df96e`。
+- 修复后临时服务 `http://127.0.0.1:5295` 打开 GitTest 后，同一请求首条返回 `82df96e`，`message = forkline-file-history\x1esubject`，文件状态为 `M .gitignore`。
+- `node --check server.js` 通过。
+- 已恢复 `.gitignore` 工作区内容、切回 `123`、删除临时分支；`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：文件历史 `git log` 输出不再注入 `0x1e` 记录分隔符，`parseFileHistoryLog` 改为按提交头行收集文件状态行。
+- `README.md`：补充文件历史对内部记录分隔符的可靠性说明。
+- `docs/CONTINUE.md`：记录文件历史解析边界修复，便于后续继续查同类问题。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
