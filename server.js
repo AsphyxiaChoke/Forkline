@@ -12,6 +12,9 @@ const WORKTREE_DIFF_CONTEXT = "8";
 const UNTRACKED_DIFF_HUNK_SIZE = 40;
 const BRANCH_STALE_DAYS = 30;
 const PROTECTED_BRANCH_NAMES = new Set(["main", "master", "develop", "development", "dev", "trunk"]);
+const GIT_LOG_FIELD_SEPARATOR = "\0";
+const BASIC_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%P";
+const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
 
 let currentRepo = null;
 let nextOperationId = 1;
@@ -256,7 +259,7 @@ function logArgs(ref) {
     "--topo-order",
     "--max-count=120",
     "--date=relative",
-    "--pretty=format:%x1f%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%D%x1f%P",
+    `--pretty=format:%x00${REF_COMMIT_LOG_FORMAT}`,
   ];
   if (selectedRef) {
     args.push("--first-parent", selectedRef);
@@ -361,7 +364,7 @@ async function readFileHistory(filePath, refInput = "") {
       "--find-renames",
       "--max-count=80",
       "--date=relative",
-      "--format=%x1e%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P",
+      `--format=%x1e${BASIC_COMMIT_LOG_FORMAT}`,
       "--name-status",
       ref,
       "--",
@@ -521,7 +524,7 @@ async function resolveCommitRef(ref, label) {
 }
 
 function compareLogArgs(range) {
-  return ["log", "--max-count=40", "--date=relative", "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P", range];
+  return ["log", "--max-count=40", "--date=relative", `--format=${BASIC_COMMIT_LOG_FORMAT}`, range];
 }
 
 function compareDiffRange(base, head, mergeBase) {
@@ -2569,7 +2572,13 @@ function buildMovedFileUnstageLineHunk(hunk, selectedKeys, matchedKeys) {
   const lines = [];
   let changed = false;
   let selectableLineIndex = -1;
+  let previousDiffLineIncluded = false;
   hunk.lines.forEach((line) => {
+    if (line.startsWith("\\")) {
+      if (previousDiffLineIncluded) lines.push(line);
+      return;
+    }
+    previousDiffLineIncluded = false;
     const selectable = !line.startsWith("\\");
     if (selectable) selectableLineIndex += 1;
     const key = selectable ? `${hunk.index}:${selectableLineIndex}` : "";
@@ -2579,8 +2588,10 @@ function buildMovedFileUnstageLineHunk(hunk, selectedKeys, matchedKeys) {
         lines.push(`-${line.slice(1)}`);
         matchedKeys.add(key);
         changed = true;
+        previousDiffLineIncluded = true;
       } else {
         lines.push(` ${line.slice(1)}`);
+        previousDiffLineIncluded = true;
       }
       return;
     }
@@ -2589,11 +2600,13 @@ function buildMovedFileUnstageLineHunk(hunk, selectedKeys, matchedKeys) {
         lines.push(`+${line.slice(1)}`);
         matchedKeys.add(key);
         changed = true;
+        previousDiffLineIncluded = true;
       }
       return;
     }
     if (selected) matchedKeys.add(key);
     lines.push(line);
+    previousDiffLineIncluded = true;
   });
   if (!changed) return "";
   const counts = countUnifiedHunkLines(lines);
@@ -2607,7 +2620,13 @@ function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode = "stage") 
   const lines = [];
   let changed = false;
   let selectableLineIndex = -1;
+  let previousDiffLineIncluded = false;
   hunk.lines.forEach((line) => {
+    if (line.startsWith("\\")) {
+      if (previousDiffLineIncluded) lines.push(line);
+      return;
+    }
+    previousDiffLineIncluded = false;
     const selectable = !line.startsWith("\\");
     if (selectable) selectableLineIndex += 1;
     const key = selectable ? `${hunk.index}:${selectableLineIndex}` : "";
@@ -2617,8 +2636,10 @@ function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode = "stage") 
         lines.push(line);
         matchedKeys.add(key);
         changed = true;
+        previousDiffLineIncluded = true;
       } else if (mode === "unstage") {
         lines.push(` ${line.slice(1)}`);
+        previousDiffLineIncluded = true;
       }
       return;
     }
@@ -2627,13 +2648,18 @@ function buildSelectedLineHunk(hunk, selectedKeys, matchedKeys, mode = "stage") 
         lines.push(line);
         matchedKeys.add(key);
         changed = true;
+        previousDiffLineIncluded = true;
       } else {
-        if (mode === "stage") lines.push(` ${line.slice(1)}`);
+        if (mode === "stage") {
+          lines.push(` ${line.slice(1)}`);
+          previousDiffLineIncluded = true;
+        }
       }
       return;
     }
     if (selected) matchedKeys.add(key);
     lines.push(line);
+    previousDiffLineIncluded = true;
   });
   if (!changed) return "";
   const counts = countUnifiedHunkLines(lines);
@@ -3056,14 +3082,14 @@ async function readRewriteRangeCommits(upstream) {
     "--reverse",
     "--topo-order",
     "--date=relative",
-    "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P",
+    `--format=${BASIC_COMMIT_LOG_FORMAT}`,
   ];
   args.push(upstream === "--root" ? "HEAD" : `${upstream}..HEAD`);
   return parseBasicCommits(await git(currentRepo, args, { maxBuffer: 1024 * 1024 * 2 }));
 }
 
 async function readBasicCommit(sha) {
-  const output = await git(currentRepo, ["show", "-s", "--date=relative", "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%P", sha], { maxBuffer: 1024 * 256 });
+  const output = await git(currentRepo, ["show", "-s", "--date=relative", `--format=${BASIC_COMMIT_LOG_FORMAT}`, sha], { maxBuffer: 1024 * 256 });
   return parseBasicCommits(output)[0] || { sha, short: sha.slice(0, 7), author: "", time: "", message: "", parents: [] };
 }
 
@@ -3071,7 +3097,7 @@ function parseBasicCommits(output) {
   return String(output || "")
     .split(/\r?\n/)
     .map((line) => {
-      const parts = line.split("\x1f");
+      const parts = line.split(GIT_LOG_FIELD_SEPARATOR);
       if (parts.length < 6) return null;
       return {
         sha: parts[0],
@@ -3092,7 +3118,7 @@ function parseFileHistoryLog(output, trackedFile) {
     .filter(Boolean)
     .map((block) => {
       const lines = block.split(/\r?\n/).filter(Boolean);
-      const parts = (lines.shift() || "").split("\x1f");
+      const parts = (lines.shift() || "").split(GIT_LOG_FIELD_SEPARATOR);
       if (parts.length < 6) return null;
       const files = parseHistoryNameStatus(lines);
       const primary = fileHistoryPrimaryChange(files, trackedFile);
@@ -3751,7 +3777,8 @@ function parseRecoveryPoints(output) {
     .split(/\r?\n/)
     .filter((line) => line.includes("\t"))
     .map((line) => {
-      const [ref, sha, short, subject] = line.split("\t");
+      const [ref, sha, short, ...subjectParts] = line.split("\t");
+      const subject = subjectParts.join("\t");
       return recoveryPointFromParts(ref, sha, short, subject);
     })
     .filter(Boolean);
@@ -4084,8 +4111,7 @@ function parseWorktreeList(output, repoPath) {
 }
 
 async function enrichWorktreeList(rows) {
-  const limited = (rows || []).slice(0, 24);
-  return Promise.all(limited.map(async (row) => {
+  return Promise.all((rows || []).map(async (row) => {
     if (!row.exists || row.prunable || row.bare) return row;
     const [statusOutput, operation] = await Promise.all([
       git(row.path, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
@@ -4194,7 +4220,7 @@ function parseSubmoduleStatusLine(line, configuredPaths = []) {
 }
 
 async function enrichSubmodules(submodules) {
-  return Promise.all((submodules || []).slice(0, 80).map(async (item) => {
+  return Promise.all((submodules || []).map(async (item) => {
     const absolutePath = path.resolve(currentRepo, item.path);
     if (!isPathInside(currentRepo, absolutePath) && !sameFsPath(currentRepo, absolutePath)) return item;
     const exists = fs.existsSync(absolutePath);
@@ -4495,7 +4521,10 @@ function parseTags(output) {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [name = "", object = "", time = "", subject = "", type = ""] = line.split("\t");
+      const parts = line.split("\t");
+      const [name = "", object = "", time = ""] = parts;
+      const type = parts.length > 4 ? parts[parts.length - 1] : "";
+      const subject = parts.length > 4 ? parts.slice(3, -1).join("\t") : parts[3] || "";
       return {
         name: name.trim(),
         object: object.trim(),
@@ -4827,10 +4856,10 @@ function parseDiff(output) {
 function parseLog(output) {
   const commits = [];
   for (const line of output.split(/\r?\n/)) {
-    if (!line.includes("\x1f")) continue;
-    const marker = line.indexOf("\x1f");
+    if (!line.includes(GIT_LOG_FIELD_SEPARATOR)) continue;
+    const marker = line.indexOf(GIT_LOG_FIELD_SEPARATOR);
     const graph = line.slice(0, marker);
-    const parts = line.slice(marker + 1).split("\x1f");
+    const parts = line.slice(marker + 1).split(GIT_LOG_FIELD_SEPARATOR);
     if (parts.length < 7) continue;
     const lane = Math.max(0, Math.min(laneColors.length - 1, Math.floor(Math.max(0, graph.indexOf("*")) / 2)));
     commits.push({
@@ -4890,7 +4919,7 @@ function syncLogArgs(range) {
     "log",
     "--max-count=20",
     "--date=relative",
-    "--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%D%x1f%P",
+    `--pretty=format:${REF_COMMIT_LOG_FORMAT}`,
     range,
   ];
 }
@@ -4898,10 +4927,10 @@ function syncLogArgs(range) {
 function parseSyncCommits(output) {
   return String(output || "")
     .split(/\r?\n/)
-    .filter((line) => line.includes("\x1f"))
+    .filter((line) => line.includes(GIT_LOG_FIELD_SEPARATOR))
     .slice(0, 20)
     .map((line) => {
-      const parts = line.split("\x1f");
+      const parts = line.split(GIT_LOG_FIELD_SEPARATOR);
       return {
         sha: parts[0] || "",
         short: parts[1] || "",

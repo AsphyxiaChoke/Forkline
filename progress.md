@@ -1834,3 +1834,113 @@
 - `docs/CONTINUE.md`: records the empty commit file-tab fix.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's edits in `public/js/panels/inspector.js`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve selected non-final line endings in untracked line staging
+### What was done
+- Found that an untracked text file without a trailing newline could lose the selected line's real newline when only a non-final line was staged.
+- Reproduced with `D:\桌面\GitTest`: staging only `alpha` from `alpha\nbeta` produced a staged blob size of `5`, meaning the staged content became `alpha` instead of `alpha\n`.
+- Updated selected-line patch generation so `\ No newline at end of file` metadata is kept only when the previous diff line is actually included in the generated patch.
+### Testing
+- Before the fix, Forkline `stageSelectedLines` on `forkline-fixtures/no-newline-line-stage-20260701.txt` staged only the first line with blob size `5`.
+- After the fix, the same API flow staged the first line with blob size `6`, preserving `alpha\n`.
+- Verified the true final line still stays without a trailing newline: staging only `beta` produced blob size `4`.
+- `node --check server.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Cleaned the temporary file and confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: selected-line patch generation now skips stale no-newline metadata when the line it belonged to was omitted from the patch.
+- `README.md`: documents the non-final line no-newline boundary.
+- `docs/CONTINUE.md`: records the same worktree Diff boundary for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: return all Git worktrees
+### What was done
+- Found that Forkline silently returned only the first 24 worktrees from `git worktree list --porcelain`.
+- Reproduced with `D:\桌面\GitTest` by creating 25 temporary detached worktrees under `C:\tmp\forkline-wt-limit-20260701`: raw Git listed 26 worktrees including the main worktree, but `/api/state` returned only 24 and ended at `wt-23`.
+- Removed the backend slice so worktree enrichment keeps every parsed worktree row.
+### Testing
+- Before the fix, `/api/state` returned `API_WORKTREE_COUNT=24` while raw Git returned `RAW_WORKTREE_COUNT=26`.
+- After the fix, the same repository returned `API_WORKTREE_COUNT=26`, with the last API row at `C:/tmp/forkline-wt-limit-20260701/wt-25`.
+- `node --check server.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Removed all 25 temporary worktrees, deleted the temporary directory, and confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: `enrichWorktreeList` now enriches all parsed worktree rows instead of slicing to the first 24.
+- `README.md`: documents that large worktree lists are not silently truncated.
+- `docs/CONTINUE.md`: records the worktree list limit fix for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: return all configured submodules
+### What was done
+- Found that Forkline silently returned only the first 80 configured submodules from `.gitmodules`.
+- Reproduced with `D:\桌面\GitTest` by creating a temporary `.gitmodules` containing 81 configured submodule paths; before the fix, `/api/state` returned 80 submodules and ended at `forkline-fixtures/submodule-limit-080`.
+- Removed the backend slice so submodule enrichment keeps every parsed submodule row.
+### Testing
+- Before the fix, `CONFIG_SUBMODULE_PATHS=81` but `API_SUBMODULE_COUNT=80` and `HAS_081=False`.
+- After the fix, the same temporary configuration returned `API_SUBMODULE_COUNT=81`, `LAST_API=forkline-fixtures/submodule-limit-081`, and `HAS_081=True`.
+- `node --check server.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Removed the temporary `.gitmodules` file and confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: `enrichSubmodules` now enriches all parsed submodule rows instead of slicing to the first 80.
+- `README.md`: documents that large submodule lists are not silently truncated.
+- `docs/CONTINUE.md`: records the submodule list limit fix for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve tabs in Tag subjects
+### What was done
+- Found that Forkline parsed Tag metadata with a plain tab split, so an annotated Tag subject containing a tab shifted the object type field.
+- Reproduced with `D:\桌面\GitTest`: temporary Tag `forkline-tab-subject-20260701` had raw subject `subject\tpart`, but `/api/state` returned `subject = subject` and `type = part`.
+- Updated Tag parsing so the first fields stay fixed, the last field remains the object type, and any middle fields are joined back into the subject.
+### Testing
+- Before the fix, the temporary Tag returned `SUBJECT_MATCH=False` and `TYPE_MATCH=False`.
+- After the fix, the same Tag returned `API_SUBJECT=subject\tpart`, `API_TYPE=tag`, `SUBJECT_MATCH=True`, and `TYPE_MATCH=True`.
+- `node --check server.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Deleted the temporary Tag and confirmed `D:\桌面\GitTest` stayed on branch `123` with a clean worktree.
+### Notes
+- `server.js`: `parseTags` now preserves tabs inside Tag subjects without shifting the object type field.
+- `README.md`: documents the Tab-in-subject Tag parsing boundary.
+- `docs/CONTINUE.md`: records the Tag subject parsing fix for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-01 - Task: preserve tabs in recovery point subjects
+### What was done
+- Found that Forkline parsed recovery point metadata with a plain tab split, so a recovery point whose target commit subject contained a tab lost everything after that tab.
+- Reproduced with `D:\桌面\GitTest`: temporary recovery ref `refs/forkline/recovery/20260701-999999/forkline_tab_subject/recovery-tab-test` pointed at a commit titled `recovery\tpart`, but `/api/state` returned `subject = recovery`.
+- Updated recovery point parsing so all fields after the short SHA are joined back into the subject.
+### Testing
+- Before the fix, the temporary recovery point returned `API_SUBJECT=recovery` and `SUBJECT_MATCH=False`.
+- After the fix, the same recovery point returned `API_SUBJECT=recovery\tpart` and `SUBJECT_MATCH=True`.
+- `node --check server.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Deleted the temporary recovery ref, deleted the temporary branch, and confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: `parseRecoveryPoints` now preserves tabs inside recovery point subjects.
+- `README.md`: documents that recovery point search keeps Tab-containing commit subjects intact.
+- `docs/CONTINUE.md`: records the recovery point subject parsing fix for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
+
+## 2026-07-02 - Task: preserve control separators in commit subjects
+### What was done
+- Found that Forkline used `0x1f` as the internal Git log field separator for commit graph, file history, compare preview, history rewrite previews, and sync commit previews.
+- Reproduced with `D:\桌面\GitTest`: temporary branch `forkline/unit-separator-subject-20260701` contained a commit titled `unit\x1fsep`; before the fix, `/api/state` returned `message = unit`, `refs = sep`, and a bogus parent count of 3.
+- Changed commit log field separation to NUL-delimited formatting and updated the shared commit parsers to split on that delimiter.
+### Testing
+- After the fix, `/api/state` for the same commit returned the full `message = unit\x1fsep`, `refs = HEAD -> forkline/unit-separator-subject-20260701`, and `parents.length = 1`.
+- `/api/commit?sha=<temporary commit>` returned `summary = unit\x1fsep`.
+- `/api/file-history?file=forkline-fixtures/unit-separator-subject-20260701.txt&ref=forkline/unit-separator-subject-20260701` returned the same full message.
+- `node --check server.js` passed.
+- `git diff --check` passed; Git only reported Windows LF-to-CRLF working-copy warnings.
+- Deleted the temporary branch and test file, and confirmed `D:\桌面\GitTest` returned to branch `123` with a clean worktree.
+### Notes
+- `server.js`: commit log formatting now uses NUL field separators for commit graph, file history, compare preview, history rewrite previews, and sync commit previews.
+- `README.md`: documents that special commit-title separators no longer break graph parsing.
+- `docs/CONTINUE.md`: records the commit subject separator parsing fix for future continuation.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's edits in `server.js`, `README.md`, `docs/CONTINUE.md`, and `progress.md`, or revert the commit created for this task after it is committed.
