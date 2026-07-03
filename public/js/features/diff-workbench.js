@@ -397,6 +397,7 @@ function fallbackWorkDiffScope(scope, fileInfo, diff) {
 }
 
 async function runWorkDiffHunkAction(action, button) {
+  const repoPath = repoPathSnapshot();
   const file = activeWorktreeDiffFile();
   const hunkIndex = Number.parseInt(button?.dataset.hunkIndex || "", 10);
   const scope = button?.dataset.hunkScope || state.activeDiff?.scope || "unstaged";
@@ -415,17 +416,21 @@ async function runWorkDiffHunkAction(action, button) {
       method: "POST",
       body: JSON.stringify({ action, file, scope, hunkIndex }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "改动块操作完成");
     await refreshWorktree(true);
+    if (!isCurrentRepoPath(repoPath)) return;
     if (state.selectedFile) {
       state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
       await loadWorkingDiff(state.selectedFile);
+      if (!isCurrentRepoPath(repoPath)) return;
       if (els.diffModal.classList.contains("show")) {
         if (state.activeDiff?.diff?.length) openDiffModal();
         else closeDiffModal();
       }
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     await refreshWorktree(true);
   } finally {
@@ -778,6 +783,7 @@ function selectedDiffLinePayload() {
 }
 
 async function runWorkDiffLineAction(button) {
+  const repoPath = repoPathSnapshot();
   const file = activeWorktreeDiffFile();
   const scope = state.activeDiff?.scope || "unstaged";
   const action = button?.dataset?.lineAction || "";
@@ -805,18 +811,22 @@ async function runWorkDiffLineAction(button) {
       method: "POST",
       body: JSON.stringify({ action, file, scope, lines }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "所选行操作完成");
     resetDiffLineSelection(false);
     await refreshWorktree(true);
+    if (!isCurrentRepoPath(repoPath)) return;
     if (state.selectedFile) {
       state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
       await loadWorkingDiff(state.selectedFile);
+      if (!isCurrentRepoPath(repoPath)) return;
       if (els.diffModal.classList.contains("show")) {
         if (state.activeDiff?.diff?.length) openDiffModal();
         else closeDiffModal();
       }
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     await refreshWorktree(true);
     syncDiffLineSelectionRows();

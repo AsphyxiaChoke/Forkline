@@ -5124,7 +5124,7 @@ async function readCurrentSyncDetails(repoPath = currentRepo) {
     credentialManager: { available: false, name: "Git Credential Manager", version: "", message: "未检测" },
     commands: ["git remote -v"],
   }));
-  const pullRequest = await readPullRequestLink(state, remotes).catch((error) => ({
+  const pullRequest = await readPullRequestLink(state, remotes, repoPath).catch((error) => ({
     available: false,
     reason: `无法生成 PR 链接：${String(error?.message || error || "未知错误")}`,
     url: "",
@@ -5403,7 +5403,7 @@ function authSummaryText(remotes, ssh, agent, credentialManager) {
   return `${remoteText}；${sshText}；${agentText}；${gcmText}`;
 }
 
-async function readPullRequestLink(syncState = {}, remotes = []) {
+async function readPullRequestLink(syncState = {}, remotes = [], repoPath = currentRepo) {
   const branch = String(syncState.branch || "").trim();
   if (!branch || branch === "HEAD" || branch === "detached HEAD" || syncState.detached) {
     return { available: false, reason: "当前处于游离 HEAD，请先切换或创建本地分支。", url: "" };
@@ -5412,7 +5412,7 @@ async function readPullRequestLink(syncState = {}, remotes = []) {
   if (!remote?.webBase) {
     return { available: false, reason: "当前仓库没有可识别的 GitHub / GitLab / Bitbucket / Gitea 网页远端。", url: "" };
   }
-  const targetBranch = await inferPullRequestTarget(branch, syncState);
+  const targetBranch = await inferPullRequestTarget(branch, syncState, repoPath);
   if (!targetBranch) {
     return { available: false, reason: "没有找到可作为目标的主分支。", url: "" };
   }
@@ -5448,9 +5448,9 @@ function preferredWebRemote(remotes = []) {
   return null;
 }
 
-async function inferPullRequestTarget(branch, syncState = {}) {
-  const localBranches = parseSimpleLines(await git(currentRepo, ["branch", "--format=%(refname:short)"]).catch(() => ""));
-  const remoteNames = await readRemoteNames();
+async function inferPullRequestTarget(branch, syncState = {}, repoPath = currentRepo) {
+  const localBranches = parseSimpleLines(await git(repoPath, ["branch", "--format=%(refname:short)"]).catch(() => ""));
+  const remoteNames = await readRemoteNames(repoPath);
   const upstreamBranch = syncState.upstream ? splitRemoteBranchRef(syncState.upstream, remoteNames).branch : "";
   if (upstreamBranch && upstreamBranch !== branch) return upstreamBranch;
   const preferred = ["main", "master", "develop", "development", "dev", "trunk"];

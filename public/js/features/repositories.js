@@ -305,16 +305,7 @@ async function submitInitForm(event) {
 
 async function applyOpenedRepoData(data, requestId = 0) {
   if (requestId && requestId !== state.openRepoRequestId) return false;
-  clearRepoScopedActionState();
-  state.commitDetails.clear();
-  state.loadingCommitDetails.clear();
-  state.stashDetails.clear();
-  state.selectedStash = "";
-  state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
-  state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
-  state.historyPlan = null;
-  state.historyQueue = { items: [], loading: false, preview: null, error: "" };
-  state.remoteCheck = null;
+  clearOpenedRepoState();
   state.data = data;
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
   if (state.selectedRef) {
@@ -332,6 +323,31 @@ async function applyOpenedRepoData(data, requestId = 0) {
     renderInspector();
   }
   return true;
+}
+
+function clearOpenedRepoState() {
+  clearRepoScopedActionState();
+  state.selectedFile = "";
+  state.workDiffScope = "unstaged";
+  state.selectedCommitFile = "";
+  state.selectedSyncSha = "";
+  state.selectedSyncFile = "";
+  state.selectedCompareFile = "";
+  state.compare = { base: "", head: "", data: null, loading: false, error: "" };
+  state.selectedChanges.clear();
+  state.selectedDiffLines.clear();
+  state.lastChangeSelection = null;
+  state.lastDiffLineKey = "";
+  setActiveDiff(null);
+  state.commitDetails.clear();
+  state.loadingCommitDetails.clear();
+  state.stashDetails.clear();
+  state.selectedStash = "";
+  state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
+  state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
+  state.historyPlan = null;
+  state.historyQueue = { items: [], loading: false, preview: null, error: "" };
+  state.remoteCheck = null;
 }
 
 function clearRepoScopedActionState() {

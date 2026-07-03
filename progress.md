@@ -3121,3 +3121,97 @@
 - `docs/CONTINUE.md`：记录旧提交补丁复制/下载结果不会覆盖新仓库页面。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧工作区按块按行刷新泄漏
+### What was done
+- 复现工作区 Diff 按块操作完成后，如果后续刷新期间用户已经切到另一个仓库，旧动作仍会继续用旧文件路径读取当前新仓库 Diff。
+- 工作区 Diff 的按块操作和按行操作现在会记录动作发起时的仓库路径；动作返回、刷新工作区和重新读取 Diff 后都会确认仍在同一仓库。
+- 该保护避免切仓库后底部对照突然显示旧仓库文件路径的空 Diff 或错误提示，降低用户基于错误工作区状态继续操作的风险。
+
+### Testing
+- 旧逻辑最小复现 harness：`repo-A` 的块操作成功后，在刷新返回前切到 `repo-B`，旧代码继续调用 `loadWorkingDiff("old.txt")`，输出 `{"oldLoadedNewRepo":true,...}`。
+- 修复后 Node harness 验证：同样切仓库时，按块和按行两条路径都不再继续读取旧文件，输出 `{"hunkDiscarded":true,"lineDiscarded":true,"hunkLoaded":[],"lineLoaded":[]}`。
+- `node --check public/js/features/diff-workbench.js` 和 `node --check server.js` 均通过。
+- `git diff --check` 通过，仅提示工作副本未来会按 Git 设置转为 CRLF。
+- 调试标记扫描无命中。
+- `git -C D:\桌面\GitTest status --short --branch` 输出 `## 123`，测试仓库未被本轮修改。
+
+### Notes
+- `public/js/features/diff-workbench.js`：工作区 Diff 按块/按行动作的后续 toast、刷新和重新读取 Diff 增加仓库路径校验。
+- `README.md`：补充旧工作区按块/按行动作刷新不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录旧工作区按块/按行动作刷新会在切仓库后丢弃。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复旧 API 响应污染新仓库操作日志状态
+### What was done
+- 复现公共 `api()` 包装器会在调用方执行仓库校验之前，先把响应中的 `operationLog` 和 `runningOperations` 写入当前页面状态。
+- 公共 `api()` 现在会记录请求发起时的仓库路径；响应回来时只有当前仍是同一个仓库，才会同步操作日志和运行中操作状态。
+- 该保护补上了调用方仓库校验之外的公共副作用，避免旧仓库动作响应让新仓库页面误显示旧操作或清空当前运行中状态。
+
+### Testing
+- 旧逻辑最小复现 harness：请求发起于 `repo-A`，响应前切到 `repo-B`，旧代码仍把 `old repo action` 和 `old running` 写入 `repo-B` 状态。
+- 修复后 Node harness 验证：切到 `repo-B` 后旧日志/运行中状态被跳过；保持在 `repo-A` 时同类响应仍会正常更新，输出 `{"staleSkipped":true,"sameRepoApplied":true,...}`。
+- `node --check public/js/api.js`、`node --check public/js/features/diff-workbench.js` 和 `node --check server.js` 均通过。
+
+### Notes
+- `public/js/api.js`：公共 API 包装器同步操作日志和运行中状态前增加仓库路径快照校验。
+- `README.md`：补充旧操作日志/运行中状态刷新不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录旧操作日志/运行中状态刷新会在切仓库后丢弃。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复打开工作树后旧仓库详情状态残留
+### What was done
+- 复现从“工作树”页打开另一个工作树后，前端只替换仓库数据和提交列表，没有清空旧仓库的文件历史、逐行追踪、储藏详情、历史编辑计划、远端诊断和右键上下文。
+- 打开工作树现在复用打开仓库时的 repo-scoped 状态清理逻辑，切到新工作树前会清掉旧仓库上下文。
+- 该保护避免新工作树页面继续显示旧文件历史、旧储藏 Diff 或旧历史编辑计划，降低用户基于错误上下文继续恢复、重写或复制信息的风险。
+
+### Testing
+- 旧逻辑最小复现 harness：`openWorktreePath()` 设置新 `state.data` 后，`renderAll()` 仍渲染 `old/repo/file.txt` 的文件历史，且旧储藏详情、历史编辑计划、远端诊断均残留。
+- 修复后 Node harness 验证：打开工作树后旧文件历史、blame、储藏详情、历史编辑计划、远端诊断和右键上下文全部清空，输出 `{"historyCleared":true,"blameCleared":true,"stashCleared":true,"planCleared":true,"remoteCheckCleared":true,"contextCleared":true}`。
+- `node --check public/js/features/repositories.js`、`node --check public/js/panels/workspaces.js`、`node --check public/js/api.js`、`node --check public/js/features/diff-workbench.js` 和 `node --check server.js` 均通过。
+
+### Notes
+- `public/js/features/repositories.js`：提取打开仓库时的 repo-scoped 状态清理函数，供其他切仓库入口复用。
+- `public/js/panels/workspaces.js`：打开工作树时调用同一套 repo-scoped 状态清理逻辑。
+- `README.md`：补充打开新仓库或工作树会清空旧文件历史、逐行追踪、历史编辑计划等上下文。
+- `docs/CONTINUE.md`：记录打开工作树会复用新仓库清理逻辑。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复打开新仓库后旧比较和最大化对照残留
+### What was done
+- 复现停留在“分支比较”页时打开新仓库或工作树，旧仓库的比较结果、选中文件和最大化 Diff 状态仍会在新仓库页面渲染。
+- 打开新仓库或工作树时现在会清空比较结果、同步提交预览选择、提交文件选择、工作区文件选择、底部/最大化 active Diff 和多选状态。
+- 该保护避免新仓库页面继续展示旧分支差异或旧文件 Diff，降低用户基于错误比较结果继续复制、查看或执行后续操作的风险。
+
+### Testing
+- 旧逻辑最小复现 harness：打开新仓库后，`renderCompareTab()` 仍用旧 `state.compare.data` 渲染 `old.txt`，`activeDiff` 也保持旧比较 Diff。
+- 修复后 Node harness 验证：比较结果、activeDiff、同步预览、提交文件选择、工作区选择和多选状态全部清空，输出 `{"compareCleared":true,"activeDiffCleared":true,"syncCleared":true,"commitFileCleared":true,"worktreeSelectionCleared":true,"selectionSetsCleared":true}`。
+- `node --check public/js/features/repositories.js`、`node --check public/js/panels/workspaces.js`、`node --check public/js/api.js`、`node --check public/js/features/diff-workbench.js` 和 `node --check server.js` 均通过。
+
+### Notes
+- `public/js/features/repositories.js`：打开新仓库/工作树时清空比较、同步预览、提交文件、工作区 Diff 和多选状态。
+- `README.md`：补充打开新仓库或工作树会清空旧比较结果和最大化对照。
+- `docs/CONTINUE.md`：记录旧比较和最大化对照会在切仓库时清理。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复同步页 PR 链接目标分支推断混仓库
+### What was done
+- 复现同步详情读取发起于 `repo-A` 后，如果全局当前仓库切到 `repo-B`，PR/MR 链接的目标分支推断会读取 `repo-B` 的本地分支和远端名。
+- PR/MR 链接生成现在把请求发起时的 `repoPath` 传入目标分支推断，远端信息、当前分支、目标分支都固定在同一个仓库快照中。
+- 该保护避免同步页在快速切仓库时生成“旧仓库 URL + 新仓库目标分支”的混合 PR/MR 链接。
+
+### Testing
+- 旧逻辑最小复现 harness：请求 `repo-A` 同步详情后把 `currentRepo` 改成 `repo-B`，旧目标分支推断读取 `repo-B`，输出目标分支 `develop`。
+- 修复后 Node harness 验证：同样切换全局仓库后，目标分支仍从 `repo-A` 推断为 `main`，所有分支/远端读取调用都使用 `repo-A`，输出 `{"fixed":true,"target":"main",...}`。
+- `node --check server.js`、`node --check public/js/features/repositories.js`、`node --check public/js/api.js`、`node --check public/js/features/diff-workbench.js` 和 `node --check public/js/panels/workspaces.js` 均通过。
+
+### Notes
+- `server.js`：PR/MR 链接生成和目标分支推断接收并使用请求仓库路径。
+- `README.md`：补充 PR/MR 目标分支推断会固定请求发起时的仓库。
+- `docs/CONTINUE.md`：记录同步页 PR/MR 目标分支推断使用仓库路径快照。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。

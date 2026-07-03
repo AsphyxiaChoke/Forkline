@@ -471,7 +471,7 @@ async function openWorktreePath(worktreePath, button) {
       body: JSON.stringify({ action: "openWorktree", path: worktreePath }),
     });
     toast(result.output || "已打开工作树");
-    state.commitDetails.clear();
+    clearOpenedRepoState();
     state.selectedRef = "";
     state.data = result.state;
     state.selectedSha = state.data.commits[0]?.sha || "";
