@@ -4,12 +4,13 @@
 
 - 远端 `origin/main` 已拉取并基于最新代码开发。
 - 已完成“远端分支 checkout”：远端分支列表现在有可见的“签出”按钮，右键菜单也支持“签出为本地分支”。
-- 查看其他分支的切换速度已优化：分支/Tag 视图切换改用轻量 `/api/ref-state`，只刷新提交图数据，不再每次重跑同步、认证、子模块、恢复点和工作区全量状态；如果切到已删除的远端分支 tracking，`/api/ref-state` 会自动 `fetch --prune` 并拒绝显示旧提交。
+- 查看其他分支的切换速度已优化：分支/Tag 视图切换改用轻量 `/api/ref-state`，只刷新提交图数据，不再每次重跑同步、认证、子模块、恢复点和工作区全量状态；如果切到已删除的远端分支 tracking，`/api/ref-state` 会自动 `fetch --prune` 并拒绝显示旧提交，前端会保留当前视图和详情。
 - 当前分支和当前 HEAD 提交已高亮：左侧分支列表、顶部分支条会标出真实检出分支；提交图会用 `HEAD` 徽标和独立行高亮标出当前仓库 HEAD。
 - Windows 下启动 `node server.js` 后会自动打开 `http://127.0.0.1:<PORT>`，非 Windows 环境保持只启动服务。
-- 顶部路径选择器已恢复并整理布局：路径输入框旁有固定可见的“选择”按钮，可在内置目录弹窗中进入上级目录、跳转输入路径，并通过桌面、下载、文档、用户目录和磁盘根目录快捷入口选择本机 Git 仓库；最近仓库和路径操作按钮已分组，窄宽度会提前换成两行顶栏，避免互相挤压或变形；目录列表会隐藏 `.git`。
+- 顶部路径选择器已恢复并整理布局：路径输入框旁有固定可见的“选择”按钮，可在内置目录弹窗中进入上级目录、跳转输入路径，并通过桌面、下载、文档、用户目录和磁盘根目录快捷入口选择本机 Git 仓库；最近仓库和路径操作按钮已分组，窄宽度会提前换成两行顶栏，避免互相挤压或变形；连续打开多个仓库时只保留最后一次打开结果；克隆或初始化期间如果用户又手动打开其他仓库，完成后的旧自动打开结果不会覆盖当前仓库；目录列表会隐藏 `.git`；快速切换目录时只保留最后选择的目录结果，旧请求或旧错误不会覆盖当前目录。
 - 提交图谱已按视图重做：`全部分支` 显示多分支提交、分叉和 merge 回线，merge 提交通过节点和回线表达，不额外显示文字标识；全部分支图谱的节点、标签、辅助线会跟随对应分支在分支列表中的颜色；单独分支改用 `--first-parent` 主线，只显示该分支自己的提交轨迹，merge 提交保留侧向虚线提示来源。全部分支主线现在优先精确本地 `main` / `master`，没有本地主干时会使用已知远端的对应分支，不会把 `forkline/main` 这类普通本地分支误判为主线；提交标题里包含内部控制分隔符时，不会把标题、引用和父提交解析错位。
 - 右侧栏已改为上下文页签：点提交只显示“详情 / 文件 / 标签列表”；点工作区或暂存区文件只显示“历史 / 逐行”；点分支只显示“分支整理 / 同步情况 / 分支比较”；工作树、子模块、储藏、恢复点、操作日志统一放到顶部右上“更多”下拉中选择进入。
+- 右侧刷新类面板已补强：分支整理、工作树、子模块和操作日志刷新返回时，如果用户已经切到其他引用，会丢弃旧响应，不会把页面拉回旧分支。
 - 设置界面已接入：顶部右上“更多”下拉和命令面板都能打开“设置”，目前集中管理本机主题、最近仓库、恢复点保留策略和布局宽高重置；这些偏好保存在当前浏览器本地，不改仓库配置。
 - 前端功能代码已从旧大文件完整拆分：`public/app.js` 仅保留兼容占位；实际功能按 `public/js/app/`、`public/js/features/`、`public/js/panels/` 分层加载，`docs/ARCHITECTURE.md` 已记录脚本顺序和新增功能落点。
 - 工作区 Diff 已支持按行选择暂存/取消暂存：底部 Diff 和最大化 Diff 中都可选择新增/删除行；未暂存视图显示“暂存所选行”，已暂存视图显示“取消暂存所选行”，修改行会按成对增删一起处理；已暂存的新文件也支持只取消暂存选中行，工作区已删除文件也支持只暂存选中的删除行，未选行会留在另一侧 Diff 中；读取 Diff 补丁时只使用 Git stdout，避免 Windows CRLF warning 混入补丁导致按行操作失败；暂存后会自动切到已暂存视图，暂不包含行内容编辑。
@@ -138,6 +139,7 @@
 - 图谱外提交的新建分支起点已修复：从文件历史或逐行追踪打开旧提交后再点“新建分支”，弹窗会使用该提交 SHA 作为起点，命令面板提示也会显示该提交，不再退回当前 HEAD。
 - 逐行追踪已接入：右侧新增“逐行”标签，工作区文件右键菜单新增“逐行追踪 git blame”，提交文件对照面板新增“逐行追踪”按钮；后端新增 `/api/file-blame`，执行 `git blame --line-porcelain <引用> -- <文件>`，返回最多前 600 行的行号、提交、作者、时间、摘要和代码内容，并对文件不在当前引用中的情况给中文提示。
 - 逐行追踪跳转已补强：当 blame 行对应的提交不在当前图谱加载范围内时，右侧仍会用 blame 行里的提交摘要作为临时详情来源，并按 SHA 读取提交详情，不再要求用户切换分支或清空图谱。
+- 文件历史和逐行追踪的快速切换已补强：连续点击多个文件时，较慢返回的旧请求不会覆盖最后选择的文件。
 - 远端分支过期保护已覆盖文件历史和逐行追踪：如果引用是已删除的 `origin/...` 远端跟踪引用，`readFileHistory` / `readFileBlame` 会自动 `fetch --prune` 并拒绝读取，避免展示过期提交和 blame 行。
 - 提交详情文件列表已保留 `git show --name-status --find-renames` 的 R/C 状态：重命名提交会返回 `state: R`、`previousFile` 和 `R100` 这类完整状态，文件树徽标会显示 R/C，不再把重命名误标成普通修改。
 
@@ -228,6 +230,7 @@
 - 引用日志恢复 API/UI 验证：临时服务 `http://127.0.0.1:5274` 打开 GitTest 后，在临时分支 `forkline-reflog-verify-*` 创建测试提交，再 `reset --hard HEAD~1` 制造 reflog 记录；`/api/state` 返回该临时提交的 reflog 项，`createRecoveryPointFromReflog` 创建 `refs/forkline/recovery/.../reflog-*`，`restoreReflogEntry` 恢复 HEAD 到临时提交并自动创建 `restore-reflog` 恢复前恢复点。内置浏览器打开同一服务后手动打开 GitTest，右侧“恢复点”页显示“引用日志 80 条”，reflog 行无横向溢出，右键菜单显示“查看提交 / 复制 SHA / 创建恢复点 update-ref / 恢复到此处 reset --hard”。测试后已切回 `123`、删除临时分支和测试恢复点 refs，GitTest 工作区干净。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
 - 分支比较过期远端分支 API 验证：临时服务 `http://127.0.0.1:5334` 打开 GitTest，创建远端分支 `forkline/stale-remote-compare-20260703` 并抓取出 `origin/forkline/stale-remote-compare-20260703` 后，手动删除裸远端真实分支。修复前 `/api/compare?base=123&head=origin/forkline/stale-remote-compare-20260703` 返回成功，目标短 SHA 为过期提交 `e15ae70`，`headOnlyCount = 1`；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，并自动 prune 掉过期远端跟踪引用。
+- 分支比较快速切换前端验证：函数 harness 模拟 `slow-head` 比较慢返回、`fast-head` 比较快返回；修复前慢返回会覆盖比较页，修复后最终保持 `fast-head` 和 `fast-head.txt`。
 - 比较页任意引用选择器 API/HTTP 验证：临时服务 `http://127.0.0.1:5239` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `base = 123`、`head = forkline/merge-clean`、目标独有提交 3 个、文件变化 6 个；HTTP 静态检查确认 `comparePickerHtml`、`data-compare-run` 和 `.compare-picker` 均已从最新资源返回。内置 Browser 本次打开 localhost 仍超时，未记为视觉验证。
 - 分支整理 API 验证：临时服务 `http://127.0.0.1:5256` 打开 GitTest 后，创建本地临时分支 `forkline/cleanup-api-verify` 指向当前 HEAD；`branchCleanup` 返回该分支 `mergedIntoCurrent = true`、`canDelete = true`、`statusLabel = 已合并`；调用 `deleteBranches` 后返回“已删除 1 个本地分支”，`show-ref` 确认该临时分支不存在。内置 Browser 本次打开 localhost 仍卡在连接/加载层，未记为视觉验证；GitTest 最终保持 `123` 分支且工作区干净。
 - 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。

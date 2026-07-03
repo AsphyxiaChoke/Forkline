@@ -2,11 +2,11 @@
 async function selectRef(ref) {
   if (!state.data) return;
   try {
+    const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
     setInspectorContext(ref ? "branch" : "commit", ref ? "branches" : "details");
     state.selectedRef = ref;
     els.searchInput.value = "";
     state.commitDetails.clear();
-    const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
     state.data.repo = { ...state.data.repo, ...(data.repo || {}), selectedRef: data.repo?.selectedRef || ref };
     state.data.commits = data.commits || [];
     state.selectedRef = state.data.repo.selectedRef || ref;

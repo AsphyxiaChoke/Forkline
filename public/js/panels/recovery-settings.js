@@ -646,7 +646,10 @@ function formatDurationText(ms) {
 
 async function refreshLogsTab() {
   if (!state.data) return;
-  state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+  const requestedRef = state.selectedRef;
+  const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
+  if (state.selectedRef !== requestedRef) return;
+  state.data = data;
   state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
   renderInspector();
 }

@@ -6,16 +6,19 @@ function currentCompareBaseRef() {
 
 async function openCompareBranch(head, base = currentCompareBaseRef()) {
   if (!head) return;
+  const requestId = ++state.compareRequestId;
   state.compare = { base, head, data: null, loading: true, error: "" };
   state.selectedCompareFile = "";
   state.selectedTab = "compare";
   renderInspector();
   try {
     const data = await api(`/api/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`);
+    if (requestId !== state.compareRequestId) return;
     state.compare = { base: data.base || base, head: data.head || head, data, loading: false, error: "" };
     state.selectedCompareFile = data.files?.[0]?.file || "";
     renderInspector();
   } catch (error) {
+    if (requestId !== state.compareRequestId) return;
     state.compare = { base, head, data: null, loading: false, error: error.message };
     state.selectedCompareFile = "";
     renderInspector();

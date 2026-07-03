@@ -14,12 +14,15 @@ function closeFolderModal() {
 }
 
 async function loadFolder(pathValue = "") {
+  const requestId = ++state.folderBrowseRequestId;
   els.folderList.innerHTML = `<div class="folder-empty">正在读取目录...</div>`;
   try {
     const data = await api(`/api/browse?path=${encodeURIComponent(pathValue || "")}`);
+    if (requestId !== state.folderBrowseRequestId) return;
     state.folderBrowse = data;
     renderFolderBrowser();
   } catch (error) {
+    if (requestId !== state.folderBrowseRequestId) return;
     els.folderList.innerHTML = `<div class="folder-empty">${escapeHtml(error.message)}</div>`;
     toast(error.message);
   }

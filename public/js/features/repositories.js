@@ -165,15 +165,18 @@ async function submitCloneForm(event) {
   if (!confirm(message)) return;
 
   els.cloneSubmit.disabled = true;
+  const openRequestId = openAfter ? ++state.openRepoRequestId : 0;
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "cloneRepository", url: source, targetPath, openAfter }),
     });
     if (result.state) {
-      await applyOpenedRepoData(result.state);
-      saveRecentRepo(state.data.repo);
-      els.repoInput.value = state.data.repo.path;
+      const opened = await applyOpenedRepoData(result.state, openRequestId);
+      if (opened) {
+        saveRecentRepo(state.data.repo);
+        els.repoInput.value = state.data.repo.path;
+      }
     }
     closeCloneModal();
     toast(result.output || "克隆完成");
@@ -273,15 +276,18 @@ async function submitInitForm(event) {
   if (!confirm(message)) return;
 
   els.initSubmit.disabled = true;
+  const openRequestId = openAfter ? ++state.openRepoRequestId : 0;
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "initRepository", targetPath, openAfter }),
     });
     if (result.state) {
-      await applyOpenedRepoData(result.state);
-      saveRecentRepo(state.data.repo);
-      els.repoInput.value = state.data.repo.path;
+      const opened = await applyOpenedRepoData(result.state, openRequestId);
+      if (opened) {
+        saveRecentRepo(state.data.repo);
+        els.repoInput.value = state.data.repo.path;
+      }
     }
     closeInitModal();
     toast(result.output || "初始化仓库完成");
@@ -292,7 +298,8 @@ async function submitInitForm(event) {
   }
 }
 
-async function applyOpenedRepoData(data) {
+async function applyOpenedRepoData(data, requestId = 0) {
+  if (requestId && requestId !== state.openRepoRequestId) return false;
   state.commitDetails.clear();
   state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
   state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
@@ -302,7 +309,10 @@ async function applyOpenedRepoData(data) {
   state.data = data;
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
   if (state.selectedRef) {
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const selectedRef = state.selectedRef;
+    const refData = await api(`/api/state?ref=${encodeURIComponent(selectedRef)}`);
+    if (requestId && requestId !== state.openRepoRequestId) return false;
+    state.data = refData;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
   }
   state.selectedSha = state.data.commits[0]?.sha || "";
@@ -312,6 +322,7 @@ async function applyOpenedRepoData(data) {
     await loadCommit(state.selectedSha);
     renderInspector();
   }
+  return true;
 }
 
 async function openRepo(pathOverride = "") {
@@ -320,16 +331,21 @@ async function openRepo(pathOverride = "") {
     toast("请输入仓库路径");
     return;
   }
+  const requestId = ++state.openRepoRequestId;
   try {
     els.openRepo.disabled = true;
-    await applyOpenedRepoData(await api("/api/open", { method: "POST", body: JSON.stringify({ path: repoPath }) }));
+    const data = await api("/api/open", { method: "POST", body: JSON.stringify({ path: repoPath }) });
+    if (requestId !== state.openRepoRequestId) return;
+    const opened = await applyOpenedRepoData(data, requestId);
+    if (!opened) return;
     saveRecentRepo(state.data.repo);
     toast(`已打开 ${state.data.repo.name}`);
     await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
+    if (requestId !== state.openRepoRequestId) return;
     toast(error.message);
   } finally {
-    els.openRepo.disabled = false;
+    if (requestId === state.openRepoRequestId) els.openRepo.disabled = false;
   }
 }
 

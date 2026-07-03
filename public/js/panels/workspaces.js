@@ -179,7 +179,10 @@ async function refreshBranchCleanup(button) {
   if (!state.data) return;
   if (button) button.disabled = true;
   try {
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const requestedRef = state.selectedRef;
+    const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
+    if (state.selectedRef !== requestedRef) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     renderInspector();
@@ -433,7 +436,10 @@ async function runWorktreeAction(action, button) {
 async function refreshWorktreeDashboard(button) {
   if (button) button.disabled = true;
   try {
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const requestedRef = state.selectedRef;
+    const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
+    if (state.selectedRef !== requestedRef) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     toast("工作树列表已刷新");
@@ -627,7 +633,10 @@ function submoduleConfirmMessage(action, submodulePath) {
 async function refreshSubmodules(button) {
   if (button) button.disabled = true;
   try {
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const requestedRef = state.selectedRef;
+    const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
+    if (state.selectedRef !== requestedRef) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     toast("子模块列表已刷新");

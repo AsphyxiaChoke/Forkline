@@ -2683,3 +2683,133 @@
 - `docs/CONTINUE.md`：记录图谱视图读取过期远端分支的 API 复现和验证结果。
 - `progress.md`：追加本轮复现、修复、验证和清理记录。
 - 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换已不存在远端分支失败后前端状态错位
+### What was done
+- 复现单个远端分支图谱切换失败时，前端会先把当前引用、右侧页签、搜索框和提交详情缓存改成失败目标。
+- `selectRef` 现在先等待 `/api/ref-state` 成功返回，再切换右侧上下文、清搜索和刷新提交图。
+- README 和继续开发文档同步说明过期远端分支切换失败会保留当前视图。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `/api/ref-state` 抛出“远端分支 origin/missing 已不存在”，`selectedRef` 被改成 `origin/missing`，右侧上下文被改成 `branch / branches`，搜索框被清空，提交详情缓存被清空。
+- 修复后复跑同一 harness，`selectedRef` 保持 `123`，右侧上下文保持 `commit / details`，搜索框保持 `keep`，提交详情缓存保持 1 条，仅显示中文错误 toast。
+- 成功路径 harness 返回 `origin/live` 和提交 `new-head` 后，仍正常切到 `branch / branches`，清空搜索，加载 `new-head` 并显示“已查看 origin/live”。
+
+### Notes
+- `public/js/features/git-actions.js`：把 `selectRef` 的状态修改移动到 `/api/ref-state` 成功之后，避免失败请求污染当前视图。
+- `README.md`：补充单个远端分支图谱切换失败会保留当前视图。
+- `docs/CONTINUE.md`：记录前端会保留当前视图和详情。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/features/git-actions.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复文件历史和逐行追踪快速切换乱序覆盖
+### What was done
+- 复现连续打开两个文件的历史时，后选择的文件先返回并显示后，较慢返回的旧文件请求会再次覆盖右侧历史面板。
+- 文件历史和逐行追踪现在各自使用请求序号，只允许最后一次请求写回面板。
+- README 和继续开发文档同步说明快速切换文件时只保留最后选择的结果。
+
+### Testing
+- 修复前用前端函数 harness 先调用 `openFileHistory("a.txt")` 再调用 `openFileHistory("b.txt")`，模拟 `a.txt` 慢返回、`b.txt` 快返回；最终 `state.fileHistory.file` 和数据都被旧的 `a.txt` 覆盖。
+- 修复后复跑同一 harness，最终 `state.fileHistory.file = b.txt`，数据也为 `b.txt`，旧的 `a.txt` 返回没有再次渲染。
+- 逐行追踪使用同样乱序 harness 验证，最终 `state.fileBlame.file = b.txt`，数据也为 `b.txt`，旧请求没有覆盖最后选择。
+
+### Notes
+- `public/js/core.js`：新增文件历史和逐行追踪请求序号。
+- `public/js/panels/inspector.js`：文件历史和逐行追踪写回前校验请求序号，丢弃过期响应。
+- `README.md`：补充快速切换文件时历史和逐行追踪只显示最后选择结果。
+- `docs/CONTINUE.md`：记录文件历史和逐行追踪乱序请求保护。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/core.js`、`public/js/panels/inspector.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复分支比较快速切换乱序覆盖
+### What was done
+- 复现连续打开两个比较目标时，后选择的比较先返回并显示后，较慢返回的旧比较请求会再次覆盖右侧比较页。
+- 比较页现在使用请求序号，只允许最后一次比较请求写回结果和选中文件。
+- README 和继续开发文档同步说明快速切换比较目标时只保留最后选择的结果。
+
+### Testing
+- 修复前用前端函数 harness 先调用 `openCompareBranch("slow-head", "main")` 再调用 `openCompareBranch("fast-head", "main")`，模拟 `slow-head` 慢返回、`fast-head` 快返回；最终 `state.compare.head`、数据和 `selectedCompareFile` 都被旧的 `slow-head` 覆盖。
+- 修复后复跑同一 harness，最终 `state.compare.head = fast-head`，数据也为 `fast-head`，`selectedCompareFile = fast-head.txt`，旧的 `slow-head` 返回没有再次渲染。
+
+### Notes
+- `public/js/core.js`：新增比较页请求序号。
+- `public/js/features/commit-actions.js`：比较结果写回前校验请求序号，丢弃过期响应。
+- `README.md`：补充快速切换比较目标时只显示最后选择的比较结果。
+- `docs/CONTINUE.md`：记录分支比较乱序请求保护。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/core.js`、`public/js/features/commit-actions.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复右侧刷新面板慢返回覆盖当前引用
+### What was done
+- 复现分支整理刷新从 `branch-a` 发出后，用户已经切到 `branch-b`，慢返回的旧刷新仍会把 `selectedRef` 和页面数据拉回 `branch-a`。
+- 分支整理、工作树、子模块和操作日志刷新现在会记录发起时的引用；如果返回时当前引用已变化，就丢弃旧响应。
+- README 和继续开发文档同步说明刷新类面板不会把页面拉回旧分支。
+
+### Testing
+- 修复前用前端函数 harness 调用 `refreshBranchCleanup()` 后立即把 `selectedRef` 改为 `branch-b`；旧请求返回后 `selectedRef` 和数据都变回 `branch-a`，并触发 `renderAll`、`renderInspector` 和“分支整理已刷新”提示。
+- 修复后复跑同一 harness，`selectedRef` 保持 `branch-b`，旧请求不再渲染或提示。
+- 另用同样模式验证 `refreshWorktreeDashboard()`、`refreshSubmodules()` 和 `refreshLogsTab()`，旧响应都不会覆盖 `branch-b`。
+- 贴近真实切换的 harness 同时把 `state.data.repo.selectedRef` 改成 `branch-b`，旧刷新返回后数据仍保持 `branch-b`。
+
+### Notes
+- `public/js/panels/workspaces.js`：分支整理、工作树和子模块刷新写回前校验当前引用是否仍是请求发起时的引用。
+- `public/js/panels/recovery-settings.js`：操作日志刷新写回前校验当前引用。
+- `README.md`：补充刷新类面板不会把页面拉回旧分支。
+- `docs/CONTINUE.md`：记录右侧刷新类面板的旧响应丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/panels/workspaces.js`、`public/js/panels/recovery-settings.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复目录选择弹窗快速切换乱序覆盖
+### What was done
+- 复现路径选择弹窗先加载 `C:/slow`、马上加载 `D:/fast` 时，`D:/fast` 先显示后会被慢返回的 `C:/slow` 覆盖。
+- 目录浏览现在使用请求序号，只允许最后一次 `loadFolder` 请求写回目录列表；旧错误也不会覆盖新目录。
+- README 和继续开发文档同步说明快速切换目录时只保留最后选择结果。
+
+### Testing
+- 修复前用前端函数 harness 先调用 `loadFolder("C:/slow")` 再调用 `loadFolder("D:/fast")`，模拟 `C:/slow` 慢返回、`D:/fast` 快返回；最终 `state.folderBrowse.current` 和路径输入框都被旧的 `C:/slow` 覆盖。
+- 修复后复跑同一 harness，最终 `state.folderBrowse.current = D:/fast`，路径输入框也保持 `D:/fast`。
+- 另验证旧错误不会覆盖新成功：`C:/broken` 慢返回错误、`D:/fast` 快返回成功时，最终仍显示 `D:/fast`，不会显示“旧目录读取失败”或弹出旧错误 toast。
+
+### Notes
+- `public/js/core.js`：新增目录浏览请求序号。
+- `public/js/features/folder-command.js`：目录浏览成功和失败写回前校验请求序号，丢弃过期响应。
+- `README.md`：补充路径选择弹窗快速切换目录时只显示最后选择结果。
+- `docs/CONTINUE.md`：记录目录弹窗旧请求和旧错误不会覆盖当前目录。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/core.js`、`public/js/features/folder-command.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复连续打开仓库乱序覆盖
+### What was done
+- 复现先打开 `slow-repo`、马上打开 `fast-repo` 时，`fast-repo` 先显示后会被慢返回的 `slow-repo` 覆盖。
+- 打开仓库现在使用请求序号；旧的 `/api/open` 返回和旧的二次 `/api/state` 返回都不会写回页面。
+- README 和继续开发文档同步说明连续打开多个仓库时只保留最后一次打开结果。
+
+### Testing
+- 修复前用前端函数 harness 先调用 `openRepo("slow-repo")` 再调用 `openRepo("fast-repo")`，模拟 `slow-repo` 的 `/api/open` 慢返回；最终仓库路径、选中引用和提交都被旧的 `slow-repo` 覆盖。
+- 修复后复跑同一 harness，最终保持 `fast-repo`、`fast-repo-main` 和 `fast-repo-head`，没有保存、提示或恢复 `slow-repo`。
+- 另验证旧请求卡在二次 `/api/state` 阶段的情况：`slow-repo` 的 `/api/open` 先返回但 `/api/state` 慢返回，随后 `fast-repo` 完成打开；最终仍保持 `fast-repo`，旧的 `slow-repo` 状态不会覆盖。
+
+### Notes
+- `public/js/core.js`：新增打开仓库请求序号。
+- `public/js/features/repositories.js`：`openRepo` 和 `applyOpenedRepoData` 写回前校验请求序号，丢弃过期打开请求。
+- `README.md`：补充连续打开多个仓库时只保留最后一次打开结果。
+- `docs/CONTINUE.md`：记录打开仓库旧请求不会覆盖当前仓库。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/core.js`、`public/js/features/repositories.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复克隆和初始化自动打开乱序覆盖
+### What was done
+- 复现克隆或初始化选择“完成后打开”时，如果用户在操作完成前又手动打开其他仓库，较慢返回的旧自动打开会覆盖当前仓库。
+- 克隆和初始化现在复用打开仓库请求序号；只有仍是最后一次打开意图时，才把返回的仓库状态写回页面。
+- README 和继续开发文档同步说明克隆/初始化旧自动打开不会覆盖后来手动打开的仓库。
+
+### Testing
+- 克隆自动打开 harness：先提交克隆并模拟慢返回，再手动打开 `fast-repo`；修复后最终保持 `fast-repo`、`fast-repo-main` 和 `fast-repo-head`，旧的 `clone-repo` 没有覆盖当前页面。
+- 初始化自动打开 harness：先提交初始化并模拟慢返回，再手动打开 `fast-repo`；修复后最终保持 `fast-repo`、`fast-repo-main` 和 `fast-repo-head`，旧的 `init-repo` 没有覆盖当前页面。
+
+### Notes
+- `public/js/features/repositories.js`：克隆和初始化自动打开写回前校验打开仓库请求序号，过期结果不再保存最近仓库或改写路径输入框。
+- `README.md`：补充克隆/初始化自动打开不会覆盖后来手动打开的仓库。
+- `docs/CONTINUE.md`：记录克隆/初始化期间手动打开其他仓库时的旧自动打开丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/features/repositories.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。

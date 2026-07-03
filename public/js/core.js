@@ -35,6 +35,9 @@ const state = {
   contextRemote: null,
   contextReflogEntry: null,
   diffRequestId: 0,
+  compareRequestId: 0,
+  fileHistoryRequestId: 0,
+  fileBlameRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
   commitDetails: new Map(),
@@ -61,6 +64,8 @@ const state = {
   cloneTargetAuto: false,
   commandPaletteIndex: 0,
   folderBrowse: null,
+  folderBrowseRequestId: 0,
+  openRepoRequestId: 0,
 };
 
 const graphWidth = 176;
