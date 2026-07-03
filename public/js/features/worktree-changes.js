@@ -63,6 +63,9 @@ function renderStage() {
   const groups = changeGroups(files);
   const filterText = terms.length ? ` · 筛选 ${visibleFiles.length}/${files.length}` : "";
   els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除，${counts.R} 个重命名${filterText}`;
+  const unborn = Boolean(state.data?.sync?.unborn);
+  els.stashChanges.disabled = unborn;
+  els.stashChanges.title = unborn ? "当前分支还没有首个提交，不能创建储藏" : "储藏全部未提交更改";
 }
 
 function ensureSelectedFileChangeKey() {

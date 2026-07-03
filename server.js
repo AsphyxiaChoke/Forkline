@@ -355,6 +355,9 @@ async function readFileHistory(filePath, refInput = "") {
     };
   }
   const ref = refInput ? normalizeCompareRef(refInput, "文件历史引用") : "HEAD";
+  if (await isCurrentUnbornRef(ref)) {
+    throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上查看文件历史。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
+  }
   await resolveCommitRef(ref, "文件历史引用");
   const historyFile = await resolveRefFileForWorktreePath(file, ref);
   const output = await git(
@@ -408,6 +411,9 @@ async function readFileBlame(filePath, refInput = "") {
     };
   }
   const ref = refInput ? normalizeCompareRef(refInput, "逐行追踪引用") : "HEAD";
+  if (await isCurrentUnbornRef(ref)) {
+    throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上逐行追踪。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
+  }
   await resolveCommitRef(ref, "逐行追踪引用");
   const blameFile = await resolveBlameFileForRef(file, ref);
   const output = await git(currentRepo, ["blame", "--line-porcelain", blameFile.ref, "--", blameFile.file], { maxBuffer: 1024 * 1024 * 10 });
@@ -479,9 +485,16 @@ async function readCompare(baseInput, headInput) {
       command: `git diff ${base}...${head}`,
     };
   }
-  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD")).trim() || "HEAD";
+  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "HEAD")).trim() || "HEAD";
+  const unborn = currentBranch !== "detached HEAD" && !(await hasHeadCommit(currentRepo));
+  if (unborn && !baseInput) {
+    throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能作为比较基准。请先创建首个提交，或手动选择一个已有提交的分支作为基准。`);
+  }
   const base = normalizeCompareRef(baseInput || (currentBranch === "detached HEAD" ? "HEAD" : currentBranch), "比较基准");
   const head = normalizeCompareRef(headInput, "比较目标");
+  if (unborn && (base === currentBranch || base === "HEAD" || head === currentBranch || head === "HEAD")) {
+    throw new Error("当前分支还没有任何提交，不能参与分支比较。请先创建首个提交，或选择两个已有提交的引用。");
+  }
   const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准"), resolveCommitRef(head, "比较目标")]);
   const mergeBase = (await git(currentRepo, ["merge-base", base, head]).catch(() => "")).trim();
   const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);
@@ -516,6 +529,12 @@ async function readCompare(baseInput, headInput) {
 function normalizeCompareRef(value, label) {
   const ref = normalizeRefName(value, label);
   return ref === "detached" || ref === "detached HEAD" ? "HEAD" : ref;
+}
+
+async function isCurrentUnbornRef(ref) {
+  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (!currentBranch || currentBranch === "detached HEAD" || await hasHeadCommit(currentRepo)) return false;
+  return ref === "HEAD" || ref === "@" || ref === currentBranch || ref === `refs/heads/${currentBranch}`;
 }
 
 async function resolveCommitRef(ref, label) {
@@ -919,8 +938,7 @@ async function runAction(body) {
     return commandResult(await git(currentRepo, ["add", "-A"], { timeout: 60000 }));
   }
   if (action === "discardAll") {
-    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
-    await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
+    await discardAllWorktreeChanges();
     return { ok: true, output: "已丢弃全部未提交更改" };
   }
   if (action === "continueRevert") {
@@ -1083,6 +1101,10 @@ async function runAction(body) {
     return commandResult(await git(currentRepo, args, { timeout: 120000 }));
   }
   if (action === "amendCommit") {
+    if (!(await hasHeadCommit(currentRepo))) {
+      const branch = (await readBranchDisplayName(currentRepo).catch(() => "当前分支")).trim() || "当前分支";
+      throw new Error(`${branch} 还没有上一次提交，不能追加提交。请先创建首个提交。`);
+    }
     const summary = String(body.summary || "").trim();
     const detail = String(body.body || "").trim();
     const args = ["commit", "--amend"];
@@ -1277,7 +1299,7 @@ function checkoutModeText(mode) {
 async function checkoutBranch(body) {
   const branch = normalizeBranchName(body.branch);
   const mode = normalizeCheckoutMode(body.mode);
-  const sourceBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const sourceBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   const branchOutput = await git(currentRepo, ["branch", "--format=%(refname:short)"]);
   const branches = branchOutput.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
   if (!branches.includes(branch)) throw new Error("只能切换到本地分支");
@@ -1291,6 +1313,9 @@ async function checkoutBranch(body) {
     const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     let stash = null;
     if (dirty.trim()) {
+      if (!(await hasHeadCommit(currentRepo))) {
+        throw new Error(`当前分支 ${sourceBranch || "HEAD"} 还没有任何提交，不能储藏并签出。请先创建首个提交，或改用“强制签出”丢弃这些改动。`);
+      }
       validateStashFiles(parseStatus(dirty), []);
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${branch} ${stamp}`;
@@ -1301,8 +1326,7 @@ async function checkoutBranch(body) {
     return { ok: true, output: "已储藏本地更改并切换分支", stash };
   }
   if (mode === "force") {
-    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
-    await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
+    await discardAllWorktreeChanges();
     await git(currentRepo, ["switch", "--force", branch], { timeout: 60000 });
     return { ok: true, output: "已丢弃本地更改并强制切换分支" };
   }
@@ -1313,7 +1337,7 @@ async function checkoutBranch(body) {
 async function checkoutRemoteBranch(body) {
   const remoteRef = normalizeRefName(body.ref, "远端分支");
   const mode = normalizeCheckoutMode(body.mode);
-  const sourceBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const sourceBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   const remoteNames = await readRemoteNames();
   const remoteBranches = (await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]))
     .split(/\r?\n/)
@@ -1338,6 +1362,9 @@ async function checkoutRemoteBranch(body) {
     const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     let stash = null;
     if (dirty.trim()) {
+      if (!(await hasHeadCommit(currentRepo))) {
+        throw new Error(`当前分支 ${sourceBranch || "HEAD"} 还没有任何提交，不能储藏并签出。请先创建首个提交，或改用“强制签出”丢弃这些改动。`);
+      }
       validateStashFiles(parseStatus(dirty), []);
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${localBranch} ${stamp}`;
@@ -1348,8 +1375,7 @@ async function checkoutRemoteBranch(body) {
     return { ok: true, branch: localBranch, remote: remoteRef, output: `已从 ${remoteRef} 签出本地分支 ${localBranch}`, stash };
   }
   if (mode === "force") {
-    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
-    await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
+    await discardAllWorktreeChanges();
     await git(currentRepo, switchArgs, { timeout: 60000 });
     return { ok: true, branch: localBranch, remote: remoteRef, output: `已强制签出本地分支 ${localBranch}` };
   }
@@ -1364,6 +1390,9 @@ async function createBranch(body) {
   await git(currentRepo, ["check-ref-format", "--branch", branch]).catch(() => {
     throw new Error("分支名不合法");
   });
+  if (!start && !checkout && !(await hasHeadCommit(currentRepo))) {
+    throw new Error("当前分支还没有任何提交，不能创建不切换的新分支。请勾选“创建后切换”，或从已有提交/分支创建。");
+  }
   const args = checkout ? ["switch", "-c", branch] : ["branch", branch];
   if (start) args.push(start);
   await git(currentRepo, args, { timeout: 60000 });
@@ -1408,9 +1437,12 @@ async function deleteBranches(body) {
 }
 
 async function pushCurrentBranch() {
-  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
-  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+  const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (!branch || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能直接推送分支。请先切换或创建本地分支。");
+  }
+  if (!(await hasHeadCommit(currentRepo))) {
+    throw new Error(`当前分支 ${branch} 还没有任何提交，不能推送。请先创建首个提交后再推送。`);
   }
   const before = await readCurrentSyncState();
   const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
@@ -1441,9 +1473,12 @@ function ensurePushIsSafe(state) {
 }
 
 async function forcePushCurrentBranchWithLease() {
-  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
-  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+  const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (!branch || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能直接强推。请先切换或创建本地分支。");
+  }
+  if (!(await hasHeadCommit(currentRepo))) {
+    throw new Error(`当前分支 ${branch} 还没有任何提交，不能强推。请先创建首个提交后再推送。`);
   }
   const before = await readCurrentSyncState();
   if (!before.upstream) {
@@ -1662,7 +1697,14 @@ function extractRemoteHost(remoteUrl) {
 }
 
 async function pullCurrentBranch() {
+  await currentLocalBranch("拉取");
   const before = await readCurrentSyncState();
+  if (!before.upstream) {
+    throw new Error("当前分支没有 upstream，不能拉取。请先在同步页设置 upstream，或推送一次建立跟踪关系。");
+  }
+  if (before.upstreamGone) {
+    throw new Error(`当前分支的 upstream ${before.upstream} 已不存在，不能拉取。请先抓取远端并重新设置 upstream。`);
+  }
   const output = await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return syncCommandResult("pull", output, before, after);
@@ -1732,6 +1774,11 @@ async function createWorktree(body) {
   const targetPath = normalizeWorktreeTargetPath(body.targetPath || body.path);
   const ref = normalizeRefName(body.ref || "HEAD", "工作树起点");
   const branch = String(body.branch || "").trim() ? normalizeBranchName(body.branch) : "";
+  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  const usesCurrentHead = ref === "HEAD" || ref === "@" || (currentBranch && (ref === currentBranch || ref === `refs/heads/${currentBranch}`));
+  if (usesCurrentHead && !(await hasHeadCommit(currentRepo))) {
+    throw new Error(`当前分支 ${currentBranch || "HEAD"} 还没有任何提交，不能从 ${ref} 创建工作树。请先创建首个提交，或把工作树起点改成已有分支、Tag 或提交 SHA。`);
+  }
   const parent = path.dirname(targetPath);
   if (!fs.existsSync(parent)) throw new Error(`工作树上级目录不存在：${parent}`);
   if (!fs.statSync(parent).isDirectory()) throw new Error(`工作树上级路径不是目录：${parent}`);
@@ -1848,6 +1895,9 @@ async function setCurrentBranchUpstream(body) {
   const branch = await currentLocalBranch("设置 upstream");
   const upstream = await ensureRemoteBranchRef(body.ref || body.upstream);
   const before = await readCurrentSyncState();
+  if (before.unborn) {
+    throw new Error(`当前分支 ${branch} 还没有任何提交，不能设置 upstream。请先创建首个提交后再设置。`);
+  }
   if (before.upstream === upstream) {
     return { ok: true, output: `当前分支 ${branch} 已经跟踪 ${upstream}` };
   }
@@ -1896,7 +1946,10 @@ async function renameBranch(body) {
 
 async function mergeRef(body) {
   const ref = normalizeRefName(body.ref, "合并目标");
-  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+  const currentBranch = await currentLocalBranch("合并");
+  if (!(await hasHeadCommit(currentRepo))) {
+    throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能合并分支。请先创建首个提交后再合并。`);
+  }
   if (ref === currentBranch) throw new Error("不能把当前分支合并到自己");
   const output = await git(currentRepo, ["merge", "--no-ff", "--no-edit", ref], { timeout: 120000 });
   return commandResult(output || `已合并 ${ref}`);
@@ -1906,9 +1959,9 @@ async function rebaseOntoRef(body) {
   const ref = normalizeRefName(body.ref, "变基目标");
   const operation = detectRepoOperation(currentRepo);
   if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再变基。`);
-  const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
-  if (!currentBranch || currentBranch === "HEAD" || currentBranch === "detached HEAD") {
-    throw new Error("当前处于游离 HEAD，不能直接变基。请先切换到本地分支。");
+  const currentBranch = await currentLocalBranch("变基");
+  if (!(await hasHeadCommit(currentRepo))) {
+    throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能变基。请先创建首个提交后再变基。`);
   }
   if (ref === currentBranch) throw new Error("不能把当前分支变基到自己");
   const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
@@ -1986,6 +2039,9 @@ async function createStash(body) {
   const files = normalizeStashFiles(body.files);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
   if (!statusOutput.trim()) throw new Error("没有可储藏的未提交更改");
+  if (!(await hasHeadCommit(currentRepo))) {
+    throw new Error("当前分支还没有任何提交，不能创建储藏。请先创建首个提交，或使用“丢弃全部”清理这些未跟踪文件。");
+  }
   validateStashFiles(parseStatus(statusOutput), files);
   const args = ["stash", "push", "-u", "-m", message];
   if (files.length) args.push("--", ...files);
@@ -3569,11 +3625,24 @@ async function ensureRemoteName(value) {
 }
 
 async function currentLocalBranch(actionText = "执行操作") {
-  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
-  if (!branch || branch === "HEAD" || branch === "detached HEAD") {
+  const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (!branch || branch === "detached HEAD") {
     throw new Error(`当前处于游离 HEAD，不能${actionText}。请先切换到本地分支。`);
   }
   return branch;
+}
+
+async function hasHeadCommit(repoPath) {
+  return Boolean((await git(repoPath, ["rev-parse", "--verify", "HEAD^{commit}"]).catch(() => "")).trim());
+}
+
+async function discardAllWorktreeChanges() {
+  if (await hasHeadCommit(currentRepo)) {
+    await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
+  } else {
+    await git(currentRepo, ["rm", "-r", "--cached", "--ignore-unmatch", "--", "."], { timeout: 60000 }).catch(() => "");
+  }
+  await git(currentRepo, ["clean", "-fd"], { timeout: 60000 });
 }
 
 async function createRecoveryPoint(actionKey) {
@@ -4632,19 +4701,26 @@ function commandResultWithSummary(summary, output) {
 async function readCurrentSyncState() {
   const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
-    return { branch: "HEAD", detached: true, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
+    return { branch: "HEAD", detached: true, unborn: false, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
   const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+  const hasCommit = await hasHeadCommit(currentRepo);
+  if (!hasCommit) {
+    const upstreamSha = upstream ? (await git(currentRepo, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim() : "";
+    return { branch, detached: false, unborn: true, upstream, upstreamGone: Boolean(upstream && !upstreamSha), ahead: 0, behind: 0 };
+  }
   if (!upstream) {
-    return { branch, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
+    return { branch, detached: false, unborn: false, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
   const upstreamSha = (await git(currentRepo, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
   if (!upstreamSha) {
-    return { branch, upstream, upstreamGone: true, ahead: 0, behind: 0 };
+    return { branch, detached: false, unborn: false, upstream, upstreamGone: true, ahead: 0, behind: 0 };
   }
   const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${upstream}...HEAD`]).catch(() => "0\t0")).trim().split(/\s+/);
   return {
     branch,
+    detached: false,
+    unborn: false,
     upstream,
     upstreamGone: false,
     behind: Number(counts[0] || 0),
@@ -4689,6 +4765,7 @@ function syncTrackingLine(after, before) {
 
 function syncStateLine(state) {
   if (!state || state.detached) return "";
+  if (state.unborn) return "同步状态：当前分支还没有首个提交，无法计算领先/落后";
   if (!state.upstream) return "同步状态：未设置 upstream，无法判断领先/落后";
   if (state.upstreamGone) return "同步状态：上游分支已不存在，请抓取远端后确认是否需要重新设置 upstream";
   if (!state.ahead && !state.behind) return "同步状态：本地与上游一致";
@@ -5775,6 +5852,24 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("no configured push destination") || lower.includes("does not appear to be a git repository")) {
     return "当前仓库没有可用远端。请先添加远端地址后再推送或拉取。";
+  }
+  if (lower.includes("src refspec") && lower.includes("does not match any")) {
+    return "当前分支还没有可推送的提交。请先创建首个提交后再推送。";
+  }
+  if (lower.includes("no commit on branch")) {
+    return "当前分支还没有任何提交。请先创建首个提交后再继续这个操作。";
+  }
+  if (lower.includes("empty head")) {
+    return "当前分支还没有任何提交，不能执行这个分支操作。请先创建首个提交后再继续。";
+  }
+  if (lower.includes("not a valid object name")) {
+    return "当前引用不是有效提交。当前分支可能还没有首个提交，请先创建提交后再继续。";
+  }
+  if (lower.includes("initial commit")) {
+    return "当前分支还没有首个提交，Git 不能执行这个操作。请先创建首个提交后再继续。";
+  }
+  if (lower.includes("ambiguous argument 'head'") && lower.includes("unknown revision")) {
+    return "当前分支还没有首个提交，HEAD 暂时不是有效引用。请先创建首个提交，或选择不依赖 HEAD 的操作。";
   }
   if (lower.includes("stale info") || (context.body?.action === "forcePushLease" && lower.includes("rejected"))) {
     return "安全强推被 Git 拒绝：远端分支在你上次抓取后可能已经变化。请先抓取远端，确认远端新增提交是否可以覆盖，再重新操作。";

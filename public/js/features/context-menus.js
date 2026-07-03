@@ -121,7 +121,8 @@ function showBranchContextMenu(event, branch, options = {}) {
   const remoteIsCurrent = Boolean(remoteLocalBranch && remoteLocalBranch === state.data?.repo?.branch);
   const currentBranch = state.data?.repo?.branch || "";
   const currentInfo = state.data?.branchInfo?.[currentBranch] || {};
-  const canSetUpstream = Boolean(isRemote && currentBranch && currentBranch !== "detached HEAD" && !branch.endsWith("/HEAD"));
+  const currentSync = state.data?.sync || {};
+  const canSetUpstream = Boolean(isRemote && currentBranch && currentBranch !== "detached HEAD" && !currentSync.unborn && !branch.endsWith("/HEAD"));
   const pullRequest = state.data?.sync?.pullRequest || {};
   const canOpenPullRequest = Boolean(isLocal && isCurrent && pullRequest.available && pullRequest.url);
   const pullRequestUnavailable = !isLocal || !isCurrent
@@ -142,18 +143,22 @@ function showBranchContextMenu(event, branch, options = {}) {
       : occupied
         ? "分支被其他工作树占用"
         : "";
-  mergeButton.disabled = isCurrent || (isRemote && !remoteLocalBranch);
+  mergeButton.disabled = isCurrent || currentSync.unborn || (isRemote && !remoteLocalBranch);
   mergeButton.title = isCurrent
     ? "不能把当前分支合并到自己"
-    : isRemote && !remoteLocalBranch
-      ? "这个远端引用不能自动推导本地分支名"
-      : `合并 ${branch} 到当前分支`;
-  rebaseButton.disabled = isCurrent || (isRemote && !remoteLocalBranch);
+    : currentSync.unborn
+      ? "当前分支还没有首个提交，不能合并分支"
+      : isRemote && !remoteLocalBranch
+        ? "这个远端引用不能自动推导本地分支名"
+        : `合并 ${branch} 到当前分支`;
+  rebaseButton.disabled = isCurrent || currentSync.unborn || (isRemote && !remoteLocalBranch);
   rebaseButton.title = isCurrent
     ? "不能把当前分支变基到自己"
-    : isRemote && !remoteLocalBranch
-      ? "这个远端引用不能自动推导本地分支名"
-      : `把当前分支 ${state.data?.repo?.branch || ""} 变基到 ${branch}`;
+    : currentSync.unborn
+      ? "当前分支还没有首个提交，不能变基"
+      : isRemote && !remoteLocalBranch
+        ? "这个远端引用不能自动推导本地分支名"
+        : `把当前分支 ${state.data?.repo?.branch || ""} 变基到 ${branch}`;
   pullRebaseButton.disabled = !isLocal || !isCurrent || !currentInfo.upstream || currentInfo.upstreamGone;
   pullRebaseButton.title = !isLocal || !isCurrent
     ? "只能对当前本地分支执行变基拉取"
@@ -162,12 +167,14 @@ function showBranchContextMenu(event, branch, options = {}) {
       : currentInfo.upstreamGone
         ? "当前分支的 upstream 已不存在，请先抓取并重新设置"
         : `从 ${currentInfo.upstream} 执行 git pull --rebase`;
-  forcePushButton.disabled = !isLocal || !isCurrent;
+  forcePushButton.disabled = !isLocal || !isCurrent || currentSync.unborn;
   forcePushButton.title = !isLocal
     ? "只能对当前本地分支执行安全强推"
     : !isCurrent
       ? "请先切换到这个分支后再安全强推"
-      : "使用 git push --force-with-lease 推送当前分支";
+      : currentSync.unborn
+        ? "当前分支还没有首个提交，不能安全强推"
+        : "使用 git push --force-with-lease 推送当前分支";
   if (openPullRequestButton) {
     openPullRequestButton.querySelector(".menu-label").textContent = pullRequest.title || "创建 Pull Request";
     openPullRequestButton.disabled = !canOpenPullRequest;
@@ -179,7 +186,9 @@ function showBranchContextMenu(event, branch, options = {}) {
   }
   setUpstreamButton.disabled = !canSetUpstream || currentInfo.upstream === branch;
   setUpstreamButton.title = !canSetUpstream
-    ? "只能把远端分支设为当前本地分支的 upstream"
+    ? currentSync.unborn
+      ? "当前分支还没有首个提交，不能设置 upstream"
+      : "只能把远端分支设为当前本地分支的 upstream"
     : currentInfo.upstream === branch
       ? "当前分支已经跟踪这个远端分支"
       : `把当前分支 ${currentBranch} 跟踪到 ${branch}`;

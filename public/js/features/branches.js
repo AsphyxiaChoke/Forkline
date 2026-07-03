@@ -346,11 +346,16 @@ function openBranchModal() {
   els.branchNameInput.value = "";
   els.branchModalTitle.textContent = "新建分支";
   els.branchNameInput.placeholder = "例如 feature/login";
+  const unborn = Boolean(state.data?.sync?.unborn && !commit);
   els.branchCheckoutToggle.checked = true;
+  els.branchCheckoutToggle.disabled = unborn;
+  els.branchCheckoutToggle.title = unborn ? "当前分支还没有首个提交，只能创建并切换到新的无提交分支" : "";
   els.branchCheckoutLabel.style.display = "";
   els.branchSubmit.textContent = "创建分支";
   els.branchStartText.textContent = commit
     ? `从选中提交 ${commit.short} 创建分支。`
+    : unborn
+      ? "当前分支还没有提交，只能创建并切换到新的无提交分支。"
     : "从当前 HEAD 创建分支。";
   els.branchModal.classList.add("show");
   els.branchModal.setAttribute("aria-hidden", "false");
@@ -367,6 +372,8 @@ function openBranchModalFromRef(ref, label = "分支") {
   els.branchModalTitle.textContent = "新建分支";
   els.branchNameInput.placeholder = "例如 feature/login";
   els.branchCheckoutToggle.checked = true;
+  els.branchCheckoutToggle.disabled = false;
+  els.branchCheckoutToggle.title = "";
   els.branchCheckoutLabel.style.display = "";
   els.branchSubmit.textContent = "创建分支";
   els.branchStartText.textContent = `从${label} ${ref} 的最新提交创建分支。`;
@@ -385,6 +392,8 @@ function openRenameBranchModal(branch) {
   els.branchNameInput.placeholder = "新的分支名";
   els.branchModalTitle.textContent = "重命名分支";
   els.branchStartText.textContent = `将 ${branch} 重命名为新的本地分支名。`;
+  els.branchCheckoutToggle.disabled = false;
+  els.branchCheckoutToggle.title = "";
   els.branchCheckoutLabel.style.display = "none";
   els.branchSubmit.textContent = "重命名";
   els.branchModal.classList.add("show");

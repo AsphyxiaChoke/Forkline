@@ -263,6 +263,7 @@ function renderSyncTab() {
 }
 
 function syncStatusText(sync) {
+  if (sync?.unborn) return "还没有首个提交";
   if (!sync?.upstream) return "未设置 upstream";
   if (sync.upstreamGone) return "上游分支已不存在";
   const ahead = sync.ahead || 0;
@@ -275,6 +276,7 @@ function syncStatusText(sync) {
 
 function syncAdviceText(sync) {
   if (sync?.detached) return "当前处于游离 HEAD，请先切换或创建本地分支。";
+  if (sync?.unborn) return "当前分支还没有首个提交。请先提交一次，再推送或计算领先/落后。";
   if (!sync?.upstream) return "可以普通推送一次来建立 upstream。";
   if (sync.upstreamGone) return "普通推送已保护。请先抓取远端，确认是否需要重新设置或取消 upstream。";
   const ahead = sync.ahead || 0;
@@ -288,6 +290,9 @@ function syncAdviceText(sync) {
 function syncPushGuard(sync) {
   if (sync?.detached) {
     return { blocked: true, title: "当前处于游离 HEAD，不能直接推送分支", text: "推送保护：当前处于游离 HEAD，请先切换或创建本地分支。" };
+  }
+  if (sync?.unborn) {
+    return { blocked: true, title: "当前分支还没有首个提交，不能推送", text: "推送保护：当前分支还没有任何提交。请先创建首个提交后再推送。" };
   }
   if (sync?.upstreamGone) {
     const upstream = sync.upstream || "upstream";
@@ -352,7 +357,7 @@ function upstreamControlHtml(sync) {
   const remoteBranches = upstreamRemoteBranches();
   const selected = selectedUpstreamCandidate(sync, remoteBranches);
   const detached = sync?.detached || sync?.branch === "HEAD" || sync?.branch === "detached HEAD";
-  const canSet = remoteBranches.length && !detached;
+  const canSet = remoteBranches.length && !detached && !sync?.unborn;
   const canUnset = Boolean(sync?.upstream) && !detached;
   return `
     <div class="upstream-panel">

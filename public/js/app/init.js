@@ -29,6 +29,7 @@ function renderAll() {
   renderBranches();
   renderWorkingFiles();
   renderStage();
+  updateAmendMode();
   renderCommits({ inspector: "never" });
   renderInspector();
 }

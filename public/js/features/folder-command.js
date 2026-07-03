@@ -156,8 +156,11 @@ function commandPaletteItems() {
   const commit = selectedCommandCommit();
   const hasCommit = Boolean(commit);
   const remoteCommit = hasCommit ? commitRemoteUrl(commit.sha) : "";
-  const pullRequest = state.data?.sync?.pullRequest || {};
+  const sync = state.data?.sync || {};
+  const pullRequest = sync.pullRequest || {};
   const branch = state.data?.repo?.branch || "当前分支";
+  const hasUsableUpstream = Boolean(sync.upstream && !sync.upstreamGone);
+  const canPush = realRepo && !syncPushGuard(sync).blocked;
   return [
     commandItem("focusSearch", "搜索提交", "聚焦顶部提交搜索框", "图谱", "commit author branch sha", hasRepo, () => {
       els.searchInput.focus();
@@ -184,13 +187,13 @@ function commandPaletteItems() {
     commandItem("tabSettings", "打开设置", "管理主题、最近仓库、恢复点策略和布局偏好", "设置", "settings preference theme recent layout", true, () => switchInspectorTab("settings")),
     commandItem("refreshWorktree", "刷新工作区", "重新读取未提交修改", "git status", "worktree changes", realRepo, () => refreshWorktree(false)),
     commandItem("stageAll", "暂存全部", "把所有工作区改动加入暂存区", "git add", "stage changes", realRepo && hasChanges, () => runAction("stageAll")),
-    commandItem("stashAll", "储藏工作区", "把当前未提交改动移入储藏列表", "git stash", "stash changes", realRepo && hasChanges, () => createStashFromSelection(null)),
+    commandItem("stashAll", "储藏工作区", "把当前未提交改动移入储藏列表", "git stash", "stash changes", realRepo && hasChanges && !sync.unborn, () => createStashFromSelection(null)),
     commandItem("discardAll", "丢弃全部", "清空已暂存、未暂存和未跟踪改动", "危险", "discard clean reset", realRepo && hasChanges, () => runAction("discardAll"), true),
     commandItem("fetch", "抓取", "从远端更新引用", "git fetch", "remote sync", realRepo, () => runAction("fetch")),
-    commandItem("pull", "拉取", `快进拉取 ${branch}`, "git pull", "remote sync", realRepo, () => runAction("pull")),
-    commandItem("pullRebase", "变基拉取", `把 ${branch} 的本地提交重放到远端之后`, "git pull --rebase", "remote rebase", realRepo, () => runAction("pullRebase")),
-    commandItem("push", "推送", `推送 ${branch}`, "git push", "remote sync", realRepo, () => runAction("push")),
-    commandItem("forcePushLease", "安全强推", "使用 force-with-lease 更新远端分支", "危险", "force push lease", realRepo, () => runAction("forcePushLease"), true),
+    commandItem("pull", "拉取", `快进拉取 ${branch}`, "git pull", "remote sync", realRepo && hasUsableUpstream, () => runAction("pull")),
+    commandItem("pullRebase", "变基拉取", `把 ${branch} 的本地提交重放到远端之后`, "git pull --rebase", "remote rebase", realRepo && hasUsableUpstream, () => runAction("pullRebase")),
+    commandItem("push", "推送", `推送 ${branch}`, "git push", "remote sync", canPush, () => runAction("push")),
+    commandItem("forcePushLease", "安全强推", "使用 force-with-lease 更新远端分支", "危险", "force push lease", realRepo && hasUsableUpstream && !sync.unborn, () => runAction("forcePushLease"), true),
     commandItem("openPullRequest", pullRequest.title || "创建 PR", `为 ${branch} 打开 ${pullRequest.platformLabel || "远端"} PR/MR 页面`, "web", "pull request merge request pr mr github gitlab", Boolean(pullRequest.available), () => runSyncPullRequestAction("open")),
     commandItem("copyPullRequest", "复制 PR 链接", "复制当前分支的 PR/MR 创建地址", "copy", "pull request merge request pr mr clipboard", Boolean(pullRequest.available), () => runSyncPullRequestAction("copy")),
     commandItem("newBranch", "新建分支", hasCommit ? `从选中提交 ${commit.short} 创建本地分支` : "从当前 HEAD 创建本地分支", "git branch", "branch checkout commit", hasRepo, openBranchModal),

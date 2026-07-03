@@ -352,9 +352,10 @@ async function runRepoOperation(action, button) {
 }
 
 async function fillLatestCommitMessage() {
-  const commit = state.data?.commits?.[0];
-  if (!commit) {
+  const commit = currentHeadCommitForAmend();
+  if (!canAmendCurrentHead() || !commit) {
     els.amendToggle.checked = false;
+    updateAmendMode();
     toast("没有可追加的上一次提交");
     return;
   }
@@ -365,14 +366,29 @@ async function fillLatestCommitMessage() {
     els.commitBody.value = message.body;
   } catch (error) {
     els.amendToggle.checked = false;
+    updateAmendMode();
     toast(error.message);
   }
 }
 
 function updateAmendMode() {
-  const enabled = Boolean(els.amendToggle.checked);
+  const canAmend = canAmendCurrentHead();
+  if (!canAmend && els.amendToggle.checked) els.amendToggle.checked = false;
+  els.amendToggle.disabled = !canAmend;
+  els.amendToggle.title = canAmend ? "追加到上一次提交" : "当前分支还没有上一次提交";
+  const enabled = canAmend && Boolean(els.amendToggle.checked);
   els.commitSubmit.textContent = enabled ? "追加提交" : "创建提交";
   els.commitSubmit.title = enabled ? "追加到上一次提交" : "创建新的提交";
+}
+
+function canAmendCurrentHead() {
+  return Boolean(state.data?.repo?.headSha && !state.data?.sync?.unborn);
+}
+
+function currentHeadCommitForAmend() {
+  const headSha = state.data?.repo?.headSha || "";
+  if (!headSha) return null;
+  return state.data?.commits?.find((commit) => commit.sha === headSha) || { sha: headSha, short: headSha.slice(0, 7), message: "" };
 }
 
 function actionConfirmMessage(action, name) {
@@ -391,7 +407,8 @@ function actionConfirmMessage(action, name) {
     const sync = state.data?.sync || {};
     const guard = syncPushGuard(sync);
     if (guard.blocked) {
-      return `${guard.text}\n\nForkline 会阻止这次普通推送。通常请先使用“变基拉取”；只有确认要改写远端历史时，再使用“安全强推”。`;
+      const nextStep = sync.unborn ? "请先创建首个提交后再推送。" : "通常请先使用“变基拉取”；只有确认要改写远端历史时，再使用“安全强推”。";
+      return `${guard.text}\n\nForkline 会阻止这次普通推送。${nextStep}`;
     }
     if (info.upstream) {
       return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}\n命令：git push`;
@@ -401,10 +418,13 @@ function actionConfirmMessage(action, name) {
   if (action === "forcePushLease") {
     const branch = state.data?.repo?.branch || "当前分支";
     const info = state.data?.branchInfo?.[branch] || {};
+    const sync = state.data?.sync || {};
     const upstream = info.upstream || "未设置 upstream";
     const divergence = info.upstream
       ? `当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}`
-      : "当前分支没有 upstream，后端会拒绝安全强推。";
+      : sync.unborn
+        ? "当前分支还没有首个提交，后端会拒绝安全强推。"
+        : "当前分支没有 upstream，后端会拒绝安全强推。";
     return `确认安全强推当前分支：${branch}？\n\n目标：${upstream}\n命令：git push --force-with-lease\n${divergence}\n\n这会改写远端分支历史。--force-with-lease 会在远端分支自你上次抓取后又变化时拒绝推送；如果不确定，请先抓取并检查远端提交。`;
   }
   return `确认执行：${name}？`;
@@ -591,6 +611,10 @@ async function createStashFromSelection(files = null) {
   const allFiles = state.data.workingFiles || [];
   if (!allFiles.length) {
     toast("没有可储藏的未提交更改");
+    return;
+  }
+  if (state.data?.sync?.unborn) {
+    toast("当前分支还没有首个提交，不能创建储藏。请先提交一次，或使用“丢弃全部”清理未跟踪文件。");
     return;
   }
   if (selectedOnly && !stashFiles.length) {

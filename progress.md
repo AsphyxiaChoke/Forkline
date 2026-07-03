@@ -2027,3 +2027,209 @@
 - `docs/CONTINUE.md`：记录文件历史解析边界修复，便于后续继续查同类问题。
 - `progress.md`：追加本轮复现、修复、验证和清理记录。
 - 回滚方式：提交前可执行 `git checkout -- server.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 修复无提交分支同步操作误报游离 HEAD
+### What was done
+- 复现并修复当前分支还没有首个提交时，推送入口把本地分支误判为游离 HEAD 的问题。
+- 同步状态新增 `unborn` 标记，右侧同步页、命令面板和分支右键菜单会阻止普通推送 / 安全强推，并提示先创建首个提交。
+- 快进拉取入口补充 upstream 预检，直接 API 调用时也返回中文原因，不再透出 Git 英文提示。
+- 同步 README 和继续开发文档，说明无提交分支的同步保护行为。
+
+### Testing
+- 在 `D:\桌面\GitTest` 从干净 `123` 分支切到临时孤儿分支 `forkline/unborn-push-20260702` 复现；修复前 `/api/state` 没有 `unborn` 标记，调用 `/api/action push` 返回“当前处于游离 HEAD”。
+- 修复后重启临时服务 `http://127.0.0.1:5291`，打开 GitTest 后 `/api/state` 返回 `sync.branch = forkline/unborn-push-20260702`、`detached = false`、`unborn = true`。
+- 修复后调用 `/api/action push` 返回“当前分支 forkline/unborn-push-20260702 还没有任何提交，不能推送”；调用 `/api/action forcePushLease` 返回“还没有任何提交，不能强推”；调用 `/api/action pull` 返回“当前分支没有 upstream，不能拉取”。
+- `node --check server.js`、`node --check public\js\panels\sync.js`、`node --check public\js\features\context-menus.js`、`node --check public\js\features\git-actions.js`、`node --check public\js\features\folder-command.js` 均通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，临时孤儿分支没有留下本地分支引用。
+
+### Notes
+- `server.js`：推送 / 安全强推改用真实分支名判断，新增 HEAD commit 检查、同步 `unborn` 状态和拉取 upstream 预检，并补充 refspec 失败中文兜底。
+- `public/js/panels/sync.js`：同步页显示“还没有首个提交”，并禁用普通推送入口。
+- `public/js/features/context-menus.js`：当前分支右键菜单在无提交分支上禁用安全强推。
+- `public/js/features/git-actions.js`：推送和安全强推确认文案加入无提交分支的下一步提示。
+- `public/js/features/folder-command.js`：命令面板按同步状态禁用拉取、推送和安全强推。
+- `README.md`：补充无提交分支需要先创建首个提交后再推送。
+- `docs/CONTINUE.md`：记录无提交分支同步保护已接入。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js public/js/panels/sync.js public/js/features/context-menus.js public/js/features/git-actions.js public/js/features/folder-command.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 修复无提交分支设置 upstream 透出英文错误
+### What was done
+- 复现并修复当前分支还没有首个提交时，点击“设置 upstream”会透出 Git 英文错误的问题。
+- 后端在执行 `git branch --set-upstream-to` 前检查 `unborn` 状态，返回中文“先创建首个提交”。
+- 同步页和远端分支右键菜单在无提交分支上禁用设置 upstream，避免界面给出不可执行入口。
+- README 和继续开发文档同步说明：设置 upstream 需要当前本地分支已有提交。
+
+### Testing
+- 在 `D:\桌面\GitTest` 从干净 `123` 分支切到临时孤儿分支 `forkline/unborn-upstream-20260702` 复现；修复前调用 `/api/action setUpstream` 到 `origin/123` 返回英文 `fatal: no commit on branch ... yet`。
+- 修复后重启临时服务 `http://127.0.0.1:5292`，同一请求返回中文“当前分支 forkline/unborn-upstream-20260702 还没有任何提交，不能设置 upstream。请先创建首个提交后再设置。”。
+- `node --check server.js`、`node --check public\js\panels\sync.js`、`node --check public\js\features\context-menus.js` 和 `git diff --check` 均通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，临时孤儿分支没有留下本地分支引用。
+
+### Notes
+- `server.js`：`setCurrentBranchUpstream` 增加无提交分支中文拦截，并为 `no commit on branch` 增加通用中文兜底。
+- `public/js/panels/sync.js`：无提交分支上禁用同步页 upstream 设置控件。
+- `public/js/features/context-menus.js`：远端分支右键菜单在当前分支无提交时禁用“设为 upstream”。
+- `README.md`：说明设置 upstream 需要当前本地分支已有提交。
+- `docs/CONTINUE.md`：补充无提交分支同步保护覆盖设置 upstream。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js public/js/panels/sync.js public/js/features/context-menus.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 修复无提交分支合并和变基错误提示
+### What was done
+- 复现并修复当前分支还没有首个提交时，合并分支透出 `empty head` 英文错误、变基误报“游离 HEAD”的问题。
+- 后端 `mergeRef` / `rebaseOntoRef` 改用真实当前分支判断，并在无提交分支上返回中文“先创建首个提交”。
+- 分支右键菜单在当前分支无提交时禁用“合并分支”和“变基当前分支到此分支”，避免给出不可执行入口。
+- README 和继续开发文档同步说明无提交分支会先阻止合并和变基。
+
+### Testing
+- 在 `D:\桌面\GitTest` 从干净 `123` 分支切到临时孤儿分支 `forkline/unborn-branch-actions-20260702` 复现；修复前 `/api/action mergeRef` 到 `origin/123` 返回英文 `fatal: Non-fast-forward commit does not make sense into an empty head`，`/api/action rebaseOntoRef` 返回误导性的“当前处于游离 HEAD”。
+- 修复后重启临时服务 `http://127.0.0.1:5293`，同样请求 `mergeRef` 返回“当前分支 forkline/unborn-branch-actions-20260702 还没有任何提交，不能合并分支”，`rebaseOntoRef` 返回“还没有任何提交，不能变基”。
+- `node --check server.js`、`node --check public\js\features\context-menus.js` 和 `git diff --check` 均通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，临时孤儿分支没有留下本地分支引用。
+
+### Notes
+- `server.js`：`mergeRef` / `rebaseOntoRef` 使用 `currentLocalBranch` 和 `hasHeadCommit` 进行无提交分支中文拦截，并为 `empty head` 增加通用中文兜底。
+- `public/js/features/context-menus.js`：当前分支无提交时禁用合并和变基目标菜单项。
+- `README.md`：说明当前分支没有首个提交时会先阻止合并和变基。
+- `docs/CONTINUE.md`：记录无提交分支合并 / 变基保护已接入。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js public/js/features/context-menus.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-02 - Task: 修复无提交分支新建分支和比较边界提示
+### What was done
+- 复现并修复当前分支还没有首个提交时，新建分支取消“创建后切换”会透出 `not a valid object name` 英文错误的问题。
+- 后端在无提交分支上拒绝“不切换”的新建分支，并提示勾选“创建后切换”或从已有提交/分支创建。
+- 分支弹窗在无提交分支上固定勾选并禁用“创建后切换”，避免界面给出不可执行选项。
+- 比较接口在默认基准落到当前无提交分支时返回明确中文提示；手动选择两个已有提交引用仍可正常比较。
+- README 和继续开发文档同步说明无提交分支的新建分支和比较限制。
+
+### Testing
+- 在 `D:\桌面\GitTest` 从干净 `123` 分支切到临时孤儿分支 `forkline/unborn-compare-branch-20260702`，并通过 `createBranch checkout=true` 进入 `forkline/unborn-created-checkout-20260702` 复现无提交分支状态。
+- 修复前调用 `/api/action createBranch`，`checkout=false`，返回英文 `fatal: not a valid object name: 'forkline/unborn-compare-branch-20260702'`。
+- 修复后重启临时服务 `http://127.0.0.1:5294`，同类 `checkout=false` 请求返回中文“当前分支还没有任何提交，不能创建不切换的新分支。请勾选‘创建后切换’，或从已有提交/分支创建。”。
+- 修复后请求 `/api/compare?head=origin/123` 返回中文“当前分支 ... 还没有任何提交，不能作为比较基准”；请求 `/api/compare?base=origin/123&head=origin/main` 成功返回 `ok=true` 和 `git diff origin/123...origin/main`。
+- `node --check server.js`、`node --check public\js\features\branches.js` 和 `git diff --check` 均通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，临时孤儿分支没有留下本地分支引用。
+
+### Notes
+- `server.js`：`readCompare` 在当前无提交分支参与比较时给出中文原因；`createBranch` 在无起点、无提交且不切换时提前中文拦截；补充 `not a valid object name` 中文兜底。
+- `public/js/features/branches.js`：无提交分支打开新建分支弹窗时固定勾选并禁用“创建后切换”，并显示对应说明。
+- `README.md`：说明无提交分支会阻止不切换的新建分支，比较需要已有提交引用。
+- `docs/CONTINUE.md`：记录无提交分支新建分支 / 比较保护已接入。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js public/js/features/branches.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支储藏和丢弃全部工作区操作
+### What was done
+- 复现并修复当前分支还没有首个提交时，“储藏工作区”透出英文 `You do not have the initial commit yet` 的问题。
+- 修复无提交分支上“丢弃全部”先执行 `git reset --hard HEAD` 导致失败、未跟踪文件无法清理的问题。
+- 后端在无提交分支上阻止创建储藏并给出中文原因；“丢弃全部”改为清空索引后执行 `git clean -fd`。
+- 前端在无提交分支上禁用顶部和命令面板的储藏入口，并在直接调用储藏时给出中文提示。
+- README 和继续开发文档同步说明无提交分支下储藏与丢弃全部的行为。
+
+### Testing
+- 在 `D:\桌面\GitTest` 从干净 `123` 分支切到临时孤儿分支 `forkline/unborn-worktree-actions-20260703` 复现；该状态下 `/api/state` 返回 `sync.unborn = true`，工作区有 14 个未跟踪文件。
+- 修复前调用 `/api/action createStash` 返回英文 `You do not have the initial commit yet`；调用 `/api/action discardAll` 返回 `fatal: ambiguous argument 'HEAD'`，未跟踪文件没有被清理。
+- 修复后重启临时服务 `http://127.0.0.1:5295`，`createStash` 返回中文“当前分支还没有任何提交，不能创建储藏”；`discardAll` 返回“已丢弃全部未提交更改”。
+- 修复后同一无提交分支 `git status --short --branch` 只剩 `## No commits yet on forkline/unborn-worktree-actions-20260703`，Forkline `/api/state` 返回 `workingCount = 0`。
+- `node --check server.js`、`node --check public\js\features\git-actions.js`、`node --check public\js\features\folder-command.js`、`node --check public\js\features\worktree-changes.js` 和 `git diff --check` 均通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，临时孤儿分支没有留下本地分支引用。
+
+### Notes
+- `server.js`：`discardAll` 在无提交分支上跳过 `reset HEAD`，改为清空索引并 clean；`createStash` 在无提交分支上中文拦截，并补充 initial commit / HEAD unknown 的中文兜底。
+- `public/js/features/git-actions.js`：无提交分支直接调用储藏时给出中文提示。
+- `public/js/features/folder-command.js`：命令面板在无提交分支上禁用“储藏工作区”。
+- `public/js/features/worktree-changes.js`：顶部“储藏”按钮在无提交分支上禁用并显示原因。
+- `README.md`：说明无提交分支不能创建储藏，以及“丢弃全部”会清理未跟踪文件。
+- `docs/CONTINUE.md`：记录无提交分支工作区操作修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前可执行 `git checkout -- server.js public/js/features/git-actions.js public/js/features/folder-command.js public/js/features/worktree-changes.js README.md docs/CONTINUE.md progress.md`；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支默认 HEAD 创建 worktree 的英文错误
+### What was done
+- 复现并修复当前分支还没有首个提交时，工作树表单使用默认 `HEAD` 起点创建 worktree 会透出英文 Git 错误的问题。
+- 后端在执行 `git worktree add` 前识别 `HEAD`、`@`、当前无提交分支名和 `refs/heads/<当前分支>`，直接返回中文提示。
+- 保留从已有本地分支、Tag 或提交 SHA 创建 worktree 的能力，避免把合法的跨引用工作树创建误拦截。
+- README 和继续开发文档同步说明无提交分支下 worktree 起点的限制。
+
+### Testing
+- 在 `D:\桌面\GitTest` 的临时无提交分支 `forkline/unborn-staged-file-20260703` 上复现；修复前调用 `/api/action createWorktree`，`ref = HEAD` 返回英文 `fatal: 'HEAD' is not a valid branch name`。
+- 修复后重启临时服务 `http://127.0.0.1:5296`，同一请求返回中文“当前分支 forkline/unborn-staged-file-20260703 还没有任何提交，不能从 HEAD 创建工作树”。
+- 修复后用当前无提交分支名作为 `ref` 创建 worktree，同样返回中文拦截；用已有分支 `123` 作为 `ref` 并创建临时分支 `forkline/worktree-from-123-unborn-20260703` 成功。
+- `node --check server.js` 通过。
+- 已删除临时 worktree `C:\tmp\forkline-worktree-unborn-allowed-20260703` 和临时分支 `forkline/worktree-from-123-unborn-20260703`；`D:\桌面\GitTest` 已切回 `123`，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：`createWorktree` 在无提交分支上拦截依赖当前 `HEAD` 的起点，并提示改用已有引用。
+- `README.md`：说明无提交分支不能用默认 `HEAD` 或当前无提交分支名创建 worktree。
+- `docs/CONTINUE.md`：记录无提交分支的工作树起点保护已接入。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；这些文件已有其他未提交改动，不要用整文件 checkout 回滚。提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支追加提交误用图谱首条提交
+### What was done
+- 复现并修复当前分支还没有首个提交时，“追加”可能拿全部分支图谱第一条提交当作上一次提交的问题。
+- 前端改为只根据当前仓库真实 `repo.headSha` 填充追加提交信息；没有 HEAD 提交或 `sync.unborn = true` 时禁用“追加”复选框。
+- 后端在 `amendCommit` 创建恢复点前检查当前分支是否已有 HEAD 提交，没有则返回中文提示，不再透出 `fatal: Needed a single revision`。
+- README 和继续开发文档同步说明无提交分支下追加提交会被禁用。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时无提交分支 `forkline/unborn-amend-20260703` 上复现：`/api/open` 返回 `headSha = ""`、`sync.unborn = true`，但 `commits[0]` 是 `main` 的 `5c1167c Merge branch 'local_debug'`。
+- 修复前调用 `/api/action amendCommit` 返回英文 `fatal: Needed a single revision`。
+- 修复后重启临时服务 `http://127.0.0.1:5296`，同一 `amendCommit` 请求返回中文“forkline/unborn-amend-20260703 还没有上一次提交，不能追加提交。请先创建首个提交。”。
+- 静态检查确认前端 `fillLatestCommitMessage` 使用 `currentHeadCommitForAmend()`，`updateAmendMode` 会根据 `repo.headSha` 和 `sync.unborn` 设置 `amendToggle.disabled`。
+- `node --check server.js`、`node --check public\js\features\git-actions.js`、`node --check public\js\app\init.js` 均通过。
+- 已对 `D:\桌面\GitTest` 执行 `reset --hard HEAD` 和 `clean -fd` 清理测试文件，最终 `git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：`amendCommit` 在无 HEAD 提交时返回中文拦截。
+- `public/js/features/git-actions.js`：追加提交填充逻辑改用真实 HEAD 提交，并在无提交分支禁用复选框。
+- `public/js/app/init.js`：全量渲染时同步刷新追加提交复选框状态。
+- `README.md`：说明无提交分支会禁用追加提交，追加只读取当前真实 HEAD。
+- `docs/CONTINUE.md`：记录无提交分支追加提交保护。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`public/js/features/git-actions.js`、`public/js/app/init.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；这些文件已有其他未提交改动，不要用整文件 checkout 回滚。提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支文件历史和逐行追踪误导提示
+### What was done
+- 复现并修复当前分支还没有首个提交时，工作区文件打开“文件历史”或“逐行追踪”提示“刷新分支列表后再试”的误导问题。
+- 后端现在会识别 `HEAD`、`@`、当前无提交分支名和 `refs/heads/<当前分支>`，并提示先创建首个提交，或选择已有分支、Tag、提交 SHA。
+- 保留显式查询已有引用的能力，例如当前分支无提交时仍可对 `123` 分支上的文件查看历史和 blame。
+- README 和继续开发文档同步说明无提交分支下文件历史 / 逐行追踪的限制。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时无提交分支 `forkline/unborn-history-20260703` 上复现：`/api/file-history` 和 `/api/file-blame` 使用当前无提交分支名作为 `ref` 时，修复前分别返回“不是有效提交引用。请刷新分支列表后再试。”。
+- 修复后重启临时服务 `http://127.0.0.1:5296`，同样请求分别返回“当前分支还没有任何提交，不能在 ... 上查看文件历史”和“不能在 ... 上逐行追踪”。
+- 回归确认显式引用 `123` 不受影响：`/api/file-history?file=189.txt&ref=123` 和 `/api/file-blame?file=189.txt&ref=123` 均返回 200。
+- `node --check server.js` 通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，并执行 `reset --hard HEAD` 与 `clean -fd` 清理测试文件；最终 `git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：文件历史和逐行追踪在当前无提交引用上返回明确中文提示。
+- `README.md`：说明无提交分支不能用当前 `HEAD` 查看文件历史或逐行追踪。
+- `docs/CONTINUE.md`：记录无提交分支文件历史 / 逐行追踪提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；这些文件已有其他未提交改动，不要用整文件 checkout 回滚。提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支强制签出仍依赖 HEAD
+### What was done
+- 复现并修复当前分支还没有首个提交时，“强制签出”先执行 `git reset --hard HEAD` 导致无法切到目标分支的问题。
+- 强制签出现在复用“丢弃全部”的清理逻辑：有 HEAD 时执行 `reset --hard HEAD`，无 HEAD 时清空索引，再执行 `git clean -fd`，随后切换目标分支。
+- “储藏并签出”在无提交分支上改为提前给出明确中文提示，说明 Git 不能在无首提交时创建储藏，并建议先提交或改用强制签出。
+- README 和继续开发文档同步说明无提交分支下储藏并签出 / 强制签出的行为。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时无提交分支 `forkline/unborn-checkout-20260703` 上复现：存在未跟踪文件 `forkline-fixtures/unborn-checkout.txt`。
+- 修复前调用 `/api/action checkoutBranch`，`branch = 123`、`mode = force` 返回“当前分支还没有首个提交，HEAD 暂时不是有效引用...”且没有切换。
+- 修复后重启临时服务 `http://127.0.0.1:5296`，同样的强制签出请求返回 200 “已丢弃本地更改并强制切换分支”。
+- 修复后同一场景下 `mode = stash` 返回明确中文“当前分支 forkline/unborn-checkout-20260703 还没有任何提交，不能储藏并签出。请先创建首个提交，或改用‘强制签出’丢弃这些改动。”。
+- `node --check server.js` 通过。
+- 强制签出后 `D:\桌面\GitTest` 回到 `123`，`git status --short --branch` 返回 `## 123`，测试文件路径不存在。
+
+### Notes
+- `server.js`：新增统一的工作区清理函数，并让丢弃全部、本地强制签出和远端强制签出走同一套无 HEAD 兼容清理；储藏并签出在无提交分支上提前中文拦截。
+- `README.md`：说明无提交分支不能储藏并签出，但可以强制签出丢弃当前改动。
+- `docs/CONTINUE.md`：记录无提交分支强制签出修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；这些文件已有其他未提交改动，不要用整文件 checkout 回滚。提交后可用 `git revert <本次提交>` 回滚。
