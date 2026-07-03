@@ -883,10 +883,12 @@ function worktreeStateSignature(files, operation) {
 
 async function refreshWorktree(silent = false) {
   if (!state.data || state.refreshingWorktree) return;
+  const repoPath = state.data.repo?.path || "";
   state.refreshingWorktree = true;
   els.refreshChanges.disabled = true;
   try {
     const data = await api("/api/worktree");
+    if ((state.data?.repo?.path || "") !== repoPath) return;
     const nextFiles = data.workingFiles || [];
     const nextOperation = data.operation || null;
     const nextSignature = worktreeStateSignature(nextFiles, nextOperation);
@@ -900,6 +902,7 @@ async function refreshWorktree(silent = false) {
       toast("未提交修改已是最新");
     }
   } catch (error) {
+    if ((state.data?.repo?.path || "") !== repoPath) return;
     if (!silent) toast(error.message);
   } finally {
     state.refreshingWorktree = false;

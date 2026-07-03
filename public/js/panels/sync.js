@@ -117,12 +117,16 @@ async function runStashAction(action, ref, button) {
   }
   const message = stashActionConfirmMessage(action, ref);
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `${names[action] || "储藏操作"}完成`);
     state.stashDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     if (!state.data.stashes?.some((stash) => stash.ref === state.selectedStash)) {
       state.selectedStash = state.data.stashes?.[0]?.ref || "";
@@ -133,6 +137,7 @@ async function runStashAction(action, ref, button) {
       renderInspector();
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -155,18 +160,22 @@ async function branchFromStash(ref, button) {
     "成功后这条储藏会从列表删除，改动会出现在新分支工作区。",
   ].join("\n");
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "branchFromStash", ref, branch: trimmed }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已从 ${ref} 创建分支 ${trimmed}`);
     state.stashDetails.clear();
     if (result.state) {
       state.data = result.state;
     } else {
-      state.data = await api("/api/state");
+      const data = await api("/api/state");
+      if (!isCurrentRepoPath(repoPath)) return;
+      state.data = data;
     }
     state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
     state.selectedStash = state.data.stashes?.[0]?.ref || "";
@@ -178,6 +187,7 @@ async function branchFromStash(ref, button) {
       renderInspector();
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;

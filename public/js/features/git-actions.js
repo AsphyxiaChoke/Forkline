@@ -289,6 +289,7 @@ async function runAction(action) {
     amendCommit: "追加提交",
   };
   if (!state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return;
+  const repoPath = repoPathSnapshot();
   try {
     const payload = { action };
     if (action === "commit" || action === "amendCommit") {
@@ -296,13 +297,16 @@ async function runAction(action) {
       payload.body = els.commitBody.value.trim();
     }
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `${names[action]}完成`);
     if (action === "commit") {
       els.commitSummary.value = "";
       els.commitBody.value = "";
     }
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
@@ -311,6 +315,7 @@ async function runAction(action) {
       renderInspector();
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -331,12 +336,16 @@ async function runRepoOperation(action, button) {
   };
   if (!state.data.repo.isSample && !confirm(messages[action] || "确认继续？")) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "操作已完成");
     state.commitDetails.clear();
     state.selectedChanges.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
@@ -345,6 +354,7 @@ async function runRepoOperation(action, button) {
       renderInspector();
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -451,15 +461,20 @@ async function runUpstreamAction(action, ref = "", button = null) {
   if (!payload) return;
   if (!state.data.repo.isSample && !confirm(message)) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "upstream 操作完成");
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedTab = "sync";
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -509,8 +524,10 @@ async function runRemoteAction(action, remoteName = "", button = null) {
   if (!payload) return;
   if (message && !state.data.repo.isSample && !confirm(message)) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    if (!isCurrentRepoPath(repoPath)) return;
     if (action === "test") {
       const check = result.remoteCheck || {};
       state.remoteCheck = {
@@ -529,11 +546,14 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     }
     toast(result.output || "远端操作完成");
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedTab = "sync";
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     if (action === "test" && remote?.name) {
       const check = error.remoteCheck || {};
       state.remoteCheck = {
@@ -659,17 +679,21 @@ async function ignoreWorktreePath(action, file) {
       ? `确认把目录加入 .gitignore？\n\n目录：${target}/\n规则：${command}\n\n这个操作只写入 .gitignore，不会删除本地文件。`
       : `确认把文件加入 .gitignore？\n\n文件：${file}\n规则：${command}\n\n这个操作只写入 .gitignore，不会删除本地文件。`;
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "ignoreWorktreePath", file, mode }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已更新 .gitignore");
     state.selectedChanges.delete(changeKey("unstaged", file));
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
+    if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
     state.data.repo.operation = data.operation || null;
     renderWorkingFiles();
     renderStage();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -692,18 +716,22 @@ async function runSingleFileAction(action, file) {
   };
   if (isDiscardAction(action) && !state.data.repo.isSample && !confirm(discardConfirmMessage(action, [file]))) return;
   if (isConflictResolveAction(action) && !state.data.repo.isSample && !confirm(conflictResolveConfirmMessage(action, file))) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(singleFileActionPayload(action, file)) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `${names[action] || "操作"}完成`);
     state.selectedChanges.delete(changeKey("unstaged", file));
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
+    if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
     state.data.repo.operation = data.operation || null;
     syncFileSelectionAfterAction(action, [file], state.data.workingFiles);
     renderWorkingFiles();
     renderStage();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -766,22 +794,27 @@ async function runFileBatchAction(action, scope, button) {
   const name = names[action] || "操作";
   if (isDiscardAction(action) && !state.data.repo.isSample && !confirm(discardConfirmMessage(action, files))) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     for (const file of files) {
+      if (!isCurrentRepoPath(repoPath)) return;
       await api("/api/action", {
         method: "POST",
         body: JSON.stringify({ action, file }),
       });
+      if (!isCurrentRepoPath(repoPath)) return;
       state.selectedChanges.delete(changeKey(scope, file));
     }
     toast(`${name}完成：${files.length} 个文件`);
     const data = await api("/api/worktree");
+    if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
     state.data.repo.operation = data.operation || null;
     syncFileSelectionAfterAction(action, files, state.data.workingFiles);
     renderWorkingFiles();
     renderStage();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;

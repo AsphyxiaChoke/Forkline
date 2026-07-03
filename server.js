@@ -19,8 +19,10 @@ const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
 
 let currentRepo = null;
 let nextOperationId = 1;
+let repoSwitchInProgress = false;
 const activeOperations = new Map();
 const operationLog = [];
+const REPO_SWITCHING_ACTIONS = new Set(["openWorktree", "cloneRepository", "initRepository"]);
 
 const laneColors = ["#23c7b7", "#ff7a67", "#f0b85b", "#5ca9ff", "#9c7cff", "#6bd58c", "#f071b8"];
 
@@ -1145,11 +1147,45 @@ async function runAction(body) {
   throw new Error("未知操作");
 }
 
+function actionChangesRepo(body = {}) {
+  const action = String(body.action || "");
+  if (!REPO_SWITCHING_ACTIONS.has(action)) return false;
+  if (action === "cloneRepository" || action === "initRepository") return body.openAfter !== false;
+  return true;
+}
+
+function hasRunningOperation(excludeId = 0) {
+  return [...activeOperations.keys()].some((id) => id !== excludeId);
+}
+
+function hasRunningRepoSwitchOperation(excludeId = 0) {
+  return [...activeOperations.values()].some((operation) => operation.id !== excludeId && operation.repoSwitching);
+}
+
+function ensureCanSwitchRepo(excludeId = 0) {
+  if (repoSwitchInProgress || hasRunningOperation(excludeId)) {
+    throw new Error("当前还有 Git 操作正在执行，暂不能切换仓库。请等待右侧操作日志中的任务完成后再切换，避免命令执行到错误仓库。");
+  }
+}
+
+function ensureCanStartAction(body = {}, operation = {}) {
+  if (repoSwitchInProgress) {
+    throw new Error("正在切换仓库，暂不能执行新的 Git 操作。请稍后重试。");
+  }
+  if (hasRunningRepoSwitchOperation(operation.id)) {
+    throw new Error("正在切换仓库，暂不能执行新的 Git 操作。请稍后重试。");
+  }
+  if (actionChangesRepo(body) && hasRunningOperation(operation.id)) {
+    throw new Error("当前还有 Git 操作正在执行，暂不能切换仓库。请等待右侧操作日志中的任务完成后再切换，避免命令执行到错误仓库。");
+  }
+}
+
 function beginOperation(body = {}) {
   const operation = {
     id: nextOperationId++,
     action: String(body.action || ""),
     label: actionLabel(body),
+    repoSwitching: actionChangesRepo(body),
     startedAt: Date.now(),
   };
   activeOperations.set(operation.id, operation);
@@ -6262,7 +6298,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && parsed.pathname === "/api/open") {
       const body = await readJson(req);
-      sendJson(res, 200, await openRepo(body.path));
+      ensureCanSwitchRepo();
+      repoSwitchInProgress = true;
+      try {
+        sendJson(res, 200, await openRepo(body.path));
+      } finally {
+        repoSwitchInProgress = false;
+      }
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/browse") {
@@ -6314,6 +6356,8 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const operation = beginOperation(body);
       try {
+        ensureCanStartAction(body, operation);
+        if (operation.repoSwitching) repoSwitchInProgress = true;
         const result = await runAction(body);
         recordOperation(operation, body, "success", actionOutputSummary(result) || "操作已完成");
         const runningOperations = listRunningOperations(operation.id);
@@ -6322,6 +6366,7 @@ const server = http.createServer(async (req, res) => {
         recordOperation(operation, body, "error", friendlyErrorMessage(error, { body, operation }));
         sendError(res, error, { body, operation });
       } finally {
+        if (operation.repoSwitching) repoSwitchInProgress = false;
         activeOperations.delete(operation.id);
       }
       return;

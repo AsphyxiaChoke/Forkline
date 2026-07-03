@@ -2813,3 +2813,139 @@
 - `docs/CONTINUE.md`：记录克隆/初始化期间手动打开其他仓库时的旧自动打开丢弃行为。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前仅反向删除本轮在 `public/js/features/repositories.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧工作区刷新覆盖新仓库
+### What was done
+- 复现工作区刷新请求仍在等待时，用户打开另一个仓库，旧 `/api/worktree` 返回会把新仓库的变更文件列表覆盖成旧仓库结果。
+- 工作区刷新现在记录请求发起时的仓库路径；返回或报错时如果当前仓库路径已经变化，就丢弃旧结果和旧错误。
+- README 和继续开发文档同步说明切换仓库期间旧工作区自动刷新不会覆盖新仓库变更列表。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `old-repo` 发起 `refreshWorktree(true)`，随后当前状态切到 `new-repo`；旧请求返回 `old-after.txt` 后，最终 `new-repo` 的 `workingFiles` 被覆盖成 `old-after.txt`。
+- 修复后复跑同一 harness，最终仍保持 `new-repo` 和 `new-before.txt`，旧请求没有触发 `renderWorkingFiles` 或 `renderStage`。
+- 旧请求报错路径也用 harness 验证：仓库已切到 `new-repo` 后，旧错误不会弹出 toast。
+
+### Notes
+- `public/js/features/diff-workbench.js`：工作区刷新写回和错误提示前校验当前仓库路径，丢弃旧仓库响应。
+- `README.md`：补充切换仓库期间旧工作区自动刷新不会覆盖新仓库变更列表。
+- `docs/CONTINUE.md`：记录旧工作区刷新响应的丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/features/diff-workbench.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧文件动作刷新覆盖新仓库
+### What was done
+- 复现单文件暂存/取消暂存/丢弃等工作区文件动作完成后，如果用户已经打开另一个仓库，旧动作随后读取的 `/api/worktree` 会覆盖新仓库的变更文件列表。
+- 文件动作现在记录发起时的仓库路径；动作结果、错误提示和工作区刷新写回前都会确认仍在同一仓库。
+- 批量文件动作在仓库切走后会停止后续文件循环，避免继续使用旧文件列表对当前仓库发动作。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `old-repo` 执行 `runSingleFileAction("stageFile", "a.txt")`，随后当前状态切到 `new-repo`；旧 `/api/worktree` 返回 `old-after.txt` 后，最终 `new-repo` 的 `workingFiles` 被覆盖成 `old-after.txt`。
+- 修复后复跑同一 harness，最终仍保持 `new-repo` 和 `new-before.txt`，旧刷新没有触发 `syncFileSelectionAfterAction`、`renderWorkingFiles` 或 `renderStage`。
+- 旧动作在切仓库后才返回的 harness 中，不会弹出旧仓库的完成提示。
+- 批量动作 harness 中，第一项动作返回后仓库切到 `new-repo`，后续旧文件动作停止执行，最终只发送 1 次文件动作请求，按钮恢复可用。
+
+### Notes
+- `public/js/features/git-actions.js`：工作区文件动作发起时记录仓库路径，并在动作结果、错误提示、批量循环和 `/api/worktree` 写回前校验当前仓库仍一致。
+- `README.md`：补充旧文件动作刷新不会覆盖新仓库变更列表。
+- `docs/CONTINUE.md`：记录旧文件动作刷新响应的丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/features/git-actions.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧储藏动作覆盖新仓库
+### What was done
+- 复现储藏应用/弹出/删除动作完成后，如果用户已经打开另一个仓库，旧动作随后读取的 `/api/state` 会把页面切回旧仓库状态。
+- 储藏动作现在记录发起时的仓库路径；动作结果、错误提示和状态写回前都会确认仍在同一仓库。
+- 从储藏创建分支也加上同样保护，旧 `result.state` 不会覆盖新仓库页面。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `old-repo` 执行 `runStashAction("apply", "stash@{0}")`，随后当前状态切到 `new-repo`；旧 `/api/state` 返回后，最终页面仓库变回 `old-repo`，储藏列表变成 `old-stash`。
+- 修复后复跑同一 harness，最终仍保持 `new-repo`、`new-main` 和 `new-stash`，旧状态没有触发 `renderAll`。
+- 旧储藏动作在切仓库后才返回的 harness 中，不会弹出旧仓库的完成提示。
+- 从储藏创建分支 harness 中，旧 `result.state` 返回后仍保持 `new-repo` 和 `new-main`，不会写回旧仓库的分支和储藏列表。
+
+### Notes
+- `public/js/core.js`：新增仓库路径快照和当前仓库校验 helper，供多个前端模块复用。
+- `public/js/features/git-actions.js`：改用共享仓库路径校验 helper，保留上一轮文件动作防护。
+- `public/js/panels/sync.js`：储藏动作和从储藏创建分支写回前校验当前仓库路径。
+- `README.md`：补充旧储藏动作刷新不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录旧储藏动作刷新响应的丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/core.js`、`public/js/features/git-actions.js`、`public/js/panels/sync.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧同步和远端动作覆盖新仓库
+### What was done
+- 复现同步动作执行后，如果用户已经打开另一个仓库，旧动作随后读取的 `/api/state` 会把页面切回旧仓库状态。
+- 同步、提交、冲突继续/中止、upstream 和远端管理动作现在都会记录发起时的仓库路径；动作结果、错误提示和状态写回前都会确认仍在同一仓库。
+- 远端测试成功或失败返回时也会校验当前仓库，旧仓库的 `remoteCheck` 不会污染新仓库同步页。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `old-repo` 执行 `runAction("fetch")`，随后当前状态切到 `new-repo`；旧 `/api/state` 返回后，最终页面仓库变回 `old-repo`，选中引用和提交也变回旧仓库。
+- 修复后复跑同一 harness，最终仍保持 `new-repo`、`new-main` 和 `new-head`，旧状态没有触发 `renderAll`、`loadCommit` 或 `renderInspector`。
+- 旧同步动作在切仓库后才返回的 harness 中，不会弹出旧仓库的完成提示。
+- 远端测试 harness 中，旧 `testRemote` 结果在切到 `new-repo` 后返回时，`state.remoteCheck` 仍保持 `null`，不会显示旧仓库诊断结果。
+- upstream 状态刷新 harness 中，旧状态返回后仍保持 `new` 仓库和原右侧页签，不会切到旧仓库同步页。
+
+### Notes
+- `public/js/features/git-actions.js`：同步/提交、冲突继续/中止、upstream 和远端动作写回前校验当前仓库路径，远端测试结果也不再跨仓库写 `remoteCheck`。
+- `README.md`：补充旧同步/远端动作刷新不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录旧同步/远端动作刷新响应的丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/features/git-actions.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止 Git 操作运行中切换仓库导致命令落到错误仓库
+### What was done
+- 复现后端使用全局 `currentRepo` 时，同一个动作前半段在旧仓库执行，用户切换仓库后，动作后半段会使用新的 `currentRepo`，存在把写入命令执行到错误仓库的致命风险。
+- 后端现在在有 Git 动作运行时拒绝 `/api/open` 切换仓库；正在切换仓库时也拒绝新的 Git 动作。
+- 会切换仓库的动作（打开工作树、克隆后打开、初始化后打开）不能和其他动作并发，避免中途改写全局仓库上下文。
+
+### Testing
+- 修复前用后端时序 harness 模拟 `currentRepo = repo-A` 的动作先执行 `first`，随后 `currentRepo` 切到 `repo-B`，动作后半段 `dangerous-write` 实际记录为 `repo-B:dangerous-write`。
+- 修复后用锁行为 harness 验证：有操作运行时切仓库会被拒绝；切仓库进行中启动新动作会被拒绝；会切仓库的动作与其他动作并发会被拒绝；已有切仓库动作时启动普通动作会被拒绝。
+- 会切仓库动作识别 harness 验证：`cloneRepository` / `initRepository` 默认会切仓库，`openAfter:false` 时不标记为切仓库，`openWorktree` 会切仓库，`fetch` 不会切仓库。
+- `node --check server.js`、`node --check public/js/core.js`、`node --check public/js/features/git-actions.js`、`node --check public/js/panels/sync.js` 均通过。
+
+### Notes
+- `server.js`：新增仓库切换锁和动作并发校验，阻止运行中 Git 动作与仓库切换交叉执行。
+- `README.md`：说明有 Git 操作运行时会暂时阻止切换仓库。
+- `docs/CONTINUE.md`：记录后端仓库切换锁行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧历史和 reset 动作刷新覆盖新仓库
+### What was done
+- 复现 reset、历史编辑、挑选和还原等高风险动作完成后，如果用户已经打开另一个仓库，旧动作随后读取的 `/api/state` 会把页面切回旧仓库状态。
+- 历史编辑队列、单条历史编辑、cherry-pick、revert 和 reset 现在都会记录发起时的仓库路径；动作结果、错误提示和状态刷新写回前都会确认仍在同一仓库。
+- 统一的历史动作刷新逻辑在加载提交详情后也会再次校验仓库路径，避免旧提交详情刷新新仓库右侧栏。
+
+### Testing
+- 修复前用前端函数 harness 模拟旧历史动作 `reloadAfterHistoryAction()` 发出 `/api/state`，随后当前状态切到 `new` 仓库；旧状态返回后，最终页面仓库变回 `old`，选中引用和提交也变回旧仓库。
+- 修复后复跑同一 harness，最终仍保持 `new`、`new` 引用和 `new-head`，没有触发旧仓库 `renderAll`。
+- reset 动作结果在切仓库后才返回的 harness 中，不会弹出旧仓库的 reset 完成提示。
+- `node --check public/js/features/commit-actions.js`、`node --check public/js/core.js`、`node --check server.js` 均通过。
+
+### Notes
+- `public/js/features/commit-actions.js`：高风险历史/reset 类动作和统一刷新逻辑写回前校验当前仓库路径。
+- `README.md`：补充旧历史/reset 动作刷新不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录旧历史/reset 动作刷新响应的丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/features/commit-actions.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧恢复点和引用日志动作刷新覆盖新仓库
+### What was done
+- 复现恢复点恢复、引用日志恢复等高风险动作完成后，如果用户已经打开另一个仓库，旧动作随后读取的 `/api/state` 会把页面切回旧仓库状态。
+- 恢复点清理、批量删除、单个删除、恢复点恢复、引用日志创建恢复点和引用日志恢复现在都会记录发起时的仓库路径；动作结果、错误提示和状态刷新写回前都会确认仍在同一仓库。
+- 操作日志页刷新也增加仓库路径校验，避免同名分支下旧仓库日志刷新覆盖新仓库右侧栏。
+
+### Testing
+- 修复前用前端函数 harness 模拟旧恢复点动作发出 `/api/state`，随后当前状态切到 `new` 仓库；旧状态返回后，最终页面仓库变回 `old`，选中引用和提交也变回旧仓库。
+- 修复后复跑同一 harness，最终仍保持 `new`、`new` 引用和 `new-head`；旧状态没有触发新页面渲染。
+- 引用日志恢复 harness 中，旧 `restoreReflogEntry` 结果在切到 `new` 后返回时，没有触发旧仓库渲染。
+- 旧恢复点动作在切仓库后才返回的 harness 中，不会弹出旧仓库的恢复完成提示。
+- `node --check public/js/panels/recovery-settings.js`、`node --check public/js/features/commit-actions.js`、`node --check public/js/core.js` 均通过。
+
+### Notes
+- `public/js/panels/recovery-settings.js`：恢复点和引用日志类动作写回前校验当前仓库路径。
+- `README.md`：补充旧恢复点动作刷新不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录旧恢复点/引用日志动作刷新响应的丢弃行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在 `public/js/panels/recovery-settings.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。

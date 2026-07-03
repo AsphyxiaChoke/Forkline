@@ -68,6 +68,14 @@ const state = {
   openRepoRequestId: 0,
 };
 
+function repoPathSnapshot() {
+  return state.data?.repo?.path || "";
+}
+
+function isCurrentRepoPath(repoPath) {
+  return repoPathSnapshot() === repoPath;
+}
+
 const graphWidth = 176;
 const laneX = [28, 54, 80, 106, 132, 154, 166];
 const rowH = 62;

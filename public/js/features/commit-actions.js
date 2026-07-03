@@ -372,6 +372,7 @@ async function runHistoryRewriteQueue(action, button) {
   ].join("\n");
   if (!state.data.repo.isSample && !confirm(message)) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
@@ -380,10 +381,12 @@ async function runHistoryRewriteQueue(action, button) {
         items: historyQueuePayload(),
       }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
     toast(result.output || "历史编辑队列已执行");
-    await reloadAfterHistoryAction();
+    await reloadAfterHistoryAction(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     state.historyQueue = { ...state.historyQueue, loading: false, error: error.message };
     renderInspector();
@@ -443,16 +446,19 @@ async function runHistoryRewritePlan(action, button) {
     return;
   }
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "rewriteHistoryCommit", sha: plan.sha, mode: plan.mode }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     state.historyPlan = null;
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
     toast(result.output || `已${preview.title || "编辑历史"} ${preview.target?.short || ""}`);
-    await reloadAfterHistoryAction();
+    await reloadAfterHistoryAction(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     state.historyPlan = { ...plan, loading: false, error: error.message };
     renderInspector();
@@ -480,14 +486,17 @@ async function rewriteHistoryCommit(commit, mode) {
   const current = state.data.repo.branch || "当前分支";
   const message = `确认${config.title} ${commit.short}？\n\n命令：${config.command}\n分支：${current}\n效果：${config.effect}\n这会重写此提交之后的历史 SHA。${warning}${dirtyNote}\n\n提交信息：${commit.message}`;
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "rewriteHistoryCommit", sha: commit.sha, mode }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已${config.title} ${commit.short}`);
-    await reloadAfterHistoryAction();
+    await reloadAfterHistoryAction(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     await refreshWorktree(false);
   }
@@ -497,14 +506,17 @@ async function cherryPickCommit(commit, mainline = null) {
   if (!state.data || !commit) return;
   const mainlineText = mainline ? `\n主线：父提交 ${mainline}` : "";
   if (!state.data.repo.isSample && !confirm(`确认挑选提交 ${commit.short} 到当前分支？\n\n这会在当前分支创建一个内容相同的新提交，不会移动原分支。${mainlineText}\n提交信息：${commit.message}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha, mainline }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已挑选提交 ${commit.short}`);
-    await reloadAfterHistoryAction();
+    await reloadAfterHistoryAction(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     await refreshWorktree(false);
   }
@@ -514,14 +526,17 @@ async function revertCommit(commit, mainline = null) {
   if (!state.data || !commit) return;
   const mainlineText = mainline ? `\n主线：父提交 ${mainline}` : "";
   if (!state.data.repo.isSample && !confirm(`确认还原提交 ${commit.short}？\n\n这会创建一个新的反向提交，不会删除历史提交。${mainlineText}\n提交信息：${commit.message}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "revertCommit", sha: commit.sha, mainline }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已还原提交 ${commit.short}`);
-    await reloadAfterHistoryAction();
+    await reloadAfterHistoryAction(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -600,21 +615,26 @@ async function resetToCommit(commit, mode) {
   };
   const warning = mode === "hard" ? "\n\n危险：Hard Reset 会丢弃未提交改动，请确认你真的不需要它们。" : "";
   if (!state.data.repo.isSample && !confirm(`确认执行${modeText}到提交 ${commit.short}？\n\n${effects[mode]}${warning}\n\n提交信息：${commit.message}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "resetToCommit", sha: commit.sha, mode }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已${modeText}到 ${commit.short}`);
-    await reloadAfterHistoryAction();
+    await reloadAfterHistoryAction(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
 
-async function reloadAfterHistoryAction() {
+async function reloadAfterHistoryAction(repoPath = repoPathSnapshot()) {
   state.commitDetails.clear();
-  state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+  const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+  if (!isCurrentRepoPath(repoPath)) return;
+  state.data = data;
   state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
   state.selectedSha = state.data.commits[0]?.sha || "";
   state.selectedFile = "";
@@ -622,6 +642,7 @@ async function reloadAfterHistoryAction() {
   renderAll();
   if (state.selectedSha) {
     await loadCommit(state.selectedSha);
+    if (!isCurrentRepoPath(repoPath)) return;
     renderInspector();
   }
 }

@@ -647,8 +647,9 @@ function formatDurationText(ms) {
 async function refreshLogsTab() {
   if (!state.data) return;
   const requestedRef = state.selectedRef;
+  const repoPath = repoPathSnapshot();
   const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-  if (state.selectedRef !== requestedRef) return;
+  if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
   state.data = data;
   state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
   renderInspector();
@@ -735,18 +736,23 @@ async function pruneRecoveryPointsByPolicy(button) {
     "删除后不能再通过 Forkline 恢复到这些引用。",
   ].join("\n");
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "pruneRecoveryPoints", keepDays: policy.keepDays, maxPerBranch: policy.maxPerBranch }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点清理完成");
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedRecoveryRef = filteredRecoveryPoints()[0]?.ref || "";
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -769,15 +775,20 @@ async function deleteFilteredRecoveryPoints(button) {
   const scopeText = conditions.length ? conditions.join("\n") : "未设置筛选，将删除当前全部恢复点";
   const message = `确认删除当前列表里的 ${points.length} 个恢复点？\n\n${scopeText}\n\n命令：git update-ref -d <恢复点引用>\n\n删除后不能再通过 Forkline 恢复到这些引用。`;
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRecoveryPoints", refs: points.map((point) => point.ref) }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点已删除");
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedRecoveryRef = filteredRecoveryPoints()[0]?.ref || "";
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -796,14 +807,18 @@ async function runRecoveryAction(action, ref, button) {
       ? `确认恢复当前分支到这个恢复点？\n\n恢复点：${point.shortRef}\n提交：${point.short || point.sha}\n命令：git reset --hard ${point.ref}\n\n这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。`
       : `确认删除这个恢复点？\n\n${point.shortRef}\n\n删除后不能再通过 Forkline 恢复到这个引用。`;
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const apiAction = action === "restore" ? "restoreRecoveryPoint" : "deleteRecoveryPoint";
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点操作完成");
     state.commitDetails.clear();
     state.selectedChanges.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     if (!state.data.recoveryPoints?.some((item) => item.ref === state.selectedRecoveryRef)) {
       state.selectedRecoveryRef = state.data.recoveryPoints?.[0]?.ref || "";
@@ -815,6 +830,7 @@ async function runRecoveryAction(action, ref, button) {
       renderInspector();
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -853,13 +869,17 @@ async function runReflogAction(action, selector, button) {
     ].join("\n");
     if (!state.data.repo.isSample && !confirm(message)) return;
   }
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ...body }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "引用日志操作完成");
     state.commitDetails.clear();
     state.selectedChanges.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     if (result.recovery?.ref) state.selectedRecoveryRef = result.recovery.ref;
     if (!state.data.reflogEntries?.some((item) => item.selector === state.selectedReflogSelector)) {
@@ -868,6 +888,7 @@ async function runReflogAction(action, selector, button) {
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
