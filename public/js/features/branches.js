@@ -277,7 +277,9 @@ function remoteExpectedSha(remoteRef) {
 
 function refExpectedSha(ref) {
   if (!ref) return "";
-  return state.data?.branchInfo?.[ref]?.sha || state.data?.remoteInfo?.[ref]?.sha || "";
+  const tagName = String(ref || "").replace(/^refs\/tags\//, "");
+  const tag = (state.data?.tags || []).find((item) => item.name === tagName);
+  return state.data?.branchInfo?.[ref]?.sha || state.data?.remoteInfo?.[ref]?.sha || tag?.object || "";
 }
 
 function targetRefSnapshotPayload(ref) {
@@ -348,6 +350,11 @@ function remoteBranchConfigSnapshotPayload(remoteRef) {
   return remote?.name ? remoteConfigSnapshotPayload(remote) : {};
 }
 
+function worktreePruneSnapshotPayload() {
+  const snapshot = state.data?.worktreePruneSnapshot || "";
+  return snapshot ? { expectedWorktreePruneSnapshot: snapshot } : {};
+}
+
 async function cleanupStaleWorktree(branch, button, options = {}) {
   if (!state.data) return;
   const pathText = options.worktreePath ? `\n占用路径：${options.worktreePath}` : "";
@@ -355,7 +362,7 @@ async function cleanupStaleWorktree(branch, button, options = {}) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "pruneWorktrees", branch }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "pruneWorktrees", branch, ...worktreePruneSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已清理失效 worktree 记录");
     const data = await loadStateForRepoPath(repoPath);

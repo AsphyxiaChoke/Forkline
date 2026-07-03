@@ -102,6 +102,7 @@ const OPERATION_SNAPSHOT_ACTIONS = new Set([
   "skipRebase",
   "abortRebase",
 ]);
+const WORKTREE_PRUNE_SNAPSHOT_ACTIONS = new Set(["pruneAllWorktrees", "pruneWorktrees"]);
 const ALL_REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetch"]);
 const UPSTREAM_SNAPSHOT_ACTIONS = new Set(["pull", "pullRebase", "push", "forcePushLease", "unsetUpstream"]);
 const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
@@ -312,7 +313,9 @@ async function readState(ref = "") {
   }
   const remoteInfo = parseRemoteBranchInfo(remoteMetaOutput, remoteNames);
 
-  const worktrees = await enrichWorktreeList(parseWorktreeList(worktreeOutput, repoPath));
+  const worktreeRows = parseWorktreeList(worktreeOutput, repoPath);
+  const worktreePruneSnapshot = buildWorktreePruneSnapshot(worktreeRows);
+  const worktrees = await enrichWorktreeList(worktreeRows);
   const branchMeta = parseBranchCleanupMeta(branchMetaOutput);
   const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), branchMeta, parseWorktreeBranches(worktreeOutput, repoPath));
   const submodules = await enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput), repoPath);
@@ -340,6 +343,7 @@ async function readState(ref = "") {
     branchInfo,
     branchCleanup,
     worktrees,
+    worktreePruneSnapshot,
     submodules,
     remotes,
     remoteInfo,
@@ -1053,6 +1057,7 @@ async function runAction(body) {
   await ensureWorktreeSnapshot(body);
   await ensureFileSnapshot(body);
   await ensureOperationSnapshot(body);
+  await ensureWorktreePruneSnapshot(body);
   if (action === "createWorktree") {
     return createWorktree(body);
   }
@@ -1084,7 +1089,7 @@ async function runAction(body) {
     return pushCurrentBranch();
   }
   if (action === "forcePushLease") {
-    return forcePushCurrentBranchWithLease();
+    return forcePushCurrentBranchWithLease(body);
   }
   if (action === "fetchRemote") {
     return fetchRemote(body);
@@ -1764,7 +1769,7 @@ async function ensureProtectedUpstreamPushAllowed(branch, upstream) {
   }
 }
 
-async function forcePushCurrentBranchWithLease() {
+async function forcePushCurrentBranchWithLease(body = {}) {
   const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能直接强推。请先切换或创建本地分支。");
@@ -1784,7 +1789,8 @@ async function forcePushCurrentBranchWithLease() {
   if (isProtectedBranchName(parsed.branch)) {
     throw new Error(`远端分支 ${before.upstream} 是主干/长期分支，Forkline 默认保护，不允许从这里安全强推。`);
   }
-  const output = await git(currentRepo, ["push", "--force-with-lease", parsed.remote, `HEAD:${parsed.branch}`], { timeout: 120000 });
+  const leaseSha = normalizeExpectedUpstreamSha(body.expectedUpstreamSha);
+  const output = await git(currentRepo, ["push", `--force-with-lease=refs/heads/${parsed.branch}:${leaseSha}`, parsed.remote, `HEAD:${parsed.branch}`], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return syncCommandResult("forcePush", output, before, after);
 }
@@ -2177,7 +2183,11 @@ async function addRemote(body) {
 async function setRemoteUrl(body) {
   const remote = await ensureRemoteName(body.name);
   const url = normalizeRemoteUrl(body.url);
+  const explicitPushUrls = await readExplicitRemotePushUrls(remote);
   await git(currentRepo, ["remote", "set-url", remote, url], { timeout: 60000 });
+  if (explicitPushUrls.length) {
+    await replaceRemotePushUrls(remote, [url]);
+  }
   return { ok: true, output: `已修改远端 ${remote} 的 URL\nURL：${url}` };
 }
 
@@ -2371,11 +2381,12 @@ async function deleteRemoteTag(body) {
 
 async function pruneWorktrees(body) {
   const branch = normalizeBranchName(body.branch);
-  const worktrees = parseWorktreeBranches(await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""), currentRepo);
-  const info = worktrees[branch];
+  const rows = parseWorktreeList(await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""), currentRepo);
+  const prunable = worktreePruneEntries(rows);
+  const info = prunable.find((row) => row.branch === branch);
   if (!info) return { ok: true, output: "没有发现需要清理的失效 worktree 记录" };
-  if (!info.prunable) {
-    throw new Error(`分支 ${branch} 已在其他工作树签出：${info.worktreePath}`);
+  if (prunable.length !== 1) {
+    throw new Error(`当前有 ${prunable.length} 条失效 worktree 记录。单项清理会影响其他记录，请刷新后在工作树页使用“清理失效”一次确认全部。`);
   }
   const output = await git(currentRepo, ["worktree", "prune", "--verbose"], { timeout: 60000 });
   return commandResult(output || "已清理失效 worktree 记录");
@@ -4063,19 +4074,42 @@ async function ensureUpstreamSnapshot(body = {}) {
     }
     if (expectedDefaultRemote) await ensureRemoteSnapshotForUpstream(expectedDefaultRemote, body, "默认推送远端", "expectedDefaultRemoteFetchUrl", "expectedDefaultRemotePushUrl");
   }
+  if (action === "forcePushLease") {
+    await ensureForcePushLeaseUpstreamSnapshot(body, currentUpstream);
+  }
+}
+
+async function ensureForcePushLeaseUpstreamSnapshot(body = {}, upstream = "") {
+  const expectedSha = normalizeExpectedUpstreamSha(body.expectedUpstreamSha);
+  const currentSha = (await git(currentRepo, ["rev-parse", "--verify", `${upstream}^{commit}`], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+  if (!currentSha) {
+    throw new Error("页面 upstream 提交状态已过期，请刷新后重新执行安全强推。");
+  }
+  if (!currentSha.startsWith(expectedSha)) {
+    throw new Error(`upstream ${upstream} 的提交已经变化。为避免安全强推覆盖外部新提交，请刷新后重新操作。`);
+  }
+  return currentSha;
+}
+
+function normalizeExpectedUpstreamSha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("页面 upstream 提交状态已过期，请刷新后重新执行安全强推。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("upstream 提交身份不合法，请刷新后重新执行安全强推。");
+  return sha;
 }
 
 async function ensureRemoteSnapshotForUpstream(remoteName, body = {}, label = "远端", fetchField = "expectedUpstreamFetchUrl", pushField = "expectedUpstreamPushUrl") {
   const hasExpectedFetch = Object.prototype.hasOwnProperty.call(body, fetchField);
   const hasExpectedPush = Object.prototype.hasOwnProperty.call(body, pushField);
-  if (!hasExpectedFetch && !hasExpectedPush) throw new Error(`页面${label}配置已过期，请刷新后重新执行这个操作。`);
+  const pushUrlsField = `${pushField}s`;
+  const hasExpectedPushUrls = Object.prototype.hasOwnProperty.call(body, pushUrlsField);
+  if (!hasExpectedFetch && !hasExpectedPush && !hasExpectedPushUrls) throw new Error(`页面${label}配置已过期，请刷新后重新执行这个操作。`);
   const expectedFetchUrl = String(body[fetchField] || "");
-  const expectedPushUrl = String(body[pushField] || "");
+  const expectedPushUrls = expectedRemotePushUrls(body, pushField, pushUrlsField);
   const current = (await readRemoteDetails()).find((remote) => remote.name === remoteName);
   if (!current) throw new Error(`${label} ${remoteName} 已不存在。请刷新后重新操作。`);
   const currentFetchUrl = current.fetchUrl || "";
-  const currentPushUrl = current.pushUrl || "";
-  if (currentFetchUrl !== expectedFetchUrl || currentPushUrl !== expectedPushUrl) {
+  if (currentFetchUrl !== expectedFetchUrl || !sameStringList(remotePushUrls(current), expectedPushUrls)) {
     throw new Error(`${label} ${remoteName} 的 URL 已经变化。为避免把操作执行到错误远端，请刷新后重新操作。`);
   }
 }
@@ -4110,18 +4144,18 @@ async function ensureRemoteConfigSnapshot(body = {}) {
     : normalizeRemoteName(tagRemoteAction ? body.remote : body.name);
   const hasExpectedFetch = Object.prototype.hasOwnProperty.call(body, "expectedFetchUrl");
   const hasExpectedPush = Object.prototype.hasOwnProperty.call(body, "expectedPushUrl");
-  if (!hasExpectedFetch && !hasExpectedPush) {
+  const hasExpectedPushUrls = Object.prototype.hasOwnProperty.call(body, "expectedPushUrls");
+  if (!hasExpectedFetch && !hasExpectedPush && !hasExpectedPushUrls) {
     throw new Error("页面远端配置已过期，请刷新后重新执行这个操作。");
   }
   const expectedFetchUrl = String(body.expectedFetchUrl || "");
-  const expectedPushUrl = String(body.expectedPushUrl || "");
+  const expectedPushUrls = expectedRemotePushUrls(body, "expectedPushUrl", "expectedPushUrls");
   const current = (await readRemoteDetails()).find((remote) => remote.name === remoteName);
   if (!current) {
     throw new Error(`远端 ${remoteName} 已不存在。请刷新远端列表后重新操作。`);
   }
   const currentFetchUrl = current.fetchUrl || "";
-  const currentPushUrl = current.pushUrl || "";
-  if (currentFetchUrl !== expectedFetchUrl || currentPushUrl !== expectedPushUrl) {
+  if (currentFetchUrl !== expectedFetchUrl || !sameStringList(remotePushUrls(current), expectedPushUrls)) {
     if (remoteBranchAction) {
       if (action === "setUpstream") {
         throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面设置错误 upstream，请刷新后重新操作。`);
@@ -4167,7 +4201,7 @@ async function ensureAllRemoteConfigSnapshot(body = {}) {
   for (const remote of expected) {
     const actual = currentByName.get(remote.name);
     if (!actual) throw new Error(`远端 ${remote.name} 已不存在。请刷新远端列表后重新操作。`);
-    if ((actual.fetchUrl || "") !== remote.fetchUrl || (actual.pushUrl || "") !== remote.pushUrl) {
+    if ((actual.fetchUrl || "") !== remote.fetchUrl || !sameStringList(remotePushUrls(actual), remote.pushUrls)) {
       throw new Error(`远端 ${remote.name} 的 URL 已经变化。为避免旧页面抓取错误远端，请刷新后重新操作。`);
     }
   }
@@ -4184,8 +4218,33 @@ function normalizeRemoteSnapshotEntries(value) {
       name: remote,
       fetchUrl: String(item?.fetchUrl || ""),
       pushUrl: String(item?.pushUrl || ""),
+      pushUrls: Object.prototype.hasOwnProperty.call(item || {}, "pushUrls")
+        ? normalizeRemotePushUrls(item.pushUrls)
+        : [String(item?.pushUrl || "")],
     };
   });
+}
+
+function expectedRemotePushUrls(body = {}, pushField = "expectedPushUrl", pushUrlsField = "expectedPushUrls") {
+  if (Object.prototype.hasOwnProperty.call(body, pushUrlsField)) {
+    return normalizeRemotePushUrls(body[pushUrlsField]);
+  }
+  return [String(body[pushField] || "")];
+}
+
+function normalizeRemotePushUrls(value) {
+  if (!Array.isArray(value)) throw new Error("页面远端配置已过期，请刷新后重新执行这个操作。");
+  return value.map((item) => String(item || ""));
+}
+
+function remotePushUrls(remote = {}) {
+  const urls = Array.isArray(remote.pushUrls) ? remote.pushUrls.map((item) => String(item || "")) : [];
+  return urls.length ? urls : [String(remote.pushUrl || "")];
+}
+
+function sameStringList(left = [], right = []) {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
 }
 
 async function ensureTargetRefSnapshot(body = {}) {
@@ -4194,7 +4253,8 @@ async function ensureTargetRefSnapshot(body = {}) {
   const target = await targetRefSnapshotRef(body);
   if (!target) return;
   const expectedSha = normalizeExpectedTargetRefSha(body.expectedTargetSha);
-  const actualSha = (await git(currentRepo, ["rev-parse", "--verify", `${target.ref}^{commit}`], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+  const actualRef = target.peel === false ? target.ref : `${target.ref}^{commit}`;
+  const actualSha = (await git(currentRepo, ["rev-parse", "--verify", actualRef], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
   if (!actualSha) throw new Error(`${target.label} 已经不存在。请刷新后重新操作。`);
   if (!actualSha.startsWith(expectedSha)) {
     throw new Error(`${target.label} 已经变化。为避免旧页面使用错误提交，请刷新后重新操作。`);
@@ -4216,6 +4276,12 @@ async function targetRefSnapshotRef(body = {}) {
   if (action === "checkoutBranch" || localBranches.includes(refText)) {
     const branch = normalizeBranchName(refText);
     return { ref: `refs/heads/${branch}`, label: `本地分支 ${branch}` };
+  }
+  const tagName = refText.startsWith("refs/tags/") ? refText.slice("refs/tags/".length) : refText;
+  const tags = parseSimpleLines(await git(currentRepo, ["tag", "--list"]).catch(() => ""));
+  if (tags.includes(tagName)) {
+    const tag = normalizeTagName(tagName);
+    return { ref: `refs/tags/${tag}`, label: `Tag ${tag}`, peel: false };
   }
   return null;
 }
@@ -4286,6 +4352,17 @@ async function ensureOperationSnapshot(body = {}) {
   }
   if (operation.snapshot !== expectedSnapshot) {
     throw new Error(`正在进行的${operationTypeLabel(expectedType)}已经变化。为避免旧页面操作到新的 Git 状态，请刷新后重新操作。`);
+  }
+}
+
+async function ensureWorktreePruneSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!WORKTREE_PRUNE_SNAPSHOT_ACTIONS.has(action)) return;
+  const expected = normalizeExpectedSnapshot(body.expectedWorktreePruneSnapshot, "失效 worktree 列表已过期，请刷新后重新清理。");
+  const output = await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => "");
+  const current = buildWorktreePruneSnapshot(parseWorktreeList(output, currentRepo));
+  if (current !== expected) {
+    throw new Error("失效 worktree 列表已经变化。为避免旧页面清理到未确认的记录，请刷新后重新操作。");
   }
 }
 
@@ -4759,6 +4836,17 @@ async function readRemoteDetails(repoPath = currentRepo) {
   return parseRemoteDetails(verboseOutput, names);
 }
 
+async function readExplicitRemotePushUrls(remote, repoPath = currentRepo) {
+  return parseSimpleLines(await git(repoPath, ["config", "--get-all", `remote.${remote}.pushurl`]).catch(() => ""));
+}
+
+async function replaceRemotePushUrls(remote, urls, repoPath = currentRepo) {
+  await git(repoPath, ["config", "--unset-all", `remote.${remote}.pushurl`]).catch(() => "");
+  for (const url of urls) {
+    await git(repoPath, ["config", "--add", `remote.${remote}.pushurl`, url], { timeout: 60000 });
+  }
+}
+
 async function defaultRemoteName(value = "") {
   const requested = String(value || "").trim();
   const remoteNames = await readRemoteNames();
@@ -4781,17 +4869,21 @@ function parseRemoteNames(output) {
 
 function parseRemoteDetails(output, remoteNames = []) {
   const order = new Map(remoteNames.map((name, index) => [name, index]));
-  const remotes = new Map(remoteNames.map((name) => [name, { name, fetchUrl: "", pushUrl: "" }]));
+  const remotes = new Map(remoteNames.map((name) => [name, { name, fetchUrl: "", pushUrl: "", pushUrls: [] }]));
   for (const rawLine of String(output || "").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     const match = line.match(/^(\S+)\s+(.+)\s+\((fetch|push)\)$/);
     if (!match) continue;
     const [, name, url, kind] = match;
-    if (!remotes.has(name)) remotes.set(name, { name, fetchUrl: "", pushUrl: "" });
+    if (!remotes.has(name)) remotes.set(name, { name, fetchUrl: "", pushUrl: "", pushUrls: [] });
     const remote = remotes.get(name);
     if (kind === "fetch") remote.fetchUrl = url.trim();
-    else remote.pushUrl = url.trim();
+    else {
+      const pushUrl = url.trim();
+      remote.pushUrls.push(pushUrl);
+      if (!remote.pushUrl) remote.pushUrl = pushUrl;
+    }
   }
   return [...remotes.values()].sort((left, right) => {
     const leftIndex = order.has(left.name) ? order.get(left.name) : Number.MAX_SAFE_INTEGER;
@@ -4949,6 +5041,16 @@ function parseWorktreeList(output, repoPath) {
   }
   flush();
   return rows;
+}
+
+function buildWorktreePruneSnapshot(rows = []) {
+  return sha256Json(worktreePruneEntries(rows)
+    .map((row) => `${row.path || ""}\0${row.branch || ""}\0${row.head || ""}\0${row.pruneReason || ""}`)
+    .sort());
+}
+
+function worktreePruneEntries(rows = []) {
+  return (rows || []).filter((row) => row.prunable);
 }
 
 async function enrichWorktreeList(rows) {
@@ -5492,20 +5594,20 @@ function commandResultWithSummary(summary, output) {
 async function readCurrentSyncState(repoPath = currentRepo) {
   const branch = (await readBranchDisplayName(repoPath).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
-    return { branch: "HEAD", detached: true, unborn: false, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
+    return { branch: "HEAD", detached: true, unborn: false, upstream: "", upstreamSha: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
   const upstream = (await git(repoPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
   const hasCommit = await hasHeadCommit(repoPath);
   if (!hasCommit) {
     const upstreamSha = upstream ? (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim() : "";
-    return { branch, detached: false, unborn: true, upstream, upstreamGone: Boolean(upstream && !upstreamSha), ahead: 0, behind: 0 };
+    return { branch, detached: false, unborn: true, upstream, upstreamSha, upstreamGone: Boolean(upstream && !upstreamSha), ahead: 0, behind: 0 };
   }
   if (!upstream) {
-    return { branch, detached: false, unborn: false, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
+    return { branch, detached: false, unborn: false, upstream: "", upstreamSha: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
   const upstreamSha = (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
   if (!upstreamSha) {
-    return { branch, detached: false, unborn: false, upstream, upstreamGone: true, ahead: 0, behind: 0 };
+    return { branch, detached: false, unborn: false, upstream, upstreamSha: "", upstreamGone: true, ahead: 0, behind: 0 };
   }
   const counts = (await git(repoPath, ["rev-list", "--left-right", "--count", `${upstream}...HEAD`]).catch(() => "0\t0")).trim().split(/\s+/);
   return {
@@ -5513,6 +5615,7 @@ async function readCurrentSyncState(repoPath = currentRepo) {
     detached: false,
     unborn: false,
     upstream,
+    upstreamSha,
     upstreamGone: false,
     behind: Number(counts[0] || 0),
     ahead: Number(counts[1] || 0),
@@ -6440,16 +6543,18 @@ function sampleState() {
         dirtyCount: 0,
       },
     ],
+    worktreePruneSnapshot: sha256Json([]),
     remotes: ["origin/main", "origin/feature/visual-history", "upstream/release/2.9"],
     sync: {
       branch: "feature/visual-history",
       upstream: "origin/feature/visual-history",
+      upstreamSha: "f6d4a2c9e8b7f1a3d5c6b8a9e0f1c2d3b4a5e6f7",
       upstreamGone: false,
       ahead: 2,
       behind: 1,
       remotes: [
-        { name: "origin", fetchUrl: "git@github.com:example/atlas-dashboard.git", pushUrl: "git@github.com:example/atlas-dashboard.git" },
-        { name: "upstream", fetchUrl: "https://github.com/example/base-dashboard.git", pushUrl: "https://github.com/example/base-dashboard.git" },
+        { name: "origin", fetchUrl: "git@github.com:example/atlas-dashboard.git", pushUrl: "git@github.com:example/atlas-dashboard.git", pushUrls: ["git@github.com:example/atlas-dashboard.git"] },
+        { name: "upstream", fetchUrl: "https://github.com/example/base-dashboard.git", pushUrl: "https://github.com/example/base-dashboard.git", pushUrls: ["https://github.com/example/base-dashboard.git"] },
       ],
       auth: {
         summary: "1 个 SSH 远端，1 个 HTTPS 远端；2 组 SSH key；agent 1 个 key；GCM 可用",

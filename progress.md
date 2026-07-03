@@ -4295,3 +4295,125 @@
 - `docs/CONTINUE.md`：同步 reflog 创建恢复点的旧页面保护说明。
 - `progress.md`：追加本轮 reflog 恢复点创建防串分支的实施与验证记录。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Prevent stale-page force push from overwriting newly fetched upstream commits
+
+### What was done
+- Reproduced a fatal safe-force-push gap with a temporary bare remote: a page loaded while `origin/feature` pointed at the old upstream commit, then an external collaborator pushed a new commit and the local repo fetched it; the old page's `forcePushLease` request succeeded and overwrote the collaborator commit because plain `--force-with-lease` used the newly fetched tracking ref as its lease.
+- Added `upstreamSha` to sync state and sent it back as `expectedUpstreamSha` with current-branch actions.
+- Made `forcePushLease` reject stale pages when the local upstream tracking commit no longer matches the page snapshot.
+- Changed the Git command to use an explicit lease, `--force-with-lease=refs/heads/<branch>:<upstreamSha>`, so the push stays bound to the page-confirmed upstream commit even if tracking changes after validation.
+- Updated README and continuation notes to document the stronger safe-force-push guard.
+
+### Testing
+- Reproduced before the fix with temp repo `C:\tmp\forkline-force-lease-stale-20260703185848`: old page saw upstream `f665728`, collaborator pushed `9de4dde`, external `git fetch` updated local `origin/feature`, and stale `forcePushLease` overwrote the remote to local commit `4bfc42d`.
+- Ran `node --check server.js`.
+- Ran `node --check public\js\features\git-actions.js`.
+- Verified after the fix with temp repo `C:\tmp\forkline-force-lease-fixed-20260703190323`: stale `forcePushLease` returned “upstream origin/feature 的提交已经变化”, and the remote stayed on collaborator commit `84b2f22`.
+- Verified a refreshed state exposes `sync.upstreamSha = 84b2f22...` and a newly confirmed safe force push succeeds, moving the remote to local commit `a7ec651`.
+- The temporary verification repos were cleaned after both runs.
+
+### Notes
+- `server.js`：同步状态返回 `upstreamSha`；安全强推校验页面看到的 upstream 提交，并使用显式 `--force-with-lease=<ref>:<sha>`。
+- `public/js/features/git-actions.js`：当前分支快照请求携带 `expectedUpstreamSha`。
+- `README.md`：补充安全强推会绑定页面看到的 upstream 提交。
+- `docs/CONTINUE.md`：同步安全强推旧页面保护和显式 lease 说明。
+- `progress.md`：追加本轮 safe-force-push 覆盖外部新提交风险的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard worktree prune against unconfirmed stale records
+
+### What was done
+- Reproduced a scope mismatch in worktree cleanup: a page confirmed cleanup for one stale worktree record (`stale-one`), then an external action created another stale record (`stale-two`); the old `pruneWorktrees` request ran global `git worktree prune --verbose` and removed both records.
+- Added a `worktreePruneSnapshot` to `/api/state` based only on prunable worktree records.
+- Required `pruneWorktrees` and `pruneAllWorktrees` requests to carry that snapshot; stale pages are rejected when the prunable worktree list changes.
+- Restricted single-record cleanup so it only runs when the current prunable list contains exactly that one record; if multiple stale records exist, the user must use the worktree page's “清理失效” action to confirm the full list.
+- Updated README and continuation notes to document the stronger worktree cleanup guard.
+
+### Testing
+- Reproduced before the fix with temp repo `C:\tmp\forkline-worktree-prune-stale-20260703190801`: after the page saw only `stale-one`, external creation of `stale-two` followed by old `pruneWorktrees stale-one` removed both stale worktree records.
+- Ran `node --check server.js`.
+- Ran `node --check public\js\features\branches.js`.
+- Ran `node --check public\js\panels\workspaces.js`.
+- Verified after the fix with temp repo `C:\tmp\forkline-worktree-prune-fixed-20260703191240`: stale `pruneWorktrees stale-one` returned “失效 worktree 列表已经变化” and kept both records; fresh single cleanup with two stale records returned “当前有 2 条失效 worktree 记录”; fresh `pruneAllWorktrees` with the current snapshot removed both confirmed stale records.
+- The temporary verification repos were cleaned after both runs.
+
+### Notes
+- `server.js`：返回并校验失效 worktree 快照，单项清理在多条失效记录存在时拒绝执行全局 prune。
+- `public/js/features/branches.js`：单项 worktree 清理请求携带页面看到的失效记录快照。
+- `public/js/panels/workspaces.js`：工作树页“清理失效”请求携带页面看到的失效记录快照。
+- `README.md`：补充清理失效 worktree 前会校验失效记录列表，单项清理不会隐式清理多条。
+- `docs/CONTINUE.md`：同步 worktree prune 旧页面保护和单项清理保护说明。
+- `progress.md`：追加本轮 worktree prune 影响范围不一致的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Keep remote push URL aligned when editing remote URL
+
+### What was done
+- Reproduced a remote URL edit bug with local bare remotes: `origin` had fetch URL pointing to remote A and a separate push URL pointing to remote B; Forkline's “修改 URL” changed fetch to remote C but left push pointing to remote B.
+- Updated remote URL editing so after `git remote set-url <remote> <url>`, Forkline rereads the remote details and runs `git remote set-url --push <remote> <url>` only when the displayed push URL still differs.
+- Updated README and continuation notes to document that editing a remote URL keeps fetch and push destinations aligned.
+
+### Testing
+- Reproduced before the fix with temp repo `C:\tmp\forkline-remote-url-stale-push-20260703191752`: after `setRemoteUrl origin <remote-c>`, `git remote -v` showed `<remote-c> (fetch)` but still `<remote-b> (push)`.
+- Ran `node --check server.js`.
+- Ran `node --check public\js\features\git-actions.js`.
+- Verified after the fix with temp repo `C:\tmp\forkline-remote-url-fixed-20260703191857`: `git remote -v` showed `<remote-c> (fetch)` and `<remote-c> (push)`, with no old push URL left.
+- The temporary verification repos were cleaned after both runs.
+
+### Notes
+- `server.js`：修改远端 URL 后复查 push URL，必要时同步更新 push URL。
+- `README.md`：补充修改远端 URL 会同时保证 fetch/push 指向新地址。
+- `docs/CONTINUE.md`：同步远端 URL 修改加固说明。
+- `progress.md`：追加本轮远端 push URL 残留旧地址的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard Tag start refs for branch and worktree creation
+
+### What was done
+- Reproduced a stale Tag target bug: a page saw Tag `v1` at commit A, an external command moved `v1` to commit B, and the old `createWorktree` request with `ref: "v1"` created a worktree at commit B without warning.
+- Added Tag objects to the frontend target-ref snapshot payload used by branch/worktree creation.
+- Extended backend target-ref snapshot validation so Tag start refs are checked against the page-seen Tag object SHA, not only local/remote branch refs.
+- Updated README and continuation notes to document that Tag start refs are protected from old-page drift.
+
+### Testing
+- Reproduced before the fix with temp repo `C:\tmp\forkline-tag-target-stale-20260703192404`: old page saw `v1` at `d8ebaa4`, external `git tag -f v1` moved it to `ead87df`, and `createWorktree` created the worktree at `ead87df`.
+- Ran `node --check server.js`.
+- Ran `node --check public\js\features\branches.js`.
+- Verified after the fix with temp repo `C:\tmp\forkline-tag-target-fixed-20260703192541`: stale `createWorktree` returned “Tag v1 已经变化” and did not create the target path; refreshed state with the new Tag SHA created the worktree at `8d1d995`.
+- The temporary verification repos were cleaned after both runs.
+
+### Notes
+- `server.js`：目标引用快照校验覆盖本地 Tag，并对 Tag 使用对象 SHA 校验，避免外部移动 Tag 后旧页面继续使用新目标。
+- `public/js/features/branches.js`：目标引用快照 payload 支持从页面 Tag 列表读取 Tag 对象 SHA。
+- `README.md`：补充从 Tag 新建分支/创建工作树会校验页面看到的 Tag 对象。
+- `docs/CONTINUE.md`：同步 Tag 起点引用旧页面保护说明。
+- `progress.md`：追加本轮 Tag 起点过期导致工作树创建到错误提交的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Handle multiple remote push URLs when editing a remote
+
+### What was done
+- Closed the remaining remote URL edit edge case where a remote configured with multiple `remote.<name>.pushurl` values could leave fetch changed to the new URL while old push URLs still pointed at previous repositories.
+- Preserved the full push URL list in remote state and included it in frontend snapshots for sync, upstream, remote branch, tag remote, and all-remotes fetch actions.
+- Updated backend stale-page checks to compare the complete push URL list instead of only the first displayed push URL.
+- Changed remote URL editing so explicit push URLs are replaced through Git config after the fetch URL update; multiple old push URLs are collapsed to the new single push destination.
+- Updated README and continuation notes to document full push URL list validation and multi-push URL replacement.
+
+### Testing
+- Ran `node --check server.js`.
+- Ran `node --check public\js\features\git-actions.js`.
+- Ran `node --check public\js\features\branches.js`.
+- Ran `node --check public\js\panels\workspaces.js`.
+- Ran a real API regression with temp repo `C:\tmp\forkline-remote-url-multi-push-fixed-20260704034004`: page state saw `origin` with two push URLs, an external command added a third push URL, stale `setRemoteUrl` returned “URL 已经变化”, refreshed `setRemoteUrl` succeeded, and `remote.origin.pushurl` ended as exactly one URL pointing to the new remote.
+- Ran `git diff --check`.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public\js README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Confirmed no `C:\tmp\forkline-remote-url-multi-push-fixed-*` temp directories remained.
+
+### Notes
+- `server.js`：远端状态保留完整 `pushUrls`，远端快照校验比较完整列表，修改远端 URL 时替换所有显式 push URL。
+- `public/js/features/git-actions.js`：同步、远端和上游相关动作携带完整 push URL 列表。
+- `README.md`：补充多 push URL 校验和修改 URL 时收敛到新地址的行为说明。
+- `docs/CONTINUE.md`：同步远端 URL 管理当前能力说明。
+- `progress.md`：追加本轮多 push URL 边界的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.

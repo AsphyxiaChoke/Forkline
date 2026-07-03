@@ -352,6 +352,7 @@ function currentBranchSnapshotPayload() {
   };
   const upstream = state.data?.sync?.upstream || "";
   payload.expectedUpstream = upstream;
+  payload.expectedUpstreamSha = state.data?.sync?.upstreamSha || "";
   if (upstream) {
     const remote = remoteForUpstream(upstream);
     if (remote?.name) {
@@ -359,6 +360,7 @@ function currentBranchSnapshotPayload() {
         expectedUpstreamRemote: remote.name,
         expectedUpstreamFetchUrl: remote.fetchUrl || "",
         expectedUpstreamPushUrl: remote.pushUrl || "",
+        expectedUpstreamPushUrls: remotePushUrls(remote),
       });
     }
   } else {
@@ -368,6 +370,7 @@ function currentBranchSnapshotPayload() {
       Object.assign(payload, {
         expectedDefaultRemoteFetchUrl: remote.fetchUrl || "",
         expectedDefaultRemotePushUrl: remote.pushUrl || "",
+        expectedDefaultRemotePushUrls: remotePushUrls(remote),
       });
     }
   }
@@ -684,6 +687,7 @@ function remoteConfigSnapshotPayload(remote) {
   return {
     expectedFetchUrl: remote?.fetchUrl || "",
     expectedPushUrl: remote?.pushUrl || "",
+    expectedPushUrls: remotePushUrls(remote),
   };
 }
 
@@ -693,8 +697,14 @@ function allRemoteConfigSnapshotPayload() {
       name: remote.name,
       fetchUrl: remote.fetchUrl || "",
       pushUrl: remote.pushUrl || "",
+      pushUrls: remotePushUrls(remote),
     })),
   };
+}
+
+function remotePushUrls(remote) {
+  const urls = Array.isArray(remote?.pushUrls) ? remote.pushUrls.map((url) => String(url || "")) : [];
+  return urls.length ? urls : [remote?.pushUrl || ""];
 }
 
 function cleanPromptValue(value, label) {

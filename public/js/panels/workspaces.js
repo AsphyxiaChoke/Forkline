@@ -500,7 +500,7 @@ async function pruneWorktreeRecords(button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "pruneAllWorktrees" }),
+      body: JSON.stringify({ action: "pruneAllWorktrees", ...worktreePruneSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已清理失效工作树记录");
