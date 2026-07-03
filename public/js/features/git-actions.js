@@ -348,6 +348,7 @@ function currentBranchSnapshotPayload() {
     expectedBranch: state.data?.repo?.branch || "",
     expectedHead: state.data?.repo?.headSha || "",
     ...worktreeSnapshotPayload(),
+    ...operationSnapshotPayload(),
   };
   const upstream = state.data?.sync?.upstream || "";
   payload.expectedUpstream = upstream;

@@ -4033,6 +4033,7 @@ async function ensureCurrentBranchSnapshot(body = {}) {
     }
   }
   await ensureUpstreamSnapshot(body);
+  await ensureCurrentOperationContextSnapshot(body);
 }
 
 async function ensureUpstreamSnapshot(body = {}) {
@@ -4075,6 +4076,19 @@ async function ensureRemoteSnapshotForUpstream(remoteName, body = {}, label = "�
   const currentPushUrl = current.pushUrl || "";
   if (currentFetchUrl !== expectedFetchUrl || currentPushUrl !== expectedPushUrl) {
     throw new Error(`${label} ${remoteName} 的 URL 已经变化。为避免把操作执行到错误远端，请刷新后重新操作。`);
+  }
+}
+
+async function ensureCurrentOperationContextSnapshot(body = {}) {
+  const operation = detectRepoOperation(currentRepo);
+  if (!operation) return;
+  const receivedType = String(body.expectedOperationType || "").trim();
+  const expectedSnapshot = normalizeExpectedSnapshot(body.expectedOperationSnapshot, "进行中的 Git 操作状态已过期，请刷新后重新执行这个操作。");
+  if (receivedType !== operation.type) {
+    throw new Error(`正在进行的${operationTypeLabel(operation.type)}已经变化。为避免旧页面操作到新的 Git 状态，请刷新后重新操作。`);
+  }
+  if (operation.snapshot !== expectedSnapshot) {
+    throw new Error(`正在进行的${operationTypeLabel(operation.type)}已经变化。为避免旧页面操作到新的 Git 状态，请刷新后重新操作。`);
   }
 }
 

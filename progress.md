@@ -4225,3 +4225,30 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮 `.gitignore` 旧页面保护验证。
 - `progress.md`：追加本轮 `.gitignore` 工作区快照保护的实施与验证记录。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard current-branch writes during in-progress Git operations
+
+### What was done
+- Reproduced a stale in-progress operation bug in a temporary `C:\tmp` repository: the page saw a resolved and staged merge with `side-a`, an external command aborted that merge and started a `side-b` merge with the same staged tree, then the old plain `commit` request still created a merge commit for `side-b`.
+- Added the current Git operation snapshot to the shared current-branch action payload, so normal current-branch writes carry the page's merge/rebase/cherry-pick/revert identity when one exists.
+- Added server-side operation-context enforcement for current-branch writes: if the repo is in an in-progress Git operation, stale or missing operation snapshots are rejected before the write action runs.
+- Updated README and continuation notes to document that current-branch writes also bind to the in-progress Git operation when one exists.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5486`: old `commit` in `C:\tmp\forkline-stale-operation-commit-20260704021821` returned success and created merge commit `d2aa4ef`, whose second parent was `side-b` (`864770a`) even though the page's original `MERGE_HEAD` was `side-a`.
+- Verified after the fix with service `http://127.0.0.1:5487`: the same stale `commit` request without `expectedOperationSnapshot` returned an error recorded as `进行中的 Git 操作状态已过期，请刷新后重新执行这个操作。`, and no old-page merge commit was created.
+- Verified fresh operation snapshots still work: after refreshing state for the `side-b` merge, `commit` with `expectedOperationType = merge` and the current operation snapshot created merge commit `18c449a`.
+- Verified normal commits are not broken when no Git operation is in progress: a follow-up `commit` without operation snapshot created `49863b4 normal commit after guard`.
+- `node --check server.js` passed.
+- `node --check public\js\features\git-actions.js` passed.
+- `git diff --check` passed; Git only printed Windows LF-to-CRLF working-copy warnings.
+- `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public\js README.md docs\CONTINUE.md progress.md` returned no debug markers.
+- Temporary services on ports `5486` and `5487` were stopped, and temporary `C:\tmp\forkline-stale-operation-commit-*` directories were removed.
+
+### Notes
+- `server.js`：当前分支类写操作在仓库存在进行中 Git 操作时会校验页面看到的操作快照。
+- `public/js/features/git-actions.js`：通用当前分支 payload 自动携带进行中 Git 操作快照。
+- `README.md`：补充当前分支写操作会绑定进行中的 merge/rebase/cherry-pick/revert 快照。
+- `docs/CONTINUE.md`：同步当前状态和本轮旧页面普通提交误操作新合并的验证记录。
+- `progress.md`：追加本轮进行中 Git 操作上下文保护的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
