@@ -28,6 +28,8 @@ function renderBranches() {
       ahead: Number(info.ahead || 0),
       behind: Number(info.behind || 0),
       upstreamGone: Boolean(info.upstreamGone),
+      sha: info.sha || "",
+      short: info.short || "",
       merge: true,
       rename: true,
       delete: true,
@@ -37,7 +39,7 @@ function renderBranches() {
   const remoteBranchItems = state.data.remotes.map((branch, index) => ({
     branch,
     index: index + 3,
-    options: { remote: true, remoteCheckout: true, merge: true, deleteRemote: true },
+    options: { remote: true, remoteCheckout: true, merge: true, deleteRemote: true, sha: remoteExpectedSha(branch) },
     active: branch === currentRef,
   }));
   const visibleLocalBranches = filterBranchItems(localBranchItems, filterTerms);
@@ -262,13 +264,24 @@ function branchDeleteTitle(branch, options, blocked) {
   return `删除本地分支 ${branch}`;
 }
 
+function branchExpectedSha(branch) {
+  const infoSha = state.data?.branchInfo?.[branch]?.sha || "";
+  if (infoSha) return infoSha;
+  const cleanupRow = (state.data?.branchCleanup || []).find((row) => row.branch === branch);
+  return cleanupRow?.lastCommit || "";
+}
+
+function remoteExpectedSha(remoteRef) {
+  return state.data?.remoteInfo?.[remoteRef]?.sha || "";
+}
+
 async function deleteBranch(branch, button) {
   if (!state.data || !branch) return;
   if (!confirm(`确认删除本地分支：${branch}？\n\n会使用安全删除；如果分支还没有合并，Git 会阻止删除。`)) return;
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteBranch", branch }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteBranch", branch, sha: branchExpectedSha(branch) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除本地分支 ${branch}`);
     const nextRef = state.selectedRef === branch ? state.data.repo.branch || "" : state.selectedRef;
@@ -295,7 +308,7 @@ async function deleteRemoteBranch(remoteRef) {
   if (!confirm(`确认删除远端分支：${remoteRef}？\n\n此操作会删除远端仓库中的分支，不会删除本地分支。\n命令：${command}`)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef, sha: remoteExpectedSha(remoteRef) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除远端分支 ${remoteRef}`);
     const nextRef = state.selectedRef === remoteRef ? state.data.repo.branch || "" : state.selectedRef;
@@ -478,7 +491,7 @@ async function renameBranchFromForm(nextBranch) {
     submit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "renameBranch", branch: oldBranch, newBranch: nextBranch }),
+      body: JSON.stringify({ action: "renameBranch", branch: oldBranch, sha: branchExpectedSha(oldBranch), newBranch: nextBranch }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已重命名为 ${nextBranch}`);

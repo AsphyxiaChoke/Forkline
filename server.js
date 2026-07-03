@@ -23,6 +23,24 @@ let repoSwitchInProgress = false;
 const activeOperations = new Map();
 const operationLog = [];
 const REPO_SWITCHING_ACTIONS = new Set(["openWorktree", "cloneRepository", "initRepository"]);
+const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
+  "pull",
+  "pullRebase",
+  "push",
+  "forcePushLease",
+  "stageAll",
+  "discardAll",
+  "commit",
+  "amendCommit",
+  "mergeRef",
+  "rebaseOntoRef",
+  "rewordCommit",
+  "rewriteHistoryCommit",
+  "rewriteHistoryQueue",
+  "cherryPickCommit",
+  "revertCommit",
+  "resetToCommit",
+]);
 
 const laneColors = ["#23c7b7", "#ff7a67", "#f0b85b", "#5ca9ff", "#9c7cff", "#6bd58c", "#f071b8"];
 
@@ -124,12 +142,13 @@ async function readState(ref = "") {
   const repoPath = currentRepo;
   const selectedRef = String(ref || "").trim();
   await ensureLiveRemoteBranchRef(selectedRef, repoPath);
-  const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
+  const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, remoteMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
     readBranchDisplayName(repoPath),
     git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(repoPath, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
     git(repoPath, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
     git(repoPath, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
+    git(repoPath, ["for-each-ref", "refs/remotes", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)"]).catch(() => ""),
     git(repoPath, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => ""),
     git(repoPath, ["remote"]).catch(() => ""),
     git(repoPath, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
@@ -169,14 +188,16 @@ async function readState(ref = "") {
   if (currentBranch && currentBranch !== "detached HEAD" && !branches.includes(currentBranch)) {
     branches.unshift(currentBranch);
   }
+  const remoteInfo = parseRemoteBranchInfo(remoteMetaOutput, remoteNames);
 
   const worktrees = await enrichWorktreeList(parseWorktreeList(worktreeOutput, repoPath));
-  const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, repoPath));
+  const branchMeta = parseBranchCleanupMeta(branchMetaOutput);
+  const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), branchMeta, parseWorktreeBranches(worktreeOutput, repoPath));
   const submodules = await enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput), repoPath);
   const branchCleanup = buildBranchCleanup({
     branches,
     branchInfo,
-    branchMeta: parseBranchCleanupMeta(branchMetaOutput),
+    branchMeta,
     mergedBranches: parseSimpleLines(mergedBranchOutput),
     currentBranch,
   });
@@ -198,6 +219,7 @@ async function readState(ref = "") {
     worktrees,
     submodules,
     remotes,
+    remoteInfo,
     sync,
     workingFiles: parseStatus(statusOutput),
     stashes: parseStashList(stashOutput),
@@ -900,6 +922,7 @@ async function runAction(body) {
   if (!currentRepo) {
     return { ok: true, sample: true, output: "示例模式不会执行真实 Git 命令" };
   }
+  await ensureCurrentBranchSnapshot(body);
   if (action === "createWorktree") {
     return createWorktree(body);
   }
@@ -1494,6 +1517,7 @@ async function deleteBranch(body) {
   const branch = normalizeBranchName(body.branch);
   const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
   ensureBranchDeletionAllowed(branch, currentBranch);
+  await ensureCurrentLocalBranch(branch, normalizeExpectedBranchSha(body.sha));
   await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
   return { ok: true, output: `已删除本地分支 ${branch}` };
 }
@@ -1509,15 +1533,46 @@ function isProtectedBranchName(branch) {
   return PROTECTED_BRANCH_NAMES.has(String(branch || "").toLowerCase());
 }
 
+function normalizeBranchActionEntries(value) {
+  const rawItems = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const entries = [];
+  for (const item of rawItems) {
+    const branch = normalizeBranchName(typeof item === "object" && item ? item.branch : item);
+    if (seen.has(branch)) continue;
+    seen.add(branch);
+    entries.push({ branch, sha: typeof item === "object" && item ? item.sha : "" });
+  }
+  return entries;
+}
+
+async function ensureCurrentLocalBranch(branch, expectedSha) {
+  const actualSha = (await git(currentRepo, ["rev-parse", "-q", "--verify", `refs/heads/${branch}^{commit}`], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+  if (!actualSha) throw new Error(`本地分支 ${branch} 已不存在，请刷新分支列表后重新选择。`);
+  if (!actualSha.startsWith(expectedSha)) {
+    throw new Error(`本地分支 ${branch} 已经变化。为避免重命名或删除错误分支，请刷新分支列表后重新选择。`);
+  }
+  return actualSha;
+}
+
+function normalizeExpectedBranchSha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("分支列表状态已过期，请刷新分支列表后重新选择。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("分支身份不合法，请刷新分支列表后重新选择。");
+  return sha;
+}
+
 async function deleteBranches(body) {
-  const branches = Array.isArray(body.branches) ? [...new Set(body.branches.map((item) => normalizeBranchName(item)))] : [];
+  const branches = normalizeBranchActionEntries(body.branches);
   if (!branches.length) throw new Error("请选择要删除的本地分支");
   const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
   const deleted = [];
   const failed = [];
-  for (const branch of branches) {
+  for (const entry of branches) {
+    const { branch } = entry;
     try {
       ensureBranchDeletionAllowed(branch, currentBranch);
+      await ensureCurrentLocalBranch(branch, normalizeExpectedBranchSha(entry.sha));
       await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
       deleted.push(branch);
     } catch (error) {
@@ -2038,7 +2093,7 @@ async function deleteRemoteBranch(body) {
   if (isProtectedBranchName(parsed.branch)) {
     throw new Error(`远端分支 ${remoteRef} 是主干/长期分支，Forkline 默认保护，不允许从这里删除。`);
   }
-  await ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed);
+  await ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed, normalizeExpectedRemoteBranchSha(body.sha));
   let output = "";
   try {
     output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
@@ -2051,12 +2106,15 @@ async function deleteRemoteBranch(body) {
   return commandResultWithSummary(`已删除远端分支 ${remoteRef}`, output);
 }
 
-async function ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed) {
+async function ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed, expectedSha) {
   const localSha = (await git(currentRepo, ["rev-parse", "--verify", `refs/remotes/${remoteRef}^{commit}`], { timeout: 60000 }).catch(() => "")).trim();
   const remoteSha = await readRemoteBranchHeadSha(parsed);
   if (!localSha || !remoteSha) {
     await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
     throw new Error(`远端分支 ${remoteRef} 已不存在或本地列表已过期，已刷新远端分支列表。请刷新后重新选择。`);
+  }
+  if (!localSha.toLowerCase().startsWith(expectedSha)) {
+    throw new Error(`远端分支 ${remoteRef} 的本地跟踪引用已经变化。为避免删除别人新推送的分支，请刷新后重新选择。`);
   }
   if (localSha !== remoteSha) {
     await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
@@ -2074,6 +2132,13 @@ async function readRemoteBranchHeadSha(parsed) {
   return row?.[0] || "";
 }
 
+function normalizeExpectedRemoteBranchSha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("远端分支列表状态已过期，请刷新分支列表后重新选择。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("远端分支身份不合法，请刷新分支列表后重新选择。");
+  return sha;
+}
+
 function isMissingRemoteBranchDeleteError(error) {
   const lower = String(error?.message || error || "").toLowerCase();
   return (lower.includes("remote ref does not exist") || lower.includes("unable to delete")) && lower.includes("remote");
@@ -2086,6 +2151,7 @@ async function renameBranch(body) {
   if (isProtectedBranchName(branch)) {
     throw new Error(`分支 ${branch} 是主干/长期分支，Forkline 默认保护，不允许从这里重命名。`);
   }
+  await ensureCurrentLocalBranch(branch, normalizeExpectedBranchSha(body.sha));
   await git(currentRepo, ["check-ref-format", "--branch", newBranch]).catch(() => {
     throw new Error("分支名不合法");
   });
@@ -3814,6 +3880,23 @@ async function currentLocalBranch(actionText = "执行操作") {
   return branch;
 }
 
+async function ensureCurrentBranchSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!CURRENT_BRANCH_SNAPSHOT_ACTIONS.has(action)) return;
+  const expectedBranch = String(body.expectedBranch || "").trim();
+  const expectedHead = String(body.expectedHead || "").trim().toLowerCase();
+  if (!expectedBranch) throw new Error("页面分支状态已过期，请刷新后重新执行这个操作。");
+  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (currentBranch !== expectedBranch) {
+    throw new Error(`当前分支已经从 ${expectedBranch} 切换到 ${currentBranch || "HEAD"}。为避免把操作执行到错误分支，请刷新页面后重新操作。`);
+  }
+  if (!expectedHead) return;
+  const currentHead = (await git(currentRepo, ["rev-parse", "--verify", "HEAD^{commit}"], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+  if (currentHead && currentHead !== expectedHead) {
+    throw new Error(`当前分支 ${currentBranch} 的 HEAD 已经变化。为避免把操作执行到旧页面之外的提交上，请刷新页面后重新操作。`);
+  }
+}
+
 async function hasHeadCommit(repoPath) {
   return Boolean((await git(repoPath, ["rev-parse", "--verify", "HEAD^{commit}"]).catch(() => "")).trim());
 }
@@ -4766,6 +4849,19 @@ function parseBranchCleanupMeta(output) {
     };
   }
   return meta;
+}
+
+function parseRemoteBranchInfo(output, remoteNames = []) {
+  const info = {};
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const [ref = "", sha = "", short = ""] = line.split("\t");
+    const remoteRef = ref.trim();
+    if (!remoteRef || remoteRef.endsWith("/HEAD")) continue;
+    if (!isKnownRemoteBranch(remoteRef, remoteNames)) continue;
+    info[remoteRef] = { sha: sha.trim(), short: short.trim() };
+  }
+  return info;
 }
 
 function parseSimpleLines(output) {

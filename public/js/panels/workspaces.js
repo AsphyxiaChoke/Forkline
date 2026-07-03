@@ -77,6 +77,8 @@ function branchCleanupRows() {
       behind: Number(info.behind) || 0,
       occupied: Boolean(info.worktreePath),
       worktreePath: info.worktreePath || "",
+      lastCommit: info.sha || "",
+      lastCommitShort: info.short || "",
       canDelete: !protectedBranch && !info.worktreePath,
       statusLabel: branch === current ? "当前" : protectedBranch ? "保护" : info.upstreamGone ? "上游丢失" : "活跃",
       reason: branch === current ? "当前所在分支不能删除" : protectedBranch ? "主干或长期分支默认保留" : info.upstreamGone ? "上游分支已经不存在，删除前先确认本地提交是否还需要" : "等待 Git 状态刷新",
@@ -200,13 +202,14 @@ async function deleteMergedCleanupBranches(button) {
   if (!state.data || state.data.repo.isSample) return;
   const branches = branchCleanupRows()
     .filter((row) => row.canDelete && row.mergedIntoCurrent)
-    .map((row) => row.branch)
-    .filter(Boolean);
+    .map((row) => ({ branch: row.branch, sha: row.lastCommit || branchExpectedSha(row.branch) }))
+    .filter((entry) => entry.branch);
   if (!branches.length) {
     toast("没有可安全删除的已合并分支");
     return;
   }
-  const preview = branches.slice(0, 8).join("\n");
+  const branchNames = branches.map((entry) => entry.branch);
+  const preview = branchNames.slice(0, 8).join("\n");
   const suffix = branches.length > 8 ? `\n... 还有 ${branches.length - 8} 个` : "";
   if (!confirm(`确认安全删除这些已合并分支？\n\n${preview}${suffix}\n\n命令：git branch -d <分支>\n如果 Git 判断未完全合并，会自动阻止。`)) return;
   if (button) button.disabled = true;
@@ -218,7 +221,7 @@ async function deleteMergedCleanupBranches(button) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除 ${branches.length} 个分支`);
-    const nextRef = branches.includes(state.selectedRef) ? state.data.repo.branch || "" : state.selectedRef;
+    const nextRef = branchNames.includes(state.selectedRef) ? state.data.repo.branch || "" : state.selectedRef;
     const data = await loadStateForRepoPath(repoPath, nextRef);
     if (!data) return;
     state.commitDetails.clear();
@@ -251,6 +254,7 @@ function branchCleanupContextOptions(branch) {
     upstreamGone: Boolean(row.upstreamGone),
     ahead: Number(row.ahead) || 0,
     behind: Number(row.behind) || 0,
+    sha: row.lastCommit || branchExpectedSha(branch),
   };
 }
 

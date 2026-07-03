@@ -122,7 +122,7 @@ async function mergeBranchRef(ref) {
   if (!state.data.repo.isSample && !confirm(`确认将 ${ref} 合并到当前分支 ${current}？${dirtyNote}`)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已合并 ${ref}`);
     const data = await loadStateForRepoPath(repoPath);
@@ -153,7 +153,7 @@ async function rebaseOntoRef(ref) {
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已变基到 ${ref}`);
     const data = await loadStateForRepoPath(repoPath);
@@ -308,7 +308,7 @@ async function runAction(action) {
   if (!state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return;
   const repoPath = repoPathSnapshot();
   try {
-    const payload = { action };
+    const payload = { action, ...currentBranchSnapshotPayload() };
     if (action === "commit" || action === "amendCommit") {
       payload.summary = els.commitSummary.value.trim();
       payload.body = els.commitBody.value.trim();
@@ -335,6 +335,13 @@ async function runAction(action) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
+}
+
+function currentBranchSnapshotPayload() {
+  return {
+    expectedBranch: state.data?.repo?.branch || "",
+    expectedHead: state.data?.repo?.headSha || "",
+  };
 }
 
 async function runRepoOperation(action, button) {
@@ -879,7 +886,7 @@ async function rewordSelectedCommit(form) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "rewordCommit", sha, summary, body }),
+      body: JSON.stringify({ action: "rewordCommit", sha, summary, body, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "提交信息已修改");

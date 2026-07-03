@@ -3461,3 +3461,94 @@
 - `docs/CONTINUE.md`：记录恢复点恢复和删除的 SHA 校验边界。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面重命名或删除已变化的本地分支
+### What was done
+- 复现页面看到本地分支 `topic` 指向旧提交后，外部 Git 命令把同名 `topic` 移到新提交；旧页面继续调用 `renameBranch topic -> renamed-stale` 会返回 `200`，并把新 `topic` 改名。
+- 本地分支状态现在会把分支 HEAD SHA 合并进 `branchInfo`；普通分支删除、重命名和分支整理批量删除都会把页面看到的 SHA 传给后端。
+- 后端在执行 `deleteBranch`、`deleteBranches` 和 `renameBranch` 前会校验当前 `refs/heads/<branch>` 仍指向页面看到的提交；分支已删除、请求缺少 SHA 或同名分支已经移动时都会返回中文提示并拒绝写操作。
+
+### Testing
+- `node --check server.js`
+- `node --check public\js\features\branches.js`
+- `node --check public\js\panels\workspaces.js`
+- 修复前临时仓库 HTTP harness：页面读取 `topic` 的旧 SHA `fc0f9fa...`，外部把 `topic` 移到新 SHA `7b474d...`；调用 `renameBranch` 返回 `200`，`topic` 消失，`renamed-stale` 指向新 SHA，`staleWasIgnored = true`。
+- 修复后同一 stale harness：页面 SHA 为 `858d134...`，外部新 SHA 为 `46c4d9a...`；带旧 SHA 调用 `renameBranch` 返回 `400` 和中文“本地分支 topic 已经变化”，`topic` 仍指向新 SHA，`renamed-stale` 不存在，`staleBlocked = true`。
+- 正常路径回归：匹配 SHA 的 `renameBranch topic -> renamed-ok` 返回成功，匹配 SHA 的 `deleteBranch old-merged` 返回成功。
+- 批量删除回归：`deleteBranches` 使用 `{ branch, sha }` 数组删除 `merged-a` 和 `merged-b`，两个分支均被删除。
+
+### Notes
+- `server.js`：本地分支状态暴露分支 HEAD SHA，并为删除、批量删除、重命名增加页面 SHA 与当前分支 SHA 的一致性校验。
+- `public/js/features/branches.js`：本地分支删除和重命名请求携带页面快照中的分支 SHA。
+- `public/js/panels/workspaces.js`：分支整理批量删除改为传 `{ branch, sha }`，备用分支行也保留最后提交 SHA。
+- `README.md`：补充本地分支删除/重命名会校验页面看到的分支 HEAD SHA。
+- `docs/CONTINUE.md`：记录本地分支删除、批量删除和重命名的 SHA 校验边界。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面删除本地 tracking 已更新的远端分支
+### What was done
+- 复现页面看到旧 `origin/feature` 后，外部把真实远端 `feature` 更新到新提交，并执行 `git fetch` 让本地 tracking 也更新；旧页面继续调用 `deleteRemoteBranch origin/feature` 会返回 `200`，把新远端分支删除。
+- 远端分支状态现在会返回 `remoteInfo[远端分支].sha`，前端删除远端分支时会携带页面看到的 tracking SHA。
+- 后端删除远端分支前会先确认当前本地 tracking 仍匹配页面 SHA，再确认当前本地 tracking 和真实远端 heads SHA 一致，避免旧页面删掉别人新推送后又被本机 fetch 到的新分支。
+
+### Testing
+- `node --check server.js`
+- `node --check public\js\features\branches.js`
+- 修复前临时裸远端 HTTP harness：页面看到 `origin/feature` 为旧 SHA `9ec5466...`，外部远端和本地 tracking 都更新到 `bfcd616...`；旧请求返回 `200`，裸远端 `refs/heads/feature` 被删除，`stalePageDeletedNewRemote = true`。
+- 修复后同一 stale harness：页面 SHA 为 `d7dce6e...`，外部远端和本地 tracking 更新到 `89912fd...`；带旧 SHA 调用返回 `400` 和中文“本地跟踪引用已经变化”，远端 `feature` 保留在新 SHA，`staleBlocked = true`。
+- 正常远端删除回归：页面 SHA、当前 tracking 和真实远端都指向 `origin/cleanup` 同一提交时，`deleteRemoteBranch` 返回成功，裸远端 `cleanup` 被删除。
+
+### Notes
+- `server.js`：远端分支状态增加 `remoteInfo`，删除远端分支前校验页面 tracking SHA、当前本地 tracking SHA 和真实远端 SHA。
+- `public/js/features/branches.js`：远端分支删除请求携带页面快照中的 tracking SHA。
+- `README.md`：补充删除远端分支会校验页面 tracking SHA、当前 tracking SHA 和真实远端 SHA。
+- `docs/CONTINUE.md`：记录本地 tracking 被外部 fetch 更新后的远端删除保护边界。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面当前分支动作落到外部切换后的分支
+### What was done
+- 复现页面打开时显示 `main` 且只看到 `main-unsaved.txt`，随后外部命令切到 `dev` 并修改 `dev-only.txt`；旧页面继续调用 `discardAll` 会返回 `200`，把 `dev-only.txt` 的未提交内容丢弃。
+- 前端通用当前分支动作现在会携带页面看到的 `expectedBranch` 和 `expectedHead`。
+- 后端对 `pull`、`pullRebase`、`push`、`forcePushLease`、`stageAll`、`discardAll`、`commit`、`amendCommit` 统一校验当前分支和 HEAD 快照；如果分支已切换或 HEAD 已变化，会拒绝旧页面请求。
+
+### Testing
+- `node --check server.js`
+- `node --check public\js\features\git-actions.js`
+- 修复前临时仓库 HTTP harness：页面分支为 `main`，外部切到 `dev` 并让 `dev-only.txt` 变为 `M`；调用旧 `discardAll` 返回 `200`，`dev-only.txt` 回到提交内容，`stalePageDiscardedDevWork = true`。
+- 修复后同一 stale 分支切换 harness：带 `expectedBranch = main` 和页面 HEAD 调用 `discardAll` 返回 `400`，提示当前分支已经从 `main` 切换到 `dev`，`dev-only.txt` 的未提交内容保留，`staleDiscardBlocked = true`。
+- 正常路径回归：当前仍是页面看到的 `main` 且 HEAD 未变时，`discardAll` 返回成功，已跟踪修改和未跟踪文件都被清理。
+- 同分支 HEAD 变化回归：页面看到旧 `main` HEAD 后，外部在 `main` 上新增提交并创建未跟踪文件；旧 `discardAll` 返回 `400`，提示 HEAD 已经变化，未跟踪文件保留。
+
+### Notes
+- `server.js`：新增当前分支快照动作集合和校验逻辑，在当前分支类写操作前确认页面分支/HEAD 仍匹配。
+- `public/js/features/git-actions.js`：通用 `runAction` 请求携带页面当前分支和 HEAD 快照。
+- `README.md`：补充当前分支类写操作会在外部切换分支或移动 HEAD 后拒绝旧页面请求。
+- `docs/CONTINUE.md`：记录当前分支类写操作的页面快照保护范围。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面 reset 和提交操作落到错误分支
+### What was done
+- 复现页面打开时显示 `main`，外部命令切到 `dev` 后，旧页面继续调用 `resetToCommit` hard 到 `main` 的旧提交；后端返回 `200`，把 `dev` 分支从自己的提交移动到 `main` 的旧提交，并删除了 `dev` 专属文件。
+- 后端当前分支快照保护范围扩展到 `mergeRef`、`rebaseOntoRef`、`rewordCommit`、`rewriteHistoryCommit`、`rewriteHistoryQueue`、`cherryPickCommit`、`revertCommit`、`resetToCommit`。
+- 前端分支合并/变基、提交挑选/还原/reset、修改提交信息和历史编辑请求都会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- `node --check server.js`
+- `node --check public\js\features\commit-actions.js`
+- `node --check public\js\features\git-actions.js`
+- 修复前临时仓库 HTTP harness：页面分支为 `main`，外部切到 `dev`；调用旧 `resetToCommit` hard 到提交 `79241d8...` 返回 `200`，`dev` 从 `3bc8a45...` 被移动到 `79241d8...`，`dev-c.txt` 不存在，`stalePageResetWrongBranch = true`。
+- 修复后同一 stale reset harness：带页面 `expectedBranch = main` 和页面 HEAD 调用 `resetToCommit` 返回 `400`，提示当前分支已从 `main` 切到 `dev`；`dev` 仍停在原提交，`dev-c.txt` 保留，`staleResetBlocked = true`。
+- 正常 reset 回归：当前仍是页面看到的 `main` 且 HEAD 未变时，带快照的 hard reset 返回成功，分支移动到目标提交并创建恢复点。
+- 后端兜底回归：直接调用不带快照的 `resetToCommit` 返回 `400`“页面分支状态已过期”，HEAD 保持不变。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖合并、变基、挑选、还原、reset 和历史编辑类写操作。
+- `public/js/features/git-actions.js`：合并、分支变基和修改提交信息请求携带当前分支快照。
+- `public/js/features/commit-actions.js`：挑选、还原、reset、历史编辑计划和历史编辑队列执行请求携带当前分支快照。
+- `README.md`：补充当前分支类写操作的快照保护覆盖 reset、挑选、还原和历史编辑。
+- `docs/CONTINUE.md`：记录当前分支快照保护已扩展到提交右键和历史编辑动作。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。

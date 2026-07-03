@@ -381,6 +381,7 @@ async function runHistoryRewriteQueue(action, button) {
       body: JSON.stringify({
         action: "rewriteHistoryQueue",
         items: historyQueuePayload(),
+        ...currentBranchSnapshotPayload(),
       }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
@@ -454,7 +455,7 @@ async function runHistoryRewritePlan(action, button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "rewriteHistoryCommit", sha: plan.sha, mode: plan.mode }),
+      body: JSON.stringify({ action: "rewriteHistoryCommit", sha: plan.sha, mode: plan.mode, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     state.historyPlan = null;
@@ -494,7 +495,7 @@ async function rewriteHistoryCommit(commit, mode) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "rewriteHistoryCommit", sha: commit.sha, mode }),
+      body: JSON.stringify({ action: "rewriteHistoryCommit", sha: commit.sha, mode, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已${config.title} ${commit.short}`);
@@ -514,7 +515,7 @@ async function cherryPickCommit(commit, mainline = null) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha, mainline }),
+      body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha, mainline, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已挑选提交 ${commit.short}`);
@@ -534,7 +535,7 @@ async function revertCommit(commit, mainline = null) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "revertCommit", sha: commit.sha, mainline }),
+      body: JSON.stringify({ action: "revertCommit", sha: commit.sha, mainline, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已还原提交 ${commit.short}`);
@@ -623,7 +624,7 @@ async function resetToCommit(commit, mode) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "resetToCommit", sha: commit.sha, mode }),
+      body: JSON.stringify({ action: "resetToCommit", sha: commit.sha, mode, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已${modeText}到 ${commit.short}`);
