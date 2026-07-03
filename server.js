@@ -1344,6 +1344,8 @@ async function checkoutRemoteBranch(body) {
     .map((item) => item.trim())
     .filter((item) => item && !item.endsWith("/HEAD"));
   if (!remoteBranches.includes(remoteRef)) throw new Error("远端分支不存在，请先抓取远端后再试");
+  const parsedRemoteRef = splitRemoteBranchRef(remoteRef, remoteNames);
+  await ensureRemoteBranchStillExists(remoteRef, parsedRemoteRef);
   const localBranch = normalizeRemoteCheckoutBranch(remoteRef, remoteNames);
   const localBranches = (await git(currentRepo, ["branch", "--format=%(refname:short)"]))
     .split(/\r?\n/)
@@ -1372,15 +1374,40 @@ async function checkoutRemoteBranch(body) {
       stash = { branch: sourceBranch, target: localBranch, ref: "stash@{0}", message };
     }
     await git(currentRepo, switchArgs, { timeout: 60000 });
-    return { ok: true, branch: localBranch, remote: remoteRef, output: `已从 ${remoteRef} 签出本地分支 ${localBranch}`, stash };
+    const trackingOutput = localExists ? await ensureRemoteCheckoutTracking(localBranch, remoteRef) : "";
+    return { ok: true, branch: localBranch, remote: remoteRef, output: [`已从 ${remoteRef} 签出本地分支 ${localBranch}`, trackingOutput].filter(Boolean).join("\n"), stash };
   }
   if (mode === "force") {
     await discardAllWorktreeChanges();
     await git(currentRepo, switchArgs, { timeout: 60000 });
-    return { ok: true, branch: localBranch, remote: remoteRef, output: `已强制签出本地分支 ${localBranch}` };
+    const trackingOutput = localExists ? await ensureRemoteCheckoutTracking(localBranch, remoteRef) : "";
+    return { ok: true, branch: localBranch, remote: remoteRef, output: [`已强制签出本地分支 ${localBranch}`, trackingOutput].filter(Boolean).join("\n") };
   }
   await git(currentRepo, switchArgs, { timeout: 60000 });
-  return { ok: true, branch: localBranch, remote: remoteRef, output: `已从 ${remoteRef} 签出本地分支 ${localBranch}` };
+  const trackingOutput = localExists ? await ensureRemoteCheckoutTracking(localBranch, remoteRef) : "";
+  return { ok: true, branch: localBranch, remote: remoteRef, output: [`已从 ${remoteRef} 签出本地分支 ${localBranch}`, trackingOutput].filter(Boolean).join("\n") };
+}
+
+async function ensureRemoteBranchStillExists(remoteRef, parsed = null) {
+  const { remote, branch } = parsed || splitRemoteBranchRef(remoteRef, await readRemoteNames());
+  const output = await git(currentRepo, ["ls-remote", "--heads", remote, branch], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+  if (String(output || "").trim()) return;
+  await git(currentRepo, ["fetch", remote, "--prune"], { timeout: 120000 }).catch(() => "");
+  throw new Error(`远端分支 ${remoteRef} 已不存在，已刷新远端分支列表。请刷新后重新选择。`);
+}
+
+async function ensureLiveRemoteBranchRef(ref) {
+  const remoteNames = await readRemoteNames();
+  if (!isKnownRemoteBranch(ref, remoteNames)) return;
+  await ensureRemoteBranchStillExists(ref, splitRemoteBranchRef(ref, remoteNames));
+}
+
+async function ensureRemoteCheckoutTracking(localBranch, remoteRef) {
+  const upstream = (await git(currentRepo, ["for-each-ref", `refs/heads/${localBranch}`, "--format=%(upstream:short)"]).catch(() => "")).trim();
+  if (upstream === remoteRef) return "";
+  if (upstream) return `本地分支 ${localBranch} 已跟踪 ${upstream}，未自动改为 ${remoteRef}`;
+  await git(currentRepo, ["branch", `--set-upstream-to=${remoteRef}`, localBranch], { timeout: 60000 });
+  return `已设置 upstream：${localBranch} -> ${remoteRef}`;
 }
 
 async function createBranch(body) {
@@ -1926,9 +1953,21 @@ async function deleteRemoteBranch(body) {
     .filter((item) => item && !item.endsWith("/HEAD"));
   if (!remoteBranches.includes(remoteRef)) throw new Error("远端分支不存在，请先抓取远端后再试");
   const parsed = splitRemoteBranchRef(remoteRef, await readRemoteNames());
-  const output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
+  let output = "";
+  try {
+    output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
+  } catch (error) {
+    if (!isMissingRemoteBranchDeleteError(error)) throw error;
+    const pruneOutput = await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
+    return commandResultWithSummary(`远端分支 ${remoteRef} 已不存在，已刷新远端分支列表`, pruneOutput);
+  }
   await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
   return commandResultWithSummary(`已删除远端分支 ${remoteRef}`, output);
+}
+
+function isMissingRemoteBranchDeleteError(error) {
+  const lower = String(error?.message || error || "").toLowerCase();
+  return (lower.includes("remote ref does not exist") || lower.includes("unable to delete")) && lower.includes("remote");
 }
 
 async function renameBranch(body) {
@@ -1946,6 +1985,7 @@ async function renameBranch(body) {
 
 async function mergeRef(body) {
   const ref = normalizeRefName(body.ref, "合并目标");
+  await ensureLiveRemoteBranchRef(ref);
   const currentBranch = await currentLocalBranch("合并");
   if (!(await hasHeadCommit(currentRepo))) {
     throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能合并分支。请先创建首个提交后再合并。`);
@@ -4046,7 +4086,7 @@ async function ensureRemoteBranchRef(value) {
   if (ref.endsWith("/HEAD")) throw new Error("不能把远端 HEAD 设为 upstream");
   const branches = await readRemoteBranchNames();
   if (!branches.includes(ref)) throw new Error(`远端分支 ${ref} 不存在。请先抓取远端后再试。`);
-  splitRemoteBranchRef(ref, await readRemoteNames());
+  await ensureRemoteBranchStillExists(ref, splitRemoteBranchRef(ref, await readRemoteNames()));
   return ref;
 }
 
@@ -5954,12 +5994,28 @@ function remoteFailureMessage(text, context = {}) {
   if (lower.includes("ssl certificate")) {
     return `${remote} 的 HTTPS 证书校验失败。请检查系统时间、代理证书或公司网络的证书配置。`;
   }
+  const localPath = extractLocalRemoteErrorPath(text);
+  if (localPath) {
+    return `${remote} 指向的本地路径 ${localPath} 不存在或不是 Git 仓库。请确认这个文件夹仍然存在；如果是裸仓库，路径通常以 .git 结尾。`;
+  }
   if (lower.includes("could not read from remote repository")) {
     return `${remote} 无法读取。请确认远端 URL 正确、仓库存在，并且你拥有访问权限。`;
   }
   if (lower.includes("unable to access")) {
     return `${remote} 无法访问。请检查远端 URL、网络连接、代理设置和认证凭据。`;
   }
+  return "";
+}
+
+function extractLocalRemoteErrorPath(text) {
+  const value = String(text || "");
+  const match = value.match(/fatal:\s+['"]([^'"]+)['"]\s+does not appear to be a git repository/i);
+  const target = match?.[1]?.trim() || "";
+  if (!target) return "";
+  if (/^[A-Za-z]:[\\/]/.test(target)) return target;
+  if (/^(?:\\\\|\/\/)[^\\/]/.test(target)) return target;
+  if (/^(?:\.{1,2}[\\/]|[\\/])/.test(target)) return target;
+  if (!target.includes("://") && !/^[^@\s]+@[^:\s]+:.+/.test(target) && (/[\\/]/.test(target) || target.endsWith(".git"))) return target;
   return "";
 }
 

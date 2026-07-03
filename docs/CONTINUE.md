@@ -161,6 +161,8 @@
 - Merge mainline UI 验证：浏览器选择 merge commit `5b478cc` 后，提交详情“挑选 / 还原”按钮不再禁用，命令提示分别显示 `git cherry-pick -m` / `git revert -m`；点击“挑选”会弹出“挑选 merge 提交”主线弹窗，列出父提交 1、父提交 2 并默认选父提交 1。
 - 远端追踪 API 验证：在 GitTest 创建 `forkline/remote-workflow-20260612155930`，第一次通过 Forkline `push` 自动设置 upstream 为 `origin/forkline/remote-workflow-20260612155930`；再次空提交后 API 返回 `ahead = 1`；第二次 `push` 后远端更新成功。
 - 远端删除 API 验证：通过 Forkline `deleteRemoteBranch` 删除 `origin/forkline/remote-workflow-20260612155930`，远端分支列表已移除，保留的本地分支显示 `upstreamGone = true` / `[gone]`。
+- 远端删除过期列表 API 验证：临时服务 `http://127.0.0.1:5322` 打开 GitTest，创建并推送 `forkline/stale-remote-delete-20260703` 后手动删除裸远端真实分支，保留本地 `origin/forkline/stale-remote-delete-20260703` 过期引用。修复前 `deleteRemoteBranch` 返回错误且本地过期引用仍存在；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，并通过 `fetch --prune` 清理本地远端跟踪引用。临时本地分支和远端引用已清理。
+- 合并过期远端分支 API 验证：临时服务 `http://127.0.0.1:5325` 打开 GitTest，创建远端分支 `forkline/stale-remote-merge-20260703`，让它比 `123` 多一个空提交并抓取出 `origin/forkline/stale-remote-merge-20260703`，随后手动删除裸远端真实分支。修复前 `mergeRef` 会从过期 tracking 创建 merge commit；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，没有创建 merge commit，并自动 prune 过期远端跟踪引用。GitTest 已重置回 `4fbce18` 且工作区干净。
 - 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
 - 同步摘要 API 验证：浏览器服务 `http://127.0.0.1:5188` 打开 GitTest 后，验证 `fetch` 能显示“新增远端分支 origin/forkline/sync-fetch-*”；验证远端领先时 `fetch` 显示“落后 0 -> 1”，随后 `pull` 显示“落后 1 -> 0”；验证本地领先时 `push` 显示“领先 1 -> 0”；验证无 upstream 分支 `push` 会设置 upstream，并显示“跟踪变化：未设置 -> origin/...”。测试后 GitTest 已切回 `123` 且工作区干净。
 - 安全强推 API 验证：浏览器服务 `http://127.0.0.1:5190` 打开 GitTest 后，在 `forkline/lease-force-*` 分支验证改写历史后普通 `push` 返回非快进中文拒绝，`forcePushLease` 成功并显示“领先 1 -> 0，落后 1 -> 0”和“强制更新”；在 `forkline/lease-stale-*` 分支验证远端被其他克隆推进后 `forcePushLease` 被 `--force-with-lease` 拒绝并返回中文 stale 提示。
@@ -181,6 +183,11 @@
 - 远端仓库管理 UI 验证：浏览器服务 `http://127.0.0.1:5193` 打开 GitTest 的 `?tab=sync`，右侧同步页显示真实仓库 `origin` 的 fetch / push URL；249px 宽右侧内容无横向溢出，远端右键菜单显示“抓取此远端 / 修改 URL / 复制 fetch URL / 复制 push URL / 删除远端”，控制台无错误。
 - Upstream 管理 API 验证：浏览器服务 `http://127.0.0.1:5194` 打开 GitTest 后，在当前 `123` 分支调用 `setUpstream` 设置到 `origin/123`，API 返回 `sync.upstream = origin/123` 且领先/落后均为 0；随后调用 `unsetUpstream`，API 返回 upstream 为空。验证后 GitTest 已恢复为无 upstream、工作区干净。
 - Upstream 管理 UI 验证：浏览器打开 `http://127.0.0.1:5194/?tab=sync`，同步页“上游分支”下拉默认选中 `origin/123`，设置按钮可见，未设置 upstream 时取消按钮禁用；249px 右侧内容无横向溢出。远端分支 `origin/123` 右键菜单显示“设为当前分支 upstream git branch -u”，按钮启用，菜单无横向溢出，控制台无错误。
+- Upstream 过期列表 API 验证：临时服务 `http://127.0.0.1:5324` 打开 GitTest，创建远端分支 `forkline/stale-upstream-20260703` 并抓取出 `origin/forkline/stale-upstream-20260703` 后，手动删除裸远端真实分支。修复前 `setUpstream` 会把当前 `123` 分支 upstream 设置到这个已不存在的远端分支，并显示“本地与上游一致”；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，不会写入 upstream，并自动 prune 过期远端跟踪引用。
+- 远端分支签出跟踪 API 验证：临时服务 `http://127.0.0.1:5319` 打开 GitTest 后，先确认当前 `123` 分支没有 upstream；调用 `checkoutRemoteBranch` 签出 `origin/123` 时，修复前 API 返回成功但 `git rev-parse @{u}` 仍报没有 upstream。修复后同一操作返回“已设置 upstream：123 -> origin/123”，`git rev-parse @{u}` 返回 `origin/123`；验证后已取消 upstream，GitTest 恢复为 `123` 分支且工作区干净。
+- 远端分支签出过期列表 API 验证：临时服务 `http://127.0.0.1:5323` 打开 GitTest，创建远端分支 `forkline/stale-remote-checkout-20260703` 并抓取出 `origin/forkline/stale-remote-checkout-20260703` 后，手动删除裸远端真实分支。修复前 `checkoutRemoteBranch` 会从过期 tracking 创建本地分支并设置 upstream；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，没有创建本地分支，且自动 prune 掉过期远端跟踪引用。临时分支和远端引用已清理，GitTest 恢复为 `123` 分支且工作区干净。
+- 本地路径远端缺失提示 API 验证：临时服务 `http://127.0.0.1:5320` 打开 GitTest，确认 `origin` 指向的 `D:\桌面\GitTestRemote.git` 不存在；调用 `testRemote` 和 `fetchRemote` 时，修复前只提示“远端 origin 无法读取”，修复后直接提示“远端 origin 指向的本地路径 D:\桌面\GitTestRemote.git 不存在或不是 Git 仓库”。验证后已从 GitTest 重新创建 `D:\桌面\GitTestRemote.git` 裸仓库，`git ls-remote --heads origin` 可读取。
+- 相对本地路径远端缺失提示 API 验证：临时服务 `http://127.0.0.1:5321` 打开 GitTest 后，临时添加远端 `forkline-relative-missing -> MissingBare.git`。修复前 `testRemote` 对 `MissingBare.git` 仍只提示“远端无法读取”；修复后 `testRemote` 和 `fetchRemote` 均直接提示“远端 forkline-relative-missing 指向的本地路径 MissingBare.git 不存在或不是 Git 仓库”。验证后已删除该临时远端，GitTest 恢复为 `123` 分支且工作区干净。
 - 推送保护 API 验证：浏览器服务 `http://127.0.0.1:5195` 打开 GitTest 后，创建临时分叉分支 `forkline/push-guard-*`，让本地相对 upstream 同时 `ahead = 1`、`behind = 1`；调用 Forkline `push` 返回中文“推送被保护”，没有执行普通推送。临时本地分支、远端分支和 `C:\tmp` 临时克隆已清理。
 - 推送保护 UI 验证：在临时分叉分支 `forkline/push-guard-ui-*` 上打开 `http://127.0.0.1:5195/?tab=sync`，同步页显示“普通推送已保护”保护条，普通“推送”按钮禁用且 title 显示“本地领先 1，同时落后 1，普通推送已保护”，安全强推按钮保持可用；249px 右侧内容无横向溢出，控制台无错误。临时本地分支、远端分支和 `C:\tmp` 临时克隆已清理。
 - 变基拉取 API 验证：浏览器服务 `http://127.0.0.1:5196` 打开 GitTest 后，创建临时分叉分支 `forkline/pull-rebase-verify-20260612-01`，让本地相对 upstream 同时 `ahead = 1`、`behind = 1`；调用 Forkline `pullRebase` 后返回“变基拉取完成”，同步状态变为 `behind = 0`、`ahead = 1`，Git 日志顺序为本地重放提交 -> 远端提交 -> 基准提交。临时本地分支、远端分支和 `C:\\tmp` 临时克隆已清理。
@@ -224,7 +231,7 @@
 
 - 当前分支：`123`
 - 当前工作区：干净。
-- 本地远端：`origin -> D:\桌面\GitTestRemote.git`
+- 本地远端：`origin -> D:\桌面\GitTestRemote.git`，当前已重新创建为可访问裸仓库。
 - 上游丢失测试分支：`forkline/remote-workflow-20260612155930`，用于验证本地分支显示 `[gone]` / “上游丢失”。
 - 储藏：`Forkline 测试储藏：可应用/弹出/删除`
 - 测试分支：`forkline/merge-clean`、`forkline/merge-conflict`、`forkline/cherry-pick-ready`、`forkline/revert-reset-lab`，以及多组 `forkline/cherry-*`、`forkline/merge-*`、`forkline/mainline-*`、`forkline/ui-cherry-*`、`forkline/ui-merge-*`、`forkline/rebase-*`、`forkline/history-*`、`forkline/sync-*`、`forkline/sync-panel-*`、`forkline/lease-*` 临时验证分支。

@@ -2422,3 +2422,140 @@
 - `docs/CONTINUE.md`：记录创建 Tag 目标提交过期提示修正。
 - `progress.md`：追加本轮复现、修复、验证和清理记录。
 - 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复远端分支签出已有本地分支时不建立 upstream
+### What was done
+- 复现 `D:\桌面\GitTest` 当前 `123` 分支没有 upstream 时，通过 Forkline 签出 `origin/123` 返回成功，但本地分支仍未跟踪 `origin/123`。
+- `checkoutRemoteBranch` 现在在本地同名分支已存在且没有 upstream 时，会补执行 `git branch --set-upstream-to=<远端分支> <本地分支>`。
+- 如果本地同名分支已经跟踪其他 upstream，Forkline 不会静默覆盖，只会在结果中说明现有跟踪关系。
+
+### Testing
+- 临时服务 `http://127.0.0.1:5319` 打开 `D:\桌面\GitTest` 后，先确认 `git rev-parse --abbrev-ref --symbolic-full-name @{u}` 返回 `fatal: no upstream configured for branch '123'`。
+- 调用 `/api/action`：`checkoutRemoteBranch`、`ref = origin/123`、`mode = keep`，修复后返回“已从 origin/123 签出本地分支 123 / 已设置 upstream：123 -> origin/123”。
+- `git -C D:\桌面\GitTest rev-parse --abbrev-ref --symbolic-full-name @{u}` 返回 `origin/123`。
+- `node --check server.js` 通过。
+- 验证后已执行 `git -C D:\桌面\GitTest branch --unset-upstream 123`，测试仓库恢复为 `## 123`。
+
+### Notes
+- `server.js`：远端分支签出时为已存在且无 upstream 的本地同名分支补建跟踪关系。
+- `README.md`：补充远端签出已有本地同名分支时的 upstream 行为说明。
+- `docs/CONTINUE.md`：记录远端分支签出跟踪关系的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复本地路径远端缺失时的模糊错误提示
+### What was done
+- 复现 GitTest 的 `origin` 指向 `D:\桌面\GitTestRemote.git`，但该本地裸仓库不存在时，Forkline 的“诊断远端”和“抓取此远端”只提示“远端 origin 无法读取”。
+- 远端错误映射现在会从 Git 原始输出中识别本地路径，并直接提示该路径不存在或不是 Git 仓库。
+- README 和继续开发文档同步说明本地路径远端缺失时会显示具体路径；验证后重新创建了 `D:\桌面\GitTestRemote.git` 测试裸仓库。
+
+### Testing
+- `Test-Path -LiteralPath D:\桌面\GitTestRemote.git` 返回 `False`。
+- 临时服务 `http://127.0.0.1:5320` 打开 `D:\桌面\GitTest` 后，修复前调用 `testRemote origin` 和 `fetchRemote origin` 均返回“远端 origin 无法读取。请确认远端 URL 正确、仓库存在，并且你拥有访问权限。”。
+- 修复后重启同端口服务，再次调用 `testRemote origin` 和 `fetchRemote origin`，均返回“远端 origin 指向的本地路径 D:\桌面\GitTestRemote.git 不存在或不是 Git 仓库...”。
+- 执行 `git clone --bare D:\桌面\GitTest D:\桌面\GitTestRemote.git` 重建测试裸仓库；`git -C D:\桌面\GitTest ls-remote --heads origin` 可读取 `123`、`local`、`local_debug` 和 `main`。
+- `git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：远端错误提示新增本地路径远端缺失识别。
+- `README.md`：说明本地路径远端不存在或不是 Git 仓库时会直接显示路径。
+- `docs/CONTINUE.md`：记录本地路径远端缺失提示修复，并说明 GitTestRemote 已重建。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。测试裸仓库如需回滚到缺失状态，可删除 `D:\桌面\GitTestRemote.git`，但默认保留它以便后续远端功能验证。
+
+## 2026-07-03 - Task: 修复相对本地路径远端缺失时的模糊错误提示
+### What was done
+- 复现 GitTest 临时远端 `forkline-relative-missing -> MissingBare.git` 不存在时，Forkline 的“诊断远端”只提示“远端无法读取”，没有指出相对本地路径。
+- 本地路径远端识别现在覆盖 `MissingBare.git` 这类相对裸仓库路径，同时排除 URL 和 SSH scp 写法，避免误判远端仓库地址。
+- README 和继续开发文档同步说明相对本地路径远端缺失时也会显示具体路径。
+
+### Testing
+- 临时添加 `git -C D:\桌面\GitTest remote add forkline-relative-missing MissingBare.git`，并确认 `D:\桌面\GitTest\MissingBare.git` 不存在。
+- 临时服务 `http://127.0.0.1:5321` 打开 `D:\桌面\GitTest` 后，修复前调用 `testRemote forkline-relative-missing` 返回通用“远端无法读取”。
+- 修复后重启同端口服务，调用 `testRemote forkline-relative-missing` 和 `fetchRemote forkline-relative-missing`，均返回“远端 forkline-relative-missing 指向的本地路径 MissingBare.git 不存在或不是 Git 仓库...”。
+- 已删除临时远端；`git -C D:\桌面\GitTest remote -v` 只剩 `origin -> D:\桌面\GitTestRemote.git`，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：本地路径远端缺失识别补充相对 `.git` 路径。
+- `README.md`：补充 `MissingBare.git` 这类相对裸仓库路径也会直接显示。
+- `docs/CONTINUE.md`：记录相对本地路径远端缺失提示修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复删除已不存在远端分支后本地列表仍残留
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 删除该远端分支只返回错误“请先抓取远端刷新列表”，但没有实际刷新列表。
+- `deleteRemoteBranch` 现在识别 Git 返回的 `remote ref does not exist` / `unable to delete` 场景，把目标分支视为远端已不存在，并自动执行 `git fetch <remote> --prune` 清理本地过期跟踪引用。
+- README 和继续开发文档同步说明远端分支已被别人删除时会自动清理本地远端跟踪引用。
+
+### Testing
+- 在 GitTest 创建本地临时分支 `forkline/stale-remote-delete-20260703`，推送到 `origin`，并显式抓取到 `refs/remotes/origin/forkline/stale-remote-delete-20260703`。
+- 直接在 `D:\桌面\GitTestRemote.git` 执行 `update-ref -d refs/heads/forkline/stale-remote-delete-20260703`，制造真实远端分支不存在、本地远端跟踪引用仍存在的过期列表状态。
+- 临时服务 `http://127.0.0.1:5322` 打开 GitTest 后，修复前调用 `deleteRemoteBranch origin/forkline/stale-remote-delete-20260703` 返回错误，且 `git branch -r --list origin/forkline/stale-remote-delete-20260703` 仍能看到过期引用。
+- 修复后重启同端口服务，再次调用同一动作返回 200 “远端分支 ... 已不存在，已刷新远端分支列表”，输出包含 `fetch --prune` 删除该远端跟踪引用。
+- 已删除本地临时分支；`git -C D:\桌面\GitTest branch -r --list origin/forkline/stale-remote-delete-20260703` 和 `git -C D:\桌面\GitTest ls-remote --heads origin forkline/stale-remote-delete-20260703` 均无输出。
+
+### Notes
+- `server.js`：删除远端分支时对远端已不存在的分支自动执行 prune 并返回成功摘要。
+- `README.md`：说明删除远端分支遇到过期列表时会自动刷新本地远端跟踪引用。
+- `docs/CONTINUE.md`：记录远端删除过期列表的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复远端分支已不存在但仍可从过期列表签出
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 仍会从过期引用创建本地分支并设置 upstream。
+- `checkoutRemoteBranch` 现在在签出前使用 `git ls-remote --heads <remote> <branch>` 确认真正的远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝签出。
+- README 和继续开发文档同步说明过期远端分支不会再被签出为本地分支。
+
+### Testing
+- 在 GitTest 推送 `HEAD` 到远端分支 `forkline/stale-remote-checkout-20260703`，抓取出 `origin/forkline/stale-remote-checkout-20260703` 后，直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，制造过期远端分支列表。
+- 临时服务 `http://127.0.0.1:5323` 打开 GitTest 后，修复前调用 `checkoutRemoteBranch origin/forkline/stale-remote-checkout-20260703` 返回成功，并创建本地分支 `forkline/stale-remote-checkout-20260703`，upstream 指向已经不存在的远端跟踪分支。
+- 修复后删除误创建的本地分支、保留过期跟踪引用，重启同端口服务再次调用同一动作，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后确认当前分支仍为 `123`，没有创建本地 `forkline/stale-remote-checkout-20260703`，并且本地过期 `origin/forkline/stale-remote-checkout-20260703` 已被 prune 清理。
+
+### Notes
+- `server.js`：远端分支签出前增加真实远端分支存在性校验，过期时自动 prune 并拒绝签出。
+- `README.md`：补充远端分支已不存在但本地列表未刷新时会清理过期引用并拒绝签出。
+- `docs/CONTINUE.md`：记录远端分支签出过期列表的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复过期远端分支仍可设为 upstream
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 仍会把当前分支 upstream 设置到这个已不存在的远端分支，并显示“本地与上游一致”。
+- `setUpstream` 现在复用远端真实存在性校验；目标远端分支已不存在时会自动 `fetch --prune` 并拒绝写入 upstream。
+- README 和继续开发文档同步说明设置 upstream 前会确认远端分支仍存在。
+
+### Testing
+- 在 GitTest 推送 `HEAD` 到远端分支 `forkline/stale-upstream-20260703`，抓取出 `origin/forkline/stale-upstream-20260703` 后，直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，制造过期远端分支列表。
+- 临时服务 `http://127.0.0.1:5324` 打开 GitTest 后，修复前调用 `setUpstream origin/forkline/stale-upstream-20260703` 返回成功，并把 `123` 的 upstream 写成这个已不存在的远端分支。
+- 修复后先取消误写入的 upstream，保留过期跟踪引用，重启同端口服务再次调用同一动作，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后 `git -C D:\桌面\GitTest rev-parse --abbrev-ref --symbolic-full-name @{u}` 返回没有 upstream，`git branch -r --list origin/forkline/stale-upstream-20260703` 无输出，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：设置 upstream 前校验真实远端分支仍存在，过期时自动 prune 并拒绝写入配置。
+- `README.md`：补充设置 upstream 会拒绝过期远端分支。
+- `docs/CONTINUE.md`：记录 Upstream 过期列表的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复合并已不存在远端分支时误用过期 tracking
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 仍会把这个过期引用合并进当前分支，创建新的 merge commit。
+- `mergeRef` 现在在目标是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝合并。
+- README 和继续开发文档同步说明过期远端分支不会再被合并。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-merge-20260703`，添加一个空提交 `25321cd`，推送并抓取出 `origin/forkline/stale-remote-merge-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5325` 打开 GitTest 后，修复前调用 `mergeRef origin/forkline/stale-remote-merge-20260703` 返回成功，并创建 merge commit `6ca351e`。
+- 已用 `git reset --hard 4fbce18...` 将 GitTest 恢复到基准提交；修复后重启同端口服务再次调用同一动作，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后确认 `git log -1 --oneline --parents` 仍为 `4fbce18 cdd252a 修改2`，没有新 merge commit；本地过期 `origin/forkline/stale-remote-merge-20260703` 已被 prune，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：合并远端分支前校验真实远端分支仍存在，过期时自动 prune 并拒绝合并。
+- `README.md`：补充过期远端分支会拒绝合并。
+- `docs/CONTINUE.md`：记录合并过期远端分支的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
