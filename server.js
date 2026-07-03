@@ -1975,7 +1975,12 @@ async function rebaseOntoRef(body) {
 
 async function createTag(body) {
   const name = normalizeTagName(body.name);
-  const target = normalizeSha(body.target);
+  let target = "";
+  try {
+    target = await resolveCommit(body.target);
+  } catch {
+    throw new Error("Tag 目标提交不存在或不是有效提交。请刷新提交列表后重新选择。");
+  }
   const annotated = Boolean(body.annotated);
   const message = String(body.message || "").trim() || name;
   await git(currentRepo, ["check-ref-format", `refs/tags/${name}`]).catch(() => {
@@ -1998,12 +2003,16 @@ async function pushTag(body) {
   await ensureLocalTag(name);
   const remote = await defaultRemoteName(body.remote);
   const output = await git(currentRepo, ["push", remote, `refs/tags/${name}:refs/tags/${name}`], { timeout: 120000 });
+  if (output.toLowerCase().includes("everything up-to-date")) {
+    return commandResultWithSummary(`远端 ${remote} 已有相同 Tag ${name}，无需重复推送`, output);
+  }
   return commandResultWithSummary(`已推送 Tag ${name} 到 ${remote}`, output);
 }
 
 async function deleteRemoteTag(body) {
   const name = normalizeTagName(body.name);
   const remote = await defaultRemoteName(body.remote);
+  await ensureRemoteTag(remote, name);
   const output = await git(currentRepo, ["push", remote, `:refs/tags/${name}`], { timeout: 120000 });
   return commandResultWithSummary(`已删除远端 Tag ${name}`, output);
 }
@@ -2986,9 +2995,12 @@ async function resetToCommit(body) {
   const target = await resolveCommit(body.sha);
   const mode = normalizeResetMode(body.mode);
   const args = mode === "mixed" ? ["reset", target] : ["reset", `--${mode}`, target];
-  const recovery = await createRecoveryPoint(`reset-${mode}`);
+  const hasCurrentHead = await hasHeadCommit(currentRepo);
+  const recovery = hasCurrentHead ? await createRecoveryPoint(`reset-${mode}`) : null;
   await git(currentRepo, args, { timeout: 120000 });
-  return appendRecoveryLine({ ok: true, output: `已${resetModeLabel(mode)}到 ${target.slice(0, 7)}` }, recovery);
+  const output = [`已${resetModeLabel(mode)}到 ${target.slice(0, 7)}`];
+  if (!hasCurrentHead) output.push("当前分支原本还没有提交，无法创建重置前恢复点。");
+  return appendRecoveryLine({ ok: true, output: output.join("\n") }, recovery);
 }
 
 async function continueRevert() {
@@ -3689,10 +3701,13 @@ async function restoreRecoveryPoint(body) {
   await currentLocalBranch("恢复恢复点");
   await ensureCleanWorktree("恢复到恢复点前，请先提交、储藏或还原当前工作区改动。");
   const target = (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`])).trim();
-  const before = await createRecoveryPoint("restore-recovery");
+  const hasCurrentHead = await hasHeadCommit(currentRepo);
+  const before = hasCurrentHead ? await createRecoveryPoint("restore-recovery") : null;
   await git(currentRepo, ["reset", "--hard", target], { timeout: 120000 });
   const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
-  return appendRecoveryLine({ ok: true, output: `已恢复到 ${short}` }, before);
+  const output = [`已恢复到 ${short}`];
+  if (!hasCurrentHead) output.push("当前分支原本还没有提交，无法创建恢复前恢复点。");
+  return appendRecoveryLine({ ok: true, output: output.join("\n") }, before);
 }
 
 async function createRecoveryPointFromReflog(body) {
@@ -4644,6 +4659,11 @@ async function ensureLocalTag(name) {
   await git(currentRepo, ["rev-parse", "-q", "--verify", `refs/tags/${name}`], { timeout: 60000 }).catch(() => {
     throw new Error(`本地 Tag ${name} 不存在`);
   });
+}
+
+async function ensureRemoteTag(remote, name) {
+  const output = await git(currentRepo, ["ls-remote", "--tags", remote, `refs/tags/${name}`], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+  if (!output.trim()) throw new Error(`远端 Tag ${name} 不存在或已经被删除。请刷新 Tag 列表后重新选择。`);
 }
 
 function sameFsPath(left, right) {
@@ -5772,6 +5792,12 @@ function friendlyErrorMessage(error, context = {}) {
     if (isStashApplyAction(context.body?.action)) {
       return "应用储藏会覆盖当前工作区的本地修改。请先提交、储藏或丢弃这些本地修改后再恢复这条储藏；原储藏仍保留在列表中。";
     }
+    if (operationKind === "revert") {
+      return "还原提交会覆盖当前工作区的本地修改。请先提交、储藏或丢弃这些修改后再还原。";
+    }
+    if (operationKind === "cherryPick") {
+      return "挑选提交会覆盖当前工作区的本地修改。请先提交、储藏或丢弃这些修改后再挑选。";
+    }
     return "这个操作会覆盖本地修改。请先提交或储藏后再试；如果是切换分支，也可以使用“储藏并签出/强制签出”。";
   }
   if (lower.includes("is already checked out at")) {
@@ -5789,6 +5815,11 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("please commit your changes or stash them")) {
     return "当前有未提交修改。请先提交或储藏后再试。";
+  }
+  if (String(context.body?.action || "") === "pushTag" && lower.includes("tag") && lower.includes("already exists")) {
+    const remote = context.body?.remote ? `远端 ${context.body.remote} ` : "远端 ";
+    const name = context.body?.name ? ` ${context.body.name}` : "";
+    return `${remote}已经存在 Tag${name}，Git 已拒绝覆盖。请确认远端 Tag 是否要保留；如需改写，请先删除远端 Tag 后再推送，或换一个新的 Tag 名。`;
   }
   if (lower.includes("remote") && lower.includes("already exists")) {
     return "这个远端名已经存在。请换一个名称，或在同步页修改已有远端的 URL。";
@@ -5840,6 +5871,9 @@ function friendlyErrorMessage(error, context = {}) {
   }
   if (lower.includes("already exists") && lower.includes("branch")) {
     return "分支已存在，请换一个分支名。";
+  }
+  if ((lower.includes("branch") && lower.includes("not found")) || lower.includes("no branch named")) {
+    return "这个本地分支已经不存在，可能是分支列表还没有刷新。请刷新分支列表后重新选择。";
   }
   if (lower.includes("already exists") && lower.includes("tag")) {
     return "标签已存在，请换一个标签名。";
@@ -5900,7 +5934,8 @@ function remoteFailureMessage(text, context = {}) {
     lower.includes("ssl certificate") ||
     lower.includes("access denied");
   if (!isRemoteOperation && !hasRemoteSignal) return "";
-  const remote = action === "cloneRepository" ? "克隆源" : context.body?.name ? `远端 ${context.body.name}` : "远端";
+  const remoteName = context.body?.remote || context.body?.name;
+  const remote = action === "cloneRepository" ? "克隆源" : remoteName ? `远端 ${remoteName}` : "远端";
   if (lower.includes("permission denied (publickey)") || lower.includes("publickey")) {
     return `${remote} 的 SSH 认证失败。请确认 SSH key 已添加到 Git 托管平台，并且当前终端可以执行 ssh -T 对应主机；也可以在同步页把远端 URL 改成 HTTPS。`;
   }

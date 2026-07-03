@@ -2233,3 +2233,192 @@
 - `docs/CONTINUE.md`：记录无提交分支强制签出修复。
 - `progress.md`：追加本轮复现、修复、验证和清理记录。
 - 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；这些文件已有其他未提交改动，不要用整文件 checkout 回滚。提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支重置到提交时的英文错误
+### What was done
+- 复现当前分支还没有首个提交时，对历史提交执行硬重置会在创建恢复点阶段失败，并透出 `fatal: Needed a single revision`。
+- `resetToCommit` 现在只有在当前分支已有 `HEAD` 提交时才创建“重置前恢复点”；无提交分支会继续执行 reset，并在结果里说明本次没有可保存的旧 HEAD。
+- README 和继续开发文档同步说明无提交分支执行 reset 时不会创建重置前恢复点。
+
+### Testing
+- 先验证远端强制签出回归：在 `D:\桌面\GitTest` 临时无提交分支上模拟 `origin/forkline-remote-only-checkout-20260703`，调用 `/api/action checkoutRemoteBranch`，`mode = force` 返回 200 “已强制签出本地分支 forkline-remote-only-checkout-20260703”。
+- 在 `D:\桌面\GitTest` 临时无提交分支 `forkline/unborn-reset-20260703` 上复现：修复前调用 `/api/action resetToCommit`，`mode = hard` 返回 `fatal: Needed a single revision`。
+- 修复后重启临时服务 `http://127.0.0.1:5298`，同一 hard reset 请求返回 200 “已硬重置到 4fbce18 / 当前分支原本还没有提交，无法创建重置前恢复点。”。
+- 同一服务继续验证 `mode = mixed` 和 `mode = soft`，均返回 200，并显示对应的“无法创建重置前恢复点”中文说明。
+- `node --check server.js` 通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，删除本轮临时本地分支和临时远端跟踪引用；最终 `git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：无提交分支执行 reset 时跳过恢复点创建，避免依赖不存在的 `HEAD`。
+- `README.md`：说明无提交分支 reset 到已有提交会继续执行，但不会创建重置前恢复点。
+- `docs/CONTINUE.md`：记录无提交分支 reset 修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复无提交分支恢复到 Forkline 恢复点的英文错误
+### What was done
+- 复现当前分支还没有首个提交时，恢复到 Forkline 恢复点会在创建“恢复前恢复点”阶段失败，并透出 `fatal: Needed a single revision`。
+- `restoreRecoveryPoint` 现在只有在当前分支已有 `HEAD` 提交时才创建恢复前恢复点；无提交分支会继续执行 `reset --hard <恢复点提交>`，并在结果里说明本次没有可保存的旧 HEAD。
+- README 和继续开发文档同步说明无提交分支恢复到 Forkline 恢复点时不会创建恢复前恢复点。
+
+### Testing
+- 在 `D:\桌面\GitTest` 手动创建临时恢复点 `refs/forkline/recovery/20260703-122700/forkline_unborn-restore-20260703/manual`，指向 `123` 分支的 `4fbce18`。
+- 在临时无提交分支 `forkline/unborn-restore-20260703` 上复现：修复前调用 `/api/action restoreRecoveryPoint` 返回 `fatal: Needed a single revision`。
+- 修复后重启临时服务 `http://127.0.0.1:5302`，在无提交分支 `forkline/unborn-reflog-restore-20260703` 上调用同一恢复点，返回 200 “已恢复到 4fbce18 / 当前分支原本还没有提交，无法创建恢复前恢复点。”。
+- 探查引用日志恢复路径：无提交分支下 `git log -g ... HEAD` 返回 `fatal: ambiguous argument 'HEAD'`，Forkline 没有可选择的 HEAD reflog 记录，因此本轮未改 reflog 恢复逻辑。
+- `node --check server.js` 通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，删除本轮临时分支和临时恢复点 ref；最终 `git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：无提交分支恢复到 Forkline 恢复点时跳过恢复前恢复点创建，避免依赖不存在的 `HEAD`。
+- `README.md`：说明无提交分支恢复到 Forkline 恢复点时会继续恢复，但不会创建恢复前恢复点。
+- `docs/CONTINUE.md`：记录无提交分支恢复点恢复修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复还原和挑选覆盖本地修改时的误导提示
+### What was done
+- 复现工作区存在暂存修改时，`revertCommit` 被 Git 阻止后 Forkline 返回通用“切换分支可储藏并签出/强制签出”提示，和还原场景不匹配。
+- 错误提示映射现在会区分 `revertCommit` 和 `cherryPickCommit`：还原 / 挑选会覆盖本地修改时，分别提示先提交、储藏或丢弃当前修改后再还原 / 挑选。
+- README 和继续开发文档同步说明还原 / 挑选覆盖本地修改时的专用中文提示。
+
+### Testing
+- 在 `D:\桌面\GitTest` 临时分支 `forkline/dirty-revert-20260703` 上创建并暂存 `forkline-fixtures/dirty-revert-20260703.txt`。
+- 修复前调用 `/api/action revertCommit`，返回通用提示“这个操作会覆盖本地修改...如果是切换分支，也可以使用‘储藏并签出/强制签出’”。
+- 修复后重启临时服务 `http://127.0.0.1:5304`，同一还原请求返回“还原提交会覆盖当前工作区的本地修改。请先提交、储藏或丢弃这些修改后再还原。”。
+- 同一脏工作区下调用 `/api/action cherryPickCommit` 返回“挑选提交会覆盖当前工作区的本地修改。请先提交、储藏或丢弃这些修改后再挑选。”。
+- `node --check server.js` 通过。
+- 已切回 `D:\桌面\GitTest` 的 `123` 分支，删除本轮临时分支；最终 `git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：覆盖本地修改错误映射新增还原 / 挑选专用提示。
+- `README.md`：补充还原 / 挑选覆盖本地修改时会提示先处理当前工作区。
+- `docs/CONTINUE.md`：记录还原 / 挑选覆盖本地修改提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复本地分支列表过期时的英文错误
+### What was done
+- 复现当前前端分支列表已过期时，继续删除或重命名一个已经不存在的本地分支会透出 Git 英文错误。
+- 错误提示映射新增 `branch not found` / `no branch named` 场景，统一提示本地分支已经不存在，需要刷新分支列表后重新选择。
+- README 和继续开发文档同步说明删除 / 重命名过期分支时的中文刷新提示。
+
+### Testing
+- 临时服务 `http://127.0.0.1:5305` 打开 `D:\桌面\GitTest` 后，调用 `/api/action deleteBranch`，`branch = forkline/missing-stale-20260703`，修复前返回 `error: branch 'forkline/missing-stale-20260703' not found`。
+- 同一服务调用 `/api/action renameBranch`，`branch = forkline/missing-stale-20260703`，修复前返回 `fatal: no branch named 'forkline/missing-stale-20260703'`。
+- 修复后重启临时服务 `http://127.0.0.1:5306`，同样的删除和重命名请求都返回“这个本地分支已经不存在，可能是分支列表还没有刷新。请刷新分支列表后重新选择。”。
+- `node --check server.js` 通过。
+- 本轮没有创建或修改 GitTest 分支；最终 `git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：为已不存在本地分支的 Git 错误增加中文刷新提示。
+- `README.md`：说明外部删除分支后再删除 / 重命名会提示刷新分支列表。
+- `docs/CONTINUE.md`：记录本地分支列表过期提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复远端 Tag 失败提示误用 Tag 名
+### What was done
+- 排查 Tag 列表过期场景：删除不存在的本地 Tag 已有中文预检“本地 Tag ... 不存在”，无需修改。
+- 复现删除远端 Tag 时，如果远端仓库不可读，Forkline 会把 `body.name` 里的 Tag 名显示成远端名，提示“远端 <Tag名> 无法读取”。
+- 远端错误提示现在优先使用 `body.remote`，再回退到 `body.name`，避免 `deleteRemoteTag` / `pushTag` 这类请求把 Tag 名误当远端。
+- README 和继续开发文档同步说明远端 Tag 操作失败时会按实际远端名显示认证、路径或网络提示。
+
+### Testing
+- 临时服务 `http://127.0.0.1:5307` 打开 `D:\桌面\GitTest` 后，调用 `/api/action deleteTag`，`name = forkline-missing-tag-20260703`，确认已有中文“本地 Tag ... 不存在”。
+- 同一服务调用 `/api/action deleteRemoteTag`，`name = forkline-missing-remote-tag-20260703`、`remote = origin`；由于 GitTest 的 `origin` 路径当前不可读，修复前返回“远端 forkline-missing-remote-tag-20260703 无法读取”。
+- 通过原始 Git 命令确认失败原因是 `D:\桌面\GitTestRemote.git` 不可读，而不是 Tag 名本身。
+- 修复后重启临时服务 `http://127.0.0.1:5309`，同一请求返回“远端 origin 无法读取。请确认远端 URL 正确、仓库存在，并且你拥有访问权限。”。
+- `node --check server.js` 通过。
+- 本轮没有创建或修改 GitTest 分支 / Tag；最终 `git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：远端错误提示优先使用 `body.remote`，避免 Tag 名覆盖远端名。
+- `README.md`：补充远端 Tag 操作失败时按实际远端名显示提示。
+- `docs/CONTINUE.md`：记录远端 Tag 失败提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复删除不存在远端 Tag 误报成功
+### What was done
+- 复现远端可访问但目标 Tag 不存在时，Git 会返回成功并带 `deleting a non-existent ref` warning，Forkline 也误报“已删除远端 Tag”。
+- `deleteRemoteTag` 现在执行删除前先用 `git ls-remote --tags <远端> refs/tags/<Tag>` 确认远端 Tag 仍存在；不存在时返回中文“请刷新 Tag 列表后重新选择”。
+- 保留远端不可读时的原有远端错误提示；正常存在的远端 Tag 仍可删除成功。
+- README 和继续开发文档同步说明删除远端 Tag 会先确认远端仍存在该 Tag。
+
+### Testing
+- 在 `C:\tmp\forkline-remote-tag-missing-20260703.git` 创建临时 bare 远端，并临时添加到 `D:\桌面\GitTest`，远端名 `forkline-temp-tag-missing`。
+- 修复前通过 Forkline API 调用 `deleteRemoteTag` 删除不存在的 `forkline-missing-existing-remote-tag-20260703`，返回 200 “已删除远端 Tag...”，但 Git 输出包含 `remote: warning: deleting a non-existent ref`。
+- 修复后重启临时服务 `http://127.0.0.1:5311`，同一请求返回“远端 Tag ... 不存在或已经被删除。请刷新 Tag 列表后重新选择。”。
+- 正常路径验证：创建本地临时 Tag `forkline-temp-existing-remote-tag-20260703`，通过 Forkline `pushTag` 推送到临时远端，再通过 `deleteRemoteTag` 删除成功；`ls-remote --tags` 确认远端 Tag 不存在。
+- `node --check server.js` 通过。
+- 已删除本地临时 Tag、移除临时远端、删除 `C:\tmp` 临时 bare 仓库；最终 `git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，`remote -v` 只剩 `origin`。
+
+### Notes
+- `server.js`：删除远端 Tag 前新增远端 Tag 存在性预检，避免 Git warning 被误当成功。
+- `README.md`：说明删除远端 Tag 会先确认远端仍存在该 Tag。
+- `docs/CONTINUE.md`：记录删除不存在远端 Tag 误报成功的修复。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复推送同名远端 Tag 冲突的误导提示
+### What was done
+- 复现远端已有同名 Tag、但本地 Tag 指向另一个提交时，`pushTag` 被 Git 拒绝后 Forkline 误报“这个远端名已经存在”。
+- 错误提示映射现在会优先识别 `pushTag` 的 `tag already exists` 场景，明确说明远端已经存在同名 Tag，Git 拒绝覆盖。
+- README 和继续开发文档同步说明远端同名 Tag 冲突时，需要先确认是否删除远端 Tag 或改用新 Tag 名。
+
+### Testing
+- 在 `C:\tmp\forkline-remote-tag-exists-20260703.git` 创建临时 bare 远端，并临时添加到 `D:\桌面\GitTest`，远端名 `forkline-temp-tag-exists`。
+- 在 GitTest 创建本地 Tag `forkline-temp-existing-push-tag-20260703` 指向 `123`，通过 Forkline `pushTag` 推送到临时远端成功。
+- 将本地同名 Tag 改指向 `3a90fbb` 后再次调用 `pushTag`；修复前返回“这个远端名已经存在。请换一个名称，或在同步页修改已有远端的 URL。”。
+- 修复后重启临时服务 `http://127.0.0.1:5313`，同一请求返回“远端 forkline-temp-tag-exists 已经存在 Tag forkline-temp-existing-push-tag-20260703，Git 已拒绝覆盖...”。
+- `node --check server.js` 通过。
+- 已删除本地临时 Tag、移除临时远端、删除 `C:\tmp` 临时 bare 仓库；最终 `git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，`remote -v` 只剩 `origin`。
+
+### Notes
+- `server.js`：为 `pushTag` 的远端同名 Tag 冲突增加专用中文提示。
+- `README.md`：补充远端已有同名 Tag 且 Git 拒绝覆盖时的处理说明。
+- `docs/CONTINUE.md`：记录推送同名远端 Tag 冲突提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复重复推送相同远端 Tag 的误导提示
+### What was done
+- 复现远端已经存在完全相同的 Tag 时，重复执行 `pushTag` 返回 `Everything up-to-date`，但 Forkline 总结仍显示“已推送 Tag...”。
+- `pushTag` 现在识别 `Everything up-to-date` 输出，并总结为“远端 ... 已有相同 Tag ...，无需重复推送”。
+- README 和继续开发文档同步说明重复推送相同远端 Tag 时会提示无需重复推送。
+
+### Testing
+- 在 `C:\tmp\forkline-remote-tag-uptodate-20260703.git` 创建临时 bare 远端，并临时添加到 `D:\桌面\GitTest`，远端名 `forkline-temp-tag-uptodate`。
+- 在 GitTest 创建本地 Tag `forkline-temp-uptodate-tag-20260703` 指向 `123`，通过 Forkline `pushTag` 第一次推送到临时远端成功。
+- 第二次推送同一 Tag 时，修复前返回 200 “已推送 Tag ... / Everything up-to-date”。
+- 修复后重启临时服务 `http://127.0.0.1:5315`，同一请求返回 200 “远端 forkline-temp-tag-uptodate 已有相同 Tag forkline-temp-uptodate-tag-20260703，无需重复推送 / Everything up-to-date”。
+- `node --check server.js` 通过。
+- 已删除本地临时 Tag、移除临时远端、删除 `C:\tmp` 临时 bare 仓库；最终 `git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`，`remote -v` 只剩 `origin`。
+
+### Notes
+- `server.js`：`pushTag` 对 `Everything up-to-date` 使用无需重复推送的摘要。
+- `README.md`：说明远端已有完全相同 Tag 时不会误报新推送。
+- `docs/CONTINUE.md`：记录重复推送相同远端 Tag 的提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复创建 Tag 目标提交过期时的英文错误
+### What was done
+- 复现使用一个格式合法但仓库中不存在的提交 SHA 创建 Tag 时，Forkline 透出 Git 原始错误 `cannot update ref ... nonexistent object`。
+- `createTag` 现在先解析目标 SHA 是否是有效提交；目标不存在或不是提交对象时，返回中文“Tag 目标提交不存在或不是有效提交。请刷新提交列表后重新选择。”。
+- README 和继续开发文档同步说明创建 Tag 会先确认目标提交仍存在。
+
+### Testing
+- 临时服务 `http://127.0.0.1:5316` 打开 `D:\桌面\GitTest` 后，调用 `/api/action createTag`，`target = 0123456789abcdef0123456789abcdef01234567`；修复前返回 `fatal: cannot update ref ... nonexistent object ...`。
+- 修复后重启临时服务 `http://127.0.0.1:5317`，同一请求返回中文“Tag 目标提交不存在或不是有效提交。请刷新提交列表后重新选择。”。
+- 正常路径验证：使用真实提交 `4fbce18...` 创建临时 Tag `forkline-valid-target-tag-20260703` 成功。
+- `node --check server.js` 通过。
+- 已删除临时 Tag；最终 `git -C D:\桌面\GitTest tag --list "forkline-*-target-tag-20260703"` 无输出，`git -C D:\桌面\GitTest status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：创建 Tag 前使用提交解析校验目标 SHA，避免过期提交详情透出 Git 原始错误。
+- `README.md`：补充创建 Tag 会确认目标提交仍存在。
+- `docs/CONTINUE.md`：记录创建 Tag 目标提交过期提示修正。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
