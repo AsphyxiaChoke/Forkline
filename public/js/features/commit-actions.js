@@ -827,6 +827,7 @@ async function createTagFromForm(event) {
     toast("没有选中的提交");
     return;
   }
+  const repoPath = repoPathSnapshot();
   try {
     els.tagSubmit.disabled = true;
     const result = await api("/api/action", {
@@ -839,18 +840,19 @@ async function createTagFromForm(event) {
         message: els.tagMessageInput.value.trim(),
       }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已创建 Tag ${name}`);
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     closeTagModal();
     state.selectedTag = result.tag || name;
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     els.tagSubmit.disabled = false;

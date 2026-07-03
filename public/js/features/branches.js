@@ -265,21 +265,24 @@ function branchDeleteTitle(branch, options, blocked) {
 async function deleteBranch(branch, button) {
   if (!state.data || !branch) return;
   if (!confirm(`确认删除本地分支：${branch}？\n\n会使用安全删除；如果分支还没有合并，Git 会阻止删除。`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteBranch", branch }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除本地分支 ${branch}`);
+    const nextRef = state.selectedRef === branch ? state.data.repo.branch || "" : state.selectedRef;
+    const data = await loadStateForRepoPath(repoPath, nextRef);
+    if (!data) return;
     state.commitDetails.clear();
-    if (state.selectedRef === branch) state.selectedRef = state.data.repo.branch || "";
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = nextRef;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -290,20 +293,23 @@ async function deleteRemoteBranch(remoteRef) {
   if (!state.data || !remoteRef) return;
   const command = remoteDeleteCommand(remoteRef);
   if (!confirm(`确认删除远端分支：${remoteRef}？\n\n此操作会删除远端仓库中的分支，不会删除本地分支。\n命令：${command}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除远端分支 ${remoteRef}`);
+    const nextRef = state.selectedRef === remoteRef ? state.data.repo.branch || "" : state.selectedRef;
+    const data = await loadStateForRepoPath(repoPath, nextRef);
+    if (!data) return;
     state.commitDetails.clear();
-    if (state.selectedRef === remoteRef) state.selectedRef = state.data.repo.branch || "";
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = nextRef;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -318,19 +324,21 @@ async function cleanupStaleWorktree(branch, button, options = {}) {
   if (!state.data) return;
   const pathText = options.worktreePath ? `\n占用路径：${options.worktreePath}` : "";
   if (!state.data.repo.isSample && !confirm(`确认清理 ${branch} 的失效 worktree 记录？${pathText}\n\n这只清理 Git 的失效 worktree 元数据，不会删除当前工作区文件。`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "pruneWorktrees", branch }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已清理失效 worktree 记录");
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -409,6 +417,9 @@ function closeBranchModal() {
   els.branchModal.classList.remove("show");
   els.branchModal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
+  state.branchStartSha = "";
+  state.branchRenameOld = "";
+  state.branchModalMode = "create";
 }
 
 async function submitBranchForm(event) {
@@ -426,25 +437,28 @@ async function submitBranchForm(event) {
   }
   const checkout = els.branchCheckoutToggle.checked;
   const submit = els.branchForm.querySelector('button[type="submit"]');
+  const repoPath = repoPathSnapshot();
   try {
     submit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已创建分支 ${branch}`);
+    const nextRef = result.checkedOut ? branch : state.selectedRef;
+    const data = await loadStateForRepoPath(repoPath, nextRef);
+    if (!data) return;
     closeBranchModal();
     state.commitDetails.clear();
-    state.selectedRef = result.checkedOut ? branch : state.selectedRef;
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = nextRef;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     submit.disabled = false;
@@ -459,24 +473,27 @@ async function renameBranchFromForm(nextBranch) {
     return;
   }
   const submit = els.branchSubmit;
+  const repoPath = repoPathSnapshot();
   try {
     submit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "renameBranch", branch: oldBranch, newBranch: nextBranch }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已重命名为 ${nextBranch}`);
+    const nextRef = state.selectedRef === oldBranch || state.data.repo.branch === oldBranch ? nextBranch : state.selectedRef;
+    const data = await loadStateForRepoPath(repoPath, nextRef);
+    if (!data) return;
     closeBranchModal();
     state.commitDetails.clear();
-    if (state.selectedRef === oldBranch || state.data.repo.branch === oldBranch) state.selectedRef = nextBranch;
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = nextRef;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     submit.disabled = false;

@@ -178,16 +178,18 @@ async function runBranchCleanupAction(action, button) {
 async function refreshBranchCleanup(button) {
   if (!state.data) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const requestedRef = state.selectedRef;
     const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-    if (state.selectedRef !== requestedRef) return;
+    if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     renderInspector();
     toast("分支整理已刷新");
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -208,23 +210,26 @@ async function deleteMergedCleanupBranches(button) {
   const suffix = branches.length > 8 ? `\n... 还有 ${branches.length - 8} 个` : "";
   if (!confirm(`确认安全删除这些已合并分支？\n\n${preview}${suffix}\n\n命令：git branch -d <分支>\n如果 Git 判断未完全合并，会自动阻止。`)) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "deleteBranches", branches }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除 ${branches.length} 个分支`);
+    const nextRef = branches.includes(state.selectedRef) ? state.data.repo.branch || "" : state.selectedRef;
+    const data = await loadStateForRepoPath(repoPath, nextRef);
+    if (!data) return;
     state.commitDetails.clear();
-    if (branches.includes(state.selectedRef)) state.selectedRef = state.data.repo.branch || "";
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.selectedRef = nextRef;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -395,17 +400,22 @@ async function submitWorktreeForm(form) {
   if (!state.data.repo.isSample && !confirm(`确认创建工作树？\n\n位置：${targetPath}\n起点：${ref}${branch ? `\n新分支：${branch}` : ""}\n命令：${command}`)) return;
   const submit = form.querySelector('button[type="submit"]');
   if (submit) submit.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已创建工作树");
+    const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
     state.commitDetails.clear();
-    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (submit) submit.disabled = false;
@@ -435,15 +445,17 @@ async function runWorktreeAction(action, button) {
 
 async function refreshWorktreeDashboard(button) {
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const requestedRef = state.selectedRef;
     const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-    if (state.selectedRef !== requestedRef) return;
+    if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     toast("工作树列表已刷新");
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -467,6 +479,7 @@ async function openWorktreePath(worktreePath, button) {
     renderAll();
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);
+      if (state.data?.repo?.path !== result.state?.repo?.path) return;
       renderInspector();
     }
   } catch (error) {
@@ -479,16 +492,21 @@ async function openWorktreePath(worktreePath, button) {
 async function pruneWorktreeRecords(button) {
   if (!state.data?.repo?.isSample && !confirm("确认清理失效工作树记录？\n\n命令：git worktree prune --verbose\n这只清理 Git 中已经失效的 worktree 元数据，不会删除仍存在的工作区文件。")) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "pruneAllWorktrees" }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已清理失效工作树记录");
-    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -602,13 +620,18 @@ async function runSubmoduleAction(action, button) {
   const message = submoduleConfirmMessage(action, submodulePath);
   if (!state.data.repo.isSample && !confirm(message)) return;
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "子模块操作完成");
-    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -632,15 +655,17 @@ function submoduleConfirmMessage(action, submodulePath) {
 
 async function refreshSubmodules(button) {
   if (button) button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const requestedRef = state.selectedRef;
     const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-    if (state.selectedRef !== requestedRef) return;
+    if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     toast("子模块列表已刷新");
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;

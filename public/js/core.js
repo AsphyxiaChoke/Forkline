@@ -76,6 +76,19 @@ function isCurrentRepoPath(repoPath) {
   return repoPathSnapshot() === repoPath;
 }
 
+async function loadStateForRepoPath(repoPath, ref = state.selectedRef) {
+  const data = await api(`/api/state?ref=${encodeURIComponent(ref)}`);
+  if (!isCurrentRepoPath(repoPath)) return null;
+  return data;
+}
+
+async function renderSelectedCommitForRepoPath(repoPath) {
+  if (!state.selectedSha || !isCurrentRepoPath(repoPath)) return;
+  await loadCommit(state.selectedSha);
+  if (!isCurrentRepoPath(repoPath)) return;
+  renderInspector();
+}
+
 const graphWidth = 176;
 const laneX = [28, 54, 80, 106, 132, 154, 166];
 const rowH = 62;

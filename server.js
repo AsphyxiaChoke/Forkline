@@ -121,25 +121,26 @@ async function readBranchDisplayName(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
+  const repoPath = currentRepo;
   const selectedRef = String(ref || "").trim();
-  await ensureLiveRemoteBranchRef(selectedRef);
+  await ensureLiveRemoteBranchRef(selectedRef, repoPath);
   const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
-    readBranchDisplayName(currentRepo),
-    git(currentRepo, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
-    git(currentRepo, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
-    git(currentRepo, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
-    git(currentRepo, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
-    git(currentRepo, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => ""),
-    git(currentRepo, ["remote"]).catch(() => ""),
-    git(currentRepo, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
-    git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => ""),
-    git(currentRepo, submoduleConfigArgs()).catch(() => ""),
-    git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => ""),
-    git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
-    git(currentRepo, ["stash", "list", "--format=%gd%x00%gs%x00%cr"]).catch(() => ""),
-    git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
-    readReflogOutput().catch(() => ""),
-    git(currentRepo, logArgs(selectedRef)).catch(() => ""),
+    readBranchDisplayName(repoPath),
+    git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
+    git(repoPath, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
+    git(repoPath, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
+    git(repoPath, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
+    git(repoPath, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => ""),
+    git(repoPath, ["remote"]).catch(() => ""),
+    git(repoPath, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
+    git(repoPath, ["worktree", "list", "--porcelain"]).catch(() => ""),
+    git(repoPath, submoduleConfigArgs()).catch(() => ""),
+    git(repoPath, ["submodule", "status", "--recursive"]).catch(() => ""),
+    git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+    git(repoPath, ["stash", "list", "--format=%gd%x00%gs%x00%cr"]).catch(() => ""),
+    git(repoPath, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
+    readReflogOutput(80, repoPath).catch(() => ""),
+    git(repoPath, logArgs(selectedRef)).catch(() => ""),
   ]);
 
   const branches = [];
@@ -169,9 +170,9 @@ async function readState(ref = "") {
     branches.unshift(currentBranch);
   }
 
-  const worktrees = await enrichWorktreeList(parseWorktreeList(worktreeOutput, currentRepo));
-  const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, currentRepo));
-  const submodules = await enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput));
+  const worktrees = await enrichWorktreeList(parseWorktreeList(worktreeOutput, repoPath));
+  const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), parseWorktreeBranches(worktreeOutput, repoPath));
+  const submodules = await enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput), repoPath);
   const branchCleanup = buildBranchCleanup({
     branches,
     branchInfo,
@@ -179,16 +180,16 @@ async function readState(ref = "") {
     mergedBranches: parseSimpleLines(mergedBranchOutput),
     currentBranch,
   });
-  const sync = await readCurrentSyncDetails();
+  const sync = await readCurrentSyncDetails(repoPath);
   return {
     repo: {
-      name: path.basename(currentRepo),
-      path: currentRepo,
+      name: path.basename(repoPath),
+      path: repoPath,
       branch: branch.trim() || "detached HEAD",
       headSha: headShaOutput.trim(),
       selectedRef,
       isSample: false,
-      operation: detectRepoOperation(currentRepo),
+      operation: detectRepoOperation(repoPath),
       remoteNames,
     },
     branches,
@@ -216,22 +217,23 @@ async function readRefState(ref = "") {
     if (ref) sample.commits = sampleBranchCommits(sample, ref);
     return { repo: sample.repo, commits: sample.commits };
   }
+  const repoPath = currentRepo;
   const selectedRef = String(ref || "").trim();
-  await ensureLiveRemoteBranchRef(selectedRef);
+  await ensureLiveRemoteBranchRef(selectedRef, repoPath);
   const [branch, headShaOutput, logOutput] = await Promise.all([
-    readBranchDisplayName(currentRepo),
-    git(currentRepo, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
-    git(currentRepo, logArgs(selectedRef)).catch(() => ""),
+    readBranchDisplayName(repoPath),
+    git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
+    git(repoPath, logArgs(selectedRef)).catch(() => ""),
   ]);
   return {
     repo: {
-      name: path.basename(currentRepo),
-      path: currentRepo,
+      name: path.basename(repoPath),
+      path: repoPath,
       branch: branch.trim() || "detached HEAD",
       headSha: headShaOutput.trim(),
       selectedRef,
       isSample: false,
-      operation: detectRepoOperation(currentRepo),
+      operation: detectRepoOperation(repoPath),
     },
     commits: parseLog(logOutput),
   };
@@ -832,8 +834,9 @@ async function readWorktree() {
   if (!currentRepo) {
     return { workingFiles: sampleState().workingFiles, operation: null };
   }
-  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
-  return { workingFiles: parseStatus(statusOutput), operation: detectRepoOperation(currentRepo) };
+  const repoPath = currentRepo;
+  const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  return { workingFiles: parseStatus(statusOutput), operation: detectRepoOperation(repoPath) };
 }
 
 async function readWorkingDiff(filePath, rawScope = "auto") {
@@ -1430,19 +1433,19 @@ async function checkoutRemoteBranch(body) {
   return { ok: true, branch: localBranch, remote: remoteRef, output: [`已从 ${remoteRef} 签出本地分支 ${localBranch}`, trackingOutput].filter(Boolean).join("\n") };
 }
 
-async function ensureRemoteBranchStillExists(remoteRef, parsed = null) {
-  const { remote, branch } = parsed || splitRemoteBranchRef(remoteRef, await readRemoteNames());
-  const output = await git(currentRepo, ["ls-remote", "--heads", remote, branch], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+async function ensureRemoteBranchStillExists(remoteRef, parsed = null, repoPath = currentRepo) {
+  const { remote, branch } = parsed || splitRemoteBranchRef(remoteRef, await readRemoteNames(repoPath));
+  const output = await git(repoPath, ["ls-remote", "--heads", remote, branch], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
   if (String(output || "").trim()) return;
-  await git(currentRepo, ["fetch", remote, "--prune"], { timeout: 120000 }).catch(() => "");
+  await git(repoPath, ["fetch", remote, "--prune"], { timeout: 120000 }).catch(() => "");
   throw new Error(`远端分支 ${remoteRef} 已不存在，已刷新远端分支列表。请刷新后重新选择。`);
 }
 
-async function ensureLiveRemoteBranchRef(ref) {
+async function ensureLiveRemoteBranchRef(ref, repoPath = currentRepo) {
   if (!String(ref || "").trim()) return;
-  const remoteNames = await readRemoteNames();
+  const remoteNames = await readRemoteNames(repoPath);
   if (!isKnownRemoteBranch(ref, remoteNames)) return;
-  await ensureRemoteBranchStillExists(ref, splitRemoteBranchRef(ref, remoteNames));
+  await ensureRemoteBranchStillExists(ref, splitRemoteBranchRef(ref, remoteNames), repoPath);
 }
 
 async function ensureRemoteCheckoutTracking(localBranch, remoteRef) {
@@ -3711,8 +3714,8 @@ function normalizeRemoteCheckoutBranch(remoteRef, remoteNames = []) {
   return splitRemoteBranchRef(remoteRef, remoteNames).branch;
 }
 
-async function readRemoteNames() {
-  return parseRemoteNames(await git(currentRepo, ["remote"]).catch(() => ""));
+async function readRemoteNames(repoPath = currentRepo) {
+  return parseRemoteNames(await git(repoPath, ["remote"]).catch(() => ""));
 }
 
 async function ensureRemoteName(value) {
@@ -3868,9 +3871,9 @@ async function readRecoveryPointsFromGit() {
   return parseRecoveryPoints(output);
 }
 
-function readReflogOutput(maxCount = 80) {
+function readReflogOutput(maxCount = 80, repoPath = currentRepo) {
   const count = Math.max(1, Math.min(Number.parseInt(String(maxCount || 80), 10) || 80, 200));
-  return git(currentRepo, [
+  return git(repoPath, [
     "log",
     "-g",
     `--max-count=${count}`,
@@ -4118,9 +4121,9 @@ function recoveryActionLabel(action) {
   return labels[action] || "危险操作前";
 }
 
-async function readRemoteBranchNames() {
-  const remoteNames = await readRemoteNames();
-  const output = await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]).catch(() => "");
+async function readRemoteBranchNames(repoPath = currentRepo) {
+  const remoteNames = await readRemoteNames(repoPath);
+  const output = await git(repoPath, ["branch", "--remotes", "--format=%(refname:short)"]).catch(() => "");
   return String(output || "")
     .split(/\r?\n/)
     .map((item) => item.trim())
@@ -4136,8 +4139,8 @@ async function ensureRemoteBranchRef(value) {
   return ref;
 }
 
-async function readRemoteDetails() {
-  const [names, verboseOutput] = await Promise.all([readRemoteNames(), git(currentRepo, ["remote", "-v"]).catch(() => "")]);
+async function readRemoteDetails(repoPath = currentRepo) {
+  const [names, verboseOutput] = await Promise.all([readRemoteNames(repoPath), git(repoPath, ["remote", "-v"]).catch(() => "")]);
   return parseRemoteDetails(verboseOutput, names);
 }
 
@@ -4424,10 +4427,10 @@ function parseSubmoduleStatusLine(line, configuredPaths = []) {
   return { sha, path: subPath, summary, status };
 }
 
-async function enrichSubmodules(submodules) {
+async function enrichSubmodules(submodules, repoPath = currentRepo) {
   return Promise.all((submodules || []).map(async (item) => {
-    const absolutePath = path.resolve(currentRepo, item.path);
-    if (!isPathInside(currentRepo, absolutePath) && !sameFsPath(currentRepo, absolutePath)) return item;
+    const absolutePath = path.resolve(repoPath, item.path);
+    if (!isPathInside(repoPath, absolutePath) && !sameFsPath(repoPath, absolutePath)) return item;
     const exists = fs.existsSync(absolutePath);
     if (!exists || item.status === "uninitialized") return { ...item, exists, initialized: false };
     const [statusOutput, branchOutput, headOutput] = await Promise.all([
@@ -4804,25 +4807,25 @@ function commandResultWithSummary(summary, output) {
   return { ok: true, output: detail ? `${summary}\n${detail}` : summary };
 }
 
-async function readCurrentSyncState() {
-  const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+async function readCurrentSyncState(repoPath = currentRepo) {
+  const branch = (await readBranchDisplayName(repoPath).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
     return { branch: "HEAD", detached: true, unborn: false, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
-  const upstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
-  const hasCommit = await hasHeadCommit(currentRepo);
+  const upstream = (await git(repoPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+  const hasCommit = await hasHeadCommit(repoPath);
   if (!hasCommit) {
-    const upstreamSha = upstream ? (await git(currentRepo, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim() : "";
+    const upstreamSha = upstream ? (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim() : "";
     return { branch, detached: false, unborn: true, upstream, upstreamGone: Boolean(upstream && !upstreamSha), ahead: 0, behind: 0 };
   }
   if (!upstream) {
     return { branch, detached: false, unborn: false, upstream: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
-  const upstreamSha = (await git(currentRepo, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
+  const upstreamSha = (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
   if (!upstreamSha) {
     return { branch, detached: false, unborn: false, upstream, upstreamGone: true, ahead: 0, behind: 0 };
   }
-  const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${upstream}...HEAD`]).catch(() => "0\t0")).trim().split(/\s+/);
+  const counts = (await git(repoPath, ["rev-list", "--left-right", "--count", `${upstream}...HEAD`]).catch(() => "0\t0")).trim().split(/\s+/);
   return {
     branch,
     detached: false,
@@ -5097,8 +5100,8 @@ function parseLog(output) {
   return commits;
 }
 
-async function readCurrentSyncDetails() {
-  const [state, remotes] = await Promise.all([readCurrentSyncState(), readRemoteDetails()]);
+async function readCurrentSyncDetails(repoPath = currentRepo) {
+  const [state, remotes] = await Promise.all([readCurrentSyncState(repoPath), readRemoteDetails(repoPath)]);
   const auth = await readAuthDiagnostics(remotes).catch((error) => ({
     summary: "认证助手读取失败",
     level: "warn",
@@ -5124,8 +5127,8 @@ async function readCurrentSyncDetails() {
   };
   if (state.detached || !state.upstream || state.upstreamGone) return details;
   const [incomingOutput, outgoingOutput] = await Promise.all([
-    state.behind ? git(currentRepo, syncLogArgs(`HEAD..${state.upstream}`)).catch(() => "") : "",
-    state.ahead ? git(currentRepo, syncLogArgs(`${state.upstream}..HEAD`)).catch(() => "") : "",
+    state.behind ? git(repoPath, syncLogArgs(`HEAD..${state.upstream}`)).catch(() => "") : "",
+    state.ahead ? git(repoPath, syncLogArgs(`${state.upstream}..HEAD`)).catch(() => "") : "",
   ]);
   details.incoming = parseSyncCommits(incomingOutput);
   details.outgoing = parseSyncCommits(outgoingOutput);

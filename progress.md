@@ -2949,3 +2949,68 @@
 - `docs/CONTINUE.md`：记录旧恢复点/引用日志动作刷新响应的丢弃行为。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前仅反向删除本轮在 `public/js/panels/recovery-settings.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧分支、Tag、worktree、子模块和补丁动作覆盖新仓库
+### What was done
+- 复现分支切换动作完成后，如果用户已经打开另一个仓库，旧动作随后读取的 `/api/state` 会把页面切回旧仓库状态。
+- 分支切换、远端分支签出、合并、变基、创建储藏、恢复签出储藏和修改提交信息现在会记录发起时的仓库路径；动作结果、错误提示、提交详情加载和状态写回前都会确认仍在同一仓库。
+- 本地/远端分支删除、批量删除已合并分支、创建/重命名分支、清理 worktree、创建 worktree、子模块操作、Tag 推送/删除和应用补丁也加上同样保护。
+- 右侧分支整理、工作树和子模块刷新现在同时校验仓库路径和选中引用，避免同名分支下旧仓库刷新覆盖新仓库页面。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `old-repo` 执行 `checkoutBranch("feature")`，随后当前状态切到 `repo-B`；旧 `/api/state` 返回后，最终页面仓库变回 `repo-A/feature`。
+- 修复后复跑同一 harness，最终仍保持 `repo-B/dev`，旧状态没有覆盖 `state.data`、`selectedRef` 或 `selectedSha`。
+- 另用同类 harness 验证 `deleteBranch("feature")` 和 `runTagAction("deleteRemote", "v1")`，旧动作返回后仍保持 `repo-B/dev`，Tag 选择保持新仓库的 `v2`。
+- `node --check public/js/core.js`、`node --check public/js/features/git-actions.js`、`node --check public/js/features/branches.js`、`node --check public/js/panels/workspaces.js`、`node --check public/js/panels/recovery-settings.js` 和 `node --check public/js/features/repositories.js` 均通过；`git diff --check` 通过；`D:\桌面\GitTest` 保持 `123` 分支且工作区干净。
+
+### Notes
+- `public/js/core.js`：新增按仓库路径加载状态和渲染选中提交的共享 helper。
+- `public/js/features/git-actions.js`：为分支切换、合并/变基、储藏恢复、创建储藏、提交信息填充和修改提交信息加仓库路径校验。
+- `public/js/features/branches.js`：为分支创建、重命名、本地/远端删除和清理失效 worktree 记录加仓库路径校验。
+- `public/js/panels/workspaces.js`：为分支整理刷新、批量删分支、worktree 和子模块动作加仓库路径校验。
+- `public/js/panels/recovery-settings.js`：为 Tag 推送/删除动作加仓库路径校验。
+- `public/js/features/repositories.js`：为应用补丁后的状态刷新加仓库路径校验。
+- `README.md`：补充切换仓库期间旧分支/Tag/worktree/子模块/补丁动作不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录本轮旧仓库响应丢弃范围。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在上述文件和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧创建弹窗和右键菜单上下文残留
+### What was done
+- 复现创建 Tag 动作完成后，如果用户已经打开另一个仓库，旧动作的状态刷新会把页面拉回旧仓库，甚至出现旧仓库路径搭配新仓库提交 SHA 的错位状态。
+- 复现打开新仓库后，旧仓库分支创建弹窗、Tag 创建弹窗保存的旧提交 SHA 和旧分支名仍留在状态里，用户继续提交时可能把旧目标带到新仓库。
+- 创建 Tag 现在使用仓库路径快照，旧动作返回、旧错误和旧状态刷新不会覆盖新仓库页面。
+- 打开新仓库时会清空分支创建/重命名、Tag 创建、merge 提交主线选择弹窗，以及提交、分支、文件、Tag、远端和 reflog 右键菜单上下文。
+
+### Testing
+- 修复前用前端函数 harness 模拟 `repo-A` 执行 `createTagFromForm()`，随后当前状态切到 `repo-B`；旧 `/api/state` 返回后，页面仓库变回 `repo-A`，但 `selectedSha` 保留 `repo-B` 的 `new-b`。
+- 修复后复跑同一 harness，最终保持 `repo-B/dev`，`selectedTag` 没有被旧 Tag 写入。
+- 打开仓库状态清理 harness 验证：`tagTargetSha`、`branchStartSha`、`branchRenameOld`、`mainlineAction`、`mainlineCommitSha` 和全部右键菜单上下文都会清空，分支/Tag/mainline 弹窗和右键菜单会关闭。
+- `node --check public/js/features/commit-actions.js`、`node --check public/js/features/repositories.js` 和 `node --check public/js/features/branches.js` 均通过。
+
+### Notes
+- `public/js/features/commit-actions.js`：创建 Tag 后刷新状态前校验当前仓库路径。
+- `public/js/features/repositories.js`：打开新仓库时清空旧仓库弹窗状态和右键菜单上下文。
+- `public/js/features/branches.js`：关闭分支弹窗时同步清空分支弹窗状态。
+- `README.md`：补充打开新仓库会清空旧仓库弹窗和右键菜单上下文。
+- `docs/CONTINUE.md`：记录切仓库时旧上下文清理行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前仅反向删除本轮在上述文件和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时后端状态读取混入两个仓库
+### What was done
+- 复现 `/api/state` 读取过程中如果用户切到另一个仓库，后端前半段 Git 输出来自旧仓库，后半段仓库路径、同步状态和子模块补充信息可能来自新仓库。
+- 全量状态、轻量引用状态和工作区状态读取现在会在请求开始时保存仓库路径，后续 Git 命令、远端校验、引用日志、子模块补充和同步详情都使用同一个路径。
+- 远端分支、远端详情、reflog、子模块和同步状态等读取 helper 增加仓库路径参数，避免内部再次读取已变化的全局仓库路径。
+
+### Testing
+- 最小后端模型复现旧行为：请求从 `repo-A` 开始后切到 `repo-B`，旧结果会返回 `repo.path = repo-B`，但分支输出仍是 `repo-A:branches`。
+- 修复后复跑同一模型，结果保持 `repo.path = repo-A`、分支输出为 `repo-A:branches`、同步状态也来自 `repo-A`。
+- `node --check server.js` 通过。
+
+### Notes
+- `server.js`：状态读取链路改为使用请求发起时的仓库路径快照。
+- `README.md`：补充后端状态读取不会混入两个仓库的数据。
+- `docs/CONTINUE.md`：记录后端状态读取的仓库快照行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块的改动；提交后可用 `git revert <本次提交>` 回滚。

@@ -922,22 +922,26 @@ async function runTagAction(action, tagName, button) {
     deleteLocal: "deleteTag",
     deleteRemote: "deleteRemoteTag",
   };
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: actionMap[action], name: tag.name }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "Tag 操作完成");
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     if (!state.data.tags?.some((item) => item.name === state.selectedTag)) {
       state.selectedTag = state.data.tags?.[0]?.name || "";
     }
     renderAll();
     if (state.selectedSha && state.selectedTab !== "tags") {
-      await loadCommit(state.selectedSha);
-      renderInspector();
+      await renderSelectedCommitForRepoPath(repoPath);
     }
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;

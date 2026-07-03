@@ -238,19 +238,24 @@ async function submitPatchForm(event) {
   }
   const command = stage ? "git apply --index" : "git apply";
   if (!confirm(`确认应用补丁？\n\n命令：${command}\n${stage ? "补丁会应用并进入暂存区。" : "补丁会应用到工作区，不会自动暂存。"}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     els.patchSubmit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "applyPatch", patch, stage }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     closePatchModal();
     toast(result.output || "补丁已应用");
+    const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
     state.commitDetails.clear();
-    state.data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     els.patchSubmit.disabled = false;
@@ -300,6 +305,7 @@ async function submitInitForm(event) {
 
 async function applyOpenedRepoData(data, requestId = 0) {
   if (requestId && requestId !== state.openRepoRequestId) return false;
+  clearRepoScopedActionState();
   state.commitDetails.clear();
   state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
   state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
@@ -323,6 +329,34 @@ async function applyOpenedRepoData(data, requestId = 0) {
     renderInspector();
   }
   return true;
+}
+
+function clearRepoScopedActionState() {
+  state.branchStartSha = "";
+  state.branchRenameOld = "";
+  state.branchModalMode = "create";
+  state.tagTargetSha = "";
+  state.mainlineAction = "";
+  state.mainlineCommitSha = "";
+  state.contextCommitSha = "";
+  state.contextBranch = null;
+  state.contextFile = null;
+  state.contextTag = null;
+  state.contextRemote = null;
+  state.contextReflogEntry = null;
+  let closedModal = false;
+  for (const modal of [els.branchModal, els.tagModal, els.mainlineModal]) {
+    if (!modal) continue;
+    if (modal.classList?.contains?.("show")) closedModal = true;
+    modal.classList?.remove?.("show");
+    modal.setAttribute?.("aria-hidden", "true");
+  }
+  if (els.mainlineOptions) els.mainlineOptions.innerHTML = "";
+  for (const menu of [els.commitContextMenu, els.branchContextMenu, els.fileContextMenu, els.tagContextMenu, els.remoteContextMenu, els.reflogContextMenu]) {
+    menu?.classList?.remove?.("show");
+    menu?.setAttribute?.("aria-hidden", "true");
+  }
+  if (closedModal) document.body.classList.remove("modal-open");
 }
 
 async function openRepo(pathOverride = "") {

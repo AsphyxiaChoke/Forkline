@@ -1,8 +1,10 @@
 // Checkout, merge, rebase, repository operations, remotes, stash, file actions, and commits.
 async function selectRef(ref) {
   if (!state.data) return;
+  const repoPath = repoPathSnapshot();
   try {
     const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
     setInspectorContext(ref ? "branch" : "commit", ref ? "branches" : "details");
     state.selectedRef = ref;
     els.searchInput.value = "";
@@ -13,11 +15,11 @@ async function selectRef(ref) {
     state.selectedSha = state.data.commits[0]?.sha || "";
     renderAll();
     if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
+      await renderSelectedCommitForRepoPath(repoPath);
     }
     toast(ref ? `已查看 ${ref}` : "已显示全部分支");
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -36,24 +38,26 @@ async function checkoutBranch(branch, button) {
   } else if (!state.data.repo.isSample && !confirm(`确认切换到分支：${branch}？`)) {
     return;
   }
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     rememberCheckoutStash(result.stash);
     toast(result.output || `已切换到 ${branch}`);
+    const data = await loadStateForRepoPath(repoPath, branch);
+    if (!data) return;
     state.commitDetails.clear();
     state.selectedRef = branch;
-    state.data = await api(`/api/state?ref=${encodeURIComponent(branch)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || branch;
     state.selectedSha = state.data.commits[0]?.sha || "";
     els.searchInput.value = "";
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
     await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -76,28 +80,30 @@ async function checkoutRemoteBranch(remoteRef, button) {
   } else if (!state.data.repo.isSample && !confirm(`确认将远端分支签出为本地分支：${targetText}？`)) {
     return;
   }
+  const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "checkoutRemoteBranch", ref: remoteRef, mode }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     const nextBranch = result.branch || localBranch || remoteRef;
     rememberCheckoutStash(result.stash);
     toast(result.output || `已签出 ${nextBranch}`);
+    const data = await loadStateForRepoPath(repoPath, nextBranch);
+    if (!data) return;
     state.commitDetails.clear();
     state.selectedRef = nextBranch;
-    state.data = await api(`/api/state?ref=${encodeURIComponent(nextBranch)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || nextBranch;
     state.selectedSha = state.data.commits[0]?.sha || "";
     els.searchInput.value = "";
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
     await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -114,19 +120,21 @@ async function mergeBranchRef(ref) {
   const dirtyCount = (state.data.workingFiles || []).length;
   const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 可能会阻止合并。建议先提交或储藏。` : "";
   if (!state.data.repo.isSample && !confirm(`确认将 ${ref} 合并到当前分支 ${current}？${dirtyNote}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已合并 ${ref}`);
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     await refreshWorktree(true);
   }
@@ -143,19 +151,21 @@ async function rebaseOntoRef(ref) {
   const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 会阻止变基。请先提交或储藏。` : "";
   const message = `确认把当前分支 ${current} 变基到 ${ref}？\n\n命令：git rebase ${ref}\n这会重写当前分支尚未合入 ${ref} 的提交 SHA。${dirtyNote}`;
   if (!state.data.repo.isSample && !confirm(message)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已变基到 ${ref}`);
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
     await refreshWorktree(true);
   }
@@ -213,13 +223,16 @@ function forgetCheckoutStash(stash) {
 
 async function maybeRestoreCheckoutStash(branch) {
   if (!branch || state.data?.repo?.isSample) return;
+  const repoPath = repoPathSnapshot();
   let stash = checkoutStashRecords().find((item) => item.repoPath === state.data.repo.path && item.branch === branch);
   if (!stash) {
     const found = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "findCheckoutStash", branch }) });
+    if (!isCurrentRepoPath(repoPath)) return;
     stash = found.stash;
   }
   if (!stash?.message || state.ignoredCheckoutStashes.has(stash.message)) return;
   const restore = await chooseStashRestore(stash);
+  if (!isCurrentRepoPath(repoPath)) return;
   if (!restore) {
     state.ignoredCheckoutStashes.add(stash.message);
     return;
@@ -229,13 +242,17 @@ async function maybeRestoreCheckoutStash(branch) {
       method: "POST",
       body: JSON.stringify({ action: "restoreCheckoutStash", branch, message: stash.message }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     forgetCheckoutStash(stash);
     toast(result.output || "已恢复储藏的本地更改");
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.commitDetails.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     if (isMissingCheckoutStashError(error)) {
       forgetCheckoutStash(stash);
       state.ignoredCheckoutStashes.add(stash.message);
@@ -369,12 +386,15 @@ async function fillLatestCommitMessage() {
     toast("没有可追加的上一次提交");
     return;
   }
+  const repoPath = repoPathSnapshot();
   try {
     const detail = await api(`/api/commit?sha=${encodeURIComponent(commit.sha)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
     const message = commitMessageParts(commit, detail);
     els.commitSummary.value = message.summary;
     els.commitBody.value = message.body;
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     els.amendToggle.checked = false;
     updateAmendMode();
     toast(error.message);
@@ -647,20 +667,25 @@ async function createStashFromSelection(files = null) {
   if (message === null) return;
   const trimmedMessage = String(message || "").trim() || defaultMessage;
   if (!state.data.repo.isSample && !confirm(`确认储藏${targetText}？\n\n说明：${trimmedMessage}`)) return;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "createStash", message: trimmedMessage, files: selectedOnly ? stashFiles : [] }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast("已创建储藏，工作区更改已移到右侧“储藏”列表");
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.stashDetails.clear();
     state.selectedChanges.clear();
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedStash = state.data.stashes?.[0]?.ref || state.selectedStash;
     state.selectedTab = "stashes";
     renderAll();
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   }
 }
@@ -850,25 +875,27 @@ async function rewordSelectedCommit(form) {
   if (!state.data.repo.isSample && !confirm(`确认修改 ${targetName} ${commit.short} 的提交信息？这会重写相关历史 SHA。`)) return;
   const button = form.querySelector("button[type='submit']");
   button.disabled = true;
+  const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "rewordCommit", sha, summary, body }),
     });
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "提交信息已修改");
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.commitDetails.clear();
     state.historyPlan = null;
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
-    state.data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     const sameCommit = state.data.commits.find((item) => item.sha === sha);
     state.selectedSha = sameCommit?.sha || state.data.commits[Math.max(previousIndex, 0)]?.sha || state.data.commits[0]?.sha || "";
     renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      renderInspector();
-    }
+    await renderSelectedCommitForRepoPath(repoPath);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     button.disabled = false;
