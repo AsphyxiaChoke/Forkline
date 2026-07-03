@@ -524,7 +524,7 @@ async function runUpstreamAction(action, ref = "", button = null) {
       toast("请选择远端分支");
       return;
     }
-    payload = { action: "setUpstream", ref: selectedRef, ...currentBranchSnapshotPayload(), ...remoteBranchConfigSnapshotPayload(selectedRef) };
+    payload = { action: "setUpstream", ref: selectedRef, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(selectedRef), ...remoteBranchConfigSnapshotPayload(selectedRef) };
     message = `确认设置当前分支 upstream？\n\n当前分支：${branch}\n目标：${selectedRef}\n命令：git branch --set-upstream-to=${selectedRef} ${branch}`;
   } else if (action === "unset") {
     const upstream = state.data?.sync?.upstream || state.data?.branchInfo?.[branch]?.upstream || "";

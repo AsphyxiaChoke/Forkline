@@ -37,7 +37,7 @@
 - 同步认证助手已接入：同步页会根据远端 URL 区分 SSH / HTTPS / 本地路径，读取本机 `~/.ssh` 中可见的 key 文件名和配对状态，检测 `ssh-agent`、Git Credential Manager，并提供 `git remote -v`、`ssh-add -l`、`ssh -T git@host`、`git credential-manager diagnose` 等可复制命令；不会读取或展示私钥内容。
 - PR/MR 快捷入口已接入：同步页会为当前本地分支生成 Pull Request / Merge Request 创建链接，支持 GitHub、GitLab、Bitbucket 和常见 Gitea / Forgejo 网页远端；可在同步页、命令面板、当前分支右键菜单中打开或复制链接，本地路径远端会显示中文不可用原因；快速切换仓库时，目标分支推断会使用请求发起时的仓库路径快照。
 - PR/MR 目标分支推断已跟随真实远端名切分：如果当前分支 upstream 是 `team/origin/main` 这类远端名含 `/` 的引用，目标分支会推断为 `main`，不会误生成 `origin/main`。
-- 当前分支 upstream 管理已接入：同步页显示远端分支下拉框，支持 `git branch --set-upstream-to=<远端分支> <当前分支>` 和 `git branch --unset-upstream <当前分支>`；远端分支右键菜单也支持“设为当前分支 upstream”，当前本地分支右键菜单支持“取消当前分支 upstream”；设置 upstream 会携带页面看到的目标远端 URL，后端发现远端 URL 已被外部命令改过时会拒绝旧页面请求，避免把当前分支跟踪到错误远端。
+- 当前分支 upstream 管理已接入：同步页显示远端分支下拉框，支持 `git branch --set-upstream-to=<远端分支> <当前分支>` 和 `git branch --unset-upstream <当前分支>`；远端分支右键菜单也支持“设为当前分支 upstream”，当前本地分支右键菜单支持“取消当前分支 upstream”；设置 upstream 会携带页面看到的目标远端分支 SHA 和目标远端 URL，后端发现远端分支或远端 URL 已被外部命令改过时会拒绝旧页面请求，避免把当前分支跟踪到错误远端或已变化的远端分支。
 - 普通推送保护已接入：如果当前分支落后 upstream，或本地领先同时落后形成分叉，后端会阻止普通 `git push` 并返回中文“推送被保护”；如果当前分支名和 upstream 指向的远端主干/长期分支名不一致，后端也会拒绝普通推送，避免 `push.default=upstream` 这类配置把普通分支推到 `origin/main`；同步页会显示保护条、禁用普通推送按钮，并保留安全强推入口。
 - 同步操作旧页面保护已增强：拉取、变基拉取、推送、安全强推和取消 upstream 会校验页面看到的 upstream 和对应远端 URL；无 upstream 的智能推送会校验页面看到的默认推送远端，避免外部刚修改远端配置后旧页面把同步操作打到新的远端。
 - 变基拉取已接入：同步页新增“变基拉取”按钮，当前本地分支右键菜单新增“变基拉取当前分支”，后端执行 `git pull --rebase`；执行前会检查本地分支、upstream、未完成操作和干净工作区，确认弹窗说明会重写本地未推送提交 SHA。
@@ -46,11 +46,11 @@
 - Diff 行文本不再截断到 280 字符：长配置行、长 JSON 行或长路径相关元信息会完整返回给前端，避免对照里看不到行尾真实改动。
 - 提交/比较/储藏文件清单不再只解析前 160 条：后端 `name-status` 解析会返回全部文件，避免大提交或大批量储藏时后面的文件从列表中消失。
 - merge 提交详情 Diff 已修复：`/api/commit` 检测到多父提交时会用第一父提交作为基准执行 `git diff <parent1> <merge>`，不再让 no-ff merge 提交详情显示空文件列表和空 Diff。
-- 工作区旧页面保护已增强：`/api/state` 和 `/api/worktree` 会返回文件快照和整体工作区快照；文件暂存/取消暂存/丢弃、工作区 Diff 按块/按行、暂存全部、丢弃全部、拉取、变基拉取、本地/远端分支签出、提交、追加提交、创建/应用/弹出储藏、从储藏创建分支、合并、挑选、还原、reset、应用补丁、子模块初始化/更新/同步，以及合并/变基/挑选/还原的继续、跳过、中止会在执行前比较页面看到的快照，发现同一分支上的文件内容、暂存状态或 `.gitmodules` 已被编辑器/外部 Git 改过时，会拒绝旧页面请求并提示刷新。
+- 工作区旧页面保护已增强：`/api/state` 和 `/api/worktree` 会返回文件快照和整体工作区快照；文件暂存/取消暂存/丢弃、加入 `.gitignore`、工作区 Diff 按块/按行、暂存全部、丢弃全部、拉取、变基拉取、本地/远端分支签出、提交、追加提交、创建/应用/弹出储藏、从储藏创建分支、合并、挑选、还原、reset、应用补丁、子模块初始化/更新/同步，以及合并/变基/挑选/还原的继续、跳过、中止会在执行前比较页面看到的快照，发现同一分支上的文件内容、暂存状态或 `.gitignore` / `.gitmodules` 已被编辑器/外部 Git 改过时，会拒绝旧页面请求并提示刷新。
 - 进行中 Git 操作旧页面保护已增强：`detectRepoOperation` 会返回合并、变基、挑选、还原对应 Git 控制文件生成的操作快照；继续、跳过或中止这些操作前会比较页面看到的操作快照和工作区快照，如果外部已经结束旧操作并开始另一场同类型操作，或外部已经改过冲突文件/暂存状态，会拒绝旧页面请求并提示刷新。
 - 本地静态资源响应已加 `Cache-Control: no-store`，避免开发验证时浏览器继续使用旧版 `app.js` / `styles.css`。
 - 本地静态资源路径边界已加固：服务端用解析后的 `public/` 绝对路径和路径分隔符判断静态文件范围，编码反斜杠目录穿越请求会返回 `403`，避免 Windows 下误读到 `public` 同级文件。
-- 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口；后端会拒绝删除 `main` / `master` / `develop` / `dev` / `trunk` 这类远端主干/长期分支；以本地或远端分支为目标的签出、合并、变基、新建分支和创建工作树会比较页面看到的目标分支 SHA，如果目标分支已被外部命令移动，会拒绝旧页面请求并提示刷新；以远端分支为目标的这些操作、设置 upstream 和删除远端分支还会比较页面看到的远端 URL，如果远端 URL 已被外部命令改过，会拒绝旧页面请求并提示刷新，避免使用错误远端分支；删除远端分支前还会比较页面看到的 tracking SHA、当前本地 tracking SHA 和真实远端 SHA，如果同名远端分支已经变化或本地 tracking 已被外部 fetch 更新，会拒绝旧页面请求并提示刷新，避免删除别人新推送的分支或删到错误远端。
+- 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口；后端会拒绝删除 `main` / `master` / `develop` / `dev` / `trunk` 这类远端主干/长期分支；以本地或远端分支为目标的签出、合并、变基、新建分支和创建工作树会比较页面看到的目标分支 SHA，如果目标分支已被外部命令移动，会拒绝旧页面请求并提示刷新；设置 upstream 也会比较页面看到的目标远端分支 SHA；以远端分支为目标的这些操作、设置 upstream 和删除远端分支还会比较页面看到的远端 URL，如果远端 URL 已被外部命令改过，会拒绝旧页面请求并提示刷新，避免使用错误远端分支；删除远端分支前还会比较页面看到的 tracking SHA、当前本地 tracking SHA 和真实远端 SHA，如果同名远端分支已经变化或本地 tracking 已被外部 fetch 更新，会拒绝旧页面请求并提示刷新，避免删除别人新推送的分支或删到错误远端。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - 分支比较已接入：本地/远端分支右键菜单新增“与当前分支比较”，右侧新增“比较”页；后端 `/api/compare` 返回两边独有提交数量、最多 40 条独有提交、目标分支相对共同祖先的文件列表和 Diff，并复用最大化对照。
 - 远端分支过期保护已覆盖比较页：如果比较基准或目标是已删除的 `origin/...` 远端跟踪引用，`readCompare` 会自动 `fetch --prune` 并拒绝比较，避免展示过期提交和文件变化。
@@ -132,7 +132,7 @@
 - 命令面板已接入：顶部新增“命令”入口，并支持键盘打开；面板会按关键词过滤常用页面跳转、同步、工作区、分支、Tag、克隆和初始化动作，禁用当前不可用命令，危险动作标红且继续复用原确认流程。
 - 左侧分支筛选已接入：仓库信息下方新增分支筛选框，可同时过滤本地分支和远端分支，匹配分支名、upstream、领先/落后/上游丢失状态，并显示命中数量；命令面板也新增“筛选分支”入口。
 - 工作区文件筛选已接入：左侧不再保留重复“工作区”列表，筛选框收拢到底部“工作区”变更面板；底部变更列表可匹配完整路径、文件名、Git 状态、中文状态、未暂存/已暂存状态，并显示命中数量；命令面板新增“筛选工作区文件”入口。
-- 未跟踪文件忽略已接入：工作区文件右键菜单新增“加入 .gitignore”和“忽略所在目录”，只对未跟踪文件启用；后端会确认目标仍是未跟踪文件，再向仓库根目录 `.gitignore` 追加 anchored 规则并避免重复追加。
+- 未跟踪文件忽略已接入：工作区文件右键菜单新增“加入 .gitignore”和“忽略所在目录”，只对未跟踪文件启用；后端会确认目标仍是未跟踪文件，并校验页面看到的整体工作区快照，再向仓库根目录 `.gitignore` 追加 anchored 规则并避免重复追加。
 - 常见 `pathspec ... did not match any files` 错误已转成中文提示：当文件已经删除、重命名或不在当前工作区中时，会提示“找不到文件 ...”，不再直接露出 Git 英文原文。
 - 顶部最近仓库快速打开已接入：成功打开真实仓库后会写入浏览器 localStorage，顶部下拉框可快速切回最近项目，清除按钮只删除浏览器记录，不会删除本地仓库；窄屏下顶栏会换成两行避免搜索框、路径输入和按钮挤压。
 - 克隆仓库入口已接入：顶部新增“克隆”，弹窗填写来源 URL/本地裸仓库路径和目标文件夹；后端新增 `cloneRepository`，执行 `git clone <来源> <保存到>`，目标必须是本机绝对路径，且会拒绝覆盖非空目录；默认克隆后直接打开新仓库并写入最近仓库。
@@ -212,6 +212,7 @@
 - Upstream 管理 API 验证：浏览器服务 `http://127.0.0.1:5194` 打开 GitTest 后，在当前 `123` 分支调用 `setUpstream` 设置到 `origin/123`，API 返回 `sync.upstream = origin/123` 且领先/落后均为 0；随后调用 `unsetUpstream`，API 返回 upstream 为空。验证后 GitTest 已恢复为无 upstream、工作区干净。
 - Upstream 管理 UI 验证：浏览器打开 `http://127.0.0.1:5194/?tab=sync`，同步页“上游分支”下拉默认选中 `origin/123`，设置按钮可见，未设置 upstream 时取消按钮禁用；249px 右侧内容无横向溢出。远端分支 `origin/123` 右键菜单显示“设为当前分支 upstream git branch -u”，按钮启用，菜单无横向溢出，控制台无错误。
 - 设置 upstream 旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 `origin/feature` 后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `setUpstream origin/feature` 会把当前 `topic` 分支 upstream 写成 RemoteB 语义下的 `origin/feature`，修复后带旧 URL 快照的请求返回“远端 origin 的 URL 已经变化”，`topic` 仍无 upstream。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常设置 `topic -> origin/feature`。
+- 设置 upstream 旧页面目标分支保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin/feature` 指向提交 A 后，外部把远端 `feature` 推进到提交 B 并在同一工作区抓取更新本地 tracking；修复前旧 `setUpstream origin/feature` 返回 200 并把 `topic` 跟踪到已变化的 `origin/feature`，修复后带旧目标 SHA 的请求返回“远端分支 origin/feature 已经变化”，`topic` 仍无 upstream。另验证缺少目标 SHA 的旧脚本会返回“目标分支状态已过期”，刷新状态后携带新 SHA 的请求可正常设置 `topic -> origin/feature`。
 - 推送旧页面 upstream 远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `feature -> origin/feature` 且 `origin -> RemoteA.git` 后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `push` 会把领先提交推到 RemoteB，修复后返回“upstream 远端 origin 的 URL 已经变化”，RemoteB 不会新增分支。另验证无 upstream 智能推送在默认远端 URL 变化时也会拒绝，新鲜快照仍可正常推到 RemoteA 并建立 upstream。
 - 抓取全部旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 `origin/feature` 的 RemoteA 提交后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `fetch` 会执行 `git fetch --all --prune` 并把 `origin/feature` 强制更新到 RemoteB 的提交，修复后返回“远端 origin 的 URL 已经变化”，本地 tracking 仍停在 RemoteA 提交。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常抓取 RemoteA 的后续提交。
 - Upstream 过期列表 API 验证：临时服务 `http://127.0.0.1:5324` 打开 GitTest，创建远端分支 `forkline/stale-upstream-20260703` 并抓取出 `origin/forkline/stale-upstream-20260703` 后，手动删除裸远端真实分支。修复前 `setUpstream` 会把当前 `123` 分支 upstream 设置到这个已不存在的远端分支，并显示“本地与上游一致”；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，不会写入 upstream，并自动 prune 过期远端跟踪引用。
@@ -231,6 +232,7 @@
 - 未跟踪文件按块暂存 API/HTTP 验证：临时服务 `http://127.0.0.1:5243` 打开 GitTest 后，创建 90 行未跟踪文本文件 `forkline-fixtures/untracked-hunk-api-20260613.txt`；`/api/worktree-diff` 返回 `scope = untracked` 且拆成 `@@ -0,0 +1,40 @@`、`@@ -0,0 +41,40 @@`、`@@ -0,0 +81,11 @@` 三个 hunk；调用 `stageHunk` 的 `scope = untracked`、`hunkIndex = 1` 后，索引只含第 41-80 行，工作区状态为 `AM`，API 返回“已暂存此未跟踪文件改动块”。HTTP 静态检查确认前端已返回 `data-hunk-scope="untracked"` 和未跟踪块暂存按钮 title；内置浏览器打开 localhost 本次仍超时并重置会话，未记为视觉验证。测试文件和索引已清理，GitTest 已恢复 `123` 分支干净状态。
 - 工作区 Diff 视图切换 API 验证：临时服务 `http://127.0.0.1:5228` 打开 GitTest 临时分支 `forkline/workdiff-scope-api-20260613040156`，同一文件第 5 行为已暂存改动、第 35 行为未暂存改动；`/api/worktree-diff` 默认返回 `scope=unstaged` 且只含第 35 行，`scope=staged` 只含第 5 行；随后调用 `unstageHunk` 只取消已暂存 hunk，缓存区清空，两处改动均保留在工作区。临时分支已删除，GitTest 已恢复 `123` 分支干净状态。
 - 未跟踪文件忽略 API 验证：临时服务 `http://127.0.0.1:5238` 打开 GitTest 后，创建临时未跟踪文件 `forkline-fixtures/forkline-ignore-api-*.log` 和临时目录 `forkline-fixtures/forkline-ignore-dir-*`；调用 `ignoreWorktreePath` 的 file / directory 两种模式后，`.gitignore` 分别追加 `/forkline-fixtures/forkline-ignore-api-*.log` 和 `/forkline-fixtures/forkline-ignore-dir-*/`，刷新工作区后这两个未跟踪目标不再列出。验证后已恢复原 `.gitignore`，删除临时文件和目录，GitTest 回到 `123` 分支干净状态。
+- 未跟踪文件忽略旧页面工作区快照保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面只看到 `logs/old.tmp` 未跟踪文件后，外部新增 `logs/important.txt` 并编辑 `.gitignore`；修复前旧 `ignoreWorktreePath mode=directory` 返回 200 并追加 `/logs/`，导致页面未见过的新文件也被隐藏，修复后缺少工作区快照或携带旧工作区快照的请求均返回 400，`.gitignore` 不会追加旧目录规则。另验证刷新状态后携带新工作区快照可正常追加 `/logs/`。
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - 远端 Tag 旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `pushTag` 会把 `stale-tag` 推到 RemoteB，修复后带旧 URL 快照的请求返回“远端 origin 的 URL 已经变化”，RemoteA/RemoteB 都不会新增该 Tag。另验证 `deleteRemoteTag` 在同样旧快照下不会误删 RemoteB 的 Tag，新鲜快照仍可正常推送或删除 RemoteA 上的 Tag。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。

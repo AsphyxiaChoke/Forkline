@@ -38,6 +38,7 @@ const REMOTE_BRANCH_REMOTE_SNAPSHOT_ACTIONS = new Set([
 const TARGET_REF_SNAPSHOT_ACTIONS = new Set([
   "checkoutBranch",
   "checkoutRemoteBranch",
+  "setUpstream",
   "mergeRef",
   "rebaseOntoRef",
   "createBranch",
@@ -74,6 +75,7 @@ const WORKTREE_SNAPSHOT_ACTIONS = new Set([
   "branchFromStash",
   "resetToCommit",
   "applyPatch",
+  "ignoreWorktreePath",
   "initSubmodules",
   "updateSubmodules",
   "syncSubmodules",

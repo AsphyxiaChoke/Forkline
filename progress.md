@@ -4182,3 +4182,46 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮拉取类工作区快照回归验证。
 - `progress.md`：追加本轮拉取旧页面保护的实施与验证记录。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale upstream target branch snapshots
+
+### What was done
+- Reproduced a stale upstream target bug in a temporary `C:\tmp` repository: the page saw `origin/feature` at commit A, an external command advanced and fetched `origin/feature` to commit B, then the old `setUpstream` request still returned success and configured the current branch to track the changed remote branch.
+- Added target-ref SHA snapshot enforcement for `setUpstream`, matching the protection already used by checkout, merge, rebase, branch creation, and worktree creation.
+- Updated the upstream UI action payload to send the page's target remote-branch SHA, and documented the new protection in README and continuation notes.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5481`: stale `setUpstream origin/feature` in `C:\tmp\forkline-upstream-target-stale-20260704014648` returned HTTP 200; the page saw `origin/feature = 37920878d01200ff0252160ef4f78351cf35d072`, the local tracking ref had moved to `2d9b4f1bded0f04e1780c455f0d5d38c341832c5`, and `topic` was configured with upstream `origin/feature`.
+- Verified old scripts without target SHA are rejected with service `http://127.0.0.1:5482`: `setUpstream origin/feature` in `C:\tmp\forkline-upstream-target-fixed-20260704014859` returned HTTP 400 `目标分支状态已过期，请刷新后重新执行这个操作。`, and `topic` still had no upstream.
+- Verified stale target SHA is rejected: the same fixed harness saw page SHA `57abad9242599380094250d61a4c559b515e78c6`, then local `origin/feature` moved to `f6a1a819dca4a3e02b80803f6694f3d1d3e71e0f`; old `setUpstream` returned HTTP 400 `远端分支 origin/feature 已经变化。为避免旧页面使用错误提交，请刷新后重新操作。`, and `topic` still had no upstream.
+- Verified fresh snapshots still work: after refreshing state, `setUpstream origin/feature` returned HTTP 200 and `git rev-parse --abbrev-ref --symbolic-full-name @{u}` returned `origin/feature`.
+- Temporary services on ports `5481` and `5482` were stopped.
+
+### Notes
+- `server.js`：把 `setUpstream` 纳入目标引用 SHA 快照校验。
+- `public/js/features/git-actions.js`：设置 upstream 时提交目标远端分支 SHA 快照。
+- `README.md`：补充设置 upstream 会校验目标远端分支 SHA 和目标远端 URL。
+- `docs/CONTINUE.md`：同步当前状态和本轮设置 upstream 目标分支快照回归验证。
+- `progress.md`：追加本轮 upstream 目标分支旧页面保护的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale worktree snapshots for .gitignore updates
+
+### What was done
+- Reproduced a stale `.gitignore` update bug in a temporary `C:\tmp` repository: the page saw only `logs/old.tmp`, an external edit added `logs/important.txt` and changed `.gitignore`, then the old “ignore directory” request still appended `/logs/`.
+- Added `ignoreWorktreePath` to the server-side worktree snapshot protection list, so stale pages cannot append ignore rules after files or `.gitignore` change behind the page.
+- Updated README and continuation notes to document that adding `.gitignore` rules validates the page's worktree snapshot.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5483`: stale `ignoreWorktreePath` in `C:\tmp\forkline-stale-ignore-worktree-20260704015647` returned HTTP 200, appended `/logs/`, and hid the externally added `logs/important.txt` from normal untracked status.
+- Verified after the fix with service `http://127.0.0.1:5484`: an old request without `expectedWorktreeSnapshot` in `C:\tmp\forkline-stale-ignore-worktree-fixed-20260704015745` returned HTTP 400 `工作区状态已过期，请刷新后重新执行这个操作。`.
+- Verified stale worktree snapshots are rejected: after external `logs/important.txt` and `.gitignore` changes, old `ignoreWorktreePath mode=directory` returned HTTP 400 `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, and `.gitignore` did not contain `/logs/`.
+- Verified fresh snapshots still work: after refreshing `/api/state`, `ignoreWorktreePath mode=directory` returned HTTP 200 and appended `/logs/`.
+- Temporary services on ports `5483` and `5484` were stopped.
+
+### Notes
+- `server.js`：把加入 `.gitignore` 动作纳入整体工作区快照校验。
+- `README.md`：补充加入 `.gitignore` 会校验工作区快照，避免旧页面写入旧忽略规则。
+- `docs/CONTINUE.md`：同步当前状态和本轮 `.gitignore` 旧页面保护验证。
+- `progress.md`：追加本轮 `.gitignore` 工作区快照保护的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
