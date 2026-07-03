@@ -46,6 +46,8 @@
 - Diff 行文本不再截断到 280 字符：长配置行、长 JSON 行或长路径相关元信息会完整返回给前端，避免对照里看不到行尾真实改动。
 - 提交/比较/储藏文件清单不再只解析前 160 条：后端 `name-status` 解析会返回全部文件，避免大提交或大批量储藏时后面的文件从列表中消失。
 - merge 提交详情 Diff 已修复：`/api/commit` 检测到多父提交时会用第一父提交作为基准执行 `git diff <parent1> <merge>`，不再让 no-ff merge 提交详情显示空文件列表和空 Diff。
+- 工作区旧页面保护已增强：`/api/state` 和 `/api/worktree` 会返回文件快照和整体工作区快照；文件暂存/取消暂存/丢弃、工作区 Diff 按块/按行、暂存全部、丢弃全部、提交、追加提交、创建储藏和应用补丁会在执行前比较页面看到的快照，发现同一分支上的文件内容或暂存状态已被编辑器/外部 Git 改过时，会拒绝旧页面请求并提示刷新。
+- 进行中 Git 操作旧页面保护已增强：`detectRepoOperation` 会返回合并、变基、挑选、还原对应 Git 控制文件生成的操作快照；继续、跳过或中止这些操作前会比较页面看到的快照，如果外部已经结束旧操作并开始另一场同类型操作，会拒绝旧页面请求并提示刷新。
 - 本地静态资源响应已加 `Cache-Control: no-store`，避免开发验证时浏览器继续使用旧版 `app.js` / `styles.css`。
 - 本地静态资源路径边界已加固：服务端用解析后的 `public/` 绝对路径和路径分隔符判断静态文件范围，编码反斜杠目录穿越请求会返回 `403`，避免 Windows 下误读到 `public` 同级文件。
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口；后端会拒绝删除 `main` / `master` / `develop` / `dev` / `trunk` 这类远端主干/长期分支；以本地或远端分支为目标的签出、合并、变基、新建分支和创建工作树会比较页面看到的目标分支 SHA，如果目标分支已被外部命令移动，会拒绝旧页面请求并提示刷新；以远端分支为目标的这些操作、设置 upstream 和删除远端分支还会比较页面看到的远端 URL，如果远端 URL 已被外部命令改过，会拒绝旧页面请求并提示刷新，避免使用错误远端分支；删除远端分支前还会比较页面看到的 tracking SHA、当前本地 tracking SHA 和真实远端 SHA，如果同名远端分支已经变化或本地 tracking 已被外部 fetch 更新，会拒绝旧页面请求并提示刷新，避免删除别人新推送的分支或删到错误远端。
@@ -89,7 +91,7 @@
 - Stash 引用过期会显示中文提示：查看详情、应用、弹出或从储藏创建分支时，如果 `stash@{n}` 已经不存在，会提示这条储藏可能已被弹出、删除或列表未刷新，要求刷新储藏列表后重新选择。
 - Stash 操作已加身份校验：状态接口会返回 stash commit SHA，应用、弹出、删除和从储藏创建分支会把页面看到的 SHA 一起传给后端；如果新的 stash 插入导致 `stash@{n}` 已经指向另一条储藏，后端会拒绝操作并提示刷新，避免删错或弹错储藏。储藏写操作也会携带页面看到的当前分支和 HEAD，避免旧页面在外部切换分支后把 stash 应用、弹出、删除或创建到错误分支状态。
 - Stash 签出恢复提醒会清理过期记录：如果浏览器本地还记着一条“储藏并签出”记录，但对应 stash 已经被手动删除，点击恢复失败后会删除这条本地提醒，避免之后反复弹窗。
-- Stash 签出恢复已加后端分支校验：恢复“储藏并签出”自动生成的 stash 前会确认当前分支仍是该 stash 所属分支，并按 `On <分支>:` 与完整消息精确匹配，避免旧弹窗或近似消息把 stash 弹到错误分支后从列表消失。
+- Stash 签出恢复已加后端分支和身份校验：恢复“储藏并签出”自动生成的 stash 前会确认当前分支仍是该 stash 所属分支，并按 `On <分支>:`、完整消息和 stash SHA 精确匹配，避免旧弹窗、近似消息或同消息新 stash 把错误储藏弹到当前分支后从列表消失。
 - 从储藏创建分支已接入：右侧“储藏”详情新增“建分支”，后端新增 `branchFromStash`，执行 `git stash branch <分支> <储藏>`；会要求工作区干净、拒绝已存在本地分支，成功后切到新分支、应用储藏改动并从储藏列表移除对应 stash；成功提示保持中文，原始 Git 输出放在 `gitOutput` 中。
 - `index.lock` 提示已增强：写入操作失败时会显示刚才执行的 Forkline 操作名、锁文件路径/时间、活跃 Forkline 操作和可检测到的 Git 进程；toast 支持多行并延长显示时间。
 - 提交右键菜单和提交详情面板都已加入“还原”和软 / 混合 / 硬重置入口，并在文案旁标注 `git revert`、`git reset --soft`、`git reset --mixed`、`git reset --hard`。还原会创建反向提交；硬重置入口标红且确认文案会提示会丢弃工作区改动。
@@ -180,6 +182,10 @@
 - 合并过期远端分支 API 验证：临时服务 `http://127.0.0.1:5325` 打开 GitTest，创建远端分支 `forkline/stale-remote-merge-20260703`，让它比 `123` 多一个空提交并抓取出 `origin/forkline/stale-remote-merge-20260703`，随后手动删除裸远端真实分支。修复前 `mergeRef` 会从过期 tracking 创建 merge commit；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，没有创建 merge commit，并自动 prune 过期远端跟踪引用。GitTest 已重置回 `4fbce18` 且工作区干净。
 - 远端分支目标旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 RemoteA 的 `origin/feature`，外部把 `origin` 改成 `RemoteB.git`，且 RemoteB 有不同的 `feature` 提交；修复前旧 `mergeRef origin/feature` 会把本地残留的 RemoteA tracking 合并进当前分支并生成 merge commit，修复后带旧 URL 快照的请求返回“远端 origin 的 URL 已经变化”，当前分支不产生 merge commit。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常合并 RemoteA 的目标分支。
 - 本地目标分支旧页面 SHA 保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到本地 `feature` 指向提交 A，外部把 `feature` 推进到提交 B；修复前旧 `mergeRef feature` 会合并 B 并带入 `from-feature-b.txt`，修复后带旧目标 SHA 的请求返回“本地分支 feature 已经变化”，当前分支 HEAD 不变且没有合入 B。另验证刷新后的 B 快照可正常合并。
+- 单文件丢弃旧页面文件快照保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `note.txt` 内容为 `page version`，外部把同一文件改成 `external version`；修复前旧 `discardWorktreeFile note.txt` 会返回成功并把文件还原成 `base`，修复后带旧文件快照的请求返回“文件 note.txt 的内容或暂存状态已经变化”，文件仍保留 `external version`。另验证刷新后的新快照可正常丢弃到 `base`。
+- 丢弃全部旧页面工作区快照保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `note.txt` 为 `page version` 后，外部改成 `external version`；修复后带旧工作区快照的 `discardAll` 返回“工作区状态已经变化”，文件仍保留 `external version`。另验证刷新后的新工作区快照可正常丢弃到 `base`。
+- 合并中止旧页面操作快照保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `side-a` 合并冲突，外部中止该合并并在同一 `main` HEAD 上开始 `side-b` 合并冲突；修复前旧 `abortMerge` 会返回成功并中止新的 `side-b` 合并，修复后带旧操作快照的请求返回“正在进行的合并已经变化”，`MERGE_HEAD` 仍指向 `side-b`。另验证刷新后的新操作快照可正常中止 `side-b` 合并。
+- 储藏并签出恢复旧页面 stash 身份保护 API 验证：临时服务打开 `C:\tmp` 仓库，同一分支上创建两条完整消息相同的 Forkline checkout stash；修复前旧 `restoreCheckoutStash` 只按消息匹配，会弹出新插入的 stash 并把 `note.txt` 恢复成错误内容；修复后请求携带旧 stash SHA，会准确弹出旧 stash，`note.txt` 恢复为旧内容，新插入的同消息 stash 仍保留。
 - 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
 - 同步摘要 API 验证：浏览器服务 `http://127.0.0.1:5188` 打开 GitTest 后，验证 `fetch` 能显示“新增远端分支 origin/forkline/sync-fetch-*”；验证远端领先时 `fetch` 显示“落后 0 -> 1”，随后 `pull` 显示“落后 1 -> 0”；验证本地领先时 `push` 显示“领先 1 -> 0”；验证无 upstream 分支 `push` 会设置 upstream，并显示“跟踪变化：未设置 -> origin/...”。测试后 GitTest 已切回 `123` 且工作区干净。
 - 安全强推 API 验证：浏览器服务 `http://127.0.0.1:5190` 打开 GitTest 后，在 `forkline/lease-force-*` 分支验证改写历史后普通 `push` 返回非快进中文拒绝，`forcePushLease` 成功并显示“领先 1 -> 0，落后 1 -> 0”和“强制更新”；在 `forkline/lease-stale-*` 分支验证远端被其他克隆推进后 `forcePushLease` 被 `--force-with-lease` 拒绝并返回中文 stale 提示。

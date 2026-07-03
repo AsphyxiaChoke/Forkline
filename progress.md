@@ -3942,3 +3942,73 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮本地目标分支旧页面 SHA 回归验证。
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale worktree file snapshots for destructive file actions
+
+### What was done
+- Reproduced a stale-page data loss bug in a temporary `C:\tmp` repository: the page saw `note.txt` with `page version`, an external editor changed the same file to `external version`, then an old `discardWorktreeFile note.txt` request returned success and restored the file to committed `base`, losing the external edit.
+- Added opaque file snapshots to `/api/state` and `/api/worktree`, based on Git status, index entries, and current worktree file content.
+- Added server-side file snapshot checks for file-level and Diff-level write actions: stage, unstage, discard, conflict resolution, hunk operations, and selected-line operations.
+- Added an overall worktree snapshot check for broad worktree write actions: stage all, discard all, commit, amend, create stash, and apply patch.
+- Updated frontend file, hunk, line, and broad worktree action requests to send the page's latest file/worktree snapshot.
+- Updated README and continuation docs with the additional stale worktree protection.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: stale `discardWorktreeFile note.txt` after `note.txt` changed from `page version` to `external version` returned HTTP 200 and restored the file to `base`.
+- `C:\tmp` fixed single-file regression: stale `discardWorktreeFile note.txt` with the old file snapshot returned HTTP 400 with `文件 note.txt 的内容或暂存状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`; `note.txt` still contained `external version`.
+- `C:\tmp` fresh single-file regression: after refreshing `/api/worktree`, `discardWorktreeFile note.txt` with the new file snapshot succeeded and restored the file to `base`.
+- `C:\tmp` fixed discard-all regression: stale `discardAll` with the old worktree snapshot returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`; `note.txt` still contained `external version`.
+- `C:\tmp` fresh discard-all regression: after refreshing `/api/worktree`, `discardAll` with the new worktree snapshot succeeded and restored the file to `base`.
+
+### Notes
+- `server.js`：工作区状态读取会返回文件快照和整体工作区快照；文件级、Diff 级和整工作区写操作执行前会拒绝旧快照。
+- `public/js/features/worktree-changes.js`：新增文件快照和工作区快照请求 payload helper。
+- `public/js/features/git-actions.js`：文件动作、批量文件动作和当前分支写操作会携带对应快照，并在刷新工作区后保存新快照。
+- `public/js/features/diff-workbench.js`：按块/按行操作会携带文件快照，刷新工作区后保存新快照。
+- `README.md`：补充文件/工作区快照保护说明。
+- `docs/CONTINUE.md`：同步当前状态和本轮旧页面文件快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale in-progress Git operation snapshots
+
+### What was done
+- Reproduced a stale operation bug in a temporary `C:\tmp` repository: the page saw a `side-a` merge conflict, an external command aborted that merge and started a new `side-b` merge conflict at the same `main` HEAD, then the old page's `abortMerge` request aborted the new `side-b` merge.
+- Added operation snapshots to `detectRepoOperation` for merge, rebase, cherry-pick, and revert, based on the relevant Git control files such as `MERGE_HEAD`, `rebase-merge`, `rebase-apply`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, and `sequencer`.
+- Added server-side operation snapshot checks for continue/skip/abort actions so old pages cannot operate on a different in-progress Git operation with the same branch and HEAD.
+- Updated frontend continue/skip/abort requests to send the page's operation type and snapshot.
+- Updated README and continuation docs with the additional stale operation protection.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: stale `abortMerge` after replacing a `side-a` merge conflict with a `side-b` merge conflict returned HTTP 200, removed `.git/MERGE_HEAD`, and restored `shared.txt` to the `main` version.
+- `C:\tmp` fixed regression after the fix: stale `abortMerge` with the old `side-a` operation snapshot returned HTTP 400 with `正在进行的合并已经变化。为避免旧页面操作到新的 Git 状态，请刷新后重新操作。`; `.git/MERGE_HEAD` still pointed to `side-b`.
+- `C:\tmp` fresh regression after the fix: after refreshing `/api/state`, `abortMerge` with the new `side-b` operation snapshot succeeded and cleared `.git/MERGE_HEAD`.
+
+### Notes
+- `server.js`：进行中的 merge/rebase/cherry-pick/revert 会暴露操作快照，继续/跳过/中止前会拒绝旧快照。
+- `public/js/features/git-actions.js`：继续/跳过/中止进行中 Git 操作时携带页面看到的操作类型和快照。
+- `README.md`：补充进行中 Git 操作快照保护说明。
+- `docs/CONTINUE.md`：同步当前状态和本轮旧页面操作快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard checkout stash restore by stash SHA
+
+### What was done
+- Reproduced a stale checkout-stash restore bug in a temporary `C:\tmp` repository: two Forkline checkout stashes on the same branch had the same message, the page remembered the older stash, then `restoreCheckoutStash` restored and popped the newer inserted stash because the server matched only by message.
+- Added checkout stash SHA capture when local or remote "stash and checkout" creates the automatic stash.
+- Updated checkout stash lookup to include stash commit SHA and to find the exact SHA when restoring.
+- Updated the frontend remembered checkout stash restore request to send the remembered stash SHA; legacy no-SHA records are forgotten before restore.
+- Updated README and continuation docs with the checkout stash identity protection.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: old checkout stash SHA `9ad08d5...` remained in the stash list, but stale `restoreCheckoutStash` popped newer same-message stash `d78dfc9...` and restored `note.txt` to `new inserted stash content`.
+- `C:\tmp` fixed regression after the fix: `restoreCheckoutStash` with the old stash SHA restored `note.txt` to `old checkout stash content`, popped the old stash, and preserved the newer same-message stash.
+
+### Notes
+- `server.js`：自动 checkout stash 创建后返回 SHA；恢复时按分支、完整消息和 SHA 精确定位 stash。
+- `public/js/features/git-actions.js`：恢复 checkout stash 时携带 SHA，并丢弃旧版无 SHA 本地记录。
+- `README.md`：补充“储藏并签出”恢复会校验 stash SHA。
+- `docs/CONTINUE.md`：同步当前状态和本轮 checkout stash 身份回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.

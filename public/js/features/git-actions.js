@@ -225,6 +225,10 @@ async function maybeRestoreCheckoutStash(branch) {
   if (!branch || state.data?.repo?.isSample) return;
   const repoPath = repoPathSnapshot();
   let stash = checkoutStashRecords().find((item) => item.repoPath === state.data.repo.path && item.branch === branch);
+  if (stash && !stash.sha) {
+    forgetCheckoutStash(stash);
+    stash = null;
+  }
   if (!stash) {
     const found = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "findCheckoutStash", branch }) });
     if (!isCurrentRepoPath(repoPath)) return;
@@ -240,7 +244,7 @@ async function maybeRestoreCheckoutStash(branch) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "restoreCheckoutStash", branch, message: stash.message, ...currentBranchSnapshotPayload() }),
+      body: JSON.stringify({ action: "restoreCheckoutStash", branch, message: stash.message, sha: stash.sha || "", ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     forgetCheckoutStash(stash);
@@ -262,7 +266,8 @@ async function maybeRestoreCheckoutStash(branch) {
 }
 
 function isMissingCheckoutStashError(error) {
-  return String(error?.message || error || "").includes("没有找到可恢复的 Forkline 储藏");
+  const message = String(error?.message || error || "");
+  return message.includes("没有找到可恢复的 Forkline 储藏") || message.includes("这条切换储藏已经不存在或已经变化");
 }
 
 function chooseStashRestore(stash) {
@@ -342,6 +347,7 @@ function currentBranchSnapshotPayload() {
   const payload = {
     expectedBranch: state.data?.repo?.branch || "",
     expectedHead: state.data?.repo?.headSha || "",
+    ...worktreeSnapshotPayload(),
   };
   const upstream = state.data?.sync?.upstream || "";
   payload.expectedUpstream = upstream;
@@ -395,7 +401,7 @@ async function runRepoOperation(action, button) {
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action, ...currentBranchSnapshotPayload() }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action, ...currentBranchSnapshotPayload(), ...operationSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "操作已完成");
     state.commitDetails.clear();
@@ -459,6 +465,13 @@ function currentHeadCommitForAmend() {
   const headSha = state.data?.repo?.headSha || "";
   if (!headSha) return null;
   return state.data?.commits?.find((commit) => commit.sha === headSha) || { sha: headSha, short: headSha.slice(0, 7), message: "" };
+}
+
+function operationSnapshotPayload() {
+  const operation = state.data?.repo?.operation || {};
+  return operation?.type && operation?.snapshot
+    ? { expectedOperationType: operation.type, expectedOperationSnapshot: operation.snapshot }
+    : {};
 }
 
 function actionConfirmMessage(action, name) {
@@ -771,6 +784,7 @@ async function ignoreWorktreePath(action, file) {
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
+    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
     state.data.repo.operation = data.operation || null;
     renderWorkingFiles();
     renderStage();
@@ -808,6 +822,7 @@ async function runSingleFileAction(action, file) {
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
+    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
     state.data.repo.operation = data.operation || null;
     syncFileSelectionAfterAction(action, [file], state.data.workingFiles);
     renderWorkingFiles();
@@ -819,9 +834,16 @@ async function runSingleFileAction(action, file) {
 }
 
 function singleFileActionPayload(action, file) {
-  if (action === "resolveConflictOurs") return { action: "resolveConflictFile", side: "ours", file, ...currentBranchSnapshotPayload() };
-  if (action === "resolveConflictTheirs") return { action: "resolveConflictFile", side: "theirs", file, ...currentBranchSnapshotPayload() };
-  return { action, file, ...currentBranchSnapshotPayload() };
+  const snapshot = fileSnapshotPayload(file, fileActionSnapshotScope(action));
+  if (action === "resolveConflictOurs") return { action: "resolveConflictFile", side: "ours", file, ...currentBranchSnapshotPayload(), ...snapshot };
+  if (action === "resolveConflictTheirs") return { action: "resolveConflictFile", side: "theirs", file, ...currentBranchSnapshotPayload(), ...snapshot };
+  return { action, file, ...currentBranchSnapshotPayload(), ...snapshot };
+}
+
+function fileActionSnapshotScope(action) {
+  if (action === "resolveConflictOurs" || action === "resolveConflictTheirs") return "conflict";
+  if (action === "unstageFile" || action === "discardStagedFile") return "staged";
+  return "unstaged";
 }
 
 function syncFileSelectionAfterAction(action, files, nextFiles) {
@@ -882,7 +904,7 @@ async function runFileBatchAction(action, scope, button) {
       if (!isCurrentRepoPath(repoPath)) return;
       await api("/api/action", {
         method: "POST",
-        body: JSON.stringify({ action, file, ...currentBranchSnapshotPayload() }),
+        body: JSON.stringify({ action, file, ...currentBranchSnapshotPayload(), ...fileSnapshotPayload(file, scope) }),
       });
       if (!isCurrentRepoPath(repoPath)) return;
       state.selectedChanges.delete(changeKey(scope, file));
@@ -891,6 +913,7 @@ async function runFileBatchAction(action, scope, button) {
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
+    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
     state.data.repo.operation = data.operation || null;
     syncFileSelectionAfterAction(action, files, state.data.workingFiles);
     renderWorkingFiles();

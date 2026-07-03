@@ -276,6 +276,24 @@ function changeKey(scope, filePath) {
   return `${scope}:${filePath}`;
 }
 
+function fileSnapshotPayload(filePath, scope = "") {
+  const snapshot = workingFileForSnapshot(filePath, scope)?.snapshot || "";
+  return snapshot ? { expectedFileSnapshot: snapshot } : {};
+}
+
+function worktreeSnapshotPayload() {
+  const snapshot = state.data?.worktreeSnapshot || "";
+  return snapshot ? { expectedWorktreeSnapshot: snapshot } : {};
+}
+
+function workingFileForSnapshot(filePath, scope = "") {
+  const matches = (state.data?.workingFiles || []).filter((file) => file.file === filePath);
+  if (scope === "staged") return matches.find((file) => file.staged) || matches[0] || null;
+  if (scope === "unstaged" || scope === "untracked") return matches.find((file) => file.unstaged) || matches[0] || null;
+  if (scope === "conflict") return matches.find((file) => file.conflict) || matches[0] || null;
+  return matches[0] || null;
+}
+
 function selectedFilesInScope(scope, files) {
   return files.filter((file) => state.selectedChanges.has(changeKey(scope, file.file)));
 }

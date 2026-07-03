@@ -414,7 +414,7 @@ async function runWorkDiffHunkAction(action, button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action, file, scope, hunkIndex, ...currentBranchSnapshotPayload() }),
+      body: JSON.stringify({ action, file, scope, hunkIndex, ...currentBranchSnapshotPayload(), ...fileSnapshotPayload(file, scope) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "改动块操作完成");
@@ -809,7 +809,7 @@ async function runWorkDiffLineAction(button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action, file, scope, lines, ...currentBranchSnapshotPayload() }),
+      body: JSON.stringify({ action, file, scope, lines, ...currentBranchSnapshotPayload(), ...fileSnapshotPayload(file, scope) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "所选行操作完成");
@@ -905,12 +905,16 @@ async function refreshWorktree(silent = false) {
     const nextSignature = worktreeStateSignature(nextFiles, nextOperation);
     if (nextSignature !== state.worktreeSignature) {
       state.data.workingFiles = nextFiles;
+      state.data.worktreeSnapshot = data.worktreeSnapshot || "";
       state.data.repo.operation = nextOperation;
       renderWorkingFiles();
       renderStage();
       if (!silent) toast("未提交修改已刷新");
     } else if (!silent) {
+      state.data.worktreeSnapshot = data.worktreeSnapshot || state.data.worktreeSnapshot || "";
       toast("未提交修改已是最新");
+    } else {
+      state.data.worktreeSnapshot = data.worktreeSnapshot || state.data.worktreeSnapshot || "";
     }
   } catch (error) {
     if ((state.data?.repo?.path || "") !== repoPath) return;

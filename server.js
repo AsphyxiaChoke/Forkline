@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 const { execFile, execFileSync } = require("child_process");
 
 const PORT = Number(process.env.PORT || 5177);
@@ -41,6 +42,38 @@ const TARGET_REF_SNAPSHOT_ACTIONS = new Set([
   "rebaseOntoRef",
   "createBranch",
   "createWorktree",
+]);
+const FILE_SNAPSHOT_ACTIONS = new Set([
+  "stageFile",
+  "unstageFile",
+  "resolveConflictFile",
+  "stageHunk",
+  "stageSelectedLines",
+  "unstageSelectedLines",
+  "unstageHunk",
+  "discardWorktreeHunk",
+  "discardWorktreeFile",
+  "discardStagedFile",
+]);
+const WORKTREE_SNAPSHOT_ACTIONS = new Set([
+  "stageAll",
+  "discardAll",
+  "commit",
+  "amendCommit",
+  "createStash",
+  "applyPatch",
+]);
+const OPERATION_SNAPSHOT_ACTIONS = new Set([
+  "continueRevert",
+  "abortRevert",
+  "continueCherryPick",
+  "skipCherryPick",
+  "abortCherryPick",
+  "continueMerge",
+  "abortMerge",
+  "continueRebase",
+  "skipRebase",
+  "abortRebase",
 ]);
 const ALL_REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetch"]);
 const UPSTREAM_SNAPSHOT_ACTIONS = new Set(["pull", "pullRebase", "push", "forcePushLease", "unsetUpstream"]);
@@ -261,6 +294,7 @@ async function readState(ref = "") {
     mergedBranches: parseSimpleLines(mergedBranchOutput),
     currentBranch,
   });
+  const working = await readWorkingStatus(repoPath, statusOutput);
   const sync = await readCurrentSyncDetails(repoPath);
   return {
     repo: {
@@ -281,7 +315,8 @@ async function readState(ref = "") {
     remotes,
     remoteInfo,
     sync,
-    workingFiles: parseStatus(statusOutput),
+    workingFiles: working.files,
+    worktreeSnapshot: working.snapshot,
     stashes: parseStashList(stashOutput),
     recoveryPoints: parseRecoveryPoints(recoveryOutput),
     reflogEntries: parseReflogEntries(reflogOutput),
@@ -925,7 +960,8 @@ async function readWorktree() {
   }
   const repoPath = currentRepo;
   const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
-  return { workingFiles: parseStatus(statusOutput), operation: detectRepoOperation(repoPath) };
+  const working = await readWorkingStatus(repoPath, statusOutput);
+  return { workingFiles: working.files, worktreeSnapshot: working.snapshot, operation: detectRepoOperation(repoPath) };
 }
 
 async function readWorkingDiff(filePath, rawScope = "auto") {
@@ -985,6 +1021,9 @@ async function runAction(body) {
   await ensureRemoteConfigSnapshot(body);
   await ensureCurrentBranchSnapshot(body);
   await ensureTargetRefSnapshot(body);
+  await ensureWorktreeSnapshot(body);
+  await ensureFileSnapshot(body);
+  await ensureOperationSnapshot(body);
   if (action === "createWorktree") {
     return createWorktree(body);
   }
@@ -1462,7 +1501,8 @@ async function checkoutBranch(body) {
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${branch} ${stamp}`;
       await git(currentRepo, ["stash", "push", "-u", "-m", message], { timeout: 120000 });
-      stash = { branch: sourceBranch, target: branch, ref: "stash@{0}", message };
+      const sha = (await git(currentRepo, ["rev-parse", "--verify", "stash@{0}^{commit}"], { timeout: 60000 }).catch(() => "")).trim();
+      stash = { branch: sourceBranch, target: branch, ref: "stash@{0}", message, sha };
     }
     await git(currentRepo, ["switch", branch], { timeout: 60000 });
     return { ok: true, output: "已储藏本地更改并切换分支", stash };
@@ -1513,7 +1553,8 @@ async function checkoutRemoteBranch(body) {
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${localBranch} ${stamp}`;
       await git(currentRepo, ["stash", "push", "-u", "-m", message], { timeout: 120000 });
-      stash = { branch: sourceBranch, target: localBranch, ref: "stash@{0}", message };
+      const sha = (await git(currentRepo, ["rev-parse", "--verify", "stash@{0}^{commit}"], { timeout: 60000 }).catch(() => "")).trim();
+      stash = { branch: sourceBranch, target: localBranch, ref: "stash@{0}", message, sha };
     }
     await git(currentRepo, switchArgs, { timeout: 60000 });
     const trackingOutput = localExists ? await ensureRemoteCheckoutTracking(localBranch, remoteRef) : "";
@@ -2319,12 +2360,13 @@ async function findCheckoutStash(body) {
 
 async function restoreCheckoutStash(body) {
   const branch = normalizeBranchName(body.branch);
+  const expectedSha = normalizeExpectedStashSha(body.sha);
   const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   if (currentBranch !== branch) {
     throw new Error(`当前分支已经切换到 ${currentBranch || "HEAD"}，不能恢复属于 ${branch} 的切换储藏。请切回 ${branch} 后再恢复。`);
   }
-  const stash = await findForklineStash(branch, String(body.message || "").trim());
-  if (!stash) throw new Error("没有找到可恢复的 Forkline 储藏");
+  const stash = await findForklineStash(branch, String(body.message || "").trim(), expectedSha);
+  if (!stash) throw new Error("这条切换储藏已经不存在或已经变化，请刷新储藏列表后重新选择。");
   await git(currentRepo, ["stash", "pop", stash.ref], { timeout: 120000 });
   return "已恢复储藏的本地更改";
 }
@@ -2474,20 +2516,24 @@ function gitignorePattern(patternPath, mode) {
   return mode === "directory" ? `/${escaped}/` : `/${escaped}`;
 }
 
-async function findForklineStash(branch, message = "") {
-  const output = await git(currentRepo, ["stash", "list", "--format=%gd%x00%s"]).catch(() => "");
+async function findForklineStash(branch, message = "", expectedSha = "") {
+  const output = await git(currentRepo, ["stash", "list", "--format=%gd%x00%H%x00%s"]).catch(() => "");
   const rows = output
     .split(/\r?\n/)
     .map((line) => {
-      const [ref, subject] = line.split(GIT_LOG_FIELD_SEPARATOR);
-      return { ref: (ref || "").trim(), subject: (subject || "").trim() };
+      const [ref, sha, subject] = line.split(GIT_LOG_FIELD_SEPARATOR);
+      return { ref: (ref || "").trim(), sha: (sha || "").trim().toLowerCase(), subject: (subject || "").trim() };
     })
     .filter((item) => item.ref && item.subject);
-  const match = rows.find((item) => isForklineCheckoutStashForBranch(item.subject, branch, message))
-    || rows.find((item) => isForklineCheckoutStashForBranch(item.subject, branch));
+  const exactMatches = message ? rows.filter((item) => isForklineCheckoutStashForBranch(item.subject, branch, message)) : [];
+  const branchMatches = rows.filter((item) => isForklineCheckoutStashForBranch(item.subject, branch));
+  const candidates = message ? exactMatches : branchMatches;
+  const match = expectedSha
+    ? candidates.find((item) => item.sha.startsWith(expectedSha))
+    : exactMatches[0] || branchMatches[0];
   if (!match) return null;
   const messagePart = checkoutStashMessagePart(match.subject, branch);
-  return { ref: match.ref, branch, message: messagePart, label: match.subject };
+  return { ref: match.ref, sha: match.sha, branch, message: messagePart, label: match.subject };
 }
 
 function isForklineCheckoutStashForBranch(subject, branch, message = "") {
@@ -4138,6 +4184,80 @@ function normalizeExpectedTargetRefSha(value) {
   return sha;
 }
 
+async function ensureWorktreeSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!WORKTREE_SNAPSHOT_ACTIONS.has(action)) return;
+  const expected = normalizeExpectedSnapshot(body.expectedWorktreeSnapshot, "工作区状态已过期，请刷新后重新执行这个操作。");
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  const working = await readWorkingStatus(currentRepo, statusOutput);
+  if (working.snapshot !== expected) {
+    throw new Error("工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。");
+  }
+}
+
+async function ensureFileSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!FILE_SNAPSHOT_ACTIONS.has(action)) return;
+  const file = normalizeRepoFile(body.file);
+  const expected = normalizeExpectedSnapshot(body.expectedFileSnapshot, "文件状态已过期，请刷新后重新执行这个操作。");
+  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]).catch(() => "");
+  const working = await readWorkingStatus(currentRepo, statusOutput);
+  const target = selectStatusFile(working.files, file, fileSnapshotScope(body));
+  if (!target) throw new Error("这个文件状态已经变化。请刷新后重新选择。");
+  if (target.snapshot !== expected) {
+    throw new Error(`文件 ${file} 的内容或暂存状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`);
+  }
+}
+
+function fileSnapshotScope(body = {}) {
+  const action = String(body.action || "");
+  if (action === "resolveConflictFile") return "conflict";
+  if (action === "unstageFile" || action === "discardStagedFile" || action === "unstageHunk" || action === "unstageSelectedLines") return "staged";
+  if (String(body.scope || "").trim().toLowerCase() === "untracked") return "untracked";
+  return "unstaged";
+}
+
+function normalizeExpectedSnapshot(value, message) {
+  const snapshot = String(value || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(snapshot)) throw new Error(message);
+  return snapshot;
+}
+
+async function ensureOperationSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!OPERATION_SNAPSHOT_ACTIONS.has(action)) return;
+  const expectedType = operationActionType(action);
+  const receivedType = String(body.expectedOperationType || "").trim();
+  const expectedSnapshot = normalizeExpectedSnapshot(body.expectedOperationSnapshot, "进行中的 Git 操作状态已过期，请刷新后重新执行这个操作。");
+  if (receivedType !== expectedType) {
+    throw new Error("进行中的 Git 操作类型已过期，请刷新后重新执行这个操作。");
+  }
+  const operation = detectRepoOperation(currentRepo);
+  if (!operation || operation.type !== expectedType) {
+    throw new Error(`当前没有正在进行的${operationTypeLabel(expectedType)}，请刷新后重新操作。`);
+  }
+  if (operation.snapshot !== expectedSnapshot) {
+    throw new Error(`正在进行的${operationTypeLabel(expectedType)}已经变化。为避免旧页面操作到新的 Git 状态，请刷新后重新操作。`);
+  }
+}
+
+function operationActionType(action) {
+  if (action.endsWith("Revert")) return "revert";
+  if (action.endsWith("CherryPick")) return "cherryPick";
+  if (action.endsWith("Merge")) return "merge";
+  if (action.endsWith("Rebase")) return "rebase";
+  return "";
+}
+
+function operationTypeLabel(type) {
+  return {
+    revert: "还原",
+    cherryPick: "挑选",
+    merge: "合并",
+    rebase: "变基",
+  }[type] || "Git 操作";
+}
+
 async function hasHeadCommit(repoPath) {
   return Boolean((await git(repoPath, ["rev-parse", "--verify", "HEAD^{commit}"]).catch(() => "")).trim());
 }
@@ -5475,6 +5595,83 @@ function parseStatusRecords(records) {
   return files;
 }
 
+async function readWorkingStatus(repoPath, statusOutput) {
+  const files = parseStatus(statusOutput);
+  const paths = [...new Set(files.flatMap((file) => [file.file, file.previousFile].filter(Boolean)))];
+  const indexEntries = await readIndexSnapshotEntries(repoPath, paths);
+  const enriched = files.map((file) => {
+    const snapshot = statusFileSnapshot(repoPath, file, indexEntries);
+    return { ...file, snapshot };
+  });
+  return {
+    files: enriched,
+    snapshot: combinedWorktreeSnapshot(enriched),
+  };
+}
+
+async function readIndexSnapshotEntries(repoPath, files) {
+  const entries = new Map();
+  if (!files.length) return entries;
+  const output = await git(repoPath, ["ls-files", "-s", "-z", "--", ...files], { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
+  for (const record of String(output || "").split("\0").filter(Boolean)) {
+    const tabIndex = record.indexOf("\t");
+    if (tabIndex < 0) continue;
+    const meta = record.slice(0, tabIndex).trim().split(/\s+/);
+    const file = record.slice(tabIndex + 1);
+    if (meta.length < 3 || !file) continue;
+    const value = `${meta[0]}:${meta[1]}:${meta[2]}`;
+    const list = entries.get(file) || [];
+    list.push(value);
+    entries.set(file, list);
+  }
+  for (const [file, list] of entries) {
+    entries.set(file, list.sort().join(","));
+  }
+  return entries;
+}
+
+function statusFileSnapshot(repoPath, file, indexEntries) {
+  return sha256Json({
+    file: file.file,
+    previousFile: file.previousFile || "",
+    state: file.state,
+    extra: file.extra,
+    conflict: Boolean(file.conflict),
+    staged: Boolean(file.staged),
+    unstaged: Boolean(file.unstaged),
+    indexStatus: file.indexStatus || "",
+    worktreeStatus: file.worktreeStatus || "",
+    index: indexEntries.get(file.file) || "missing",
+    previousIndex: file.previousFile ? indexEntries.get(file.previousFile) || "missing" : "",
+    worktree: worktreeFileSnapshot(repoPath, file.file),
+    previousWorktree: file.previousFile ? worktreeFileSnapshot(repoPath, file.previousFile) : "",
+  });
+}
+
+function combinedWorktreeSnapshot(files) {
+  return sha256Json(files.map((file) => `${file.file}\0${file.previousFile || ""}\0${file.snapshot || ""}`).sort());
+}
+
+function worktreeFileSnapshot(repoPath, file) {
+  const repoRoot = path.resolve(repoPath);
+  const fullPath = path.resolve(repoRoot, normalizeRepoFile(file));
+  if (!sameFsPath(repoRoot, fullPath) && !isPathInside(repoRoot, fullPath)) return "outside";
+  try {
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) return stat.isDirectory() ? "directory" : "other";
+    const hash = crypto.createHash("sha256");
+    hash.update(fs.readFileSync(fullPath));
+    return `file:${stat.size}:${hash.digest("hex")}`;
+  } catch (error) {
+    if (error?.code === "ENOENT") return "missing";
+    return `error:${error?.code || "unknown"}`;
+  }
+}
+
+function sha256Json(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
 function statusFile(indexStatus, worktreeStatus, status, file, previousFile = "") {
   const conflict = indexStatus === "U" || worktreeStatus === "U" || ["AA", "AU", "UD", "DU", "UA", "UU", "DD"].includes(status);
   const staged = indexStatus !== " " && indexStatus !== "?";
@@ -6681,18 +6878,79 @@ function detectRepoOperation(repoPath) {
   const gitDir = resolveGitDirSync(repoPath);
   if (!gitDir) return null;
   if (fs.existsSync(path.join(gitDir, "REVERT_HEAD"))) {
-    return { type: "revert", label: "还原提交未完成", canContinue: true, canAbort: true };
+    return { type: "revert", label: "还原提交未完成", canContinue: true, canAbort: true, snapshot: gitOperationSnapshot(gitDir, "revert") };
   }
   if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
-    return { type: "cherryPick", label: "挑选提交未完成", canContinue: true, canAbort: true, canSkip: true };
+    return { type: "cherryPick", label: "挑选提交未完成", canContinue: true, canAbort: true, canSkip: true, snapshot: gitOperationSnapshot(gitDir, "cherryPick") };
   }
   if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
-    return { type: "merge", label: "合并未完成", canContinue: true, canAbort: true };
+    return { type: "merge", label: "合并未完成", canContinue: true, canAbort: true, snapshot: gitOperationSnapshot(gitDir, "merge") };
   }
   if (fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"))) {
-    return { type: "rebase", label: "变基未完成", canContinue: true, canAbort: true, canSkip: true };
+    return { type: "rebase", label: "变基未完成", canContinue: true, canAbort: true, canSkip: true, snapshot: gitOperationSnapshot(gitDir, "rebase") };
   }
   return null;
+}
+
+function gitOperationSnapshot(gitDir, type) {
+  const paths = operationSnapshotPaths(gitDir, type);
+  const entries = paths
+    .map((relative) => operationSnapshotEntry(gitDir, relative))
+    .filter(Boolean)
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return sha256Json({ type, entries });
+}
+
+function operationSnapshotPaths(gitDir, type) {
+  if (type === "merge") return ["MERGE_HEAD", "MERGE_MODE", "MERGE_MSG"];
+  if (type === "revert") return ["REVERT_HEAD", ...sequencerSnapshotPaths(gitDir)];
+  if (type === "cherryPick") return ["CHERRY_PICK_HEAD", ...sequencerSnapshotPaths(gitDir)];
+  if (type === "rebase") {
+    return [
+      ...directorySnapshotPaths(gitDir, "rebase-merge"),
+      ...directorySnapshotPaths(gitDir, "rebase-apply"),
+    ];
+  }
+  return [];
+}
+
+function sequencerSnapshotPaths(gitDir) {
+  return directorySnapshotPaths(gitDir, "sequencer");
+}
+
+function directorySnapshotPaths(gitDir, relativeDir) {
+  const root = path.join(gitDir, relativeDir);
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return [];
+  const results = [];
+  const stack = [root];
+  while (stack.length && results.length < 128) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.isFile()) {
+        results.push(path.relative(gitDir, full).replaceAll("\\", "/"));
+      }
+    }
+  }
+  return results;
+}
+
+function operationSnapshotEntry(gitDir, relativePath) {
+  const full = path.join(gitDir, relativePath);
+  try {
+    const stat = fs.statSync(full);
+    if (!stat.isFile()) return null;
+    const buffer = fs.readFileSync(full);
+    return {
+      path: relativePath.replaceAll("\\", "/"),
+      size: stat.size,
+      sha: crypto.createHash("sha256").update(buffer).digest("hex"),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function describeLockFile(lockPath) {
