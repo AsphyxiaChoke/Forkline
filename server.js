@@ -283,18 +283,19 @@ async function readCommit(sha) {
     const commit = sample.commits.find((item) => item.sha === sha) || sample.commits[0];
     return { ...commit, files: commit.files, diff: commit.diff };
   }
-  const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", sha]).catch(() => "")).trim();
+  const repoPath = currentRepo;
+  const parentLine = (await git(repoPath, ["rev-list", "--parents", "-n", "1", sha]).catch(() => "")).trim();
   const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
   const diffBase = parents.length > 1 ? parents[0] : "";
   const [filesOutput, diffOutput, messageOutput, basicCommit] = await Promise.all([
     diffBase
-      ? git(currentRepo, ["diff", "--name-status", "--find-renames", diffBase, sha], { maxBuffer: 1024 * 1024 * 2 })
-      : git(currentRepo, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
+      ? git(repoPath, ["diff", "--name-status", "--find-renames", diffBase, sha], { maxBuffer: 1024 * 1024 * 2 })
+      : git(repoPath, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
     diffBase
-      ? git(currentRepo, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
-      : git(currentRepo, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 }),
-    git(currentRepo, ["show", "-s", "--format=%B", sha], { maxBuffer: 1024 * 256 }),
-    readBasicCommit(sha),
+      ? git(repoPath, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
+      : git(repoPath, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 }),
+    git(repoPath, ["show", "-s", "--format=%B", sha], { maxBuffer: 1024 * 256 }),
+    readBasicCommit(sha, repoPath),
   ]);
   return {
     ...basicCommit,
@@ -329,11 +330,12 @@ async function readCommitPatch(sha) {
       command: `git format-patch -1 ${commit.short} --stdout`,
     };
   }
-  const target = await resolveCommit(sha);
+  const repoPath = currentRepo;
+  const target = await resolveCommit(sha, repoPath);
   const [patch, shortOutput, subjectOutput] = await Promise.all([
-    git(currentRepo, ["format-patch", "-1", "--stdout", target], { maxBuffer: 1024 * 1024 * 12 }),
-    git(currentRepo, ["rev-parse", "--short", target], { timeout: 60000 }),
-    git(currentRepo, ["show", "-s", "--format=%s", target], { maxBuffer: 1024 * 256 }),
+    git(repoPath, ["format-patch", "-1", "--stdout", target], { maxBuffer: 1024 * 1024 * 12 }),
+    git(repoPath, ["rev-parse", "--short", target], { timeout: 60000 }),
+    git(repoPath, ["show", "-s", "--format=%s", target], { maxBuffer: 1024 * 256 }),
   ]);
   const short = shortOutput.trim();
   return {
@@ -361,15 +363,16 @@ async function readFileHistory(filePath, refInput = "") {
       command: `git log --follow -- ${file}`,
     };
   }
+  const repoPath = currentRepo;
   const ref = refInput ? normalizeCompareRef(refInput, "文件历史引用") : "HEAD";
-  if (await isCurrentUnbornRef(ref)) {
+  if (await isCurrentUnbornRef(ref, repoPath)) {
     throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上查看文件历史。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
   }
-  await ensureLiveRemoteBranchRef(ref);
-  await resolveCommitRef(ref, "文件历史引用");
-  const historyFile = await resolveRefFileForWorktreePath(file, ref);
+  await ensureLiveRemoteBranchRef(ref, repoPath);
+  await resolveCommitRef(ref, "文件历史引用", repoPath);
+  const historyFile = await resolveRefFileForWorktreePath(file, ref, repoPath);
   const output = await git(
-    currentRepo,
+    repoPath,
     [
       "log",
       "--follow",
@@ -418,14 +421,15 @@ async function readFileBlame(filePath, refInput = "") {
       command: `git blame --line-porcelain ${file}`,
     };
   }
+  const repoPath = currentRepo;
   const ref = refInput ? normalizeCompareRef(refInput, "逐行追踪引用") : "HEAD";
-  if (await isCurrentUnbornRef(ref)) {
+  if (await isCurrentUnbornRef(ref, repoPath)) {
     throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上逐行追踪。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
   }
-  await ensureLiveRemoteBranchRef(ref);
-  await resolveCommitRef(ref, "逐行追踪引用");
-  const blameFile = await resolveBlameFileForRef(file, ref);
-  const output = await git(currentRepo, ["blame", "--line-porcelain", blameFile.ref, "--", blameFile.file], { maxBuffer: 1024 * 1024 * 10 });
+  await ensureLiveRemoteBranchRef(ref, repoPath);
+  await resolveCommitRef(ref, "逐行追踪引用", repoPath);
+  const blameFile = await resolveBlameFileForRef(file, ref, repoPath);
+  const output = await git(repoPath, ["blame", "--line-porcelain", blameFile.ref, "--", blameFile.file], { maxBuffer: 1024 * 1024 * 10 });
   const parsed = parseBlamePorcelain(output, 600);
   return {
     ok: true,
@@ -440,35 +444,35 @@ async function readFileBlame(filePath, refInput = "") {
   };
 }
 
-async function resolveBlameFileForRef(file, ref) {
-  const resolved = await resolveRefFileForWorktreePath(file, ref);
-  if (await refContainsFile(ref, resolved.file)) return { ...resolved, ref };
-  const parentRef = await findParentRefContainingFile(ref, resolved.file);
+async function resolveBlameFileForRef(file, ref, repoPath = currentRepo) {
+  const resolved = await resolveRefFileForWorktreePath(file, ref, repoPath);
+  if (await refContainsFile(ref, resolved.file, repoPath)) return { ...resolved, ref };
+  const parentRef = await findParentRefContainingFile(ref, resolved.file, repoPath);
   if (parentRef) return { ...resolved, ref: parentRef };
   return { ...resolved, ref };
 }
 
-async function resolveRefFileForWorktreePath(file, ref) {
+async function resolveRefFileForWorktreePath(file, ref, repoPath = currentRepo) {
   const currentFile = normalizeRepoFile(file);
-  if (await refContainsFile(ref, currentFile)) return { file: currentFile, previousFile: "" };
-  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  if (await refContainsFile(ref, currentFile, repoPath)) return { file: currentFile, previousFile: "" };
+  const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
   const target = selectStatusFile(parseStatus(statusOutput), currentFile, "any");
   const previousFile = target?.previousFile ? normalizeRepoFile(target.previousFile) : "";
-  if (previousFile && await refContainsFile(ref, previousFile)) {
+  if (previousFile && await refContainsFile(ref, previousFile, repoPath)) {
     return { file: previousFile, previousFile };
   }
   return { file: currentFile, previousFile: "" };
 }
 
-async function refContainsFile(ref, file) {
-  return Boolean(await git(currentRepo, ["cat-file", "-e", `${ref}:${file}`], { timeout: 60000 }).then(() => "1").catch(() => ""));
+async function refContainsFile(ref, file, repoPath = currentRepo) {
+  return Boolean(await git(repoPath, ["cat-file", "-e", `${ref}:${file}`], { timeout: 60000 }).then(() => "1").catch(() => ""));
 }
 
-async function findParentRefContainingFile(ref, file) {
-  const parentLine = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", ref]).catch(() => "")).trim();
+async function findParentRefContainingFile(ref, file, repoPath = currentRepo) {
+  const parentLine = (await git(repoPath, ["rev-list", "--parents", "-n", "1", ref]).catch(() => "")).trim();
   const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
   for (const parent of parents) {
-    if (await refContainsFile(parent, file)) return parent;
+    if (await refContainsFile(parent, file, repoPath)) return parent;
   }
   return "";
 }
@@ -494,8 +498,9 @@ async function readCompare(baseInput, headInput) {
       command: `git diff ${base}...${head}`,
     };
   }
-  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "HEAD")).trim() || "HEAD";
-  const unborn = currentBranch !== "detached HEAD" && !(await hasHeadCommit(currentRepo));
+  const repoPath = currentRepo;
+  const currentBranch = (await readBranchDisplayName(repoPath).catch(() => "HEAD")).trim() || "HEAD";
+  const unborn = currentBranch !== "detached HEAD" && !(await hasHeadCommit(repoPath));
   if (unborn && !baseInput) {
     throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能作为比较基准。请先创建首个提交，或手动选择一个已有提交的分支作为基准。`);
   }
@@ -504,17 +509,17 @@ async function readCompare(baseInput, headInput) {
   if (unborn && (base === currentBranch || base === "HEAD" || head === currentBranch || head === "HEAD")) {
     throw new Error("当前分支还没有任何提交，不能参与分支比较。请先创建首个提交，或选择两个已有提交的引用。");
   }
-  await Promise.all([ensureLiveRemoteBranchRef(base), ensureLiveRemoteBranchRef(head)]);
-  const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准"), resolveCommitRef(head, "比较目标")]);
-  const mergeBase = (await git(currentRepo, ["merge-base", base, head]).catch(() => "")).trim();
-  const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);
+  await Promise.all([ensureLiveRemoteBranchRef(base, repoPath), ensureLiveRemoteBranchRef(head, repoPath)]);
+  const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准", repoPath), resolveCommitRef(head, "比较目标", repoPath)]);
+  const mergeBase = (await git(repoPath, ["merge-base", base, head]).catch(() => "")).trim();
+  const counts = (await git(repoPath, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);
   const baseOnlyCount = Number(counts[0] || 0);
   const headOnlyCount = Number(counts[1] || 0);
   const [baseOnlyOutput, headOnlyOutput, filesOutput, diffOutput] = await Promise.all([
-    baseOnlyCount ? git(currentRepo, compareLogArgs(`${head}..${base}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
-    headOnlyCount ? git(currentRepo, compareLogArgs(`${base}..${head}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
-    git(currentRepo, ["diff", "--name-status", "--find-renames", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
-    git(currentRepo, ["diff", "--unified=8", "--no-ext-diff", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 8 }).catch(() => ""),
+    baseOnlyCount ? git(repoPath, compareLogArgs(`${head}..${base}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
+    headOnlyCount ? git(repoPath, compareLogArgs(`${base}..${head}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
+    git(repoPath, ["diff", "--name-status", "--find-renames", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
+    git(repoPath, ["diff", "--unified=8", "--no-ext-diff", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 8 }).catch(() => ""),
   ]);
   return {
     ok: true,
@@ -541,14 +546,14 @@ function normalizeCompareRef(value, label) {
   return ref === "detached" || ref === "detached HEAD" ? "HEAD" : ref;
 }
 
-async function isCurrentUnbornRef(ref) {
-  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
-  if (!currentBranch || currentBranch === "detached HEAD" || await hasHeadCommit(currentRepo)) return false;
+async function isCurrentUnbornRef(ref, repoPath = currentRepo) {
+  const currentBranch = (await readBranchDisplayName(repoPath).catch(() => "")).trim();
+  if (!currentBranch || currentBranch === "detached HEAD" || await hasHeadCommit(repoPath)) return false;
   return ref === "HEAD" || ref === "@" || ref === currentBranch || ref === `refs/heads/${currentBranch}`;
 }
 
-async function resolveCommitRef(ref, label) {
-  return (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => {
+async function resolveCommitRef(ref, label, repoPath = currentRepo) {
+  return (await git(repoPath, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => {
     throw new Error(`${label} ${ref} 不是有效提交引用。请刷新分支列表后再试。`);
   })).trim();
 }
@@ -582,36 +587,37 @@ async function readHistoryRewritePreview(sha, rawMode) {
       canRun: false,
     };
   }
-  const targetSha = await resolveCommit(sha);
-  const target = await readBasicCommit(targetSha);
+  const repoPath = currentRepo;
+  const targetSha = await resolveCommit(sha, repoPath);
+  const target = await readBasicCommit(targetSha, repoPath);
   const blockers = [];
   const warnings = ["执行前会自动创建恢复点", "执行后目标提交之后的 SHA 会改变"];
-  const operation = detectRepoOperation(currentRepo);
+  const operation = detectRepoOperation(repoPath);
   if (operation) blockers.push(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
 
-  const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+  const statusOutput = await git(repoPath, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
   const dirtyCount = parseStatus(statusOutput).length;
   if (statusOutput.trim()) blockers.push(`当前还有 ${dirtyCount || "未提交"} 个未提交改动。请先提交、储藏或丢弃后再编辑历史。`);
 
   let branch = "";
   try {
-    branch = await currentLocalBranchForRewrite();
+    branch = await currentLocalBranchForRewrite(repoPath);
   } catch (error) {
     blockers.push(error.message);
   }
   try {
-    await ensureCommitInCurrentHistory(targetSha);
+    await ensureCommitInCurrentHistory(targetSha, repoPath);
   } catch (error) {
     blockers.push(error.message);
   }
 
-  const parents = await commitParents(targetSha);
+  const parents = await commitParents(targetSha, repoPath);
   if (parents.length > 1) blockers.push(`暂不支持对 merge 提交执行${historyRewritePreviewTitle(mode)}`);
   if ((mode === "squash" || mode === "fixup") && parents.length === 0) {
     blockers.push("根提交没有父提交，不能压缩或修补进父提交");
   }
 
-  const parent = parents[0] ? await readBasicCommit(parents[0]).catch(() => null) : null;
+  const parent = parents[0] ? await readBasicCommit(parents[0], repoPath).catch(() => null) : null;
   let upstream = "";
   let rebaseStart = "";
   let affectedPreview = [];
@@ -623,10 +629,10 @@ async function readHistoryRewritePreview(sha, rawMode) {
     targetIndex = 0;
   } else {
     const base = mode === "drop" || (mode === "reword" && !parents[0]) ? targetSha : parents[0];
-    const baseParents = base ? await commitParents(base).catch(() => []) : [];
+    const baseParents = base ? await commitParents(base, repoPath).catch(() => []) : [];
     upstream = baseParents.length ? `${base}^` : "--root";
     rebaseStart = upstream === "--root" ? "仓库根提交" : `${baseParents[0]?.slice(0, 7) || base.slice(0, 7)} 之后`;
-    const affected = await readRewriteRangeCommits(upstream).catch(() => []);
+    const affected = await readRewriteRangeCommits(upstream, repoPath).catch(() => []);
     affectedCount = affected.length;
     affectedPreview = affected.slice(0, 12);
     targetIndex = affected.findIndex((item) => item.sha === targetSha);
@@ -690,16 +696,17 @@ async function readHistoryRewriteQueuePreview(rawItems) {
 
   const blockers = [];
   const warnings = ["执行前会自动创建恢复点", "执行后队列影响范围内的 SHA 会改变"];
-  const operation = detectRepoOperation(currentRepo);
+  const repoPath = currentRepo;
+  const operation = detectRepoOperation(repoPath);
   if (operation) blockers.push(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
 
-  const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+  const statusOutput = await git(repoPath, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
   const dirtyCount = parseStatus(statusOutput).length;
   if (statusOutput.trim()) blockers.push(`当前还有 ${dirtyCount || "未提交"} 个未提交改动。请先提交、储藏或丢弃后再编辑历史。`);
 
   let branch = "";
   try {
-    branch = await currentLocalBranchForRewrite();
+    branch = await currentLocalBranchForRewrite(repoPath);
   } catch (error) {
     blockers.push(error.message);
   }
@@ -707,18 +714,18 @@ async function readHistoryRewriteQueuePreview(rawItems) {
   const resolved = [];
   const seenTargets = new Set();
   for (const item of requested) {
-    const targetSha = await resolveCommit(item.sha);
+    const targetSha = await resolveCommit(item.sha, repoPath);
     if (seenTargets.has(targetSha)) {
       blockers.push(`提交 ${targetSha.slice(0, 7)} 在队列中重复出现。`);
       continue;
     }
     seenTargets.add(targetSha);
     try {
-      await ensureCommitInCurrentHistory(targetSha);
+      await ensureCommitInCurrentHistory(targetSha, repoPath);
     } catch (error) {
       blockers.push(error.message);
     }
-    const [target, parents] = await Promise.all([readBasicCommit(targetSha), commitParents(targetSha)]);
+    const [target, parents] = await Promise.all([readBasicCommit(targetSha, repoPath), commitParents(targetSha, repoPath)]);
     if (parents.length > 1) blockers.push(`提交 ${target.short} 是 merge 提交，暂不支持加入历史编辑队列。`);
     if ((item.mode === "squash" || item.mode === "fixup") && parents.length === 0) {
       blockers.push(`提交 ${target.short} 是根提交，不能压缩或修补进父提交。`);
@@ -730,7 +737,7 @@ async function readHistoryRewriteQueuePreview(rawItems) {
       summary: item.summary || "",
       body: item.body || "",
       target,
-      parent: parents[0] ? await readBasicCommit(parents[0]).catch(() => null) : null,
+      parent: parents[0] ? await readBasicCommit(parents[0], repoPath).catch(() => null) : null,
       parentSha: parents[0] || "",
     });
   }
@@ -741,7 +748,7 @@ async function readHistoryRewriteQueuePreview(rawItems) {
     blockers.push("批量修改提交信息暂不和压缩/修补混用，请分两次执行。");
   }
 
-  const fullRange = await readRewriteRangeCommits("--root").catch(() => []);
+  const fullRange = await readRewriteRangeCommits("--root", repoPath).catch(() => []);
   const order = new Map(fullRange.map((commit, index) => [commit.sha, index]));
   let earliestBase = "";
   let earliestIndex = Number.POSITIVE_INFINITY;
@@ -763,10 +770,10 @@ async function readHistoryRewriteQueuePreview(rawItems) {
   let rebaseStart = "";
   let affected = [];
   if (earliestBase) {
-    const baseParents = await commitParents(earliestBase).catch(() => []);
+    const baseParents = await commitParents(earliestBase, repoPath).catch(() => []);
     upstream = baseParents.length ? `${earliestBase}^` : "--root";
     rebaseStart = upstream === "--root" ? "仓库根提交" : `${baseParents[0]?.slice(0, 7) || earliestBase.slice(0, 7)} 之后`;
-    affected = await readRewriteRangeCommits(upstream).catch(() => []);
+    affected = await readRewriteRangeCommits(upstream, repoPath).catch(() => []);
     const merges = affected.filter((commit) => commit.parents.length > 1);
     if (merges.length) {
       blockers.push(`这段历史里包含 merge 提交 ${merges[0].short}。为避免破坏分支拓扑，暂不自动执行历史编辑队列。`);
@@ -844,22 +851,23 @@ async function readWorkingDiff(filePath, rawScope = "auto") {
     const sample = sampleState();
     return { file: filePath || sample.workingFiles[0]?.file || "", scope: "unstaged", requestedScope: "auto", diff: sample.commits[0]?.diff || [] };
   }
+  const repoPath = currentRepo;
   const file = normalizeRepoFile(filePath);
   const requestedScope = normalizeWorktreeDiffRequestScope(rawScope);
   let scope = requestedScope === "auto" ? "unstaged" : requestedScope;
-  let target = await readStatusFileForDiff(file, scope);
-  let output = await readWorktreeDiffOutput(file, scope, target);
+  let target = await readStatusFileForDiff(file, scope, repoPath);
+  let output = await readWorktreeDiffOutput(file, scope, target, repoPath);
   if (!output && requestedScope !== "staged") {
-    target = target || await readStatusFileForDiff(file, "unstaged");
+    target = target || await readStatusFileForDiff(file, "unstaged", repoPath);
     if (target?.indexStatus === "?") {
       scope = "untracked";
-      output = readNewFileDiff(file);
+      output = readNewFileDiff(file, repoPath);
     }
   }
   if (!output && requestedScope === "auto") {
     scope = "staged";
-    target = await readStatusFileForDiff(file, scope);
-    output = await readWorktreeDiffOutput(file, scope, target);
+    target = await readStatusFileForDiff(file, scope, repoPath);
+    output = await readWorktreeDiffOutput(file, scope, target, repoPath);
   }
   return { file, previousFile: target?.previousFile || "", scope, requestedScope, diff: parseDiff(output) };
 }
@@ -868,10 +876,11 @@ async function readStash(ref) {
   if (!currentRepo) {
     return { ref: "", files: [], diff: [] };
   }
+  const repoPath = currentRepo;
   const stashRef = normalizeStashRef(ref);
   const [filesOutput, diffOutput] = await Promise.all([
-    git(currentRepo, ["stash", "show", "--include-untracked", "--name-status", stashRef], { maxBuffer: 1024 * 1024 * 2 }),
-    git(currentRepo, ["stash", "show", "--include-untracked", "--patch", "--no-ext-diff", "--unified=8", stashRef], { maxBuffer: 1024 * 1024 * 5 }),
+    git(repoPath, ["stash", "show", "--include-untracked", "--name-status", stashRef], { maxBuffer: 1024 * 1024 * 2 }),
+    git(repoPath, ["stash", "show", "--include-untracked", "--patch", "--no-ext-diff", "--unified=8", stashRef], { maxBuffer: 1024 * 1024 * 5 }),
   ]);
   return {
     ref: stashRef,
@@ -1178,8 +1187,11 @@ function ensureCanStartAction(body = {}, operation = {}) {
   if (hasRunningRepoSwitchOperation(operation.id)) {
     throw new Error("正在切换仓库，暂不能执行新的 Git 操作。请稍后重试。");
   }
-  if (actionChangesRepo(body) && hasRunningOperation(operation.id)) {
-    throw new Error("当前还有 Git 操作正在执行，暂不能切换仓库。请等待右侧操作日志中的任务完成后再切换，避免命令执行到错误仓库。");
+  if (hasRunningOperation(operation.id)) {
+    if (actionChangesRepo(body)) {
+      throw new Error("当前还有 Git 操作正在执行，暂不能切换仓库。请等待右侧操作日志中的任务完成后再切换，避免命令执行到错误仓库。");
+    }
+    throw new Error("当前还有 Git 操作正在执行，暂不能执行新的 Git 操作。请等待右侧操作日志中的任务完成后再继续，避免多个命令同时修改仓库状态。");
   }
 }
 
@@ -2447,18 +2459,18 @@ async function unstageSelectedLines(body) {
   return `已取消暂存所选 ${selectedLines.length} 行`;
 }
 
-async function readWorktreeDiffOutput(file, scope, fileInfo = null) {
+async function readWorktreeDiffOutput(file, scope, fileInfo = null, repoPath = currentRepo) {
   const diffScope = normalizeDiffScope(scope);
-  const target = fileInfo || await readStatusFileForDiff(file, diffScope === "staged" ? "staged" : "unstaged");
+  const target = fileInfo || await readStatusFileForDiff(file, diffScope === "staged" ? "staged" : "unstaged", repoPath);
   const pathspecs = worktreeDiffPathspecs(file, target);
   const args = diffScope === "staged"
     ? ["diff", "--cached", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", ...pathspecs]
     : ["diff", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", ...pathspecs];
-  return git(currentRepo, args, { maxBuffer: 1024 * 1024 * 8, stdoutOnly: true }).catch(() => "");
+  return git(repoPath, args, { maxBuffer: 1024 * 1024 * 8, stdoutOnly: true }).catch(() => "");
 }
 
-async function readStatusFileForDiff(file, scope = "any") {
-  const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+async function readStatusFileForDiff(file, scope = "any", repoPath = currentRepo) {
+  const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
   return selectStatusFile(parseStatus(statusOutput), file, scope);
 }
 
@@ -3191,13 +3203,13 @@ async function abortRebase() {
   return { ok: true, output: "已中止变基，工作区已回到变基前状态" };
 }
 
-async function resolveCommit(value) {
+async function resolveCommit(value, repoPath = currentRepo) {
   const sha = normalizeSha(value);
-  return (await git(currentRepo, ["rev-parse", "--verify", `${sha}^{commit}`])).trim();
+  return (await git(repoPath, ["rev-parse", "--verify", `${sha}^{commit}`])).trim();
 }
 
-async function currentLocalBranchForRewrite() {
-  const branch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
+async function currentLocalBranchForRewrite(repoPath = currentRepo) {
+  const branch = (await git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
   if (!branch || branch === "HEAD" || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能编辑分支历史。请先切换到本地分支。");
   }
@@ -3209,35 +3221,35 @@ async function ensureCleanWorktree(message) {
   if (statusOutput.trim()) throw new Error(message);
 }
 
-async function ensureCommitInCurrentHistory(target) {
-  await git(currentRepo, ["merge-base", "--is-ancestor", target, "HEAD"]).catch(() => {
+async function ensureCommitInCurrentHistory(target, repoPath = currentRepo) {
+  await git(repoPath, ["merge-base", "--is-ancestor", target, "HEAD"]).catch(() => {
     throw new Error("只能编辑当前分支历史中的提交");
   });
 }
 
-async function commitParents(target) {
-  const line = (await git(currentRepo, ["rev-list", "--parents", "-n", "1", target])).trim();
+async function commitParents(target, repoPath = currentRepo) {
+  const line = (await git(repoPath, ["rev-list", "--parents", "-n", "1", target])).trim();
   return line.split(/\s+/).slice(1);
 }
 
-async function ensureLinearRewriteRange(upstream, mode) {
-  const merges = await readRewriteRangeMerges(upstream);
+async function ensureLinearRewriteRange(upstream, mode, repoPath = currentRepo) {
+  const merges = await readRewriteRangeMerges(upstream, repoPath);
   if (merges.length) {
     const first = merges[0]?.short || "";
     throw new Error(`这段历史里包含 merge 提交 ${first}。为避免破坏分支拓扑，暂不自动执行 ${historyRewriteActionLabel(mode)}。`);
   }
 }
 
-async function readRewriteRangeMerges(upstream) {
+async function readRewriteRangeMerges(upstream, repoPath = currentRepo) {
   const args = upstream === "--root" ? ["rev-list", "--parents", "HEAD"] : ["rev-list", "--parents", `${upstream}..HEAD`];
-  return (await git(currentRepo, args))
+  return (await git(repoPath, args))
     .split(/\r?\n/)
     .map((line) => line.trim().split(/\s+/).filter(Boolean))
     .filter((parts) => parts.length > 2)
     .map((parts) => ({ sha: parts[0], short: parts[0]?.slice(0, 7) || "", parents: parts.slice(1) }));
 }
 
-async function readRewriteRangeCommits(upstream) {
+async function readRewriteRangeCommits(upstream, repoPath = currentRepo) {
   const args = [
     "log",
     "--reverse",
@@ -3246,11 +3258,11 @@ async function readRewriteRangeCommits(upstream) {
     `--format=${BASIC_COMMIT_LOG_FORMAT}`,
   ];
   args.push(upstream === "--root" ? "HEAD" : `${upstream}..HEAD`);
-  return parseBasicCommits(await git(currentRepo, args, { maxBuffer: 1024 * 1024 * 2 }));
+  return parseBasicCommits(await git(repoPath, args, { maxBuffer: 1024 * 1024 * 2 }));
 }
 
-async function readBasicCommit(sha) {
-  const output = await git(currentRepo, ["show", "-s", "--date=relative", `--format=${BASIC_COMMIT_LOG_FORMAT}`, sha], { maxBuffer: 1024 * 256 });
+async function readBasicCommit(sha, repoPath = currentRepo) {
+  const output = await git(repoPath, ["show", "-s", "--date=relative", `--format=${BASIC_COMMIT_LOG_FORMAT}`, sha], { maxBuffer: 1024 * 256 });
   return parseBasicCommits(output)[0] || { sha, short: sha.slice(0, 7), author: "", time: "", message: "", parents: [] };
 }
 
@@ -4761,8 +4773,8 @@ function sameFsPath(left, right) {
   return normalize(left) === normalize(right);
 }
 
-function readNewFileDiff(file) {
-  const repoRoot = path.resolve(currentRepo);
+function readNewFileDiff(file, repoPath = currentRepo) {
+  const repoRoot = path.resolve(repoPath);
   const fullPath = path.resolve(repoRoot, file);
   if (!fullPath.startsWith(repoRoot + path.sep)) throw new Error("文件路径不合法");
   if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) return "";

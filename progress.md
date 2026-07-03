@@ -3014,3 +3014,110 @@
 - `docs/CONTINUE.md`：记录后端状态读取的仓库快照行为。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前反向删除本轮 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧提交详情、文件历史、逐行追踪和比较结果覆盖新仓库
+### What was done
+- 复现比较、文件历史和提交详情请求发出后，如果用户先切到另一个仓库，旧仓库请求返回时仍会写入新仓库页面。
+- 比较页、文件历史、逐行追踪和提交详情加载现在会记录请求发起时的仓库路径；返回或报错时如果当前仓库已经变化，就丢弃旧结果。
+- 打开新仓库时同步清空还在加载中的提交详情标记，避免旧仓库的提交详情请求阻塞新仓库同 SHA 的详情加载。
+- 后端提交详情、补丁导出、文件历史、逐行追踪和比较接口也改为使用请求发起时的仓库路径快照，避免同一次响应混入两个仓库的数据。
+
+### Testing
+- 前端竞态 harness 复现旧行为：`openCompareBranch()` 发起于 `repo-A` 后切到 `repo-B`，旧比较结果仍写入 `state.compare`；`openFileHistory()` 发起于旧仓库后切到 `repo-C`，旧历史提交仍写入新仓库面板。
+- 修复后复跑同一 harness，旧比较、旧文件历史和旧提交详情都被丢弃，没有写入新仓库状态。
+- 后端 VM harness 验证：`readCompare("main", "feature")` 发起于 `repo-A` 后把全局 `currentRepo` 改成 `repo-B`，所有 Git 调用仍只使用 `repo-A`，返回的 SHA 和文件列表也来自 `repo-A`。
+- `node --check server.js`、`node --check public/js/features/commit-actions.js`、`node --check public/js/features/graph.js`、`node --check public/js/features/repositories.js` 和 `node --check public/js/panels/inspector.js` 均通过。
+
+### Notes
+- `public/js/features/commit-actions.js`：比较请求写回前校验仓库路径。
+- `public/js/features/graph.js`：提交详情请求写回和错误提示前校验仓库路径。
+- `public/js/features/repositories.js`：打开新仓库时清空提交详情加载标记。
+- `public/js/panels/inspector.js`：文件历史和逐行追踪请求写回前校验仓库路径。
+- `server.js`：提交详情、补丁、文件历史、逐行追踪和比较读取链路使用仓库路径快照。
+- `README.md`：补充切换仓库期间旧历史读取不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录历史读取接口的仓库快照行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧工作区 Diff 和储藏详情覆盖新仓库
+### What was done
+- 复现工作区 Diff 请求发出后，如果用户先切到另一个仓库，旧仓库 Diff 返回时仍会写入新仓库底部对照面板。
+- 复现储藏详情请求发出后切换仓库，旧仓库的 `stash@{0}` 文件列表和 Diff 仍可能写入新仓库；打开新仓库时也没有清空旧储藏详情缓存。
+- 工作区 Diff 和储藏详情加载现在会记录请求发起时的仓库路径，返回或报错时如果当前仓库已经变化，就丢弃旧结果。
+- 打开新仓库时会清空储藏详情缓存和当前选中储藏，避免两个仓库都有同名 `stash@{0}` 时复用旧详情。
+- 后端工作区 Diff 和储藏详情读取会使用请求发起时的仓库路径快照，避免一次响应混入两个仓库的数据。
+
+### Testing
+- 前端竞态 harness 复现旧行为：`loadWorkingDiff("old.txt")` 发起于 `repo-A` 后切到 `repo-B`，旧 Diff 仍写入 `activeDiff`；`loadStashDetail("stash@{0}")` 发起于 `repo-C` 后切到 `repo-D`，旧储藏文件仍写入 `stashDetails`。
+- 修复后复跑同一 harness，旧工作区 Diff 和旧储藏详情都被丢弃，没有写入新仓库状态。
+- 后端 VM harness 验证：`readWorkingDiff("file.txt", "unstaged")` 和 `readStash("stash@{0}")` 都在请求发起后把全局 `currentRepo` 改成 `repo-B`，所有 Git 调用仍只使用 `repo-A`。
+- `node --check server.js`、`node --check public/js/features/diff-workbench.js`、`node --check public/js/features/repositories.js` 和 `node --check public/js/panels/sync.js` 均通过。
+
+### Notes
+- `public/js/features/diff-workbench.js`：工作区 Diff 请求写回和错误提示前校验仓库路径。
+- `public/js/panels/sync.js`：储藏详情请求写回和错误提示前校验仓库路径。
+- `public/js/features/repositories.js`：打开新仓库时清空储藏详情缓存和选中储藏。
+- `server.js`：工作区 Diff、未跟踪文件虚拟 Diff 和储藏详情读取链路使用仓库路径快照。
+- `README.md`：补充切换仓库期间旧工作区 Diff 和旧储藏详情不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录工作区 Diff 和储藏详情读取的仓库快照行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复普通 Git 写操作可并发执行的问题
+### What was done
+- 复现后端只拦截切仓库类动作并发，普通写动作可以同时进入 `/api/action`：例如 `stageAll` 仍在运行时，`commit` 可以被允许启动。
+- 后端现在只要已有 Git 操作正在运行，就拒绝新的 Git 操作；切仓库类动作仍保留“暂不能切换仓库”的明确提示，普通动作返回“暂不能执行新的 Git 操作”。
+- 这个后端保护覆盖浏览器连点、多个页面同时操作和脚本直接调用，避免多个命令同时修改索引或工作区状态。
+
+### Testing
+- 修复前 VM harness：先 `beginOperation({ action: "stageAll" })`，再启动 `commit`，`ensureCanStartAction()` 返回允许，`activeOperations` 同时有 2 个操作。
+- 修复后同一 harness：第二个普通写动作被拒绝，提示“当前还有 Git 操作正在执行，暂不能执行新的 Git 操作...”。
+- 另用 VM harness 验证：已有普通操作时再启动 `openWorktree`，仍返回原来的“暂不能切换仓库”提示。
+- `node --check server.js` 通过。
+
+### Notes
+- `server.js`：`ensureCanStartAction` 改为串行化所有 Git 操作。
+- `README.md`：补充有 Git 操作运行时会阻止新的 Git 操作。
+- `docs/CONTINUE.md`：记录后端操作串行化行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧历史重写预览覆盖新仓库
+### What was done
+- 复现历史重写单项预览和队列预览请求发出后，如果用户切到另一个仓库，旧仓库预览仍可能写入新仓库详情页。
+- 历史重写单项预览和队列预览现在都会记录请求发起时的仓库路径；返回或报错时如果当前仓库已经变化，就丢弃旧结果。
+- 后端历史重写单项预览和队列预览会使用请求发起时的仓库路径快照，提交解析、当前分支、未提交状态、父提交、影响范围和 merge 检查都固定在同一个仓库。
+
+### Testing
+- 旧逻辑形状 harness 复现：`historyPlan` 只校验 SHA/mode、`historyQueue` 只校验队列签名时，切到新仓库后旧预览仍写入当前状态。
+- 修复后前端 harness 验证：旧单项历史重写预览和旧队列预览返回时都被丢弃，没有写入新仓库页面。
+- 后端 VM harness 验证：`readHistoryRewritePreview()` 和 `readHistoryRewriteQueuePreview()` 发起于 `repo-A` 后把全局 `currentRepo` 改成 `repo-B`，所有 Git 调用仍只使用 `repo-A`。
+- `node --check server.js` 和 `node --check public/js/features/commit-actions.js` 均通过。
+
+### Notes
+- `public/js/features/commit-actions.js`：历史重写单项预览和队列预览写回前校验仓库路径。
+- `server.js`：历史重写预览读取链路和相关 helper 支持仓库路径快照。
+- `README.md`：补充切换仓库期间旧历史重写预览不会覆盖新仓库页面。
+- `docs/CONTINUE.md`：记录历史重写预览的仓库快照行为。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复切换仓库时旧提交补丁复制下载结果泄漏
+### What was done
+- 复现提交补丁复制和下载请求发出后，如果用户切到另一个仓库，旧仓库补丁仍可能写入剪贴板或触发下载。
+- 复制补丁和下载补丁现在会记录请求发起时的仓库路径；返回时如果当前仓库已经变化，就丢弃旧结果。
+- 该保护避免用户在新仓库页面里误拿到旧仓库的 `.patch` 内容。
+
+### Testing
+- 旧逻辑形状 harness 复现：旧补丁请求返回时，`copyCommitPatch()` 会复制旧补丁，`downloadCommitPatch()` 会下载旧补丁。
+- 修复后 Node harness 验证：切到 `repo-B` 后，`repo-A` 的旧复制和下载结果均被丢弃，输出 `{"copyDiscarded":true,"downloadDiscarded":true}`。
+- `node --check server.js`、`node --check public/js/features/commit-actions.js`、`node --check public/js/features/diff-workbench.js`、`node --check public/js/features/graph.js`、`node --check public/js/features/repositories.js`、`node --check public/js/panels/inspector.js`、`node --check public/js/panels/sync.js` 均通过。
+- `git diff --check` 通过，仅提示工作副本未来会按 Git 设置转为 CRLF。
+- 调试标记扫描无命中。
+
+### Notes
+- `public/js/features/commit-actions.js`：补丁复制和下载写入前校验仓库路径。
+- `README.md`：补充补丁复制/下载在切仓库时丢弃旧结果。
+- `docs/CONTINUE.md`：记录旧提交补丁复制/下载结果不会覆盖新仓库页面。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。

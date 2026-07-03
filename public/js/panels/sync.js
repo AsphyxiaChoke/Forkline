@@ -92,14 +92,17 @@ function stashDetailHtml(stash, detail, files, diff) {
 
 async function loadStashDetail(ref) {
   if (!ref || state.stashDetails.get(ref)?.loading) return;
+  const repoPath = repoPathSnapshot();
   state.stashDetails.set(ref, { loading: true });
   try {
     const detail = await api(`/api/stash?ref=${encodeURIComponent(ref)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
     state.stashDetails.set(ref, detail);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     state.stashDetails.set(ref, { error: error.message });
   }
-  if (state.selectedTab === "stashes" && state.selectedStash === ref) renderInspector();
+  if (isCurrentRepoPath(repoPath) && state.selectedTab === "stashes" && state.selectedStash === ref) renderInspector();
 }
 
 function selectStash(ref) {

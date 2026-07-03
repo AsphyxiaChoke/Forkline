@@ -6,6 +6,7 @@ function currentCompareBaseRef() {
 
 async function openCompareBranch(head, base = currentCompareBaseRef()) {
   if (!head) return;
+  const repoPath = repoPathSnapshot();
   const requestId = ++state.compareRequestId;
   state.compare = { base, head, data: null, loading: true, error: "" };
   state.selectedCompareFile = "";
@@ -13,12 +14,12 @@ async function openCompareBranch(head, base = currentCompareBaseRef()) {
   renderInspector();
   try {
     const data = await api(`/api/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`);
-    if (requestId !== state.compareRequestId) return;
+    if (requestId !== state.compareRequestId || !isCurrentRepoPath(repoPath)) return;
     state.compare = { base: data.base || base, head: data.head || head, data, loading: false, error: "" };
     state.selectedCompareFile = data.files?.[0]?.file || "";
     renderInspector();
   } catch (error) {
-    if (requestId !== state.compareRequestId) return;
+    if (requestId !== state.compareRequestId || !isCurrentRepoPath(repoPath)) return;
     state.compare = { base, head, data: null, loading: false, error: error.message };
     state.selectedCompareFile = "";
     renderInspector();
@@ -274,6 +275,7 @@ async function refreshHistoryRewriteQueuePreview() {
     renderInspector();
     return;
   }
+  const repoPath = repoPathSnapshot();
   const signature = historyQueueSignature(items);
   state.historyQueue = { ...state.historyQueue, loading: true, error: "" };
   renderInspector();
@@ -282,11 +284,11 @@ async function refreshHistoryRewriteQueuePreview() {
       method: "POST",
       body: JSON.stringify({ items: historyQueuePayload(items) }),
     });
-    if (signature !== historyQueueSignature()) return;
+    if (signature !== historyQueueSignature() || !isCurrentRepoPath(repoPath)) return;
     state.historyQueue = { ...state.historyQueue, loading: false, preview, error: "" };
     renderInspector();
   } catch (error) {
-    if (signature !== historyQueueSignature()) return;
+    if (signature !== historyQueueSignature() || !isCurrentRepoPath(repoPath)) return;
     state.historyQueue = { ...state.historyQueue, loading: false, preview: null, error: error.message };
     renderInspector();
   }
@@ -411,16 +413,18 @@ async function openHistoryRewritePlan(commit, mode) {
   state.selectedTab = "details";
   state.selectedSha = commit.sha;
   state.historyPlan = { sha: commit.sha, mode, loading: true, preview: null, error: "" };
+  const repoPath = repoPathSnapshot();
   renderCommits();
   await loadCommit(commit.sha);
+  if (!isCurrentRepoPath(repoPath)) return;
   renderInspector();
   try {
     const preview = await api(`/api/history-rewrite-preview?sha=${encodeURIComponent(commit.sha)}&mode=${encodeURIComponent(mode)}`);
-    if (state.historyPlan?.sha !== commit.sha || state.historyPlan?.mode !== mode) return;
+    if (state.historyPlan?.sha !== commit.sha || state.historyPlan?.mode !== mode || !isCurrentRepoPath(repoPath)) return;
     state.historyPlan = { sha: commit.sha, mode, loading: false, preview, error: "" };
     renderInspector();
   } catch (error) {
-    if (state.historyPlan?.sha !== commit.sha || state.historyPlan?.mode !== mode) return;
+    if (state.historyPlan?.sha !== commit.sha || state.historyPlan?.mode !== mode || !isCurrentRepoPath(repoPath)) return;
     state.historyPlan = { sha: commit.sha, mode, loading: false, preview: null, error: error.message };
     renderInspector();
   }
@@ -687,13 +691,17 @@ async function fetchCommitPatch(commit) {
 }
 
 async function copyCommitPatch(commit) {
+  const repoPath = repoPathSnapshot();
   const result = await fetchCommitPatch(commit);
+  if (!isCurrentRepoPath(repoPath)) return;
   await copyText(result.patch || "");
   toast(`已复制补丁：${result.fileName || result.short || commit.short}`);
 }
 
 async function downloadCommitPatch(commit) {
+  const repoPath = repoPathSnapshot();
   const result = await fetchCommitPatch(commit);
+  if (!isCurrentRepoPath(repoPath)) return;
   downloadTextFile(result.fileName || `${commit.short || "commit"}.patch`, result.patch || "", "text/x-patch;charset=utf-8");
   toast(`已下载补丁：${result.fileName || commit.short}`);
 }

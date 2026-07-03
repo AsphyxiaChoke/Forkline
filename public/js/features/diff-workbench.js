@@ -290,6 +290,7 @@ async function loadWorkingDiff(filePath) {
   const fileInfo = selectedWorkingFileInfo(filePath);
   const scope = normalizeWorkDiffScopeChoice(state.workDiffScope, fileInfo);
   state.workDiffScope = scope;
+  const repoPath = repoPathSnapshot();
   const requestId = ++state.diffRequestId;
   els.workDiffTitle.textContent = "变更对照";
   els.workDiffPath.textContent = filePath;
@@ -297,11 +298,11 @@ async function loadWorkingDiff(filePath) {
   els.workDiffView.textContent = "正在读取差异...";
   try {
     const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(scope)}`);
-    if (requestId !== state.diffRequestId) return;
+    if (requestId !== state.diffRequestId || !isCurrentRepoPath(repoPath)) return;
     const fallbackScope = fallbackWorkDiffScope(data.scope || scope, fileInfo, data.diff || []);
     if (fallbackScope) {
       const fallback = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(fallbackScope)}`);
-      if (requestId !== state.diffRequestId) return;
+      if (requestId !== state.diffRequestId || !isCurrentRepoPath(repoPath)) return;
       if (fallback.diff?.length) {
         renderWorkDiff(fallback.file || filePath, fallback.diff, fallback.scope || fallbackScope);
         return;
@@ -309,7 +310,7 @@ async function loadWorkingDiff(filePath) {
     }
     renderWorkDiff(data.file || filePath, data.diff || [], data.scope || "unstaged");
   } catch (error) {
-    if (requestId !== state.diffRequestId) return;
+    if (requestId !== state.diffRequestId || !isCurrentRepoPath(repoPath)) return;
     els.workDiffView.className = "work-diff-view empty";
     els.workDiffView.textContent = error.message;
   }

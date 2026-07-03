@@ -287,6 +287,7 @@ function refColor(ref) {
 
 async function loadCommit(sha) {
   if (!sha || state.commitDetails.has(sha) || state.loadingCommitDetails.has(sha)) return;
+  const repoPath = repoPathSnapshot();
   const commit = state.data.commits.find((item) => item.sha === sha);
   if (commit?.files?.length || commit?.diff?.length) {
     state.commitDetails.set(sha, { files: commit.files || [], diff: commit.diff || [] });
@@ -295,8 +296,10 @@ async function loadCommit(sha) {
   state.loadingCommitDetails.add(sha);
   try {
     const detail = await api(`/api/commit?sha=${encodeURIComponent(sha)}`);
+    if (!isCurrentRepoPath(repoPath)) return;
     state.commitDetails.set(sha, detail);
   } catch (error) {
+    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     state.loadingCommitDetails.delete(sha);

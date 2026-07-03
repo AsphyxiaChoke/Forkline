@@ -545,16 +545,17 @@ async function openFileBlame(filePath, ref = "") {
     return;
   }
   const targetRef = ref || currentFileHistoryRef();
+  const repoPath = repoPathSnapshot();
   const requestId = ++state.fileBlameRequestId;
   state.fileBlame = { file: filePath, ref: targetRef, data: null, loading: true, error: "" };
   state.selectedTab = "fileBlame";
   renderInspector();
   try {
     const data = await api(`/api/file-blame?file=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(targetRef)}`);
-    if (requestId !== state.fileBlameRequestId) return;
+    if (requestId !== state.fileBlameRequestId || !isCurrentRepoPath(repoPath)) return;
     state.fileBlame = { file: filePath, ref: data.ref || targetRef, data, loading: false, error: "" };
   } catch (error) {
-    if (requestId !== state.fileBlameRequestId) return;
+    if (requestId !== state.fileBlameRequestId || !isCurrentRepoPath(repoPath)) return;
     state.fileBlame = { file: filePath, ref: targetRef, data: null, loading: false, error: error.message };
   }
   renderInspector();
@@ -581,16 +582,17 @@ async function openFileHistory(filePath, ref = "") {
     return;
   }
   const targetRef = ref || currentFileHistoryRef();
+  const repoPath = repoPathSnapshot();
   const requestId = ++state.fileHistoryRequestId;
   state.fileHistory = { file: filePath, ref: targetRef, data: null, loading: true, error: "" };
   state.selectedTab = "fileHistory";
   renderInspector();
   try {
     const data = await api(`/api/file-history?file=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(targetRef)}`);
-    if (requestId !== state.fileHistoryRequestId) return;
+    if (requestId !== state.fileHistoryRequestId || !isCurrentRepoPath(repoPath)) return;
     state.fileHistory = { file: filePath, ref: data.ref || targetRef, data, loading: false, error: "" };
   } catch (error) {
-    if (requestId !== state.fileHistoryRequestId) return;
+    if (requestId !== state.fileHistoryRequestId || !isCurrentRepoPath(repoPath)) return;
     state.fileHistory = { file: filePath, ref: targetRef, data: null, loading: false, error: error.message };
   }
   renderInspector();

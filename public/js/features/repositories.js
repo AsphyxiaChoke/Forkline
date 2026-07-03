@@ -307,6 +307,9 @@ async function applyOpenedRepoData(data, requestId = 0) {
   if (requestId && requestId !== state.openRepoRequestId) return false;
   clearRepoScopedActionState();
   state.commitDetails.clear();
+  state.loadingCommitDetails.clear();
+  state.stashDetails.clear();
+  state.selectedStash = "";
   state.fileHistory = { file: "", ref: "", data: null, loading: false, error: "" };
   state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
   state.historyPlan = null;
