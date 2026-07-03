@@ -455,7 +455,7 @@ async function submitBranchForm(event) {
     submit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout }),
+      body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已创建分支 ${branch}`);

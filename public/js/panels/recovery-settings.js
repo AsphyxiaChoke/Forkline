@@ -922,7 +922,12 @@ async function runTagAction(action, tagName, button) {
     toast("已复制 Tag 名称");
     return;
   }
-  const message = tagActionConfirmMessage(action, tag.name);
+  const remote = action === "push" || action === "deleteRemote" ? defaultTagRemote() : null;
+  if ((action === "push" || action === "deleteRemote") && !remote?.name) {
+    toast("当前仓库没有远端。请先添加远端仓库后再操作 Tag。");
+    return;
+  }
+  const message = tagActionConfirmMessage(action, tag.name, remote?.name);
   if (!state.data.repo.isSample && !confirm(message)) return;
   const actionMap = {
     push: "pushTag",
@@ -932,7 +937,9 @@ async function runTagAction(action, tagName, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: actionMap[action], name: tag.name, sha: tag.object || "" }) });
+    const payload = { action: actionMap[action], name: tag.name, sha: tag.object || "" };
+    if (remote?.name) Object.assign(payload, { remote: remote.name }, remoteConfigSnapshotPayload(remote));
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "Tag 操作完成");
     const data = await loadStateForRepoPath(repoPath);
@@ -955,10 +962,15 @@ async function runTagAction(action, tagName, button) {
   }
 }
 
-function tagActionConfirmMessage(action, name) {
-  if (action === "push") return `确认推送 Tag：${name}？\n\n命令：git push <远端> refs/tags/${name}:refs/tags/${name}`;
+function defaultTagRemote() {
+  const remotes = syncRemotes();
+  return remotes.find((remote) => remote.name === "origin") || remotes[0] || null;
+}
+
+function tagActionConfirmMessage(action, name, remoteName = "<远端>") {
+  if (action === "push") return `确认推送 Tag：${name}？\n\n命令：git push ${remoteName} refs/tags/${name}:refs/tags/${name}`;
   if (action === "deleteLocal") return `确认删除本地 Tag：${name}？\n\n命令：git tag -d ${name}\n此操作不会删除远端 Tag。`;
-  if (action === "deleteRemote") return `确认删除远端 Tag：${name}？\n\n命令：git push <远端> :refs/tags/${name}\n此操作不会删除本地 Tag。`;
+  if (action === "deleteRemote") return `确认删除远端 Tag：${name}？\n\n命令：git push ${remoteName} :refs/tags/${name}\n此操作不会删除本地 Tag。`;
   return `确认操作 Tag：${name}？`;
 }
 

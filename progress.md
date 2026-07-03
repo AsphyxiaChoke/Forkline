@@ -3771,3 +3771,86 @@
 - `docs/CONTINUE.md`：记录远端仓库管理已具备 URL 快照保护。
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: Guard stale branch checkout and branch creation actions
+
+### What was done
+- Reproduced a stale-page destructive checkout bug in a temporary `C:\tmp` repository: the page opened `main`, an external command switched to `dev` and added `dev-work.txt`, then an old `checkoutBranch` force request ran `git clean` against `dev` and removed the new untracked file before failing on occupied service logs.
+- Added current branch / HEAD snapshot protection to local branch checkout, remote branch checkout, and branch creation so old pages are rejected before they can stash, clean, switch, or create from the wrong HEAD.
+- Updated the frontend checkout and branch creation requests to send the same current branch snapshot payload used by other high-risk Git write actions.
+- Updated user-facing continuation docs to record that stale branch checkout and branch creation are now protected.
+
+### Testing
+- `C:\tmp` fixed regression: stale `checkoutBranch` force request with `expectedBranch = main` after external switch to `dev` returned HTTP 400 with `当前分支已经从 main 切换到 dev...`; `dev-work.txt` still existed and the repo remained on `dev`.
+- `C:\tmp` fixed regression: stale `createBranch` returned the same branch-change protection, left the repo on `dev`, and did not create `created-from-stale`.
+- `C:\tmp` fixed regression: stale `checkoutRemoteBranch` returned the same branch-change protection before checking the remote ref.
+
+### Notes
+- `server.js`：把 `checkoutBranch`、`checkoutRemoteBranch`、`createBranch` 纳入当前分支快照保护。
+- `public/js/features/git-actions.js`：本地/远端分支签出请求带上页面当前分支和 HEAD。
+- `public/js/features/branches.js`：新建分支请求带上页面当前分支和 HEAD。
+- `README.md`：补充分支签出和新建分支的旧页面保护说明。
+- `docs/CONTINUE.md`：同步当前状态和本轮 API 验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale remote URL for Tag remote actions
+
+### What was done
+- Reproduced a stale Tag remote bug in a temporary `C:\tmp` repository: the page saw `origin -> RemoteA.git`, an external command changed `origin` to `RemoteB.git`, then an old `pushTag` request without a remote snapshot pushed `stale-tag` to RemoteB while RemoteA stayed unchanged.
+- Added remote URL snapshot protection for `pushTag` and `deleteRemoteTag`; stale requests must carry the page's remote name plus fetch/push URL snapshot and are rejected if the current remote config differs.
+- Updated the Tag panel to resolve the default Tag remote on the page, include that remote in confirmations, and send the remote snapshot with Tag push/delete-remote actions.
+- Updated README and continuation docs to describe the stale remote protection.
+
+### Testing
+- `C:\tmp` fixed push regression: stale `pushTag` with `origin` snapshot from RemoteA after external `origin` switch to RemoteB returned HTTP 400 with `远端 origin 的 URL 已经变化...`; neither RemoteA nor RemoteB received `stale-tag`.
+- `C:\tmp` fresh push regression: after restoring `origin` to RemoteA and refreshing state, `pushTag` for `ok-tag` succeeded and RemoteA contained the Tag.
+- `C:\tmp` fixed delete regression: stale `deleteRemoteTag` with RemoteA snapshot after external switch to RemoteB returned HTTP 400; both RemoteA and RemoteB still contained `stale-delete`.
+- `C:\tmp` fresh delete regression: after restoring `origin` to RemoteA and refreshing state, `deleteRemoteTag` for `ok-delete` succeeded and RemoteA no longer contained the Tag.
+
+### Notes
+- `server.js`：新增 Tag 远端写操作的远端 URL 快照校验，缺少远端快照的旧 Tag 请求会被拒绝。
+- `public/js/panels/recovery-settings.js`：Tag 推送/删除远端请求固定页面默认远端并携带 fetch/push URL 快照，确认提示显示实际远端名。
+- `README.md`：说明远端 Tag 推送/删除会校验页面看到的远端 URL。
+- `docs/CONTINUE.md`：同步 Tag 管理状态和旧页面远端保护验证。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale upstream remote for sync actions
+
+### What was done
+- Reproduced a stale upstream push bug in a temporary `C:\tmp` repository: the page saw `feature -> origin/feature` and `origin -> RemoteA.git`, an external command changed `origin` to `RemoteB.git`, then an old `push` request passed the branch/HEAD snapshot and pushed the local ahead commit to RemoteB.
+- Added upstream snapshot protection for pull, rebase pull, push, force-with-lease, and unset-upstream actions; these actions now compare the page's upstream and upstream remote URL with the live repository before running Git.
+- Added default push remote snapshot protection for no-upstream smart push, so an old page cannot create upstream on a newly changed default remote.
+- Updated README and continuation docs with the new sync protection behavior.
+
+### Testing
+- `C:\tmp` fixed upstream push regression: stale `push` after `origin` changed from RemoteA to RemoteB returned HTTP 400 with `upstream 远端 origin 的 URL 已经变化...`; RemoteB did not receive `feature`.
+- `C:\tmp` fresh upstream push regression: after restoring `origin` to RemoteA and refreshing state, `push` succeeded and updated RemoteA.
+- `C:\tmp` fixed no-upstream smart push regression: stale `push` after default `origin` changed from RemoteA to RemoteB returned HTTP 400 with `默认推送远端 origin 的 URL 已经变化...`; RemoteB did not receive `feature`.
+- `C:\tmp` fresh no-upstream smart push regression: after restoring `origin` to RemoteA and refreshing state, `push` succeeded, RemoteA received `feature`, and upstream was established.
+
+### Notes
+- `server.js`：新增 upstream/默认推送远端快照校验，覆盖拉取、变基拉取、推送、安全强推和取消 upstream。
+- `public/js/features/git-actions.js`：当前分支快照载荷增加页面 upstream、upstream 远端 URL，以及无 upstream 时的默认推送远端 URL。
+- `README.md`：说明同步类操作会校验 upstream 和远端 URL。
+- `docs/CONTINUE.md`：同步当前状态和本轮推送旧页面回归验证。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale remote list for fetch all
+
+### What was done
+- Reproduced a stale fetch-all bug in a temporary `C:\tmp` repository: the page saw `origin -> RemoteA.git` and `origin/feature` at RemoteA's commit, an external command changed `origin` to `RemoteB.git`, then an old `fetch` request ran `git fetch --all --prune` and force-updated the local tracking ref to RemoteB's commit.
+- Added full remote-list snapshot protection for fetch-all actions so the server compares the page's remote names and fetch/push URLs with the live repository before running `git fetch --all --prune`.
+- Updated the frontend fetch action to send the current remote list snapshot from the sync panel state.
+- Updated README and continuation docs with the fetch-all stale remote protection behavior.
+
+### Testing
+- `C:\tmp` fixed regression: stale `fetch` after `origin` changed from RemoteA to RemoteB returned HTTP 400 with `远端 origin 的 URL 已经变化...`; `refs/remotes/origin/feature` stayed at the RemoteA commit.
+- `C:\tmp` fresh regression: after restoring `origin` to RemoteA and refreshing state, `fetch` succeeded and updated `origin/feature` to RemoteA's later commit.
+
+### Notes
+- `server.js`：新增抓取全部远端前的完整远端列表和 URL 快照校验。
+- `public/js/features/git-actions.js`：抓取全部远端请求携带页面看到的远端列表、fetch URL 和 push URL。
+- `README.md`：说明 `git fetch --all --prune` 会校验页面远端列表和 URL。
+- `docs/CONTINUE.md`：同步当前状态和本轮抓取全部旧页面回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.

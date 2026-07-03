@@ -24,6 +24,9 @@ const activeOperations = new Map();
 const operationLog = [];
 const REPO_SWITCHING_ACTIONS = new Set(["openWorktree", "cloneRepository", "initRepository"]);
 const REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetchRemote", "setRemoteUrl", "deleteRemote"]);
+const TAG_REMOTE_SNAPSHOT_ACTIONS = new Set(["pushTag", "deleteRemoteTag"]);
+const ALL_REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetch"]);
+const UPSTREAM_SNAPSHOT_ACTIONS = new Set(["pull", "pullRebase", "push", "forcePushLease", "unsetUpstream"]);
 const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
   "pull",
   "pullRebase",
@@ -31,6 +34,9 @@ const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
   "forcePushLease",
   "setUpstream",
   "unsetUpstream",
+  "checkoutBranch",
+  "checkoutRemoteBranch",
+  "createBranch",
   "createWorktree",
   "initSubmodules",
   "updateSubmodules",
@@ -3928,17 +3934,70 @@ async function ensureCurrentBranchSnapshot(body = {}) {
   if (currentBranch !== expectedBranch) {
     throw new Error(`当前分支已经从 ${expectedBranch} 切换到 ${currentBranch || "HEAD"}。为避免把操作执行到错误分支，请刷新页面后重新操作。`);
   }
-  if (!expectedHead) return;
-  const currentHead = (await git(currentRepo, ["rev-parse", "--verify", "HEAD^{commit}"], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
-  if (currentHead && currentHead !== expectedHead) {
-    throw new Error(`当前分支 ${currentBranch} 的 HEAD 已经变化。为避免把操作执行到旧页面之外的提交上，请刷新页面后重新操作。`);
+  if (expectedHead) {
+    const currentHead = (await git(currentRepo, ["rev-parse", "--verify", "HEAD^{commit}"], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+    if (currentHead && currentHead !== expectedHead) {
+      throw new Error(`当前分支 ${currentBranch} 的 HEAD 已经变化。为避免把操作执行到旧页面之外的提交上，请刷新页面后重新操作。`);
+    }
+  }
+  await ensureUpstreamSnapshot(body);
+}
+
+async function ensureUpstreamSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!UPSTREAM_SNAPSHOT_ACTIONS.has(action)) return;
+  const hasExpectedUpstream = Object.prototype.hasOwnProperty.call(body, "expectedUpstream");
+  if (!hasExpectedUpstream) throw new Error("页面 upstream 状态已过期，请刷新后重新执行这个操作。");
+  const expectedUpstream = String(body.expectedUpstream || "").trim();
+  const currentUpstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { timeout: 60000 }).catch(() => "")).trim();
+  if (currentUpstream !== expectedUpstream) {
+    const before = expectedUpstream || "未设置 upstream";
+    const after = currentUpstream || "未设置 upstream";
+    throw new Error(`当前分支 upstream 已经从 ${before} 变为 ${after}。为避免把操作执行到错误远端，请刷新页面后重新操作。`);
+  }
+  if (expectedUpstream) {
+    const remoteName = normalizeRemoteName(body.expectedUpstreamRemote || splitRemoteBranchRef(expectedUpstream, await readRemoteNames()).remote);
+    await ensureRemoteSnapshotForUpstream(remoteName, body, "upstream 远端");
+  } else if (action === "push") {
+    const hasExpectedDefaultRemote = Object.prototype.hasOwnProperty.call(body, "expectedDefaultRemote");
+    if (!hasExpectedDefaultRemote) throw new Error("页面默认推送远端状态已过期，请刷新后重新执行这个操作。");
+    const expectedDefaultRemote = String(body.expectedDefaultRemote || "").trim();
+    const remoteNames = await readRemoteNames();
+    const currentDefaultRemote = remoteNames.includes("origin") ? "origin" : remoteNames[0] || "";
+    if (currentDefaultRemote !== expectedDefaultRemote) {
+      throw new Error(`默认推送远端已经从 ${expectedDefaultRemote || "无远端"} 变为 ${currentDefaultRemote || "无远端"}。为避免把操作执行到错误远端，请刷新页面后重新操作。`);
+    }
+    if (expectedDefaultRemote) await ensureRemoteSnapshotForUpstream(expectedDefaultRemote, body, "默认推送远端", "expectedDefaultRemoteFetchUrl", "expectedDefaultRemotePushUrl");
+  }
+}
+
+async function ensureRemoteSnapshotForUpstream(remoteName, body = {}, label = "远端", fetchField = "expectedUpstreamFetchUrl", pushField = "expectedUpstreamPushUrl") {
+  const hasExpectedFetch = Object.prototype.hasOwnProperty.call(body, fetchField);
+  const hasExpectedPush = Object.prototype.hasOwnProperty.call(body, pushField);
+  if (!hasExpectedFetch && !hasExpectedPush) throw new Error(`页面${label}配置已过期，请刷新后重新执行这个操作。`);
+  const expectedFetchUrl = String(body[fetchField] || "");
+  const expectedPushUrl = String(body[pushField] || "");
+  const current = (await readRemoteDetails()).find((remote) => remote.name === remoteName);
+  if (!current) throw new Error(`${label} ${remoteName} 已不存在。请刷新后重新操作。`);
+  const currentFetchUrl = current.fetchUrl || "";
+  const currentPushUrl = current.pushUrl || "";
+  if (currentFetchUrl !== expectedFetchUrl || currentPushUrl !== expectedPushUrl) {
+    throw new Error(`${label} ${remoteName} 的 URL 已经变化。为避免把操作执行到错误远端，请刷新后重新操作。`);
   }
 }
 
 async function ensureRemoteConfigSnapshot(body = {}) {
   const action = String(body.action || "");
-  if (!REMOTE_CONFIG_SNAPSHOT_ACTIONS.has(action)) return;
-  const remoteName = normalizeRemoteName(body.name);
+  if (ALL_REMOTE_CONFIG_SNAPSHOT_ACTIONS.has(action)) {
+    await ensureAllRemoteConfigSnapshot(body);
+    return;
+  }
+  const tagRemoteAction = TAG_REMOTE_SNAPSHOT_ACTIONS.has(action);
+  if (!REMOTE_CONFIG_SNAPSHOT_ACTIONS.has(action) && !tagRemoteAction) return;
+  if (tagRemoteAction && !String(body.remote || "").trim()) {
+    throw new Error("页面 Tag 远端状态已过期，请刷新 Tag 列表后重新操作。");
+  }
+  const remoteName = normalizeRemoteName(tagRemoteAction ? body.remote : body.name);
   const hasExpectedFetch = Object.prototype.hasOwnProperty.call(body, "expectedFetchUrl");
   const hasExpectedPush = Object.prototype.hasOwnProperty.call(body, "expectedPushUrl");
   if (!hasExpectedFetch && !hasExpectedPush) {
@@ -3955,6 +4014,40 @@ async function ensureRemoteConfigSnapshot(body = {}) {
   if (currentFetchUrl !== expectedFetchUrl || currentPushUrl !== expectedPushUrl) {
     throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面覆盖或删除新的远端配置，请刷新后重新操作。`);
   }
+}
+
+async function ensureAllRemoteConfigSnapshot(body = {}) {
+  if (!Object.prototype.hasOwnProperty.call(body, "expectedRemotes")) {
+    throw new Error("页面远端配置已过期，请刷新后重新执行这个操作。");
+  }
+  const expected = normalizeRemoteSnapshotEntries(body.expectedRemotes);
+  const current = await readRemoteDetails();
+  if (current.length !== expected.length) {
+    throw new Error("远端列表已经变化。为避免旧页面抓取错误远端，请刷新后重新操作。");
+  }
+  const currentByName = new Map(current.map((remote) => [remote.name, remote]));
+  for (const remote of expected) {
+    const actual = currentByName.get(remote.name);
+    if (!actual) throw new Error(`远端 ${remote.name} 已不存在。请刷新远端列表后重新操作。`);
+    if ((actual.fetchUrl || "") !== remote.fetchUrl || (actual.pushUrl || "") !== remote.pushUrl) {
+      throw new Error(`远端 ${remote.name} 的 URL 已经变化。为避免旧页面抓取错误远端，请刷新后重新操作。`);
+    }
+  }
+}
+
+function normalizeRemoteSnapshotEntries(value) {
+  if (!Array.isArray(value)) throw new Error("页面远端配置已过期，请刷新后重新执行这个操作。");
+  const seen = new Set();
+  return value.map((item) => {
+    const remote = normalizeRemoteName(item?.name);
+    if (seen.has(remote)) throw new Error("页面远端配置重复，请刷新后重新执行这个操作。");
+    seen.add(remote);
+    return {
+      name: remote,
+      fetchUrl: String(item?.fetchUrl || ""),
+      pushUrl: String(item?.pushUrl || ""),
+    };
+  });
 }
 
 async function hasHeadCommit(repoPath) {

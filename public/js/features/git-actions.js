@@ -41,7 +41,7 @@ async function checkoutBranch(branch, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     rememberCheckoutStash(result.stash);
     toast(result.output || `已切换到 ${branch}`);
@@ -85,7 +85,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "checkoutRemoteBranch", ref: remoteRef, mode }),
+      body: JSON.stringify({ action: "checkoutRemoteBranch", ref: remoteRef, mode, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     const nextBranch = result.branch || localBranch || remoteRef;
@@ -309,6 +309,7 @@ async function runAction(action) {
   const repoPath = repoPathSnapshot();
   try {
     const payload = { action, ...currentBranchSnapshotPayload() };
+    if (action === "fetch") Object.assign(payload, allRemoteConfigSnapshotPayload());
     if (action === "commit" || action === "amendCommit") {
       payload.summary = els.commitSummary.value.trim();
       payload.body = els.commitBody.value.trim();
@@ -338,10 +339,42 @@ async function runAction(action) {
 }
 
 function currentBranchSnapshotPayload() {
-  return {
+  const payload = {
     expectedBranch: state.data?.repo?.branch || "",
     expectedHead: state.data?.repo?.headSha || "",
   };
+  const upstream = state.data?.sync?.upstream || "";
+  payload.expectedUpstream = upstream;
+  if (upstream) {
+    const remote = remoteForUpstream(upstream);
+    if (remote?.name) {
+      Object.assign(payload, {
+        expectedUpstreamRemote: remote.name,
+        expectedUpstreamFetchUrl: remote.fetchUrl || "",
+        expectedUpstreamPushUrl: remote.pushUrl || "",
+      });
+    }
+  } else {
+    const remote = defaultSyncRemote();
+    payload.expectedDefaultRemote = remote?.name || "";
+    if (remote?.name) {
+      Object.assign(payload, {
+        expectedDefaultRemoteFetchUrl: remote.fetchUrl || "",
+        expectedDefaultRemotePushUrl: remote.pushUrl || "",
+      });
+    }
+  }
+  return payload;
+}
+
+function remoteForUpstream(upstream) {
+  if (!upstream) return null;
+  return findRemote(splitRemoteBranchRef(upstream).remote);
+}
+
+function defaultSyncRemote() {
+  const remotes = syncRemotes();
+  return remotes.find((remote) => remote.name === "origin") || remotes[0] || null;
 }
 
 async function runRepoOperation(action, button) {
@@ -637,6 +670,16 @@ function remoteConfigSnapshotPayload(remote) {
   return {
     expectedFetchUrl: remote?.fetchUrl || "",
     expectedPushUrl: remote?.pushUrl || "",
+  };
+}
+
+function allRemoteConfigSnapshotPayload() {
+  return {
+    expectedRemotes: syncRemotes().map((remote) => ({
+      name: remote.name,
+      fetchUrl: remote.fetchUrl || "",
+      pushUrl: remote.pushUrl || "",
+    })),
   };
 }
 
