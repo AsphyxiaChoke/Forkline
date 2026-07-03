@@ -1,9 +1,11 @@
 // Shared HTTP wrapper for Forkline API calls.
 async function api(path, options = {}) {
   const requestRepoPath = repoPathSnapshot();
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (requestRepoPath && !state.data?.repo?.isSample) headers["X-Forkline-Repo-Path"] = requestRepoPath;
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   const data = await response.json();
   if (state.data && isCurrentRepoPath(requestRepoPath)) {

@@ -1493,9 +1493,16 @@ async function createBranch(body) {
 async function deleteBranch(body) {
   const branch = normalizeBranchName(body.branch);
   const currentBranch = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
-  if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
+  ensureBranchDeletionAllowed(branch, currentBranch);
   await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
   return { ok: true, output: `已删除本地分支 ${branch}` };
+}
+
+function ensureBranchDeletionAllowed(branch, currentBranch = "") {
+  if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
+  if (PROTECTED_BRANCH_NAMES.has(String(branch || "").toLowerCase())) {
+    throw new Error(`分支 ${branch} 是主干/长期分支，Forkline 默认保护，不允许从这里删除。`);
+  }
 }
 
 async function deleteBranches(body) {
@@ -1506,7 +1513,7 @@ async function deleteBranches(body) {
   const failed = [];
   for (const branch of branches) {
     try {
-      if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
+      ensureBranchDeletionAllowed(branch, currentBranch);
       await git(currentRepo, ["branch", "-d", branch], { timeout: 60000 });
       deleted.push(branch);
     } catch (error) {
@@ -5855,6 +5862,18 @@ function sendError(res, error, context = {}) {
   sendJson(res, 400, { error: friendlyErrorMessage(error, context), ...extra, operationLog, runningOperations: listRunningOperations(context.operation?.id) });
 }
 
+function ensureRequestRepoMatchesCurrent(req, options = {}) {
+  const expectedRepo = String(req.headers["x-forkline-repo-path"] || "").trim();
+  if (!expectedRepo) {
+    if (options.requireRepo && currentRepo) {
+      throw new Error("页面缺少仓库上下文。为避免把操作执行到错误仓库，请刷新页面后再试。");
+    }
+    return;
+  }
+  if (currentRepo && sameFsPath(expectedRepo, currentRepo)) return;
+  throw new Error(`页面仓库已经切换。请求来自 ${expectedRepo}，但当前服务端仓库是 ${currentRepo || "未打开仓库"}。为避免误操作，请刷新或重新打开目标仓库后再执行。`);
+}
+
 function friendlyErrorMessage(error, context = {}) {
   const raw = String(error?.message || error || "").trim();
   const text = raw || "操作失败";
@@ -6304,10 +6323,12 @@ const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url, `http://localhost:${PORT}`);
   try {
     if (req.method === "GET" && parsed.pathname === "/api/state") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readState(parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/ref-state") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readRefState(parsed.searchParams.get("ref") || ""));
       return;
     }
@@ -6327,48 +6348,59 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/commit") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/patch") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readCommitPatch(parsed.searchParams.get("sha") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/file-history") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readFileHistory(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/file-blame") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readFileBlame(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/compare") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readCompare(parsed.searchParams.get("base") || "", parsed.searchParams.get("head") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/history-rewrite-preview") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readHistoryRewritePreview(parsed.searchParams.get("sha") || "", parsed.searchParams.get("mode") || ""));
       return;
     }
     if (req.method === "POST" && parsed.pathname === "/api/history-rewrite-queue-preview") {
+      ensureRequestRepoMatchesCurrent(req);
       const body = await readJson(req);
       sendJson(res, 200, await readHistoryRewriteQueuePreview(body.items));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readWorktree());
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree-diff") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readWorkingDiff(parsed.searchParams.get("file") || "", parsed.searchParams.get("scope") || "auto"));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/stash") {
+      ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readStash(parsed.searchParams.get("ref") || ""));
       return;
     }
     if (req.method === "POST" && parsed.pathname === "/api/action") {
       const body = await readJson(req);
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
       const operation = beginOperation(body);
       try {
         ensureCanStartAction(body, operation);

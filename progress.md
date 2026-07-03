@@ -3215,3 +3215,61 @@
 - `docs/CONTINUE.md`：记录同步页 PR/MR 目标分支推断使用仓库路径快照。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面请求把 Git 操作执行到当前新仓库
+### What was done
+- 复现两个页面或旧页面上下文下，服务端全局当前仓库已经从 `repo-A` 切到 `repo-B` 后，来自 `repo-A` 的 `/api/action` 仍会按 `repo-B` 执行，`stageAll` 会把 `repo-B` 文件暂存。
+- 前端 API 请求现在会携带发起请求时的真实仓库路径；服务端对仓库相关读取和写入接口校验该路径，发现请求来自旧仓库时直接返回中文错误。
+- 该保护覆盖状态读取、提交详情、补丁、文件历史、逐行追踪、比较、历史重写预览、工作区、工作区 Diff、储藏详情和 `/api/action`，避免旧页面、旧弹窗或多标签页把操作打到当前新仓库。
+
+### Testing
+- 修复前临时双仓库 HTTP harness：先打开 `repo-A`，再打开 `repo-B`，随后带 `X-Forkline-Repo-Path: repo-A` 调用 `stageAll`；旧逻辑返回成功，`repo-A` 仍为 `?? a.txt`，`repo-B` 变成 `A  b.txt`，确认跨仓库误操作成立。
+- 修复后同一 harness：旧仓库请求返回 `400` 和中文“页面仓库已经切换”提示，`repo-A` 保持 `?? a.txt`，`repo-B` 保持 `?? b.txt`，输出 `fixed: true`。
+- 正向临时仓库 harness：打开单个仓库后带匹配的 `X-Forkline-Repo-Path` 调用 `stageAll`，返回 `200`，文件正常进入暂存区，输出 `passed: true`。
+- `node --check server.js` 和 `node --check public/js/api.js` 均通过。
+
+### Notes
+- `public/js/api.js`：真实仓库模式下为 API 请求附带 `X-Forkline-Repo-Path` 仓库上下文。
+- `server.js`：仓库相关接口执行前校验请求仓库和服务端当前仓库一致，不一致时拒绝读取或执行。
+- `README.md`：补充仓库相关 API 会携带并校验请求发起时的仓库路径。
+- `docs/CONTINUE.md`：记录旧页面/多页面请求会被服务端拦截，避免操作落到当前新仓库。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止缺少仓库上下文的写操作落到当前仓库
+### What was done
+- 复现旧脚本或手工请求完全不带 `X-Forkline-Repo-Path` 时，服务端仍会按全局当前仓库执行 `/api/action`，导致来自旧页面语义的 `stageAll` 把当前新仓库文件暂存。
+- `/api/action` 现在要求真实仓库已打开时必须带仓库上下文；缺少上下文会在创建操作日志前直接返回中文错误，不再执行任何 Git 写操作。
+- 保留 `/api/state` 首次无上下文读取能力，避免刷新页面时无法恢复当前仓库视图。
+
+### Testing
+- 修复前临时双仓库 HTTP harness：先打开 `repo-A`，再打开 `repo-B`，随后不带仓库头调用 `stageAll`；旧逻辑返回 `200`，`repo-A` 为 `?? a.txt`，`repo-B` 变成 `A  b.txt`，确认无头写操作会落到当前仓库。
+- 修复后同一 harness：不带仓库头的 `stageAll` 返回 `400` 和中文“页面缺少仓库上下文”提示，`repo-A` 保持 `?? a.txt`，`repo-B` 保持 `?? b.txt`，输出 `fixed: true`。
+- 不匹配仓库头复测仍返回 `400`，匹配仓库头的 `stageAll` 返回 `200` 且文件正常进入暂存区。
+- `node --check server.js` 和 `node --check public/js/api.js` 均通过。
+
+### Notes
+- `server.js`：为仓库上下文校验增加“写操作必须提供仓库路径”的模式，并在 `/api/action` 创建操作记录前拦截缺失或不匹配的上下文。
+- `README.md`：补充写操作缺少仓库上下文时会拒绝执行。
+- `docs/CONTINUE.md`：记录旧脚本/无上下文写操作会被服务端拦截。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止后端删除主干保护分支
+### What was done
+- 复现 UI/文档标记 `main` / `master` / `develop` / `dev` / `trunk` 为主干保护分支，但后端 `deleteBranch` 只拦当前分支，直接 API 调用仍可删除非当前的 `main`。
+- 后端删除本地分支现在统一检查当前分支和主干保护分支；单个删除和批量删除都会拒绝这些保护分支。
+- 批量删除仍允许删除普通已合并分支，并把被保护的主干分支列入失败原因，不会中断其他安全删除。
+
+### Testing
+- 修复前临时仓库 HTTP harness：创建 `main` 和当前 `topic`，直接调用 `deleteBranch main` 返回 `200`，`main` 从本地分支列表消失，输出 `bug: true`。
+- 修复后同一 harness：`deleteBranch main` 返回 `400` 和中文“主干/长期分支，Forkline 默认保护”提示，`main` 和 `topic` 都保留，输出 `fixed: true`。
+- 批量删除复测：`deleteBranches ["main","cleanup"]` 返回 `200`，普通分支 `cleanup` 被删除，`main` 保留并显示被保护原因，输出 `passed: true`。
+- `node --check server.js` 和 `node --check public/js/api.js` 均通过。
+
+### Notes
+- `server.js`：本地分支删除入口增加后端主干保护分支兜底，覆盖单删和批量删除。
+- `README.md`：补充分支删除保护由后端拒绝主干分支删除。
+- `docs/CONTINUE.md`：记录后端会拒绝删除当前分支和主干保护分支。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
