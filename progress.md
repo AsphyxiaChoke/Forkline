@@ -3486,6 +3486,29 @@
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
 
+## 2026-07-03 - Task: 阻止旧页面应用补丁落到外部切换后的分支
+### What was done
+- 复现页面打开时显示 `main`，外部命令切到 `dev` 后，旧页面继续调用 `applyPatch`；修复前会把补丁内容写进 `dev` 工作区。
+- 后端当前分支快照保护范围扩展到 `applyPatch`。
+- 前端应用补丁请求会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-apply-patch-20260703214856`：旧 `applyPatch` 写入 `dev` 的 `patch-applied.txt`，状态为 `?? patch-applied.txt`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-apply-patch-fixed-20260703215022`：stale `applyPatch` 返回 `400`，提示当前分支已从 `main` 切到 `dev`，`patch-stale.txt` 不存在。
+- 后端兜底回归：不带分支快照的 `applyPatch` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”，`patch-missing.txt` 不存在。
+- 正常回归：当前 `dev` 且 HEAD 未变时，带快照的 `applyPatch` 返回 `200`“已应用补丁到工作区”，`patch-normal.txt` 写入工作区。
+- 推送前静态验证通过：`node --check server.js`、`node --check public\js\features\git-actions.js`、`node --check public\js\features\diff-workbench.js`、`node --check public\js\features\repositories.js`、`git diff --check`。
+- 推送前确认 `D:\桌面\GitTest` 状态为 `## 123`，未被本轮推送流程改动。
+- 临时服务进程 `15232` 已确认命令行为 `"D:\Program Files\nodejs\node.exe" server.js`，但停止进程的提权请求被环境拒绝；本轮未绕过权限强杀。临时 apply patch 复现仓库也因沙箱限制未在本轮确认清理。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖应用补丁。
+- `public/js/features/repositories.js`：应用补丁请求携带当前分支快照。
+- `README.md`：补充应用补丁会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录补丁工作流已携带页面分支快照。
+- `progress.md`：追加本轮复现、修复、验证、清理限制和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
 ## 2026-07-03 - Task: 阻止旧页面删除本地 tracking 已更新的远端分支
 ### What was done
 - 复现页面看到旧 `origin/feature` 后，外部把真实远端 `feature` 更新到新提交，并执行 `git fetch` 让本地 tracking 也更新；旧页面继续调用 `deleteRemoteBranch origin/feature` 会返回 `200`，把新远端分支删除。
@@ -3550,5 +3573,92 @@
 - `public/js/features/commit-actions.js`：挑选、还原、reset、历史编辑计划和历史编辑队列执行请求携带当前分支快照。
 - `README.md`：补充当前分支类写操作的快照保护覆盖 reset、挑选、还原和历史编辑。
 - `docs/CONTINUE.md`：记录当前分支快照保护已扩展到提交右键和历史编辑动作。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面工作区文件操作落到外部切换后的分支
+### What was done
+- 复现页面打开时看到 `main` 的 `shared.txt` 有未暂存改动，外部命令切到 `dev` 后，旧页面继续调用 `discardWorktreeFile shared.txt`；修复前后端返回成功，并把 `dev` 分支上的未保存内容丢回 `dev-base`。
+- 后端当前分支快照保护范围扩展到 `stageFile`、`ignoreWorktreePath`、`unstageFile`、`resolveConflictFile`、`stageHunk`、`stageSelectedLines`、`unstageSelectedLines`、`unstageHunk`、`discardWorktreeHunk`、`discardWorktreeFile`、`discardStagedFile`。
+- 前端单文件、批量文件、加入 `.gitignore`、冲突文件取舍、工作区 Diff 按块和按行请求都会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-file-action-header-20260703211828`：页面分支为 `main`，外部切到 `dev`；旧 `discardWorktreeFile` 返回 `工作区改动已丢弃`，`shared.txt` 从 `dev-important-unsaved` 变为 `dev-base`，工作区变干净。
+- 修复后临时仓库 `C:\tmp\forkline-stale-file-fixed-20260703212044`：同一 stale `discardWorktreeFile` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；`shared.txt` 保留 `dev-important-unsaved`，状态仍为 ` M shared.txt`。
+- 后端兜底回归：直接调用不带快照的 `stageFile` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”
+- 正常操作回归：当前仍是页面看到的 `dev` 且 HEAD 未变时，带快照的 `stageFile` 可把 `shared.txt` 暂存为 `M  shared.txt`；带快照的 `discardWorktreeFile` 可正常丢弃工作区改动。
+- 本轮 `C:\tmp\forkline-stale-file-*` 临时复现仓库已清理，临时服务进程已停止。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖工作区文件、冲突文件、按块和按行写操作。
+- `public/js/features/git-actions.js`：单文件、批量文件和加入 `.gitignore` 请求携带当前分支快照。
+- `public/js/features/diff-workbench.js`：工作区 Diff 按块和按行请求携带当前分支快照。
+- `README.md`：补充文件级和 Diff 细粒度写操作也会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录当前分支快照保护已扩展到工作区文件、块和行级操作。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面中止进行中的 Git 操作落到外部切换后的分支
+### What was done
+- 复现页面显示 `main` 正在合并冲突，外部命令中止 `main` 合并后切到 `dev` 并制造新的合并冲突；旧页面继续调用 `abortMerge`，修复前会把 `dev` 当前合并中止，清掉 `MERGE_HEAD` 并恢复 `dev` 文件内容。
+- 后端当前分支快照保护范围扩展到 `continueRevert`、`abortRevert`、`continueCherryPick`、`skipCherryPick`、`abortCherryPick`、`continueMerge`、`abortMerge`、`continueRebase`、`skipRebase`、`abortRebase`。
+- 前端工作区冲突横幅里的继续、跳过和中止请求都会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-op-abort-merge-20260703212818`：页面分支为 `main`，外部切到 `dev` 并进入合并冲突；旧 `abortMerge` 返回 `已中止合并，工作区已回到合并前状态`，`dev` 的 `.git\MERGE_HEAD` 被清除，`conflict.txt` 从冲突内容恢复为 `dev`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-op-abort-merge-fixed-20260703212941`：同一 stale `abortMerge` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；`dev` 的 `.git\MERGE_HEAD` 仍存在，`conflict.txt` 仍保留冲突内容，状态仍为 `UU conflict.txt`。
+- 后端兜底回归：直接调用不带快照的 `abortMerge` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”
+- 正常合并中止回归：当前仍是页面看到的 `dev` 且 HEAD 未变时，带快照的 `abortMerge` 返回 `200`，`.git\MERGE_HEAD` 被清除，工作区回到干净。
+- 正常变基中止回归：临时仓库 `C:\tmp\forkline-op-abort-rebase-normal-20260703213010` 在 rebase 冲突中页面分支为 `detached HEAD`；带页面快照调用 `abortRebase` 返回 `200`，分支回到 `topic`，工作区干净。
+- 本轮 `C:\tmp\forkline-stale-op-abort-merge-*` 和 `C:\tmp\forkline-op-abort-rebase-normal-*` 临时复现仓库已清理，临时服务进程已停止。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖合并、变基、挑选和还原的继续、跳过、中止操作。
+- `public/js/features/git-actions.js`：工作区冲突横幅的 repo operation 请求携带当前分支快照。
+- `README.md`：补充继续、跳过和中止进行中 Git 操作也会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录当前分支快照保护已扩展到进行中操作控制按钮。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面 upstream 操作落到外部切换后的分支
+### What was done
+- 复现页面打开时显示 `main -> origin/main`，外部命令切到 `dev -> origin/dev` 后，旧页面继续调用 `unsetUpstream`；修复前会取消 `dev` 的 upstream，返回“已取消 upstream：dev”。
+- 后端当前分支快照保护范围扩展到 `setUpstream` 和 `unsetUpstream`。
+- 前端同步页和分支右键菜单里的设置/取消 upstream 请求都会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-upstream-work-20260703213451`：页面分支为 `main`，外部切到 `dev`；旧 `unsetUpstream` 返回 `200`，`dev` 的 upstream 从 `origin/dev` 变为空，`main` 仍是 `origin/main`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-upstream-work-fixed-20260703213630`：同一 stale `unsetUpstream` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；`dev` upstream 仍为 `origin/dev`。
+- 后端兜底回归：直接调用不带快照的 `unsetUpstream` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”
+- 正常 upstream 回归：当前仍是页面看到的 `dev` 且 HEAD 未变时，带快照的 `unsetUpstream` 可取消 `dev` upstream；随后带快照的 `setUpstream origin/dev` 可恢复为 `dev -> origin/dev`。
+- 本轮 `C:\tmp\forkline-stale-upstream-*` 临时复现仓库和裸远端已清理，临时服务进程已停止。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖设置和取消当前分支 upstream。
+- `public/js/features/git-actions.js`：upstream 设置/取消请求携带当前分支快照。
+- `README.md`：补充 upstream 设置也会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录当前分支快照保护已扩展到 upstream 管理。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面远端配置操作覆盖外部更新后的远端 URL
+### What was done
+- 复现页面打开时看到 `origin` 指向旧裸远端，外部命令把 `origin` 改到新裸远端后，旧页面继续调用 `deleteRemote`；修复前返回 `200`，并把当前新的 `origin` 远端配置删除。
+- 后端新增远端配置快照保护，覆盖 `fetchRemote`、`setRemoteUrl`、`deleteRemote`；执行前会比较页面看到的 fetch/push URL 和当前真实远端 URL。
+- 前端远端行的抓取、修改 URL、删除远端请求都会携带页面看到的 fetch/push URL。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-remote-config-work-20260703214146`：页面看到 `origin -> C:\tmp\forkline-stale-remote-config-old-...git`，外部改成 `origin -> C:\tmp\forkline-stale-remote-config-new-...git`；旧 `deleteRemote` 返回 `200`，`git remote -v` 变为空。
+- 修复后临时仓库 `C:\tmp\forkline-stale-remote-config-work-fixed-20260703214355`：同一 stale `deleteRemote` 带页面远端 URL 快照返回 `400`，提示远端 URL 已变化；`origin` 仍指向新的裸远端。
+- 后端兜底回归：直接调用不带远端 URL 快照的 `deleteRemote` 返回 `400`“页面远端配置已过期，请刷新后重新执行这个操作。”
+- 正常远端配置回归：当前远端 URL 与页面快照一致时，`setRemoteUrl` 可把 `origin` 改到第三个裸远端，随后带新快照的 `deleteRemote` 可正常删除 `origin`。
+- 抓取指定远端回归：临时仓库 `C:\tmp\forkline-remote-fetch-snapshot-work-20260703214424` 中，不带快照的 `fetchRemote` 返回 `400`；带当前 fetch/push URL 快照的 `fetchRemote` 返回 `200` 并完成抓取。
+- 本轮 `C:\tmp\forkline-stale-remote-config-*` 和 `C:\tmp\forkline-remote-fetch-snapshot-*` 临时复现仓库与裸远端已清理，临时服务进程已停止。
+
+### Notes
+- `server.js`：新增远端配置快照保护集合和 `ensureRemoteConfigSnapshot`，在执行远端行写操作前校验 fetch/push URL 未被外部改过。
+- `public/js/features/git-actions.js`：抓取指定远端、修改 URL 和删除远端请求携带远端配置快照。
+- `README.md`：补充远端配置操作会校验页面看到的 fetch/push URL。
+- `docs/CONTINUE.md`：记录远端仓库管理已具备 URL 快照保护。
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。

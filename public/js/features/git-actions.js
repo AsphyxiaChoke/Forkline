@@ -362,7 +362,7 @@ async function runRepoOperation(action, button) {
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "操作已完成");
     state.commitDetails.clear();
@@ -478,11 +478,11 @@ async function runUpstreamAction(action, ref = "", button = null) {
       toast("请选择远端分支");
       return;
     }
-    payload = { action: "setUpstream", ref: selectedRef };
+    payload = { action: "setUpstream", ref: selectedRef, ...currentBranchSnapshotPayload() };
     message = `确认设置当前分支 upstream？\n\n当前分支：${branch}\n目标：${selectedRef}\n命令：git branch --set-upstream-to=${selectedRef} ${branch}`;
   } else if (action === "unset") {
     const upstream = state.data?.sync?.upstream || state.data?.branchInfo?.[branch]?.upstream || "";
-    payload = { action: "unsetUpstream" };
+    payload = { action: "unsetUpstream", ...currentBranchSnapshotPayload() };
     message = `确认取消当前分支 upstream？\n\n当前分支：${branch}\n原 upstream：${upstream || "未设置"}\n命令：git branch --unset-upstream ${branch}`;
   }
   if (!payload) return;
@@ -533,11 +533,11 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     if (urlInput === null) return;
     const url = cleanPromptValue(urlInput, "远端 URL");
     if (!url) return;
-    payload = { action: "setRemoteUrl", name: remote.name, url };
+    payload = { action: "setRemoteUrl", name: remote.name, url, ...remoteConfigSnapshotPayload(remote) };
     message = `确认修改远端 URL：${remote.name}？\n\n新 URL：${url}\n命令：git remote set-url ${remote.name} ${url}`;
   } else if (action === "delete") {
     if (!remote?.name) return;
-    payload = { action: "deleteRemote", name: remote.name };
+    payload = { action: "deleteRemote", name: remote.name, ...remoteConfigSnapshotPayload(remote) };
     message = `确认删除远端：${remote.name}？\n\n命令：git remote remove ${remote.name}\n这个操作只会删除当前仓库里的远端配置，不会删除 GitHub 或服务器上的仓库。`;
   } else if (action === "test") {
     if (!remote?.name) return;
@@ -545,7 +545,7 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     message = "";
   } else if (action === "fetch") {
     if (!remote?.name) return;
-    payload = { action: "fetchRemote", name: remote.name };
+    payload = { action: "fetchRemote", name: remote.name, ...remoteConfigSnapshotPayload(remote) };
     message = `确认抓取远端：${remote.name}？\n\n命令：git fetch ${remote.name} --prune`;
   }
   if (!payload) return;
@@ -633,6 +633,13 @@ function findRemote(name) {
   return syncRemotes().find((remote) => remote.name === name) || null;
 }
 
+function remoteConfigSnapshotPayload(remote) {
+  return {
+    expectedFetchUrl: remote?.fetchUrl || "",
+    expectedPushUrl: remote?.pushUrl || "",
+  };
+}
+
 function cleanPromptValue(value, label) {
   const text = String(value || "").trim();
   if (!text) toast(`请填写${label}`);
@@ -713,7 +720,7 @@ async function ignoreWorktreePath(action, file) {
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "ignoreWorktreePath", file, mode }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "ignoreWorktreePath", file, mode, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已更新 .gitignore");
     state.selectedChanges.delete(changeKey("unstaged", file));
@@ -769,9 +776,9 @@ async function runSingleFileAction(action, file) {
 }
 
 function singleFileActionPayload(action, file) {
-  if (action === "resolveConflictOurs") return { action: "resolveConflictFile", side: "ours", file };
-  if (action === "resolveConflictTheirs") return { action: "resolveConflictFile", side: "theirs", file };
-  return { action, file };
+  if (action === "resolveConflictOurs") return { action: "resolveConflictFile", side: "ours", file, ...currentBranchSnapshotPayload() };
+  if (action === "resolveConflictTheirs") return { action: "resolveConflictFile", side: "theirs", file, ...currentBranchSnapshotPayload() };
+  return { action, file, ...currentBranchSnapshotPayload() };
 }
 
 function syncFileSelectionAfterAction(action, files, nextFiles) {
@@ -832,7 +839,7 @@ async function runFileBatchAction(action, scope, button) {
       if (!isCurrentRepoPath(repoPath)) return;
       await api("/api/action", {
         method: "POST",
-        body: JSON.stringify({ action, file }),
+        body: JSON.stringify({ action, file, ...currentBranchSnapshotPayload() }),
       });
       if (!isCurrentRepoPath(repoPath)) return;
       state.selectedChanges.delete(changeKey(scope, file));

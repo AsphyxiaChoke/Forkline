@@ -243,7 +243,7 @@ async function submitPatchForm(event) {
     els.patchSubmit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "applyPatch", patch, stage }),
+      body: JSON.stringify({ action: "applyPatch", patch, stage, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     closePatchModal();

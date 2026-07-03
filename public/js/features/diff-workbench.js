@@ -414,7 +414,7 @@ async function runWorkDiffHunkAction(action, button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action, file, scope, hunkIndex }),
+      body: JSON.stringify({ action, file, scope, hunkIndex, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "改动块操作完成");
@@ -809,7 +809,7 @@ async function runWorkDiffLineAction(button) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action, file, scope, lines }),
+      body: JSON.stringify({ action, file, scope, lines, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "所选行操作完成");
