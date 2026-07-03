@@ -741,7 +741,12 @@ async function pruneRecoveryPointsByPolicy(button) {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "pruneRecoveryPoints", keepDays: policy.keepDays, maxPerBranch: policy.maxPerBranch }),
+      body: JSON.stringify({
+        action: "pruneRecoveryPoints",
+        keepDays: policy.keepDays,
+        maxPerBranch: policy.maxPerBranch,
+        deleteRefs: plan.deletePoints.map((point) => ({ ref: point.ref, sha: point.sha })),
+      }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点清理完成");
@@ -811,7 +816,8 @@ async function runRecoveryAction(action, ref, button) {
   try {
     if (button) button.disabled = true;
     const apiAction = action === "restore" ? "restoreRecoveryPoint" : "deleteRecoveryPoint";
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref, sha: point.sha }) });
+    const snapshot = action === "restore" ? currentBranchSnapshotPayload() : {};
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref, sha: point.sha, ...snapshot }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点操作完成");
     state.commitDetails.clear();
@@ -872,7 +878,8 @@ async function runReflogAction(action, selector, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ...body }) });
+    const snapshot = action === "restore" ? currentBranchSnapshotPayload() : {};
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ...body, ...snapshot }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "引用日志操作完成");
     state.commitDetails.clear();

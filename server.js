@@ -31,6 +31,10 @@ const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
   "forcePushLease",
   "setUpstream",
   "unsetUpstream",
+  "createWorktree",
+  "initSubmodules",
+  "updateSubmodules",
+  "syncSubmodules",
   "stageAll",
   "discardAll",
   "commit",
@@ -43,7 +47,15 @@ const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
   "cherryPickCommit",
   "revertCommit",
   "resetToCommit",
+  "restoreRecoveryPoint",
+  "restoreReflogEntry",
   "applyPatch",
+  "restoreCheckoutStash",
+  "createStash",
+  "applyStash",
+  "popStash",
+  "dropStash",
+  "branchFromStash",
   "stageFile",
   "ignoreWorktreePath",
   "unstageFile",
@@ -4069,7 +4081,11 @@ async function pruneRecoveryPoints(body) {
   const policy = normalizeRecoveryRetentionPolicy(body);
   const points = await readRecoveryPointsFromGit();
   const plan = recoveryRetentionPlan(points, policy);
+  const expectedEntries = normalizeRecoveryRefEntries(body.deleteRefs);
   if (!plan.deletePoints.length) {
+    if (expectedEntries.length) {
+      throw new Error("恢复点清理预览已经变化，请刷新恢复点列表后重新清理。");
+    }
     return {
       ok: true,
       output: `没有需要清理的恢复点。当前保留 ${points.length} 个恢复点。`,
@@ -4077,17 +4093,30 @@ async function pruneRecoveryPoints(body) {
       plan,
     };
   }
-  if (plan.deletePoints.length > 120) {
-    throw new Error(`本次策略会删除 ${plan.deletePoints.length} 个恢复点。为避免误删，请先缩小策略范围或使用筛选删除。`);
+  if (!expectedEntries.length) {
+    throw new Error("恢复点清理预览已过期，请刷新恢复点列表后重新清理。");
   }
-  for (const point of plan.deletePoints) {
-    const ref = await ensureRecoveryRef(point.ref);
+  if (expectedEntries.length > 120) {
+    throw new Error(`本次策略会删除 ${expectedEntries.length} 个恢复点。为避免误删，请先缩小策略范围或使用筛选删除。`);
+  }
+  const plannedRefs = new Set(plan.deletePoints.map((point) => point.ref));
+  const expectedRefs = new Set(expectedEntries.map((entry) => entry.ref));
+  if (plannedRefs.size !== expectedRefs.size || [...plannedRefs].some((ref) => !expectedRefs.has(ref))) {
+    throw new Error("恢复点清理预览已经变化，请刷新恢复点列表后重新清理。");
+  }
+  const safeRefs = [];
+  for (const entry of expectedEntries) {
+    const ref = await ensureRecoveryRef(entry.ref, normalizeExpectedRecoverySha(entry.sha));
+    if (!plannedRefs.has(ref)) throw new Error("恢复点清理预览已经变化，请刷新恢复点列表后重新清理。");
+    safeRefs.push(ref);
+  }
+  for (const ref of safeRefs) {
     await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
   }
   return {
     ok: true,
-    output: `已按保留策略清理 ${plan.deletePoints.length} 个恢复点，保留 ${plan.keepCount} 个。${recoveryRetentionPolicyLabel(policy)}`,
-    deleted: plan.deletePoints.length,
+    output: `已按保留策略清理 ${safeRefs.length} 个恢复点，保留 ${plan.keepCount} 个。${recoveryRetentionPolicyLabel(policy)}`,
+    deleted: safeRefs.length,
     plan,
   };
 }
@@ -4164,12 +4193,13 @@ function recoveryRetentionPlan(points, policy, now = new Date()) {
     maxPerBranch: policy.maxPerBranch,
     keepCount: Math.max(0, points.length - deletePoints.length),
     deleteCount: deletePoints.length,
-    deletePoints: deletePoints.map((point) => ({
-      ref: point.ref,
-      shortRef: point.shortRef,
-      short: point.short,
-      branch: point.branch,
-      actionLabel: point.actionLabel,
+      deletePoints: deletePoints.map((point) => ({
+        ref: point.ref,
+        shortRef: point.shortRef,
+        sha: point.sha,
+        short: point.short,
+        branch: point.branch,
+        actionLabel: point.actionLabel,
       time: point.time,
     })),
   };

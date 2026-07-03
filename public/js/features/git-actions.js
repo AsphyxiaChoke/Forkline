@@ -240,7 +240,7 @@ async function maybeRestoreCheckoutStash(branch) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "restoreCheckoutStash", branch, message: stash.message }),
+      body: JSON.stringify({ action: "restoreCheckoutStash", branch, message: stash.message, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     forgetCheckoutStash(stash);
@@ -685,7 +685,7 @@ async function createStashFromSelection(files = null) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "createStash", message: trimmedMessage, files: selectedOnly ? stashFiles : [] }),
+      body: JSON.stringify({ action: "createStash", message: trimmedMessage, files: selectedOnly ? stashFiles : [], ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast("已创建储藏，工作区更改已移到右侧“储藏”列表");

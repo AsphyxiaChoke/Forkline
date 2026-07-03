@@ -3509,6 +3509,115 @@
 - `progress.md`：追加本轮复现、修复、验证、清理限制和回滚说明。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
 
+## 2026-07-03 - Task: 阻止旧页面储藏操作落到外部切换后的分支
+### What was done
+- 复现页面在 `main` 看到 `stash@{0}`，外部命令切到 `dev` 后，旧页面继续调用 `applyStash`；修复前后端会在 `dev` 执行 `git stash apply`，返回失败但已经把 `dev` 工作区打成 `UU shared.txt` 冲突状态。
+- 后端当前分支快照保护范围扩展到 `restoreCheckoutStash`、`createStash`、`applyStash`、`popStash`、`dropStash` 和 `branchFromStash`。
+- 前端创建储藏、恢复签出储藏、应用/弹出/删除储藏、从储藏创建分支请求都会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-apply-stash-20260703220038`：页面分支为 `main`，外部切到 `dev`；旧 `applyStash` 返回 `400`，但 `shared.txt` 已变成冲突内容，状态为 `UU shared.txt`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-apply-stash-fixed-20260703220226`：同一 stale `applyStash` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；`shared.txt` 仍为 `dev-base`，状态仍为 `## dev`。
+- 后端兜底回归：不带分支快照的 `applyStash` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”，`dev` 工作区仍干净。
+- 正常应用储藏回归：当前 `main` 且 HEAD 未变时，带快照的 `applyStash` 返回 `200`，`shared.txt` 变为 `main-stashed`，状态为 `M shared.txt`。
+- 创建储藏回归：临时仓库 `C:\tmp\forkline-stale-create-stash-fixed-20260703220258` 中，stale `createStash` 带 `main` 快照在当前 `dev` 返回 `400`，`dev-unsaved` 保留；当前 `dev` 快照一致时 `createStash` 返回 `200` 并生成 `stash@{0}: On dev: normal create stash`。
+- 本轮临时服务进程 `7272`、`17932` 已停止；本轮三个 `C:\tmp\forkline-stale-*stash*` 临时仓库已清理。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖储藏写操作。
+- `public/js/features/git-actions.js`：创建储藏和恢复签出储藏请求携带当前分支快照。
+- `public/js/panels/sync.js`：应用、弹出、删除储藏和从储藏创建分支请求携带当前分支快照。
+- `README.md`：补充储藏写操作会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录储藏写操作已纳入当前分支快照保护。
+- `progress.md`：追加本轮复现、修复、验证、清理和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面恢复点保留策略误删新产生的恢复点
+### What was done
+- 复现页面看到两个 `main` 恢复点，保留策略“每个分支保留 1 个”预览只应删除旧恢复点；外部命令在确认前新增更晚恢复点后，旧页面继续调用 `pruneRecoveryPoints`。修复前后端重新按当前真实 refs 计算并删除了两个恢复点，包括页面原本预览要保留的恢复点。
+- 前端执行保留策略清理时会提交页面预览出的删除候选 `ref + sha`。
+- 后端执行前重新读取真实恢复点并重新计算保留策略，只有当前删除候选与页面提交候选完全一致时才删除；候选变化或旧脚本缺少候选列表时会拒绝执行。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-recovery-prune-20260703222759`：页面看到 `reset-keep` 和 `reset-old`，外部新增 `reset-new`；旧 `pruneRecoveryPoints` 返回 `200`，实际删除 `reset-keep` 和 `reset-old`，只剩 `reset-new`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-recovery-prune-fixed2-20260703223109`：同一 stale 请求只携带页面预览的 `reset-old` 候选，返回 `400`“恢复点清理预览已经变化”；`reset-old`、`reset-keep`、`reset-new` 全部保留。
+- 后端兜底回归：不带 `deleteRefs` 的旧脚本调用返回 `400`“恢复点清理预览已过期”，三个恢复点全部保留。
+- 正常保留策略回归：刷新后携带当前候选 `reset-keep` 和 `reset-old`，`pruneRecoveryPoints` 返回 `200`，删除 2 个，只保留最新的 `reset-new`。
+- 本轮临时服务进程 `34008`、`18072` 已停止；本轮 `C:\tmp\forkline-stale-recovery-prune*` 临时仓库已清理。
+
+### Notes
+- `server.js`：保留策略清理要求请求携带页面预览候选，执行前重新计算并校验候选列表和每个恢复点 SHA。
+- `public/js/panels/recovery-settings.js`：保留策略清理请求携带待删除恢复点的 `ref + sha`。
+- `README.md`：补充保留策略清理会校验候选列表未变化。
+- `docs/CONTINUE.md`：记录恢复点保留策略只删除页面确认过且后端重新计算一致的候选。
+- `progress.md`：追加本轮复现、修复、验证、清理和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面子模块操作按外部切换后的分支记录更新
+### What was done
+- 复现父仓库 `main` 记录子模块提交 A，`dev` 记录子模块提交 B；页面在 `main`，外部切到 `dev` 后，旧页面继续调用 `updateSubmodules`。修复前后端返回成功，并把子模块工作区从 A checkout 到 `dev` 记录的 B。
+- 后端当前分支快照保护范围扩展到 `initSubmodules`、`updateSubmodules` 和 `syncSubmodules`。
+- 前端子模块初始化、更新全部、更新单个子模块和同步 URL 请求都会携带页面看到的当前分支和 HEAD。
+- 检查 Tag 写操作：本地/远端 Tag 删除和推送已有页面看到的 Tag 对象 SHA 校验，创建 Tag 使用明确目标提交 SHA，本轮未改 Tag 路径。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-submodule-parent-20260703222148`：页面分支为 `main`，外部切到 `dev`；旧 `updateSubmodules modules/sub` 返回 `200`，子模块从 `d653577` 变为 `74f0064`，文件内容变为 `sub B`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-submodule-parent-fixed-20260703222255`：同一 stale `updateSubmodules` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；子模块仍停在 `177ac88`，文件内容仍为 `sub A`。
+- 后端兜底回归：不带分支快照的 `updateSubmodules` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”，子模块仍未移动。
+- 正常子模块更新回归：当前 `dev` 且 HEAD 未变时，带快照的 `updateSubmodules` 返回 `200`，子模块更新到 `2c8e4b0`，文件内容变为 `sub B`。
+- 本轮临时服务进程 `32812`、`8988` 已停止；本轮 `C:\tmp\forkline-stale-submodule-*` 临时父仓库和子模块源仓库已清理。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖子模块初始化、更新和同步。
+- `public/js/panels/workspaces.js`：子模块写操作请求携带当前分支快照。
+- `README.md`：补充子模块写操作会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录子模块写操作已纳入当前分支快照保护。
+- `progress.md`：追加本轮复现、修复、验证、清理和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面创建工作树从外部切换后的分支派生
+### What was done
+- 复现页面在 `main` 创建工作树，起点为 `HEAD` 且填写新分支；外部命令切到 `dev` 后，旧页面继续调用 `createWorktree`。修复前后端返回成功，并从 `dev` 的 HEAD 创建了新工作树分支。
+- 后端当前分支快照保护范围扩展到 `createWorktree`。
+- 前端创建工作树请求会携带页面看到的当前分支和 HEAD。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-worktree-create-20260703221509`：页面分支为 `main`，外部切到 `dev`；旧 `createWorktree` 返回 `200`，目标 `C:\tmp\forkline-stale-worktree-target-20260703221509` 中新分支 `wt-old-page` 指向 `dev` 的 `36bfa38`，文件内容为 `dev current`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-worktree-create-fixed-20260703221620`：同一 stale `createWorktree` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；目标目录未创建，`wt-stale` 分支不存在。
+- 后端兜底回归：不带分支快照的 `createWorktree` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”，目标目录未创建，`wt-missing` 分支不存在。
+- 正常创建工作树回归：当前 `dev` 且 HEAD 未变时，带快照的 `createWorktree` 返回 `200`，目标工作树分支 `wt-normal` 指向 `dev` 的 `8678dda`，文件内容为 `dev current`。
+- 本轮临时服务进程 `36804`、`10788` 已停止；本轮 `C:\tmp\forkline-stale-worktree-*` 临时仓库和目标工作树目录已清理。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖创建工作树。
+- `public/js/panels/workspaces.js`：创建工作树请求携带当前分支快照。
+- `README.md`：补充创建工作树会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录创建工作树已纳入当前分支快照保护。
+- `progress.md`：追加本轮复现、修复、验证、清理和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面恢复点和引用日志恢复硬重置外部切换后的分支
+### What was done
+- 复现页面在 `main` 查看恢复点，外部命令切到 `dev` 后，旧页面继续调用 `restoreRecoveryPoint`；修复前后端返回成功，并把当前 `dev` 从自己的提交硬重置到 `main` 的恢复点提交。
+- 后端当前分支快照保护范围扩展到 `restoreRecoveryPoint` 和 `restoreReflogEntry`。
+- 前端恢复点恢复和引用日志恢复请求会携带页面看到的当前分支和 HEAD；删除恢复点、批量删除和保留策略清理仍只走恢复点 SHA/范围校验，不额外绑定当前分支。
+
+### Testing
+- 修复前临时仓库 `C:\tmp\forkline-stale-recovery-restore-20260703220758`：页面分支为 `main`，外部切到 `dev`；旧 `restoreRecoveryPoint` 返回 `200`，`dev` 从 `66bea06` 被硬重置到 `70cda80`，`branch.txt` 变为 `main target`。
+- 修复后临时仓库 `C:\tmp\forkline-stale-recovery-restore-fixed-20260703220905`：同一 stale `restoreRecoveryPoint` 带页面快照返回 `400`，提示当前分支已从 `main` 切到 `dev`；`dev` 仍停在 `32391a2`，`branch.txt` 保留 `dev current`。
+- 后端兜底回归：不带分支快照的 `restoreRecoveryPoint` 返回 `400`“页面分支状态已过期，请刷新后重新执行这个操作。”，`dev` 仍未移动。
+- 正常恢复点回归：当前 `main` 且 HEAD 未变时，带快照的 `restoreRecoveryPoint` 返回 `200`，`main` 从 `af8cfa0` 恢复到 `55241a3`，`branch.txt` 变为 `main target`。
+- 引用日志恢复回归：临时仓库 `C:\tmp\forkline-stale-reflog-restore-fixed-20260703220949` 中，stale `restoreReflogEntry` 和不带快照请求均返回 `400` 且 `dev current` 保留；当前 `main` 快照一致时，`restoreReflogEntry` 返回 `200` 并恢复到目标 reflog 提交。
+- 本轮临时服务进程 `25120`、`26132` 已停止；本轮三个 `C:\tmp\forkline-stale-*restore*` 临时仓库已清理。
+
+### Notes
+- `server.js`：扩大当前分支快照保护动作集合，覆盖恢复点恢复和引用日志恢复。
+- `public/js/panels/recovery-settings.js`：恢复点恢复和引用日志恢复请求携带当前分支快照。
+- `README.md`：补充恢复点/引用日志恢复会校验页面分支和 HEAD。
+- `docs/CONTINUE.md`：记录恢复点恢复和引用日志恢复已纳入当前分支快照保护。
+- `progress.md`：追加本轮复现、修复、验证、清理和回滚说明。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
 ## 2026-07-03 - Task: 阻止旧页面删除本地 tracking 已更新的远端分支
 ### What was done
 - 复现页面看到旧 `origin/feature` 后，外部把真实远端 `feature` 更新到新提交，并执行 `git fetch` 让本地 tracking 也更新；旧页面继续调用 `deleteRemoteBranch origin/feature` 会返回 `200`，把新远端分支删除。

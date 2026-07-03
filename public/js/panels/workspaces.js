@@ -408,7 +408,7 @@ async function submitWorktreeForm(form) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch }),
+      body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已创建工作树");
@@ -626,7 +626,7 @@ async function runSubmoduleAction(action, button) {
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ ...payload, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "子模块操作完成");
     const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);

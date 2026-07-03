@@ -124,7 +124,7 @@ async function runStashAction(action, ref, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref, sha: stash?.sha || "" }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref, sha: stash?.sha || "", ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `${names[action] || "储藏操作"}完成`);
     state.stashDetails.clear();
@@ -170,7 +170,7 @@ async function branchFromStash(ref, button) {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "branchFromStash", ref, sha: stash?.sha || "", branch: trimmed }),
+      body: JSON.stringify({ action: "branchFromStash", ref, sha: stash?.sha || "", branch: trimmed, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已从 ${ref} 创建分支 ${trimmed}`);
