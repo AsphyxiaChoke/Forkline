@@ -39,7 +39,7 @@ function tagRowHtml(tag, active) {
         <em>${escapeHtml(tag.time || "")}</em>
       </span>
       <span class="stash-message" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || "无说明")}</span>
-      <span class="stash-branch">${escapeHtml(tag.object ? `${tag.object} · ${tag.type || "commit"}` : tag.type || "commit")}</span>
+      <span class="stash-branch">${escapeHtml(tag.short || tag.object ? `${tag.short || tag.object} · ${tag.type || "commit"}` : tag.type || "commit")}</span>
     </button>
   `;
 }
@@ -55,7 +55,7 @@ function tagDetailHtml(tag) {
     </div>
     <div class="meta-grid stash-meta">
       <span>名称</span><div class="meta-value">${escapeHtml(tag.name)}</div>
-      <span>对象</span><div class="meta-value">${escapeHtml(tag.object || "未知")}</div>
+      <span>对象</span><div class="meta-value">${escapeHtml(tag.short || tag.object || "未知")}</div>
       <span>类型</span><div class="meta-value">${escapeHtml(tag.type || "commit")}</div>
       <span>时间</span><div class="meta-value">${escapeHtml(tag.time || "未知")}</div>
       <span>说明</span><div class="meta-value" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || "无说明")}</div>
@@ -778,7 +778,7 @@ async function deleteFilteredRecoveryPoints(button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRecoveryPoints", refs: points.map((point) => point.ref) }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRecoveryPoints", refs: points.map((point) => ({ ref: point.ref, sha: point.sha })) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点已删除");
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
@@ -811,7 +811,7 @@ async function runRecoveryAction(action, ref, button) {
   try {
     if (button) button.disabled = true;
     const apiAction = action === "restore" ? "restoreRecoveryPoint" : "deleteRecoveryPoint";
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref, sha: point.sha }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "恢复点操作完成");
     state.commitDetails.clear();
@@ -925,7 +925,7 @@ async function runTagAction(action, tagName, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: actionMap[action], name: tag.name }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: actionMap[action], name: tag.name, sha: tag.object || "" }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "Tag 操作完成");
     const data = await loadStateForRepoPath(repoPath);

@@ -114,6 +114,7 @@ function selectStash(ref) {
 async function runStashAction(action, ref, button) {
   if (!state.data || !ref) return;
   const names = { apply: "应用储藏", pop: "弹出储藏", drop: "删除储藏", branch: "从储藏创建分支" };
+  const stash = state.data.stashes?.find((item) => item.ref === ref);
   if (action === "branch") {
     await branchFromStash(ref, button);
     return;
@@ -123,7 +124,7 @@ async function runStashAction(action, ref, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref, sha: stash?.sha || "" }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `${names[action] || "储藏操作"}完成`);
     state.stashDetails.clear();
@@ -148,6 +149,7 @@ async function runStashAction(action, ref, button) {
 }
 
 async function branchFromStash(ref, button) {
+  const stash = state.data?.stashes?.find((item) => item.ref === ref);
   const defaultName = defaultStashBranchName(ref);
   const branch = prompt(`从 ${ref} 创建新分支：`, defaultName);
   if (branch === null) return;
@@ -168,7 +170,7 @@ async function branchFromStash(ref, button) {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "branchFromStash", ref, branch: trimmed }),
+      body: JSON.stringify({ action: "branchFromStash", ref, sha: stash?.sha || "", branch: trimmed }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已从 ${ref} 创建分支 ${trimmed}`);

@@ -132,12 +132,12 @@ async function readState(ref = "") {
     git(repoPath, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
     git(repoPath, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => ""),
     git(repoPath, ["remote"]).catch(() => ""),
-    git(repoPath, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
+    git(repoPath, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
     git(repoPath, ["worktree", "list", "--porcelain"]).catch(() => ""),
     git(repoPath, submoduleConfigArgs()).catch(() => ""),
     git(repoPath, ["submodule", "status", "--recursive"]).catch(() => ""),
     git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
-    git(repoPath, ["stash", "list", "--format=%gd%x00%gs%x00%cr"]).catch(() => ""),
+    git(repoPath, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%cr"]).catch(() => ""),
     git(repoPath, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
     readReflogOutput(80, repoPath).catch(() => ""),
     git(repoPath, logArgs(selectedRef)).catch(() => ""),
@@ -1043,15 +1043,15 @@ async function runAction(body) {
     return createStash(body);
   }
   if (action === "applyStash") {
-    const ref = normalizeStashRef(body.ref);
+    const ref = await ensureCurrentStashRef(body);
     return commandResult(await git(currentRepo, ["stash", "apply", ref], { timeout: 120000 }));
   }
   if (action === "popStash") {
-    const ref = normalizeStashRef(body.ref);
+    const ref = await ensureCurrentStashRef(body);
     return commandResult(await git(currentRepo, ["stash", "pop", ref], { timeout: 120000 }));
   }
   if (action === "dropStash") {
-    const ref = normalizeStashRef(body.ref);
+    const ref = await ensureCurrentStashRef(body);
     return commandResult(await git(currentRepo, ["stash", "drop", ref], { timeout: 120000 }));
   }
   if (action === "branchFromStash") {
@@ -2038,6 +2038,7 @@ async function deleteRemoteBranch(body) {
   if (isProtectedBranchName(parsed.branch)) {
     throw new Error(`远端分支 ${remoteRef} 是主干/长期分支，Forkline 默认保护，不允许从这里删除。`);
   }
+  await ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed);
   let output = "";
   try {
     output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
@@ -2048,6 +2049,29 @@ async function deleteRemoteBranch(body) {
   }
   await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
   return commandResultWithSummary(`已删除远端分支 ${remoteRef}`, output);
+}
+
+async function ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed) {
+  const localSha = (await git(currentRepo, ["rev-parse", "--verify", `refs/remotes/${remoteRef}^{commit}`], { timeout: 60000 }).catch(() => "")).trim();
+  const remoteSha = await readRemoteBranchHeadSha(parsed);
+  if (!localSha || !remoteSha) {
+    await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
+    throw new Error(`远端分支 ${remoteRef} 已不存在或本地列表已过期，已刷新远端分支列表。请刷新后重新选择。`);
+  }
+  if (localSha !== remoteSha) {
+    await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
+    throw new Error(`远端分支 ${remoteRef} 已经变化，当前页面看到的不是最新远端分支。为避免删除别人新推送的分支，请刷新后重新选择。`);
+  }
+}
+
+async function readRemoteBranchHeadSha(parsed) {
+  const output = await git(currentRepo, ["ls-remote", "--heads", parsed.remote, parsed.branch], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
+  const fullRef = `refs/heads/${parsed.branch}`;
+  const row = String(output || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/))
+    .find((parts) => parts[1] === fullRef);
+  return row?.[0] || "";
 }
 
 function isMissingRemoteBranchDeleteError(error) {
@@ -2122,14 +2146,14 @@ async function createTag(body) {
 
 async function deleteTag(body) {
   const name = normalizeTagName(body.name);
-  await ensureLocalTag(name);
+  await ensureCurrentLocalTag(body);
   const output = await git(currentRepo, ["tag", "-d", name], { timeout: 60000 });
   return commandResultWithSummary(`已删除本地 Tag ${name}`, output);
 }
 
 async function pushTag(body) {
   const name = normalizeTagName(body.name);
-  await ensureLocalTag(name);
+  await ensureCurrentLocalTag(body);
   const remote = await defaultRemoteName(body.remote);
   const output = await git(currentRepo, ["push", remote, `refs/tags/${name}:refs/tags/${name}`], { timeout: 120000 });
   if (output.toLowerCase().includes("everything up-to-date")) {
@@ -2140,8 +2164,9 @@ async function pushTag(body) {
 
 async function deleteRemoteTag(body) {
   const name = normalizeTagName(body.name);
+  await ensureCurrentLocalTag(body);
   const remote = await defaultRemoteName(body.remote);
-  await ensureRemoteTag(remote, name);
+  await ensureRemoteTag(remote, name, normalizeExpectedTagSha(body.sha));
   const output = await git(currentRepo, ["push", remote, `:refs/tags/${name}`], { timeout: 120000 });
   return commandResultWithSummary(`已删除远端 Tag ${name}`, output);
 }
@@ -2166,6 +2191,10 @@ async function findCheckoutStash(body) {
 
 async function restoreCheckoutStash(body) {
   const branch = normalizeBranchName(body.branch);
+  const currentBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
+  if (currentBranch !== branch) {
+    throw new Error(`当前分支已经切换到 ${currentBranch || "HEAD"}，不能恢复属于 ${branch} 的切换储藏。请切回 ${branch} 后再恢复。`);
+  }
   const stash = await findForklineStash(branch, String(body.message || "").trim());
   if (!stash) throw new Error("没有找到可恢复的 Forkline 储藏");
   await git(currentRepo, ["stash", "pop", stash.ref], { timeout: 120000 });
@@ -2229,7 +2258,7 @@ function selectedStashFilesHaveChanges(statusFiles, files) {
 }
 
 async function branchFromStash(body) {
-  const ref = normalizeStashRef(body.ref);
+  const ref = await ensureCurrentStashRef(body);
   const branch = normalizeBranchName(body.branch);
   await ensureCleanWorktree("从储藏创建分支前，请先提交、储藏或丢弃当前工作区改动。");
   const existing = (await git(currentRepo, ["show-ref", "--verify", `refs/heads/${branch}`]).catch(() => "")).trim();
@@ -2326,11 +2355,23 @@ async function findForklineStash(branch, message = "") {
       return { ref: (ref || "").trim(), subject: (subject || "").trim() };
     })
     .filter((item) => item.ref && item.subject);
-  const match = rows.find((item) => message && item.subject.includes(message))
-    || rows.find((item) => item.subject.startsWith(`On ${branch}: Forkline: checkout `));
+  const match = rows.find((item) => isForklineCheckoutStashForBranch(item.subject, branch, message))
+    || rows.find((item) => isForklineCheckoutStashForBranch(item.subject, branch));
   if (!match) return null;
-  const messagePart = match.subject.replace(/^On [^:]+:\s*/, "");
+  const messagePart = checkoutStashMessagePart(match.subject, branch);
   return { ref: match.ref, branch, message: messagePart, label: match.subject };
+}
+
+function isForklineCheckoutStashForBranch(subject, branch, message = "") {
+  const messagePart = checkoutStashMessagePart(subject, branch);
+  if (!messagePart.startsWith("Forkline: checkout ")) return false;
+  return message ? messagePart === message : true;
+}
+
+function checkoutStashMessagePart(subject, branch) {
+  const prefix = `On ${branch}: `;
+  const text = String(subject || "");
+  return text.startsWith(prefix) ? text.slice(prefix.length).trim() : "";
 }
 
 async function discardWorktreeFile(body) {
@@ -3826,7 +3867,7 @@ function recoveryPointLine(recovery) {
 }
 
 async function restoreRecoveryPoint(body) {
-  const ref = await ensureRecoveryRef(body.ref);
+  const ref = await ensureRecoveryRef(body.ref, normalizeExpectedRecoverySha(body.sha));
   await currentLocalBranch("恢复恢复点");
   await ensureCleanWorktree("恢复到恢复点前，请先提交、储藏或还原当前工作区改动。");
   const target = (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`])).trim();
@@ -3860,23 +3901,37 @@ async function restoreReflogEntry(body) {
 }
 
 async function deleteRecoveryPoint(body) {
-  const ref = await ensureRecoveryRef(body.ref);
+  const ref = await ensureRecoveryRef(body.ref, normalizeExpectedRecoverySha(body.sha));
   await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
   return { ok: true, output: `已删除恢复点 ${shortRecoveryRef(ref)}` };
 }
 
 async function deleteRecoveryPoints(body) {
-  const refs = [...new Set((Array.isArray(body.refs) ? body.refs : []).map((item) => String(item || "").trim()).filter(Boolean))];
-  if (!refs.length) throw new Error("请选择要删除的恢复点");
-  if (refs.length > 80) throw new Error("一次最多删除 80 个恢复点，请先缩小筛选范围。");
+  const entries = normalizeRecoveryRefEntries(body.refs);
+  if (!entries.length) throw new Error("请选择要删除的恢复点");
+  if (entries.length > 80) throw new Error("一次最多删除 80 个恢复点，请先缩小筛选范围。");
   const safeRefs = [];
-  for (const ref of refs) {
-    safeRefs.push(await ensureRecoveryRef(ref));
+  for (const entry of entries) {
+    safeRefs.push(await ensureRecoveryRef(entry.ref, normalizeExpectedRecoverySha(entry.sha)));
   }
   for (const ref of safeRefs) {
     await git(currentRepo, ["update-ref", "-d", ref], { timeout: 60000 });
   }
   return { ok: true, output: `已删除 ${safeRefs.length} 个恢复点` };
+}
+
+function normalizeRecoveryRefEntries(value) {
+  const rawItems = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const entries = [];
+  for (const item of rawItems) {
+    const ref = typeof item === "object" && item ? String(item.ref || "").trim() : String(item || "").trim();
+    const sha = typeof item === "object" && item ? String(item.sha || "").trim() : "";
+    if (!ref || seen.has(ref)) continue;
+    seen.add(ref);
+    entries.push({ ref, sha });
+  }
+  return entries;
 }
 
 async function pruneRecoveryPoints(body) {
@@ -4008,16 +4063,26 @@ function recoveryRetentionPolicyLabel(policy) {
     .join("；");
 }
 
-async function ensureRecoveryRef(value) {
+async function ensureRecoveryRef(value, expectedSha = "") {
   const input = String(value || "").trim().replace(/^\/+/, "");
   if (!input) throw new Error("请选择恢复点");
   const ref = input.startsWith(`${RECOVERY_REF_PREFIX}/`) ? input : `${RECOVERY_REF_PREFIX}/${input}`;
   normalizeRefName(ref, "恢复点");
   if (!ref.startsWith(`${RECOVERY_REF_PREFIX}/`)) throw new Error("恢复点不属于 Forkline 管理范围");
-  await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => {
+  const actualSha = (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => {
     throw new Error("恢复点不存在或已经被删除");
-  });
+  })).trim().toLowerCase();
+  if (expectedSha && !actualSha.startsWith(expectedSha)) {
+    throw new Error("恢复点已经变化。为避免恢复或删除错误提交，请刷新恢复点列表后重新选择。");
+  }
   return ref;
+}
+
+function normalizeExpectedRecoverySha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("恢复点状态已过期，请刷新恢复点列表后重新选择。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("恢复点身份不合法，请刷新恢复点列表后重新选择。");
+  return sha;
 }
 
 function parseRecoveryPoints(output) {
@@ -4256,6 +4321,24 @@ function normalizeStashRef(value) {
   const ref = String(value || "").trim();
   if (/^stash@\{\d+\}$/.test(ref)) return ref;
   throw new Error("储藏引用不合法");
+}
+
+async function ensureCurrentStashRef(body) {
+  const ref = normalizeStashRef(body.ref);
+  const expectedSha = normalizeExpectedStashSha(body.sha);
+  const actualSha = (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+  if (!actualSha) throw new Error("这条储藏已经不存在，请刷新储藏列表后重新选择。");
+  if (!actualSha.startsWith(expectedSha)) {
+    throw new Error("储藏列表已经变化，这个引用现在指向了另一条储藏。为避免操作错储藏，请刷新储藏列表后重新选择。");
+  }
+  return ref;
+}
+
+function normalizeExpectedStashSha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("储藏列表状态已过期，请刷新储藏列表后重新选择。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("储藏身份不合法，请刷新储藏列表后重新选择。");
+  return sha;
 }
 
 function normalizeStashMessage(value) {
@@ -4770,12 +4853,18 @@ function parseTags(output) {
     .filter(Boolean)
     .map((line) => {
       const parts = line.split("\t");
-      const [name = "", object = "", time = ""] = parts;
-      const type = parts.length > 4 ? parts[parts.length - 1] : "";
-      const subject = parts.length > 4 ? parts.slice(3, -1).join("\t") : parts[3] || "";
+      const [name = "", object = "", maybeShort = "", maybeTime = ""] = parts;
+      const hasFullObject = /^[0-9a-f]{40}$/i.test(object) && /^[0-9a-f]{7,40}$/i.test(maybeShort);
+      const short = hasFullObject ? maybeShort : object;
+      const time = hasFullObject ? maybeTime : maybeShort;
+      const type = parts.length > (hasFullObject ? 5 : 4) ? parts[parts.length - 1] : "";
+      const subject = parts.length > (hasFullObject ? 5 : 4)
+        ? parts.slice(hasFullObject ? 4 : 3, -1).join("\t")
+        : parts[hasFullObject ? 4 : 3] || "";
       return {
         name: name.trim(),
         object: object.trim(),
+        short: short.trim(),
         time: time.trim(),
         subject: subject.trim(),
         type: type.trim() || "commit",
@@ -4784,15 +4873,45 @@ function parseTags(output) {
     .filter((tag) => tag.name);
 }
 
-async function ensureLocalTag(name) {
-  await git(currentRepo, ["rev-parse", "-q", "--verify", `refs/tags/${name}`], { timeout: 60000 }).catch(() => {
-    throw new Error(`本地 Tag ${name} 不存在`);
-  });
+async function ensureCurrentLocalTag(body) {
+  const name = normalizeTagName(body.name);
+  const expectedSha = normalizeExpectedTagSha(body.sha);
+  const actualSha = await readLocalTagObjectSha(name);
+  if (!actualSha.startsWith(expectedSha)) {
+    throw new Error(`本地 Tag ${name} 已经变化。为避免操作错 Tag，请刷新 Tag 列表后重新选择。`);
+  }
+  return actualSha;
 }
 
-async function ensureRemoteTag(remote, name) {
+async function readLocalTagObjectSha(name) {
+  return (await git(currentRepo, ["rev-parse", "-q", "--verify", `refs/tags/${name}`], { timeout: 60000 }).catch(() => {
+    throw new Error(`本地 Tag ${name} 不存在`);
+  })).trim().toLowerCase();
+}
+
+function normalizeExpectedTagSha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("Tag 列表状态已过期，请刷新 Tag 列表后重新选择。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("Tag 身份不合法，请刷新 Tag 列表后重新选择。");
+  return sha;
+}
+
+async function ensureRemoteTag(remote, name, expectedSha = "") {
   const output = await git(currentRepo, ["ls-remote", "--tags", remote, `refs/tags/${name}`], { timeout: 60000, maxBuffer: 1024 * 1024 * 2 });
-  if (!output.trim()) throw new Error(`远端 Tag ${name} 不存在或已经被删除。请刷新 Tag 列表后重新选择。`);
+  const remoteSha = remoteTagObjectSha(output, name);
+  if (!remoteSha) throw new Error(`远端 Tag ${name} 不存在或已经被删除。请刷新 Tag 列表后重新选择。`);
+  if (expectedSha && !remoteSha.startsWith(expectedSha)) {
+    throw new Error(`远端 Tag ${name} 已经变化。为避免删除别人新推送的同名 Tag，请刷新 Tag 列表后重新选择。`);
+  }
+}
+
+function remoteTagObjectSha(output, name) {
+  const fullRef = `refs/tags/${name}`;
+  const row = String(output || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/))
+    .find((parts) => parts[1] === fullRef);
+  return (row?.[0] || "").toLowerCase();
 }
 
 function sameFsPath(left, right) {
@@ -5051,10 +5170,15 @@ function parseStashList(output) {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => {
-      const [ref, subject = "", time = ""] = line.split(GIT_LOG_FIELD_SEPARATOR);
+      const [ref, shaOrSubject = "", subjectOrTime = "", maybeTime = ""] = line.split(GIT_LOG_FIELD_SEPARATOR);
+      const hasSha = /^[0-9a-f]{40}$/i.test(shaOrSubject);
+      const sha = hasSha ? shaOrSubject : "";
+      const subject = hasSha ? subjectOrTime : shaOrSubject;
+      const time = hasSha ? maybeTime : subjectOrTime;
       const parsed = parseStashSubject(subject);
       return {
         ref,
+        sha,
         branch: parsed.branch,
         message: parsed.message,
         subject,

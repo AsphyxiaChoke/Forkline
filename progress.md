@@ -3366,3 +3366,98 @@
 - `docs/CONTINUE.md`：记录本地 API 内容类型边界。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止自动签出储藏恢复到错误分支
+### What was done
+- 复现“储藏并签出”生成的自动 stash 可被旧弹窗或直接 API 在错误当前分支上恢复：请求声称恢复 `main` 的 stash，但当前仍在 `dev` 时，后端仍会执行 `git stash pop`，导致 `main` 的改动进入 `dev`，原 stash 从列表消失。
+- 后端恢复自动签出 stash 前现在会确认当前分支仍等于请求里的所属分支；如果用户已经切到其他分支，会返回中文提示要求先切回原分支。
+- 自动签出 stash 查找改为按 `On <分支>:` 前缀和完整消息精确匹配，不再只用 `subject.includes(message)` 命中近似消息或其他分支的 stash。
+
+### Testing
+- 修复前临时仓库 HTTP harness：在 `main` 创建 `Forkline: checkout dev ...` stash 后切到 `dev`，调用 `restoreCheckoutStash` 并传 `branch = main` 返回 `200`；当前分支仍为 `dev`，`stash list` 变空，`dev` 工作区出现 `main stash change`。
+- 修复后同一错误分支 harness：返回 `400` 和中文“当前分支已经切换到 dev，不能恢复属于 main 的切换储藏”，当前分支仍为 `dev`，`stash@{0}` 仍保留，工作区干净，文件内容仍是 `base`。
+- 正确分支回归：当前分支为 `main` 时调用同一 `restoreCheckoutStash` 返回 `200`，stash 被正常弹出，`file.txt` 恢复为 `main stash change`。
+
+### Notes
+- `server.js`：恢复自动签出 stash 前增加当前分支校验，并将自动 stash 查找收紧到所属分支和完整消息。
+- `README.md`：补充自动签出 stash 恢复的后端分支校验和精确匹配规则。
+- `docs/CONTINUE.md`：记录自动签出 stash 恢复不会再应用到错误分支。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止过期储藏引用删错储藏
+### What was done
+- 复现页面选中旧列表里的 `stash@{0}` 后，如果期间又创建了新的 stash，旧 stash 会变成 `stash@{1}`；后端继续按旧 `stash@{0}` 执行 `dropStash` 会删除新 stash，API 返回成功，用户选中的旧 stash 反而保留。
+- 状态接口现在返回每条 stash 的 commit SHA；前端执行应用、弹出、删除和从储藏创建分支时，会把页面选中时看到的 SHA 一起传给后端。
+- 后端执行这些 stash 写操作前会确认当前 `stash@{n}` 仍指向同一个 SHA；如果序号已经漂移，会拒绝操作并提示刷新储藏列表后重新选择。
+
+### Testing
+- 修复前临时仓库 HTTP harness：页面先读取 `old selected stash` 为 `stash@{0}`，随后外部创建 `new later stash`；调用 `dropStash stash@{0}` 返回 `200`，结果 `new later stash` 被删除，`old selected stash` 仍保留。
+- 修复后同一 stale 引用 harness：带旧 `ref + sha` 调用 `dropStash` 返回 `400` 和中文“储藏列表已经变化”提示，`new later stash` 与 `old selected stash` 都保留。
+- 当前引用回归：刷新后用当前 `stash@{0}` 的 SHA 调用 `dropStash` 返回 `200`，只删除当前选中的 `new later stash`，旧 stash 留在列表中。
+
+### Notes
+- `server.js`：stash 列表增加 SHA 输出，应用/弹出/删除/建分支统一校验 ref 当前指向的 SHA。
+- `public/js/panels/sync.js`：stash 写操作请求携带页面选中时的 SHA。
+- `README.md`：补充 stash 序号漂移时的后端拒绝规则。
+- `docs/CONTINUE.md`：记录 stash 操作身份校验边界。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面删除已变化的远端分支
+### What was done
+- 复现本地页面看到旧 `origin/feature` 后，真实远端 `feature` 被别人更新到新提交；旧页面继续调用 `deleteRemoteBranch origin/feature` 会返回 `200`，并把新远端分支删除。
+- 后端删除远端分支前现在会读取本地 tracking 分支 SHA 和真实远端 heads SHA；如果两者不一致，会先抓取刷新远端跟踪引用，然后拒绝删除并提示刷新页面重新选择。
+- 本地 tracking 和真实远端一致的普通远端分支删除路径保持可用。
+
+### Testing
+- 修复前临时裸仓库 HTTP harness：本地 `origin/feature` 仍指向旧提交 `586b8ec...`，真实远端 `feature` 已更新到 `1fe256b...`；调用 `deleteRemoteBranch origin/feature` 返回 `200`，裸远端 `refs/heads/feature` 被删除。
+- 修复后同一 stale 远端分支 harness：本地 tracking 指向旧提交 `37d8af9...`，真实远端为新提交 `e2c11d5...`；调用返回 `400` 和中文“远端分支 origin/feature 已经变化”提示，裸远端 `feature` 仍保留在新提交。
+- 普通删除回归：本地 `origin/cleanup` 和真实远端 `cleanup` 都指向 `7b32632...` 时，调用 `deleteRemoteBranch origin/cleanup` 返回 `200`，裸远端 `cleanup` 被删除。
+
+### Notes
+- `server.js`：远端分支删除前增加真实远端 SHA 与本地 tracking SHA 的一致性校验。
+- `README.md`：补充远端分支变化时会拒绝旧页面删除请求。
+- `docs/CONTINUE.md`：记录远端分支删除的 SHA 校验边界。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面删除已变化的 Tag
+### What was done
+- 复现本地页面看到旧 `v1` Tag 后，真实远端 `v1` 被别人强制更新到新提交；旧页面继续调用 `deleteRemoteTag v1` 会返回 `200`，并把新远端 Tag 删除。
+- Tag 状态现在保留完整对象 SHA，前端推送 Tag、删除本地 Tag、删除远端 Tag 时会把页面看到的 SHA 一起传给后端。
+- 后端执行 Tag 写操作前会确认本地同名 Tag 仍是页面看到的对象；删除远端 Tag 时还会确认真实远端 Tag 也仍是同一个对象，避免旧页面删错或推错同名 Tag。
+
+### Testing
+- 修复前临时裸仓库 HTTP harness：本地 `v1` 仍指向旧提交 `f10ed26...`，真实远端 `v1` 已更新到 `60c8f97...`；调用 `deleteRemoteTag v1` 返回 `200`，裸远端 `refs/tags/v1` 被删除。
+- 修复后同一 stale 远端 Tag harness：页面 SHA 为旧对象 `2130e81...`，真实远端为新对象 `aaa0c6a...`；调用返回 `400` 和中文“远端 Tag v1 已经变化”提示，裸远端 `v1` 仍保留在新对象。
+- 普通远端删除回归：本地和真实远端 `v1` 都指向 `51330d0...` 时，调用 `deleteRemoteTag v1` 返回 `200`，裸远端 `v1` 被删除。
+- 本地 stale Tag 回归：页面 SHA 为旧对象 `5d7c852...`，本地同名 `v1` 已被外部改到 `0c4aa60...`；调用 `deleteTag v1` 返回 `400`，本地新 `v1` 保留。
+
+### Notes
+- `server.js`：Tag 列表增加完整对象 SHA，Tag 写操作统一校验页面 SHA、本地 SHA，并在删除远端 Tag 时校验真实远端 SHA。
+- `public/js/panels/recovery-settings.js`：Tag 写操作请求携带页面选中时的完整对象 SHA，界面仍显示短 SHA。
+- `README.md`：补充 Tag 写操作的对象 SHA 校验规则。
+- `docs/CONTINUE.md`：记录 Tag 列表完整 SHA 和远端删除校验边界。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止旧页面恢复或删除已变化的恢复点
+### What was done
+- 复现页面看到恢复点 ref 指向提交 B 后，如果同一个 `refs/forkline/recovery/...` 被外部改到提交 A，旧页面继续调用 `restoreRecoveryPoint` 会返回 `200` 并把 HEAD 重置到 A，和用户看到的恢复点不一致。
+- 恢复点恢复、单个删除和批量删除现在都会携带页面看到的恢复点 SHA；后端执行前会确认当前 ref 仍指向同一个提交。
+- 如果恢复点 ref 已经变化，后端会返回中文提示要求刷新恢复点列表，不会执行 reset 或 update-ref 删除。
+
+### Testing
+- 修复前临时仓库 HTTP harness：页面读取恢复点 SHA 为 B `4ec2d45...`，外部把同一恢复点 ref 改到 A `98df6b2...`；调用 `restoreRecoveryPoint` 返回 `200`，HEAD 被重置到 A，文件内容变成 `A`。
+- 修复后同一 stale 恢复点 harness：页面 SHA 为 B `2525e97...`，ref 已改到 A `cbcd664...`；调用 `restoreRecoveryPoint` 返回 `400` 和中文“恢复点已经变化”，HEAD 仍停在 C `9f634a5...`，文件内容仍为 `C`。
+- 正常恢复回归：ref 和页面 SHA 都指向 B `16437e7...` 时，调用 `restoreRecoveryPoint` 返回 `200`，HEAD 恢复到 B，并创建新的 `restore-recovery` 恢复前恢复点。
+- 删除回归：页面 SHA 为 B `bb25814...`，ref 已改到 A `fb85397...`；调用 `deleteRecoveryPoint` 返回 `400`，该 ref 仍保留并指向 A。
+
+### Notes
+- `server.js`：恢复点恢复、单个删除和批量删除增加页面 SHA 与当前 ref SHA 的一致性校验。
+- `public/js/panels/recovery-settings.js`：恢复点恢复、删除和筛选批量删除请求携带页面看到的 SHA。
+- `README.md`：补充恢复点 ref 变化时会拒绝旧页面恢复/删除请求。
+- `docs/CONTINUE.md`：记录恢复点恢复和删除的 SHA 校验边界。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
