@@ -3273,3 +3273,96 @@
 - `docs/CONTINUE.md`：记录后端会拒绝删除当前分支和主干保护分支。
 - `progress.md`：追加本轮复现、修复和验证记录。
 - 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止后端删除远端主干保护分支
+### What was done
+- 复现远端分支删除接口只确认 tracking 引用存在，直接 API 调用 `deleteRemoteBranch origin/main` 会执行 `git push origin --delete main`，导致远端主干分支被删除。
+- 后端删除远端分支时现在会先用真实远端名解析远端引用，再按解析后的分支名拦截 `main` / `master` / `develop` / `development` / `dev` / `trunk` 这类主干/长期分支。
+- 普通远端分支删除路径保持不变，仍会删除成功后执行 `fetch --prune`。
+
+### Testing
+- 修复前临时仓库 HTTP harness：调用 `deleteRemoteBranch origin/main` 返回 `200`，裸远端只剩 `cleanup`，输出 `mainDeleted: true`。
+- 修复后同一 harness：调用 `deleteRemoteBranch origin/main` 返回 `400` 和中文“远端分支 origin/main 是主干/长期分支”提示，远端保留 `cleanup,main`；随后调用 `deleteRemoteBranch origin/cleanup` 返回 `200`，远端只剩 `main`。
+- 带斜杠远端名回归：远端名 `team/origin` 时，`deleteRemoteBranch team/origin/main` 返回 `400` 并保留 `main`，`deleteRemoteBranch team/origin/cleanup` 返回 `200` 并删除普通分支。
+
+### Notes
+- `server.js`：远端分支删除入口增加后端主干保护分支兜底，并复用统一的保护分支名判断。
+- `README.md`：补充远端主干/长期分支删除会被后端拒绝。
+- `docs/CONTINUE.md`：记录远端分支删除的后端保护范围。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止安全强推改写远端主干保护分支
+### What was done
+- 复现普通本地分支设置 upstream 到 `origin/main` 后，直接调用 `forcePushLease` 会执行 `git push --force-with-lease origin HEAD:main`，把远端 `main` 改写成普通分支提交。
+- 后端安全强推现在会解析当前 upstream 的真实远端分支名，并拒绝推送到 `main` / `master` / `develop` / `development` / `dev` / `trunk` 这类主干/长期分支。
+- 普通非保护远端分支的 `--force-with-lease` 路径保持可用。
+
+### Testing
+- 修复前临时仓库 HTTP harness：`setUpstream origin/main` 返回 `200`，随后 `forcePushLease` 返回 `200`，远端 `main` 从 `7ee68ef` 被改写为普通分支孤立提交 `2d82f23`，输出 `mainOverwritten: true`。
+- 修复后同一 harness：`setUpstream origin/main` 返回 `200`，`forcePushLease` 返回 `400` 和中文“远端分支 origin/main 是主干/长期分支”提示，远端 `main` 保持原提交，输出 `mainKept: true`。
+- 普通分支回归：当前分支跟踪 `origin/topic` 时，`forcePushLease` 返回 `200`，远端 `topic` 更新到本地改写后的提交。
+- 带斜杠远端名回归：远端名 `team/origin` 时，`team/origin/main` 被 `400` 拦截，远端 `main` 保持原提交。
+
+### Notes
+- `server.js`：安全强推入口增加后端主干保护分支兜底，复用统一的保护分支名判断。
+- `README.md`：补充安全强推不会打到远端主干/长期分支。
+- `docs/CONTINUE.md`：记录安全强推的后端保护范围。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止普通推送把普通分支推到远端主干
+### What was done
+- 复现仓库配置 `push.default=upstream` 时，普通本地分支 `feature` 跟踪 `origin/main` 后，直接调用 `push` 会执行裸 `git push` 并把远端 `main` 快进到 `feature` 提交。
+- 后端普通推送现在会解析当前 upstream 的真实远端分支名；如果 upstream 是主干/长期分支且当前分支名不一致，会返回中文保护提示，不执行 `git push`。
+- 当前分支名和远端主干分支名一致时仍允许普通推送；普通非保护分支也不受影响。
+
+### Testing
+- 修复前临时仓库 HTTP harness：配置 `push.default=upstream`，`feature` 跟踪 `origin/main` 后调用 `push` 返回 `200`，远端 `main` 从 `817c67e` 更新到 `feature` 提交 `e405367`，输出 `mainUpdatedByFeature: true`。
+- 修复后同一 harness：`feature` 跟踪 `origin/main` 后调用 `push` 返回 `400` 和中文“当前分支 feature 的 upstream 是远端主干/长期分支 origin/main”提示，远端 `main` 保持原提交，输出 `mainKept: true`。
+- 普通分支回归：`topic` 跟踪 `origin/topic` 且本地领先时，调用 `push` 返回 `200`，远端 `topic` 更新到本地提交。
+- 主干同名回归：`main` 跟踪 `origin/main` 且本地领先时，调用 `push` 返回 `200`，远端 `main` 正常更新。
+- 带斜杠远端名回归：远端名 `team/origin` 时，`feature` 跟踪 `team/origin/main` 调用 `push` 返回 `400`，远端 `main` 保持原提交。
+
+### Notes
+- `server.js`：普通 push 在执行裸 `git push` 前增加 upstream 主干保护，防止分支名不一致时推到远端主干。
+- `README.md`：补充普通推送会拦截普通分支推到远端主干。
+- `docs/CONTINUE.md`：记录普通推送保护新增的 upstream 主干分支名一致性检查。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止重命名本地主干保护分支
+### What was done
+- 复现后端已拒绝删除 `main` 等主干保护分支，但 `renameBranch main -> renamed-main` 仍会成功，等价于绕过删除保护让本地 `main` 消失。
+- 后端重命名本地分支时现在会拒绝把 `main` / `master` / `develop` / `development` / `dev` / `trunk` 这类主干/长期分支作为源分支重命名。
+- 普通本地分支重命名路径保持可用。
+
+### Testing
+- 修复前临时仓库 HTTP harness：当前在 `main`，调用 `renameBranch main -> renamed-main` 返回 `200`，分支列表只剩 `renamed-main`，输出 `mainRemoved: true`。
+- 修复后同一 harness：调用 `renameBranch main -> renamed-main` 返回 `400` 和中文“主干/长期分支，Forkline 默认保护”提示，分支列表仍为 `main`，输出 `mainKept: true`。
+- 普通分支回归：当前在 `topic`，调用 `renameBranch topic -> renamed-topic` 返回 `200`，分支列表只剩 `renamed-topic`。
+
+### Notes
+- `server.js`：本地分支重命名入口增加主干保护分支兜底。
+- `README.md`：补充分支整理保护会拒绝重命名主干分支。
+- `docs/CONTINUE.md`：记录后端拒绝删除/重命名主干保护分支。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 阻止 text/plain POST 触发本地写操作
+### What was done
+- 复现本地服务会把 `Content-Type: text/plain` 的 JSON 字符串照常解析并执行；在无当前仓库状态下，直接 POST `initRepository` 会创建目标目录和 `.git`。
+- 服务端统一 JSON 读取入口现在只接受 `application/json`，拒绝 `text/plain` 等简单请求，避免外部网页用 no-cors 简单 POST 绕过前端确认触发克隆、初始化或 Git 写操作。
+- 正常前端 `application/json` 请求保持可用。
+
+### Testing
+- 修复前临时服务 HTTP harness：用 `Content-Type: text/plain;charset=UTF-8` POST `{"action":"initRepository","targetPath":"C:\\tmp\\forkline-text-plain-init-*","openAfter":false}`，返回 `200`，目标目录下 `.git` 被创建，输出 `gitCreated: true`。
+- 修复后同一 text/plain harness：返回 `400` 和中文“请求内容类型不合法”提示，目标目录未创建 `.git`，输出 `gitCreated: false`。
+- 正常 JSON 回归：用 `Content-Type: application/json` 调用同一 `initRepository` 返回 `200`，目标目录正常创建 `.git`。
+
+### Notes
+- `server.js`：`readJson` 增加 `application/json` 内容类型校验，覆盖 `/api/open`、`/api/action` 和历史队列预览等 POST JSON 入口。
+- `README.md`：补充本地 API POST 只接受 JSON 请求。
+- `docs/CONTINUE.md`：记录本地 API 内容类型边界。
+- `progress.md`：追加本轮复现、修复和验证记录。
+- 回滚方式：提交前反向删除本轮在上述文件和本日志块中的改动；提交后可用 `git revert <本次提交>` 回滚。

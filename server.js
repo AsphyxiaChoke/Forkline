@@ -1500,9 +1500,13 @@ async function deleteBranch(body) {
 
 function ensureBranchDeletionAllowed(branch, currentBranch = "") {
   if (branch === currentBranch) throw new Error("不能删除当前所在分支，请先切换到其他分支");
-  if (PROTECTED_BRANCH_NAMES.has(String(branch || "").toLowerCase())) {
+  if (isProtectedBranchName(branch)) {
     throw new Error(`分支 ${branch} 是主干/长期分支，Forkline 默认保护，不允许从这里删除。`);
   }
+}
+
+function isProtectedBranchName(branch) {
+  return PROTECTED_BRANCH_NAMES.has(String(branch || "").toLowerCase());
 }
 
 async function deleteBranches(body) {
@@ -1542,6 +1546,7 @@ async function pushCurrentBranch() {
   let output = "";
   if (upstream) {
     ensurePushIsSafe(before);
+    await ensureProtectedUpstreamPushAllowed(branch, upstream);
     output = await git(currentRepo, ["push"], { timeout: 120000 });
   } else {
     const remoteNames = await readRemoteNames();
@@ -1565,6 +1570,13 @@ function ensurePushIsSafe(state) {
   }
 }
 
+async function ensureProtectedUpstreamPushAllowed(branch, upstream) {
+  const parsed = splitRemoteBranchRef(upstream, await readRemoteNames());
+  if (isProtectedBranchName(parsed.branch) && branch !== parsed.branch) {
+    throw new Error(`推送被保护：当前分支 ${branch} 的 upstream 是远端主干/长期分支 ${upstream}。为避免把普通分支推到主干，请先取消 upstream，或切到 ${parsed.branch} 分支后再推送。`);
+  }
+}
+
 async function forcePushCurrentBranchWithLease() {
   const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
@@ -1582,6 +1594,9 @@ async function forcePushCurrentBranchWithLease() {
   }
   const remoteNames = await readRemoteNames();
   const parsed = splitRemoteBranchRef(before.upstream, remoteNames);
+  if (isProtectedBranchName(parsed.branch)) {
+    throw new Error(`远端分支 ${before.upstream} 是主干/长期分支，Forkline 默认保护，不允许从这里安全强推。`);
+  }
   const output = await git(currentRepo, ["push", "--force-with-lease", parsed.remote, `HEAD:${parsed.branch}`], { timeout: 120000 });
   const after = await readCurrentSyncState();
   return syncCommandResult("forcePush", output, before, after);
@@ -2020,6 +2035,9 @@ async function deleteRemoteBranch(body) {
     .filter((item) => item && !item.endsWith("/HEAD"));
   if (!remoteBranches.includes(remoteRef)) throw new Error("远端分支不存在，请先抓取远端后再试");
   const parsed = splitRemoteBranchRef(remoteRef, await readRemoteNames());
+  if (isProtectedBranchName(parsed.branch)) {
+    throw new Error(`远端分支 ${remoteRef} 是主干/长期分支，Forkline 默认保护，不允许从这里删除。`);
+  }
   let output = "";
   try {
     output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
@@ -2041,6 +2059,9 @@ async function renameBranch(body) {
   const branch = normalizeBranchName(body.branch);
   const newBranch = normalizeBranchName(body.newBranch);
   if (branch === newBranch) return { ok: true, branch, output: "分支名没有变化" };
+  if (isProtectedBranchName(branch)) {
+    throw new Error(`分支 ${branch} 是主干/长期分支，Forkline 默认保护，不允许从这里重命名。`);
+  }
   await git(currentRepo, ["check-ref-format", "--branch", newBranch]).catch(() => {
     throw new Error("分支名不合法");
   });
@@ -5841,6 +5862,10 @@ function sampleState() {
 }
 
 async function readJson(req) {
+  const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw new Error("请求内容类型不合法。Forkline 只接受 application/json 的本地页面请求。");
+  }
   let raw = "";
   for await (const chunk of req) raw += chunk;
   return raw ? JSON.parse(raw) : {};
