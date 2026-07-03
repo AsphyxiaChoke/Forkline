@@ -4,7 +4,7 @@
 
 - 远端 `origin/main` 已拉取并基于最新代码开发。
 - 已完成“远端分支 checkout”：远端分支列表现在有可见的“签出”按钮，右键菜单也支持“签出为本地分支”。
-- 查看其他分支的切换速度已优化：分支/Tag 视图切换改用轻量 `/api/ref-state`，只刷新提交图数据，不再每次重跑同步、认证、子模块、恢复点和工作区全量状态。
+- 查看其他分支的切换速度已优化：分支/Tag 视图切换改用轻量 `/api/ref-state`，只刷新提交图数据，不再每次重跑同步、认证、子模块、恢复点和工作区全量状态；如果切到已删除的远端分支 tracking，`/api/ref-state` 会自动 `fetch --prune` 并拒绝显示旧提交。
 - 当前分支和当前 HEAD 提交已高亮：左侧分支列表、顶部分支条会标出真实检出分支；提交图会用 `HEAD` 徽标和独立行高亮标出当前仓库 HEAD。
 - Windows 下启动 `node server.js` 后会自动打开 `http://127.0.0.1:<PORT>`，非 Windows 环境保持只启动服务。
 - 顶部路径选择器已恢复并整理布局：路径输入框旁有固定可见的“选择”按钮，可在内置目录弹窗中进入上级目录、跳转输入路径，并通过桌面、下载、文档、用户目录和磁盘根目录快捷入口选择本机 Git 仓库；最近仓库和路径操作按钮已分组，窄宽度会提前换成两行顶栏，避免互相挤压或变形；目录列表会隐藏 `.git`。
@@ -47,10 +47,13 @@
 - 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - 分支比较已接入：本地/远端分支右键菜单新增“与当前分支比较”，右侧新增“比较”页；后端 `/api/compare` 返回两边独有提交数量、最多 40 条独有提交、目标分支相对共同祖先的文件列表和 Diff，并复用最大化对照。
+- 远端分支过期保护已覆盖比较页：如果比较基准或目标是已删除的 `origin/...` 远端跟踪引用，`readCompare` 会自动 `fetch --prune` 并拒绝比较，避免展示过期提交和文件变化。
+- 远端分支过期保护已覆盖图谱视图：如果 `/api/ref-state?ref=` 或 `/api/state?ref=` 指向已删除的 `origin/...` 远端跟踪引用，会自动 `fetch --prune` 并拒绝返回旧图谱提交。
 - 分支整理已接入：右侧“分支”页现在汇总本地分支的已合并、上游丢失和长期未动状态，显示最后提交、upstream、领先/落后、保护/占用原因；分支右键菜单和命令面板可直接打开分支整理，列表中可查看、比较、安全删除单个分支，也可批量安全删除已合并分支。
 - 分支整理删除策略：后端新增 `deleteBranches`，批量删除仍逐个执行 `git branch -d`；当前分支、`main` / `master` / `develop` / `dev` / `trunk` 这类主干分支、以及其他 worktree 占用分支会在 UI 禁用，未完全合并的分支仍由 Git 拦截并返回中文原因。
 - 本地分支列表过期提示已修正：如果分支已经被外部 Git 命令删除，继续点击删除或重命名会提示“本地分支已经不存在，请刷新分支列表”，不再透出 `branch not found` 或 `no branch named`。
 - Git worktree 管理已接入：右侧新增“工作树”页，读取 `git worktree list --porcelain` 并对存在的工作树补充干净/有改动摘要；大量 worktree 会完整返回，不再只显示前 24 个；支持从任意引用创建工作树、可选同时创建新分支、打开已有工作树、复制路径、刷新列表和执行 `git worktree prune --verbose` 清理失效记录。
+- 远端分支过期保护已覆盖工作树：如果从已删除的 `origin/...` 远端跟踪引用创建 worktree，`createWorktree` 会自动 `fetch --prune` 并拒绝创建，避免生成指向过期提交的 detached worktree。
 - Git submodule 管理已接入：右侧新增“子模块”页，读取 `.gitmodules` 和 `git submodule status --recursive`，显示子模块路径、URL、目标提交、初始化状态、提交不一致和本地改动数量；大量子模块会完整返回，不再只显示前 80 个；支持初始化全部、更新全部、更新单个子模块、同步 URL、复制路径和复制 URL。
 - 子模块路径带空格时的状态合并已修复：解析 `git submodule status --recursive` 时会优先用 `.gitmodules` 中的完整路径匹配状态行，不再把 `forkline-fixtures/submodule space 20260701` 截断成额外的 `forkline-fixtures/submodule` 假子模块；读取 `.gitmodules` 已切到 `git config -z`，会保留路径值里的前导空格，避免 ` leading-submodule-20260701` 被显示成不存在的 `leading-submodule-20260701`。
 - 单个子模块更新也会保留路径前导空格：`updateSubmodules` 不再 trim `body.path`，避免 UI 已正确显示 ` leading-update-submodule-20260701` 后，点击“更新”又报“子模块不存在：leading-update-submodule-20260701”。
@@ -61,6 +64,8 @@
 - 远端 Tag 操作失败提示已修正：推送或删除远端 Tag 时如果远端 URL / 路径不可读，提示会显示实际远端名，例如 `origin`，不再把 Tag 名误当成远端；删除远端 Tag 前会先用 `ls-remote --tags` 确认该 Tag 仍存在，避免 Git 对不存在 Tag 返回成功 warning 后误报“已删除”；重复推送远端已有的相同 Tag 会提示无需重复推送；推送同名但不同对象的 Tag 被远端拒绝时，会提示远端已存在同名 Tag，而不是误报“远端名已经存在”。
 - “合并分支”已改为 `--no-ff --no-edit`，即使可以快进也会保留 merge commit，方便在“全部分支”图谱里看到分支回归主线的样式。
 - 无提交分支的合并 / 变基保护已接入：当前分支还没有首个提交时，分支右键菜单会禁用“合并分支”和“变基当前分支到此分支”，后端 `mergeRef` / `rebaseOntoRef` 也会返回中文原因，不再透出 empty head 或误报游离 HEAD。
+- 远端分支过期保护已覆盖变基：如果本地仍残留 `origin/...` 远端跟踪引用，但真实远端分支已被删除，`rebaseOntoRef` 会自动 `fetch --prune` 并拒绝变基，避免当前分支移动到过期提交。
+- 远端分支过期保护已覆盖新建分支：如果从已删除的 `origin/...` 远端跟踪引用创建本地分支，`createBranch` 会自动 `fetch --prune` 并拒绝创建，避免新分支指向过期提交。
 - 无提交分支的新建分支 / 比较保护已接入：当前分支还没有首个提交时，新建分支弹窗会固定勾选“创建后切换”，后端拒绝不切换的新建分支并给出中文提示；比较页如果把当前无提交分支作为基准或目标，也会提示先创建首个提交或选择已有提交引用。
 - 无提交分支的工作区操作已修复：当前分支还没有首个提交时，储藏入口会中文提示 Git 不能 stash；“丢弃全部”会跳过不存在的 `HEAD`，清空索引并执行 `git clean -fd` 清理未跟踪文件。
 - 无提交分支的工作树起点保护已接入：当前分支还没有首个提交时，使用默认 `HEAD` 或当前无提交分支名创建 worktree 会返回中文提示，要求先创建首个提交，或把起点改成已有分支、Tag 或提交 SHA。
@@ -133,6 +138,7 @@
 - 图谱外提交的新建分支起点已修复：从文件历史或逐行追踪打开旧提交后再点“新建分支”，弹窗会使用该提交 SHA 作为起点，命令面板提示也会显示该提交，不再退回当前 HEAD。
 - 逐行追踪已接入：右侧新增“逐行”标签，工作区文件右键菜单新增“逐行追踪 git blame”，提交文件对照面板新增“逐行追踪”按钮；后端新增 `/api/file-blame`，执行 `git blame --line-porcelain <引用> -- <文件>`，返回最多前 600 行的行号、提交、作者、时间、摘要和代码内容，并对文件不在当前引用中的情况给中文提示。
 - 逐行追踪跳转已补强：当 blame 行对应的提交不在当前图谱加载范围内时，右侧仍会用 blame 行里的提交摘要作为临时详情来源，并按 SHA 读取提交详情，不再要求用户切换分支或清空图谱。
+- 远端分支过期保护已覆盖文件历史和逐行追踪：如果引用是已删除的 `origin/...` 远端跟踪引用，`readFileHistory` / `readFileBlame` 会自动 `fetch --prune` 并拒绝读取，避免展示过期提交和 blame 行。
 - 提交详情文件列表已保留 `git show --name-status --find-renames` 的 R/C 状态：重命名提交会返回 `state: R`、`previousFile` 和 `R100` 这类完整状态，文件树徽标会显示 R/C，不再把重命名误标成普通修改。
 
 ## 已验证
@@ -145,6 +151,7 @@
 - API 验证结果：可签出成本地 `forkline/remote-checkout-demo`，并保留 GitTest 中故意留下的已暂存、未暂存、未跟踪改动。
 - UI 验证结果：远端分支行显示“签出”和“合并”按钮。
 - 合并图谱验证：通过 Forkline API 将 `forkline/merge-clean` 合并到 `main` 后生成两父 merge commit `2f1ec54`，API 返回 `parents.Count = 2`，页面首行显示 `Merge branch 'forkline/merge-clean'`，SVG 图谱进入 `overview` 模式并有回归连线数据。
+- 图谱过期远端分支 API 验证：临时服务 `http://127.0.0.1:5338` 打开 GitTest，创建远端分支 `forkline/stale-remote-refstate-20260703` 并抓取出 `origin/forkline/stale-remote-refstate-20260703` 后，手动删除裸远端真实分支。修复前 `/api/ref-state?ref=origin/forkline/stale-remote-refstate-20260703` 和 `/api/state?ref=...` 都返回成功，首条提交为过期提交 `1ebb95c`；修复后两个接口均返回“远端分支 ... 已不存在，已刷新远端分支列表”，并自动 prune 掉过期远端跟踪引用。
 - Stash 验证：通过 Forkline API 对 `forkline-fixtures/stash-api-temp.txt` 执行所选文件储藏，临时文件被 stash 移除，stash 数量从 1 增至 2；随后已删除临时 stash，GitTest 原有测试改动保持不变。UI 验证：工作区顶部显示“储藏”，文件右键菜单显示“储藏所选”，并能按未暂存/已暂存状态禁用不适用动作。
 - Stash 说明：储藏会把改动从工作区移到 Git stash，所以工作区改动消失是正常行为；用户可在右侧“储藏”页恢复。
 - 从储藏创建分支 API 验证：临时服务 `http://127.0.0.1:5208` 打开 GitTest 后创建临时 stash `Forkline stash branch api test 2 20260613`，调用 `branchFromStash` 从 `stash@{0}` 创建 `forkline/stash-branch-api-2-20260613`；API 返回中文“已从 stash@{0} 创建并切换到分支...”，`gitOutput` 单独保存 Git 原始输出；新分支工作区出现临时未跟踪文件，stash 列表移除该项。另验证已存在分支会中文拒绝“本地分支 ... 已存在”。临时文件、临时分支已清理，GitTest 已恢复 `123` 分支干净状态。
@@ -176,9 +183,11 @@
 - 同步认证助手 API/静态验证：临时服务 `http://127.0.0.1:5258` 打开 GitTest 后，`sync.auth` 返回 `origin` 为 `kind = local`、摘要包含“1 个本地远端”，命令只给出 `git remote -v`，没有误导到 SSH/HTTPS；同时返回可见 SSH key 文件名、`ssh-agent` 状态和 Git Credential Manager 状态。静态检查确认 `readAuthDiagnostics`、`syncAuthHtml` 和 `.auth-card` 均存在。内置 Browser 本次打开 localhost 仍卡在加载层并重置会话，未记为视觉验证；GitTest 最终保持 `123` 分支且工作区干净。
 - PR/MR 快捷入口 API/静态验证：临时服务 `http://127.0.0.1:5264` 打开 GitTest 后，`sync.pullRequest.available = false`，中文原因是“当前仓库没有可识别的 GitHub / GitLab / Bitbucket / Gitea 网页远端。”，没有为本地远端 `D:\桌面\GitTestRemote.git` 误生成链接；静态检查确认同步页按钮、命令面板、当前分支右键菜单、`.pr-card` 样式和后端 `readPullRequestLink` 均已接入。内置 Browser 打开 localhost 本次仍超时并重置会话，未记为视觉验证；GitTest 最终保持 `123` 分支且工作区干净。
 - Git worktree API/静态验证：临时服务 `http://127.0.0.1:5267` 打开 GitTest 后，通过 Forkline `createWorktree` 从 `123` 创建临时分支 `forkline/worktree-api-20260613b` 到 `C:\tmp\forkline-worktree-api-20260613b`；返回的 `state.worktrees` 能找到该路径，分支为临时分支、状态 `clean`、改动数 0。随后调用 `openWorktree` 成功切到该工作树，返回仓库路径和分支均正确。验证后已执行 `git worktree remove --force`、删除临时分支和临时目录，GitTest 最终保持 `123` 分支且工作区干净。静态检查确认“工作树”标签、表单、按钮、`.worktree-dashboard` 样式和后端 `parseWorktreeList/createWorktree/openWorktree/pruneAllWorktrees` 均已接入。内置 Browser 本次打开 `http://127.0.0.1:5268/?tab=worktrees` 仍超时并重置会话，未记为视觉验证。
+- Worktree 过期远端分支 API 验证：临时服务 `http://127.0.0.1:5332` 打开 GitTest，创建远端分支 `forkline/stale-remote-worktree-20260703` 并抓取出 `origin/forkline/stale-remote-worktree-20260703` 后，手动删除裸远端真实分支。修复前 `createWorktree` 会从过期 tracking 在 `C:\tmp\forkline-stale-worktree-20260703` 创建 detached worktree，HEAD 指向过期提交 `0204135`；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，没有创建目录或 worktree 记录，且自动 prune 掉过期远端跟踪引用。
 - Git submodule API/静态验证：临时创建本地子模块源仓库 `C:\tmp\forkline-submodule-source-20260613`，并在 GitTest 中通过 `git -c protocol.file.allow=always submodule add` 临时添加到 `forkline-fixtures/submodule-api-20260613`；Forkline API 打开 GitTest 后，`state.submodules` 能列出该路径、URL、`status = ok`、`initialized = true`、`exists = true`、`dirtyCount = 0`。调用 `updateSubmodules` 单个路径返回“已更新...”，调用 `syncSubmodules` 返回 Git 的同步输出。验证后已 `submodule deinit`、`git rm`、`reset --hard`、`clean -fd`，并删除临时源仓库、子模块目录和 `.git/modules` 元数据；最终 GitTest 保持 `123` 分支且工作区干净，临时路径均不存在。静态检查确认“子模块”标签、按钮、`.submodule-dashboard` 样式和后端 `parseSubmodules/initSubmodules/updateSubmodules/syncSubmodules` 均已接入。
 - Git submodule 复测：本地服务 `http://127.0.0.1:5269` 打开 GitTest 后，临时创建本地子模块源仓库 `C:\tmp\forkline-submodule-source-rerun-20260613`，并添加到 `forkline-fixtures/submodule-rerun-20260613`；Forkline API 返回该子模块 `status = ok`、`initialized = true`、`exists = true`、`dirtyCount = 0`，单个 `updateSubmodules` 返回“已更新forkline-fixtures/submodule-rerun-20260613”，`syncSubmodules` 返回 Git 的同步输出。复测后 GitTest 保持 `123` 分支且工作区干净，临时源仓库和子模块目录均已删除。内置 Browser 打开 `http://127.0.0.1:5269/?tab=submodules` 本次在连接/加载层超时并重置会话，未记为视觉验证。
 - 从提交创建分支验证：本地服务 `http://127.0.0.1:5270` 打开 GitTest 后，通过 Forkline API 调用 `createBranch`，以 `HEAD~1` 的提交 SHA 创建临时分支 `forkline/branch-from-commit-api-20260613` 且 `checkout = false`；`git rev-parse` 确认临时分支指向指定提交 `cdd252a`，测试后已删除临时分支，GitTest 保持 `123` 分支且工作区干净。静态检查确认提交详情按钮、提交右键菜单 `git branch` 提示和命令面板文案均已接入。
+- 从过期远端分支创建分支 API 验证：临时服务 `http://127.0.0.1:5330` 打开 GitTest，创建远端分支 `forkline/stale-remote-create-branch-20260703` 并抓取出 `origin/forkline/stale-remote-create-branch-20260703` 后，手动删除裸远端真实分支。修复前 `createBranch` 会从过期 tracking 创建本地分支 `forkline/from-stale-create-branch-20260703`，指向过期提交 `fd3fe65`；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，没有创建本地分支，且自动 prune 掉过期远端跟踪引用。
 - 补丁工作流 API/静态验证：本地服务 `http://127.0.0.1:5271` 打开 GitTest 后，在临时分支 `forkline/patch-api-verify-20260613` 创建测试提交；`/api/patch?sha=<提交>` 返回 `git format-patch -1 6a886e8 --stdout` 生成的补丁，文件名为 `6a886e8-Forkline-patch-API-verify.patch` 且包含测试文件 `forkline-fixtures/patch-api-verify-20260613.txt`。随后 `reset --hard HEAD~1` 移除该提交，再通过 `applyPatch`、`stage = true` 应用补丁，API 返回“已应用补丁并暂存改动”，`git diff --cached --name-only` 确认测试文件进入暂存区。测试后已 `reset --hard`、`clean -fd`、切回 `123` 并删除临时分支，GitTest 保持干净。静态检查确认补丁弹窗、命令面板、提交详情按钮、提交右键菜单和后端 `/api/patch` / `applyPatch` 均已接入。内置 Browser 打开 `http://127.0.0.1:5272/` 本次仍在 localhost 加载层超时并重置会话，未记为视觉验证。
 - 远端仓库管理 UI 验证：浏览器服务 `http://127.0.0.1:5193` 打开 GitTest 的 `?tab=sync`，右侧同步页显示真实仓库 `origin` 的 fetch / push URL；249px 宽右侧内容无横向溢出，远端右键菜单显示“抓取此远端 / 修改 URL / 复制 fetch URL / 复制 push URL / 删除远端”，控制台无错误。
 - Upstream 管理 API 验证：浏览器服务 `http://127.0.0.1:5194` 打开 GitTest 后，在当前 `123` 分支调用 `setUpstream` 设置到 `origin/123`，API 返回 `sync.upstream = origin/123` 且领先/落后均为 0；随后调用 `unsetUpstream`，API 返回 upstream 为空。验证后 GitTest 已恢复为无 upstream、工作区干净。
@@ -202,6 +211,7 @@
 - Tag API 验证：在 GitTest 创建临时附注 Tag `forkline-tag-workflow-20260612162546`，`/api/state` 能列出；通过 Forkline `pushTag` 推送到 `origin` 后 `git ls-remote --tags origin <tag>` 可查到；通过 `deleteRemoteTag` 删除远端 Tag 后远端查不到；通过 `deleteTag` 删除本地 Tag 后 `/api/state` 不再列出。临时 Tag 已清理。
 - Tag UI 验证：浏览器打开 `http://127.0.0.1:5184`，GitTest 右侧“标签”页显示 `forkline-v0.1.0`，详情按钮为“查看提交 / 复制名称 / 推送 Tag / 删除本地 / 删除远端”；Tag 行右键菜单显示“查看此 Tag 提交 / 复制 Tag 名称 / 推送 Tag / 删除本地 Tag / 删除远端 Tag”，控制台无错误。
 - Rebase API 验证：在 GitTest 上验证普通 `rebaseOntoRef` 成功，topic 分支父提交变为目标分支 HEAD；冲突场景会返回中文变基冲突提示，`repo.operation.type = rebase`，冲突文件可识别。
+- Rebase 过期远端分支 API 验证：临时服务 `http://127.0.0.1:5328` 打开 GitTest，创建远端分支 `forkline/stale-remote-rebase-20260703` 并抓取出 `origin/forkline/stale-remote-rebase-20260703` 后，手动删除裸远端真实分支。修复前 `rebaseOntoRef` 会把当前 `123` 分支变基到过期 tracking 提交 `9a1d73a`；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，当前 HEAD 保持 `4fbce18`，且自动 prune 掉过期远端跟踪引用。
 - Rebase 冲突流程验证：在 GitTest 上分别验证 `abortRebase` 可恢复干净状态，手动解决并暂存后 `continueRebase` 可继续并让 topic 父提交等于目标 HEAD，`skipRebase` 可跳过当前冲突提交并结束变基。
 - Rebase UI 验证：浏览器打开 `http://127.0.0.1:5186`，GitTest 分支右键菜单显示“变基当前分支到此分支 git rebase”；进入变基冲突后，工作区横幅显示“变基发生冲突”，未解决冲突时“继续变基”禁用，“跳过变基”和“中止变基”可用，控制台无错误。
 - 历史编辑 API 验证：浏览器服务 `http://127.0.0.1:5187` 打开 GitTest 后，通过 `/api/action` 验证 `rewriteHistoryCommit` 的 `squash`、`fixup`、`drop`。`squash` 和 `fixup` 都把两次提交压成 1 次并保留第二次提交的文件改动；`fixup` 保留父提交标题；`drop` 删除目标提交引入的第二行改动，最终工作区干净。
@@ -217,6 +227,7 @@
 - 恢复点策略偏好/候选预览静态验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 通过；HTTP 静态资源检查确认最新 `app.js` 返回 `forkline-recovery-policy`、`saveRecoveryPolicyPreference`、`recoveryRetentionPreviewHtml`，最新 `styles.css` 返回 `.recovery-retention-preview-row`。内置浏览器打开 localhost 本次仍超时并重置会话，未记为视觉验证。
 - 引用日志恢复 API/UI 验证：临时服务 `http://127.0.0.1:5274` 打开 GitTest 后，在临时分支 `forkline-reflog-verify-*` 创建测试提交，再 `reset --hard HEAD~1` 制造 reflog 记录；`/api/state` 返回该临时提交的 reflog 项，`createRecoveryPointFromReflog` 创建 `refs/forkline/recovery/.../reflog-*`，`restoreReflogEntry` 恢复 HEAD 到临时提交并自动创建 `restore-reflog` 恢复前恢复点。内置浏览器打开同一服务后手动打开 GitTest，右侧“恢复点”页显示“引用日志 80 条”，reflog 行无横向溢出，右键菜单显示“查看提交 / 复制 SHA / 创建恢复点 update-ref / 恢复到此处 reset --hard”。测试后已切回 `123`、删除临时分支和测试恢复点 refs，GitTest 工作区干净。
 - 分支比较 API 验证：浏览器服务 `http://127.0.0.1:5201` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `headOnlyCount = 3`、`files = 6`、`diff = 57`；请求 `/api/compare?base=123&head=origin/forkline/merge-clean` 同样返回 3 个目标独有提交和 6 个文件变化。
+- 分支比较过期远端分支 API 验证：临时服务 `http://127.0.0.1:5334` 打开 GitTest，创建远端分支 `forkline/stale-remote-compare-20260703` 并抓取出 `origin/forkline/stale-remote-compare-20260703` 后，手动删除裸远端真实分支。修复前 `/api/compare?base=123&head=origin/forkline/stale-remote-compare-20260703` 返回成功，目标短 SHA 为过期提交 `e15ae70`，`headOnlyCount = 1`；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，并自动 prune 掉过期远端跟踪引用。
 - 比较页任意引用选择器 API/HTTP 验证：临时服务 `http://127.0.0.1:5239` 打开 GitTest 后，请求 `/api/compare?base=123&head=forkline/merge-clean` 返回 `base = 123`、`head = forkline/merge-clean`、目标独有提交 3 个、文件变化 6 个；HTTP 静态检查确认 `comparePickerHtml`、`data-compare-run` 和 `.compare-picker` 均已从最新资源返回。内置 Browser 本次打开 localhost 仍超时，未记为视觉验证。
 - 分支整理 API 验证：临时服务 `http://127.0.0.1:5256` 打开 GitTest 后，创建本地临时分支 `forkline/cleanup-api-verify` 指向当前 HEAD；`branchCleanup` 返回该分支 `mergedIntoCurrent = true`、`canDelete = true`、`statusLabel = 已合并`；调用 `deleteBranches` 后返回“已删除 1 个本地分支”，`show-ref` 确认该临时分支不存在。内置 Browser 本次打开 localhost 仍卡在连接/加载层，未记为视觉验证；GitTest 最终保持 `123` 分支且工作区干净。
 - 最近仓库验证：`node --check public/app.js`、`node --check server.js`、`git diff --check` 均通过；Forkline API 可打开 `D:\桌面\GitTest`，返回仓库 `GitTest`、分支 `123`、工作区改动 0；静态检查确认最近仓库入口、localStorage、下拉复位和低宽度顶栏换行规则存在。内置浏览器打开本地页本次超时，未记为视觉验证。
@@ -224,6 +235,7 @@
 - 初始化仓库 API 验证：临时服务 `http://127.0.0.1:5206` 调用 `initRepository` 初始化 `C:\tmp\forkline-init-api-20260613`，返回 `ok=true`、新仓库 `forkline-init-api-20260613`、分支 `master`、同步状态分支 `master`、提交数 0；重复初始化同一目录会中文拒绝“这个文件夹已经是 Git 仓库”。另验证已有普通非空目录 `C:\tmp\forkline-init-existing-api-20260613` 可初始化且不强制打开。HTTP 静态检查确认 `initRepo`、`initModal`、`initForm` 和“初始化仓库”入口存在；内置浏览器本次打开本地页仍超时，未记为视觉验证。临时测试目录已清理，临时服务已关闭。
 - 文件历史 API 验证：临时服务 `http://127.0.0.1:5203` 打开 `D:\桌面\GitTest` 后，请求 `/api/file-history?file=配置文件1.txt&ref=123` 返回文件 `配置文件1.txt`、引用 `123`、6 条历史记录和命令 `git log --follow 123 -- 配置文件1.txt`；请求绝对路径 `D:\桌面\GitTest\配置文件1.txt` 会中文拒绝“文件路径不合法”。静态检查确认“历史”标签、文件右键菜单、提交文件面板按钮和 CSS 已接入；内置浏览器打开本地页本次仍超时，未记为视觉验证。
 - 逐行追踪 API 验证：临时服务 `http://127.0.0.1:5205` 打开 `D:\桌面\GitTest` 后，请求 `/api/file-blame?file=配置文件3.txt&ref=123` 返回文件 `配置文件3.txt`、引用 `123`、1 行 blame、首行提交 `1ff8d18`、作者 `Admin`、未截断；请求 `配置文件1.txt` 返回中文“文件 配置文件1.txt 在 123 中不存在...”；请求绝对路径 `D:\桌面\GitTest\配置文件3.txt` 会中文拒绝“文件路径不合法”。静态检查确认“逐行”标签、文件右键菜单、提交文件面板按钮和 CSS 已接入。
+- 文件历史 / 逐行追踪过期远端分支 API 验证：临时服务 `http://127.0.0.1:5336` 打开 GitTest，创建远端分支 `forkline/stale-remote-file-read-20260703` 并抓取出 `origin/forkline/stale-remote-file-read-20260703` 后，手动删除裸远端真实分支。修复前 `/api/file-history` 返回 1 条过期提交 `0408d6d`，`/api/file-blame` 返回 2 行旧 blame；修复后两个接口均返回“远端分支 ... 已不存在，已刷新远端分支列表”，并自动 prune 掉过期远端跟踪引用。
 
 ## GitTest 测试数据
 

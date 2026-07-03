@@ -2255,6 +2255,26 @@
 - `progress.md`：追加本轮复现、修复、验证和清理记录。
 - 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
 
+## 2026-07-03 - Task: 修复变基已不存在远端分支时误用过期 tracking
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 仍会把当前分支变基到这个过期提交。
+- `rebaseOntoRef` 现在在目标是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝变基。
+- README 和继续开发文档同步说明过期远端分支不会再作为变基目标。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-rebase-20260703`，添加一个空提交 `9a1d73a`，推送并抓取出 `origin/forkline/stale-remote-rebase-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5327` 打开 GitTest 后，修复前调用 `rebaseOntoRef origin/forkline/stale-remote-rebase-20260703` 返回成功，并把当前 `123` 分支移动到过期提交 `9a1d73a`。
+- 已用 `git reset --hard 4fbce18...` 将 GitTest 恢复到基准提交；修复后重启临时服务 `http://127.0.0.1:5328` 再次调用同一动作，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后确认当前 HEAD 仍为 `4fbce18bd7ae1b652dc7c550321acac3de9093b3`，本地过期 `origin/forkline/stale-remote-rebase-20260703` 已被 prune，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：变基远端分支前校验真实远端分支仍存在，过期时自动 prune 并拒绝变基。
+- `README.md`：补充过期远端分支会拒绝变基。
+- `docs/CONTINUE.md`：记录变基过期远端分支的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
 ## 2026-07-03 - Task: 修复无提交分支恢复到 Forkline 恢复点的英文错误
 ### What was done
 - 复现当前分支还没有首个提交时，恢复到 Forkline 恢复点会在创建“恢复前恢复点”阶段失败，并透出 `fatal: Needed a single revision`。
@@ -2557,5 +2577,109 @@
 - `server.js`：合并远端分支前校验真实远端分支仍存在，过期时自动 prune 并拒绝合并。
 - `README.md`：补充过期远端分支会拒绝合并。
 - `docs/CONTINUE.md`：记录合并过期远端分支的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复从已不存在远端分支新建本地分支
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 仍会从这个过期引用创建新的本地分支。
+- `createBranch` 现在在起点是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝创建。
+- README 和继续开发文档同步说明过期远端分支不会再作为新建分支起点。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-create-branch-20260703`，添加一个空提交 `fd3fe65`，推送并抓取出 `origin/forkline/stale-remote-create-branch-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5329` 打开 GitTest 后，修复前调用 `createBranch`，起点为 `origin/forkline/stale-remote-create-branch-20260703`，返回成功并创建本地分支 `forkline/from-stale-create-branch-20260703` 指向过期提交 `fd3fe65`。
+- 已删除误创建的本地分支；修复后重启临时服务 `http://127.0.0.1:5330` 再次调用同一动作，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后确认没有创建本地 `forkline/from-stale-create-branch-20260703`，本地过期 `origin/forkline/stale-remote-create-branch-20260703` 已被 prune，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：从远端分支起点新建本地分支前校验真实远端分支仍存在，过期时自动 prune 并拒绝创建。
+- `README.md`：补充过期远端分支会拒绝作为新建分支起点。
+- `docs/CONTINUE.md`：记录从过期远端分支创建本地分支的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复从已不存在远端分支创建 worktree
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，Forkline 仍会从这个过期引用创建 detached worktree。
+- `createWorktree` 现在在起点是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝创建。
+- README 和继续开发文档同步说明过期远端分支不会再作为 worktree 起点。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-worktree-20260703`，添加一个空提交 `0204135`，推送并抓取出 `origin/forkline/stale-remote-worktree-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5331` 打开 GitTest 后，修复前调用 `createWorktree`，起点为 `origin/forkline/stale-remote-worktree-20260703`，返回成功并在 `C:\tmp\forkline-stale-worktree-20260703` 创建 detached worktree，HEAD 指向过期提交 `0204135`。
+- 已执行 `git worktree remove --force C:\tmp\forkline-stale-worktree-20260703` 清理误创建的 worktree；修复后重启临时服务 `http://127.0.0.1:5332` 再次调用同一动作，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后确认没有创建 `C:\tmp\forkline-stale-worktree-20260703`，`git worktree list --porcelain` 只剩主工作树，本地过期 `origin/forkline/stale-remote-worktree-20260703` 已被 prune，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：从远端分支起点创建 worktree 前校验真实远端分支仍存在，过期时自动 prune 并拒绝创建。
+- `README.md`：补充过期远端分支会拒绝作为 worktree 起点。
+- `docs/CONTINUE.md`：记录从过期远端分支创建 worktree 的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复比较页读取已不存在远端分支
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，比较页仍会读取这个过期引用并展示目标独有提交。
+- `readCompare` 现在在比较基准或目标是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝比较。
+- README 和继续开发文档同步说明比较页不会再展示过期远端分支的数据。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-compare-20260703`，添加文件 `forkline-fixtures/stale-compare-20260703.txt` 并提交 `e15ae70`，推送并抓取出 `origin/forkline/stale-remote-compare-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5333` 打开 GitTest 后，修复前请求 `/api/compare?base=123&head=origin/forkline/stale-remote-compare-20260703` 返回成功，`headShort = e15ae70`，`headOnlyCount = 1`。
+- 修复后重启临时服务 `http://127.0.0.1:5334` 再次请求同一比较，返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”。
+- 修复后确认本地过期 `origin/forkline/stale-remote-compare-20260703` 已被 prune，真实远端分支不存在，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：比较前校验基准和目标中的远端分支仍存在，过期时自动 prune 并拒绝比较。
+- `README.md`：补充比较页会拒绝过期远端分支。
+- `docs/CONTINUE.md`：记录比较页读取过期远端分支的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复文件历史和逐行追踪读取已不存在远端分支
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，文件历史和逐行追踪仍会读取这个过期引用并展示旧提交数据。
+- `readFileHistory` 和 `readFileBlame` 现在在引用是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝读取。
+- README 和继续开发文档同步说明文件历史和逐行追踪不会再展示过期远端分支的数据。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-file-read-20260703`，添加文件 `forkline-fixtures/stale-file-read-20260703.txt` 并提交 `0408d6d`，推送并抓取出 `origin/forkline/stale-remote-file-read-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5335` 打开 GitTest 后，修复前请求 `/api/file-history?file=forkline-fixtures/stale-file-read-20260703.txt&ref=origin/forkline/stale-remote-file-read-20260703` 返回 1 条过期提交 `0408d6d`。
+- 同一服务请求 `/api/file-blame` 返回 2 行旧 blame，首行文本为 `stale file read line one`，首行提交为 `0408d6d`。
+- 修复后重启临时服务 `http://127.0.0.1:5336`，文件历史请求返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”，并自动 prune 过期跟踪引用。
+- 为单独验证逐行追踪，临时将旧提交重新挂回 `refs/remotes/origin/forkline/stale-remote-file-read-20260703`；修复后的 `/api/file-blame` 同样返回“远端分支 ... 已不存在”，并再次 prune 过期跟踪引用。
+- 修复后确认本地过期 `origin/forkline/stale-remote-file-read-20260703` 已被 prune，真实远端分支不存在，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：文件历史和逐行追踪读取前校验远端分支仍存在，过期时自动 prune 并拒绝读取。
+- `README.md`：补充文件历史和逐行追踪会拒绝过期远端分支。
+- `docs/CONTINUE.md`：记录文件历史和逐行追踪读取过期远端分支的 API 复现和验证结果。
+- `progress.md`：追加本轮复现、修复、验证和清理记录。
+- 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。
+
+## 2026-07-03 - Task: 修复图谱视图读取已不存在远端分支
+### What was done
+- 复现远端分支已经被外部删除，但本地仍保留 `origin/...` 过期跟踪引用时，轻量图谱和全量状态接口仍会读取这个过期引用并展示旧提交图谱。
+- `readState` 和 `readRefState` 现在在选中引用是远端分支时会校验真实远端分支仍存在；不存在时自动 `fetch --prune` 并拒绝读取。
+- `ensureLiveRemoteBranchRef` 对空引用快速返回，避免默认状态读取多跑无意义的远端检查。
+- README 和继续开发文档同步说明切到远端分支图谱时不会再展示过期 tracking 数据。
+
+### Testing
+- 在 GitTest 创建临时分支 `forkline/stale-remote-refstate-20260703`，添加文件 `forkline-fixtures/stale-refstate-20260703.txt` 并提交 `1ebb95c`，推送并抓取出 `origin/forkline/stale-remote-refstate-20260703`。
+- 切回 `123`、删除本地临时分支，并直接在 `D:\桌面\GitTestRemote.git` 删除真实远端分支，只保留本地过期远端跟踪引用。
+- 临时服务 `http://127.0.0.1:5337` 打开 GitTest 后，修复前请求 `/api/ref-state?ref=origin/forkline/stale-remote-refstate-20260703` 返回成功，首条提交为 `1ebb95c`；`/api/state?ref=...` 同样返回成功，`remotes` 中仍包含该过期引用。
+- 修复后重启临时服务 `http://127.0.0.1:5338`，`/api/ref-state?ref=...` 返回“远端分支 ... 已不存在，已刷新远端分支列表。请刷新后重新选择。”，并自动 prune 过期跟踪引用。
+- 为单独验证全量状态接口，临时将旧提交重新挂回 `refs/remotes/origin/forkline/stale-remote-refstate-20260703`；修复后的 `/api/state?ref=...` 同样返回“远端分支 ... 已不存在”，并再次 prune 过期跟踪引用。
+- 修复后确认本地过期 `origin/forkline/stale-remote-refstate-20260703` 已被 prune，真实远端分支不存在，`git status --short --branch` 返回 `## 123`。
+
+### Notes
+- `server.js`：图谱状态读取前校验选中远端分支仍存在，过期时自动 prune 并拒绝读取。
+- `README.md`：补充单个远端分支图谱会拒绝过期 tracking。
+- `docs/CONTINUE.md`：记录图谱视图读取过期远端分支的 API 复现和验证结果。
 - `progress.md`：追加本轮复现、修复、验证和清理记录。
 - 回滚方式：提交前仅反向删除本轮在 `server.js`、`README.md`、`docs/CONTINUE.md` 和本日志块中的新增内容；提交后可用 `git revert <本次提交>` 回滚。

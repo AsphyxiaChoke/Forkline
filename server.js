@@ -119,6 +119,8 @@ async function readBranchDisplayName(repoPath) {
 
 async function readState(ref = "") {
   if (!currentRepo) return sampleState();
+  const selectedRef = String(ref || "").trim();
+  await ensureLiveRemoteBranchRef(selectedRef);
   const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
     readBranchDisplayName(currentRepo),
     git(currentRepo, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
@@ -135,7 +137,7 @@ async function readState(ref = "") {
     git(currentRepo, ["stash", "list", "--format=%gd%x00%gs%x00%cr"]).catch(() => ""),
     git(currentRepo, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
     readReflogOutput().catch(() => ""),
-    git(currentRepo, logArgs(ref)).catch(() => ""),
+    git(currentRepo, logArgs(selectedRef)).catch(() => ""),
   ]);
 
   const branches = [];
@@ -182,7 +184,7 @@ async function readState(ref = "") {
       path: currentRepo,
       branch: branch.trim() || "detached HEAD",
       headSha: headShaOutput.trim(),
-      selectedRef: ref,
+      selectedRef,
       isSample: false,
       operation: detectRepoOperation(currentRepo),
       remoteNames,
@@ -213,6 +215,7 @@ async function readRefState(ref = "") {
     return { repo: sample.repo, commits: sample.commits };
   }
   const selectedRef = String(ref || "").trim();
+  await ensureLiveRemoteBranchRef(selectedRef);
   const [branch, headShaOutput, logOutput] = await Promise.all([
     readBranchDisplayName(currentRepo),
     git(currentRepo, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
@@ -358,6 +361,7 @@ async function readFileHistory(filePath, refInput = "") {
   if (await isCurrentUnbornRef(ref)) {
     throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上查看文件历史。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
   }
+  await ensureLiveRemoteBranchRef(ref);
   await resolveCommitRef(ref, "文件历史引用");
   const historyFile = await resolveRefFileForWorktreePath(file, ref);
   const output = await git(
@@ -414,6 +418,7 @@ async function readFileBlame(filePath, refInput = "") {
   if (await isCurrentUnbornRef(ref)) {
     throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上逐行追踪。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
   }
+  await ensureLiveRemoteBranchRef(ref);
   await resolveCommitRef(ref, "逐行追踪引用");
   const blameFile = await resolveBlameFileForRef(file, ref);
   const output = await git(currentRepo, ["blame", "--line-porcelain", blameFile.ref, "--", blameFile.file], { maxBuffer: 1024 * 1024 * 10 });
@@ -495,6 +500,7 @@ async function readCompare(baseInput, headInput) {
   if (unborn && (base === currentBranch || base === "HEAD" || head === currentBranch || head === "HEAD")) {
     throw new Error("当前分支还没有任何提交，不能参与分支比较。请先创建首个提交，或选择两个已有提交的引用。");
   }
+  await Promise.all([ensureLiveRemoteBranchRef(base), ensureLiveRemoteBranchRef(head)]);
   const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准"), resolveCommitRef(head, "比较目标")]);
   const mergeBase = (await git(currentRepo, ["merge-base", base, head]).catch(() => "")).trim();
   const counts = (await git(currentRepo, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);
@@ -1397,6 +1403,7 @@ async function ensureRemoteBranchStillExists(remoteRef, parsed = null) {
 }
 
 async function ensureLiveRemoteBranchRef(ref) {
+  if (!String(ref || "").trim()) return;
   const remoteNames = await readRemoteNames();
   if (!isKnownRemoteBranch(ref, remoteNames)) return;
   await ensureRemoteBranchStillExists(ref, splitRemoteBranchRef(ref, remoteNames));
@@ -1420,6 +1427,7 @@ async function createBranch(body) {
   if (!start && !checkout && !(await hasHeadCommit(currentRepo))) {
     throw new Error("当前分支还没有任何提交，不能创建不切换的新分支。请勾选“创建后切换”，或从已有提交/分支创建。");
   }
+  if (start) await ensureLiveRemoteBranchRef(start);
   const args = checkout ? ["switch", "-c", branch] : ["branch", branch];
   if (start) args.push(start);
   await git(currentRepo, args, { timeout: 60000 });
@@ -1806,6 +1814,7 @@ async function createWorktree(body) {
   if (usesCurrentHead && !(await hasHeadCommit(currentRepo))) {
     throw new Error(`当前分支 ${currentBranch || "HEAD"} 还没有任何提交，不能从 ${ref} 创建工作树。请先创建首个提交，或把工作树起点改成已有分支、Tag 或提交 SHA。`);
   }
+  await ensureLiveRemoteBranchRef(ref);
   const parent = path.dirname(targetPath);
   if (!fs.existsSync(parent)) throw new Error(`工作树上级目录不存在：${parent}`);
   if (!fs.statSync(parent).isDirectory()) throw new Error(`工作树上级路径不是目录：${parent}`);
@@ -1999,6 +2008,7 @@ async function rebaseOntoRef(body) {
   const ref = normalizeRefName(body.ref, "变基目标");
   const operation = detectRepoOperation(currentRepo);
   if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再变基。`);
+  await ensureLiveRemoteBranchRef(ref);
   const currentBranch = await currentLocalBranch("变基");
   if (!(await hasHeadCommit(currentRepo))) {
     throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能变基。请先创建首个提交后再变基。`);
