@@ -4012,3 +4012,106 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮 checkout stash 身份回归验证。
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale submodule worktree snapshots
+
+### What was done
+- Reproduced a stale submodule sync bug in a temporary `C:\tmp` repository: the page saw the original `.gitmodules` URL, an external edit changed `.gitmodules`, then stale `syncSubmodules` still returned success and wrote the new URL into `.git/config`.
+- Added `initSubmodules`, `updateSubmodules`, and `syncSubmodules` to the server-side worktree snapshot protection list so submodule writes reject stale `.gitmodules` or worktree state.
+- Updated README and continuation docs to state that submodule write operations validate the current branch, HEAD, and worktree snapshot.
+
+### Testing
+- Reproduced regression before the fix in `C:\tmp\forkline-stale-submodule-sync-repro-20260703163045`: stale `syncSubmodules` returned HTTP 200 and changed `submodule.libs/sub.url` from `C:/tmp/Initial.git` to `C:/tmp/SubmoduleRemoteB.git`.
+- Verified after the fix in `C:\tmp\forkline-stale-submodule-sync-verify-20260703163151`: stale `syncSubmodules` returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, and `submodule.libs/sub.url` stayed `C:/tmp/Initial.git`.
+- Verified the fresh-path regression after the fix: after refreshing `/api/state`, `syncSubmodules` with the new worktree snapshot returned HTTP 200 and synced `submodule.libs/sub.url` to `C:/tmp/SubmoduleRemoteB.git`.
+- `node --check server.js`
+
+### Notes
+- `server.js`：子模块初始化、更新和同步动作纳入整体工作区快照校验。
+- `README.md`：补充子模块写操作会校验工作区快照，避免旧 `.gitmodules` 状态被继续使用。
+- `docs/CONTINUE.md`：同步当前状态和本轮子模块工作区快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale stash worktree snapshots
+
+### What was done
+- Reproduced a stale stash pop bug in a temporary `C:\tmp` repository: the page saw a clean worktree with one stash, an external edit added a new file, then stale `popStash` still returned success, applied the stash, and removed it from the stash list.
+- Added `applyStash`, `popStash`, `restoreCheckoutStash`, and `branchFromStash` to the server-side worktree snapshot protection list so stash operations that write into the worktree reject stale worktree state.
+- Updated README and continuation docs to state that stash apply/pop/restore/branch operations validate the worktree snapshot in addition to branch and stash identity.
+
+### Testing
+- Reproduced regression before the fix in `C:\tmp\forkline-stale-stash-pop-repro-20260703163815`: stale `popStash` returned HTTP 200, dropped the stash, staged `stash.txt`, and left the externally added `external.txt` in the worktree.
+- Verified after the fix in `C:\tmp\forkline-stale-stash-pop-verify-20260703163933`: stale `popStash` returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, the stash was preserved, and `stash.txt` was not applied.
+- Verified the fresh-path regression after the fix: after refreshing `/api/state`, `popStash` with the new worktree snapshot returned HTTP 200, applied `stash.txt`, and removed the stash.
+- `node --check server.js`
+
+### Notes
+- `server.js`：储藏应用、弹出、签出恢复和从储藏创建分支动作纳入整体工作区快照校验。
+- `README.md`：补充储藏写入工作区前会校验工作区快照。
+- `docs/CONTINUE.md`：同步当前状态和本轮储藏工作区快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale reset worktree snapshots
+
+### What was done
+- Reproduced a stale hard-reset bug in a temporary `C:\tmp` repository: the page saw a clean worktree, an external edit changed a tracked file, then stale `resetToCommit --hard` still returned success, moved `HEAD`, and discarded the external edit.
+- Added `resetToCommit` to the server-side worktree snapshot protection list so soft/mixed/hard reset reject stale worktree state before moving the current branch or rewriting the index/worktree.
+- Updated README and continuation docs to state that reset validates the worktree snapshot.
+
+### Testing
+- Reproduced regression before the fix in `C:\tmp\forkline-stale-reset-hard-repro-20260703164536`: stale `resetToCommit` hard returned HTTP 200, moved `HEAD` to the target commit, and changed `note.txt` from `external edit after page snapshot` back to `base`.
+- Verified after the fix in `C:\tmp\forkline-stale-reset-hard-verify-20260703164637`: stale `resetToCommit` hard returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, kept `HEAD` unchanged, and preserved `note.txt` as `external edit after page snapshot`.
+- Verified the fresh-path regression after the fix: after refreshing `/api/state`, `resetToCommit` hard with the new worktree snapshot returned HTTP 200, moved `HEAD` to the target commit, and reset `note.txt` to `base`.
+- `node --check server.js`
+
+### Notes
+- `server.js`：reset 动作纳入整体工作区快照校验。
+- `README.md`：补充 reset 前会校验工作区快照，避免旧页面丢弃外部刚写入的改动。
+- `docs/CONTINUE.md`：同步当前状态和本轮 reset 工作区快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale checkout worktree snapshots
+
+### What was done
+- Reproduced a stale force-checkout bug in a temporary `C:\tmp` repository: the page saw one dirty tracked file and the user chose force checkout, an external edit then created a new untracked file, and stale `checkoutBranch --force` still returned success and deleted the newly created file.
+- Added `checkoutBranch` and `checkoutRemoteBranch` to the server-side worktree snapshot protection list so keep/stash/force checkout reject stale worktree state before carrying, stashing, or discarding changes.
+- Updated README and continuation docs to state that local and remote checkout validate the worktree snapshot.
+
+### Testing
+- Reproduced regression before the fix in `C:\tmp\forkline-stale-force-checkout-repro-20260703165233`: stale `checkoutBranch` force returned HTTP 200, switched from `main` to `dev`, and deleted `external-untracked.txt` that was created after the page snapshot.
+- Verified after the fix in `C:\tmp\forkline-stale-force-checkout-verify-20260703165352`: stale `checkoutBranch` force returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, stayed on `main`, kept `external-untracked.txt`, and preserved the original dirty tracked file.
+- Verified the fresh-path regression after the fix: after refreshing `/api/state`, `checkoutBranch` force with the new worktree snapshot returned HTTP 200, switched to `dev`, and removed the current snapshot's untracked file as expected.
+- `node --check server.js`
+
+### Notes
+- `server.js`：本地和远端分支签出动作纳入整体工作区快照校验。
+- `README.md`：补充签出前会校验工作区快照，避免旧页面丢弃或储藏外部刚出现的改动。
+- `docs/CONTINUE.md`：同步当前状态和本轮签出工作区快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale branch rename current-branch snapshots
+
+### What was done
+- Reproduced a stale branch rename bug in a temporary `C:\tmp` repository: the page was on `main` and prepared to rename non-current `feature`, an external command switched to `feature`, then stale `renameBranch feature -> renamed-feature` still returned success and renamed the current branch.
+- Added `renameBranch` to the server-side current branch snapshot protection list.
+- Updated the branch rename frontend request to send the page's current branch and HEAD snapshot.
+- Updated README and continuation docs to state that branch rename validates both the selected branch SHA and the current branch snapshot.
+
+### Testing
+- Reproduced regression before the fix in `C:\tmp\forkline-stale-rename-branch-repro-20260703165931`: stale `renameBranch` returned HTTP 200, current branch became `renamed-feature`, and `feature` disappeared from the local branch list.
+- Verified after the fix in `C:\tmp\forkline-stale-rename-branch-verify-20260703170057`: stale `renameBranch` returned HTTP 400 with `当前分支已经从 main 切换到 feature。为避免把操作执行到错误分支，请刷新页面后重新操作。`, current branch stayed `feature`, and branch `feature` remained.
+- Verified the fresh-path regression after the fix: after refreshing `/api/state` on `feature`, `renameBranch feature -> renamed-feature` returned HTTP 200 and current branch became `renamed-feature`.
+- `node --check server.js`
+- `node --check public/js/features/branches.js`
+
+### Notes
+- `server.js`：分支重命名动作纳入当前分支和 HEAD 快照校验。
+- `public/js/features/branches.js`：重命名分支请求携带页面看到的当前分支和 HEAD。
+- `README.md`：补充分支重命名前会校验当前分支快照，避免旧页面把外部切换后的当前分支改名。
+- `docs/CONTINUE.md`：同步当前状态和本轮分支重命名快照回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.

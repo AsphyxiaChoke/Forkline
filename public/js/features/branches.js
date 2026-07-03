@@ -506,7 +506,7 @@ async function renameBranchFromForm(nextBranch) {
     submit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "renameBranch", branch: oldBranch, sha: branchExpectedSha(oldBranch), newBranch: nextBranch }),
+      body: JSON.stringify({ action: "renameBranch", branch: oldBranch, sha: branchExpectedSha(oldBranch), newBranch: nextBranch, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已重命名为 ${nextBranch}`);

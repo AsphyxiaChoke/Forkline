@@ -58,10 +58,20 @@ const FILE_SNAPSHOT_ACTIONS = new Set([
 const WORKTREE_SNAPSHOT_ACTIONS = new Set([
   "stageAll",
   "discardAll",
+  "checkoutBranch",
+  "checkoutRemoteBranch",
   "commit",
   "amendCommit",
   "createStash",
+  "applyStash",
+  "popStash",
+  "restoreCheckoutStash",
+  "branchFromStash",
+  "resetToCommit",
   "applyPatch",
+  "initSubmodules",
+  "updateSubmodules",
+  "syncSubmodules",
 ]);
 const OPERATION_SNAPSHOT_ACTIONS = new Set([
   "continueRevert",
@@ -87,6 +97,7 @@ const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
   "checkoutBranch",
   "checkoutRemoteBranch",
   "createBranch",
+  "renameBranch",
   "createWorktree",
   "initSubmodules",
   "updateSubmodules",
