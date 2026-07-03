@@ -132,6 +132,7 @@ const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
   "revertCommit",
   "resetToCommit",
   "restoreRecoveryPoint",
+  "createRecoveryPointFromReflog",
   "restoreReflogEntry",
   "applyPatch",
   "restoreCheckoutStash",
@@ -4244,7 +4245,12 @@ async function ensureFileSnapshot(body = {}) {
   const expected = normalizeExpectedSnapshot(body.expectedFileSnapshot, "文件状态已过期，请刷新后重新执行这个操作。");
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]).catch(() => "");
   const working = await readWorkingStatus(currentRepo, statusOutput);
-  const target = selectStatusFile(working.files, file, fileSnapshotScope(body));
+  let target = selectStatusFile(working.files, file, fileSnapshotScope(body));
+  if (!target || target.snapshot !== expected) {
+    const fullStatusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+    const fullWorking = await readWorkingStatus(currentRepo, fullStatusOutput);
+    target = selectStatusFile(fullWorking.files, file, fileSnapshotScope(body));
+  }
   if (!target) throw new Error("这个文件状态已经变化。请刷新后重新选择。");
   if (target.snapshot !== expected) {
     throw new Error(`文件 ${file} 的内容或暂存状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`);

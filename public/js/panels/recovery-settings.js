@@ -878,7 +878,7 @@ async function runReflogAction(action, selector, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const snapshot = action === "restore" ? currentBranchSnapshotPayload() : {};
+    const snapshot = action === "restore" || action === "create" ? currentBranchSnapshotPayload() : {};
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ...body, ...snapshot }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "引用日志操作完成");

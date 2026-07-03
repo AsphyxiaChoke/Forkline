@@ -4252,3 +4252,46 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮旧页面普通提交误操作新合并的验证记录。
 - `progress.md`：追加本轮进行中 Git 操作上下文保护的实施与验证记录。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Fix file snapshot checks for staged rename worktree edits
+
+### What was done
+- Reproduced a legitimate file operation being blocked as stale: a temporary repo had `git mv old.txt new.txt` staged, then `new.txt` received an unstaged edit; calling `discardStagedFile` immediately after loading state returned “文件 new.txt 的内容或暂存状态已经变化”.
+- Traced the mismatch to Git status semantics: full status reports `RM old.txt -> new.txt`, but path-limited `git status -- new.txt` reports `AM new.txt`, so the server compared a path-limited snapshot against the page's full-status snapshot.
+- Updated file snapshot verification to fall back to full `git status -z` when the fast path-limited snapshot is missing or differs, preserving stale-page protection while allowing valid staged-rename operations.
+- Updated README and continuation notes to document the staged-rename snapshot behavior.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5492` and temp repo `C:\tmp\forkline-rename-discard-20260704023533`: `discardStagedFile new.txt` returned the stale-file message even though no external edit occurred.
+- Verified after the fix with service `http://127.0.0.1:5493` on the same repo: `discardStagedFile new.txt` returned “已暂存改动已丢弃”; `new.txt` still contained `base\nextra\n`, `old.txt` was absent, and status was `D old.txt` plus `?? new.txt`, preserving the worktree-side rename/edit.
+- Verified stale protection still works with service `http://127.0.0.1:5494` and temp repo `C:\tmp\forkline-rename-stale-20260704023744`: after loading the page snapshot, an external edit changed `new.txt`; the old `discardStagedFile` request returned “文件 new.txt 的内容或暂存状态已经变化” and preserved `external\nchange\n`.
+
+### Notes
+- `server.js`：文件级快照校验在 pathspec 快照缺失或不一致时回退到全量工作区状态，修正暂存重命名加未暂存编辑的误判。
+- `README.md`：补充暂存重命名文件会使用全量状态兜底校验。
+- `docs/CONTINUE.md`：记录工作区旧页面保护和“丢已暂存”的重命名快照行为。
+- `progress.md`：追加本轮 staged rename 文件快照误判的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Protect reflog recovery point creation from stale branch pages
+
+### What was done
+- Reproduced the risk where a page loaded on `main` could try to create a Forkline recovery point from a reflog entry after an external command switched the repository to `dev`.
+- Added `createRecoveryPointFromReflog` to the current-branch snapshot guarded actions so the server rejects stale branch/HEAD context before creating the recovery ref.
+- Updated the reflog action UI path to send the page's current branch and HEAD when creating a recovery point, matching the existing restore-to-reflog protection.
+- Updated README and continuation notes to document that reflog recovery point creation is also protected from old-page branch drift.
+
+### Testing
+- Ran `node --check server.js`.
+- Ran `node --check public\js\panels\recovery-settings.js`.
+- Verified through the real local API with temp repo `C:\tmp\forkline-reflog-create-verify-20260703185149`: a page snapshot from `main` was rejected after external `git switch dev` with “当前分支已经从 main 切换到 dev”; no `refs/forkline/recovery/...` ref was created.
+- Verified the refreshed `dev` state could still create a reflog recovery point, producing `forkline/recovery/20260704-025152/dev/reflog-fa4d1f4`.
+- The temp verification repo was cleaned after the run.
+
+### Notes
+- `server.js`：把 `createRecoveryPointFromReflog` 纳入当前分支快照保护。
+- `public/js/panels/recovery-settings.js`：从 reflog 创建恢复点时发送页面看到的分支和 HEAD；普通恢复点删除路径不携带无效的创建分支判断。
+- `README.md`：补充从引用日志创建恢复点会校验当前分支和 HEAD。
+- `docs/CONTINUE.md`：同步 reflog 创建恢复点的旧页面保护说明。
+- `progress.md`：追加本轮 reflog 恢复点创建防串分支的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
