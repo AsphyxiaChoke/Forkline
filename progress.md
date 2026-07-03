@@ -4115,3 +4115,70 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮分支重命名快照回归验证。
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale merge and commit-copy worktree snapshots
+
+### What was done
+- Reproduced stale worktree bugs in temporary `C:\tmp` repositories: after the page saw a clean worktree, an external command added a new untracked file, then old `mergeRef` and `cherryPickCommit` requests still returned success and moved HEAD.
+- Added worktree snapshot enforcement for `mergeRef`, `cherryPickCommit`, and `revertCommit`, so these operations now reject stale pages before creating a merge, picked, or reverse commit.
+- Updated README and continuation notes to document that merge, cherry-pick, and revert now compare the page's worktree snapshot before writing.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5297`: stale `cherryPickCommit` in `C:\tmp\forkline-stale-cherrypick-repro-20260704010951` returned HTTP 200, moved HEAD from `2b69cf7` to `00bc298`, and left `outside.txt` untracked.
+- Reproduced before the fix with service `http://127.0.0.1:5297`: stale `mergeRef` in `C:\tmp\forkline-stale-merge-repro-20260704011054` returned HTTP 200, moved HEAD from `325388b` to `65e9b54`, and left `outside.txt` untracked.
+- Verified after the fix with service `http://127.0.0.1:5299`: stale `cherryPickCommit` in `C:\tmp\forkline-stale-cherrypick-final-20260704011418` returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, and HEAD did not change.
+- Verified after the fix with service `http://127.0.0.1:5299`: stale `mergeRef` in `C:\tmp\forkline-stale-merge-final-20260704011437` returned HTTP 400 with the same stale worktree message, and HEAD did not change.
+- Verified after the fix with service `http://127.0.0.1:5299`: stale `revertCommit` in `C:\tmp\forkline-stale-revert-verify-20260704011305` returned HTTP 400 with the same stale worktree message, and HEAD did not change.
+- Verified fresh snapshots still work: `cherryPickCommit` in `C:\tmp\forkline-fresh-cherrypick-verify-20260704011332` returned HTTP 200 and cleanly created commit `22c70b3`; `mergeRef` in `C:\tmp\forkline-fresh-merge-verify-20260704011354` returned HTTP 200 and cleanly created merge commit `f4f19f1`.
+- Temporary services on ports `5297`, `5298`, and `5299` were stopped; temporary repositories created for this task were removed from `C:\tmp`.
+
+### Notes
+- `server.js`：把合并、挑选和还原动作纳入整体工作区快照校验。
+- `README.md`：补充合并、挑选和还原会校验工作区快照的使用说明。
+- `docs/CONTINUE.md`：同步当前状态和本轮旧页面工作区快照回归验证。
+- `progress.md`：追加本轮合并、挑选和还原旧页面保护的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale in-progress operation worktree snapshots
+
+### What was done
+- Reproduced a stale in-progress operation bug in a temporary `C:\tmp` repository: the page saw a merge conflict, an external editor changed the conflicted file, then the old `abortMerge` request still returned success and discarded that external resolution content.
+- Added worktree snapshot enforcement for merge, rebase, cherry-pick, and revert continue/skip/abort controls, so old conflict banners cannot continue, skip, or abort after the worktree has changed behind the page.
+- Updated README and continuation notes to document that in-progress Git operation controls compare both the Git operation snapshot and the worktree snapshot.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5301`: stale `abortMerge` in `C:\tmp\forkline-stale-abort-merge-worktree-repro-20260704012303` returned HTTP 200, cleared `MERGE_HEAD`, and changed `shared.txt` from `external resolved important content` back to `main change`.
+- Verified after the fix with service `http://127.0.0.1:5302`: stale `abortMerge` in `C:\tmp\forkline-stale-abort-merge-worktree-verify-20260704012358` returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, kept `MERGE_HEAD`, and preserved `external resolved important content`.
+- Verified fresh snapshots still work: `abortMerge` in `C:\tmp\forkline-fresh-abort-merge-worktree-verify-20260704012421` returned HTTP 200 and cleaned the merge state.
+- Verified stale continue is also blocked: stale `continueMerge` in `C:\tmp\forkline-stale-continue-merge-worktree-verify-20260704012449` returned HTTP 400, kept `MERGE_HEAD`, and preserved the staged external resolution.
+- Verified fresh continue still works: `continueMerge` in `C:\tmp\forkline-fresh-continue-merge-worktree-verify-20260704012513` returned HTTP 200 and created merge commit `bbcb818`.
+- Temporary services on ports `5301` and `5302` were stopped; temporary repositories created for this task were removed from `C:\tmp`.
+
+### Notes
+- `server.js`：把合并、变基、挑选和还原的继续/跳过/中止动作纳入整体工作区快照校验。
+- `README.md`：补充进行中 Git 操作按钮会同时校验操作快照和工作区快照。
+- `docs/CONTINUE.md`：同步当前状态和本轮进行中操作工作区快照回归验证。
+- `progress.md`：追加本轮进行中操作旧页面保护的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Guard stale pull worktree snapshots
+
+### What was done
+- Reproduced a stale pull bug in a temporary `C:\tmp` repository: the page saw a clean worktree and a fast-forwardable upstream, an external command added a new untracked file, then the old `pull` request still returned success and moved HEAD.
+- Added worktree snapshot enforcement for `pull` and `pullRebase`, so old sync controls cannot move the current branch after the worktree changes behind the page.
+- Updated README and continuation notes to document that pull and pull-rebase compare the page's worktree snapshot before writing.
+
+### Testing
+- Reproduced before the fix with service `http://127.0.0.1:5303`: stale `pull` in `C:\tmp\forkline-stale-pull-work-20260704013152` returned HTTP 200, moved HEAD from `6de7172` to `295a7d5`, and left `outside.txt` untracked.
+- Verified after the fix with service `http://127.0.0.1:5304`: stale `pull` in `C:\tmp\forkline-stale-pull-work-verify-20260704013304` returned HTTP 400 with `工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。`, kept HEAD at `a2fe659`, and preserved `outside.txt`.
+- Verified fresh `pull` still works: `pull` in `C:\tmp\forkline-fresh-pull-work-verify-20260704013330` returned HTTP 200 and fast-forwarded HEAD from `8c49eca` to `6eb3592`.
+- Verified stale `pullRebase` is blocked: `pullRebase` in `C:\tmp\forkline-stale-pullrebase-work-verify-20260704013400` returned HTTP 400 with the same stale worktree message and kept HEAD at `e7b915e`.
+- Verified fresh `pullRebase` still works: `pullRebase` in `C:\tmp\forkline-fresh-pullrebase-work-verify-20260704013426` returned HTTP 200 and fast-forwarded HEAD from `35367c6` to `37f2b57`.
+- Temporary services on ports `5303` and `5304` were stopped; temporary repositories and bare remotes created for this task were removed from `C:\tmp`.
+
+### Notes
+- `server.js`：把拉取和变基拉取纳入整体工作区快照校验。
+- `README.md`：补充拉取和变基拉取会校验工作区快照，避免旧页面在外部新改动旁移动当前分支。
+- `docs/CONTINUE.md`：同步当前状态和本轮拉取类工作区快照回归验证。
+- `progress.md`：追加本轮拉取旧页面保护的实施与验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
