@@ -25,6 +25,23 @@ const operationLog = [];
 const REPO_SWITCHING_ACTIONS = new Set(["openWorktree", "cloneRepository", "initRepository"]);
 const REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetchRemote", "setRemoteUrl", "deleteRemote"]);
 const TAG_REMOTE_SNAPSHOT_ACTIONS = new Set(["pushTag", "deleteRemoteTag"]);
+const REMOTE_BRANCH_REMOTE_SNAPSHOT_ACTIONS = new Set([
+  "deleteRemoteBranch",
+  "setUpstream",
+  "checkoutRemoteBranch",
+  "mergeRef",
+  "rebaseOntoRef",
+  "createBranch",
+  "createWorktree",
+]);
+const TARGET_REF_SNAPSHOT_ACTIONS = new Set([
+  "checkoutBranch",
+  "checkoutRemoteBranch",
+  "mergeRef",
+  "rebaseOntoRef",
+  "createBranch",
+  "createWorktree",
+]);
 const ALL_REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetch"]);
 const UPSTREAM_SNAPSHOT_ACTIONS = new Set(["pull", "pullRebase", "push", "forcePushLease", "unsetUpstream"]);
 const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
@@ -967,6 +984,7 @@ async function runAction(body) {
   }
   await ensureRemoteConfigSnapshot(body);
   await ensureCurrentBranchSnapshot(body);
+  await ensureTargetRefSnapshot(body);
   if (action === "createWorktree") {
     return createWorktree(body);
   }
@@ -3993,11 +4011,14 @@ async function ensureRemoteConfigSnapshot(body = {}) {
     return;
   }
   const tagRemoteAction = TAG_REMOTE_SNAPSHOT_ACTIONS.has(action);
-  if (!REMOTE_CONFIG_SNAPSHOT_ACTIONS.has(action) && !tagRemoteAction) return;
+  const remoteBranchAction = await remoteNameForRemoteBranchSnapshot(body);
+  if (!REMOTE_CONFIG_SNAPSHOT_ACTIONS.has(action) && !tagRemoteAction && !remoteBranchAction) return;
   if (tagRemoteAction && !String(body.remote || "").trim()) {
     throw new Error("页面 Tag 远端状态已过期，请刷新 Tag 列表后重新操作。");
   }
-  const remoteName = normalizeRemoteName(tagRemoteAction ? body.remote : body.name);
+  const remoteName = remoteBranchAction
+    ? remoteBranchAction
+    : normalizeRemoteName(tagRemoteAction ? body.remote : body.name);
   const hasExpectedFetch = Object.prototype.hasOwnProperty.call(body, "expectedFetchUrl");
   const hasExpectedPush = Object.prototype.hasOwnProperty.call(body, "expectedPushUrl");
   if (!hasExpectedFetch && !hasExpectedPush) {
@@ -4012,8 +4033,36 @@ async function ensureRemoteConfigSnapshot(body = {}) {
   const currentFetchUrl = current.fetchUrl || "";
   const currentPushUrl = current.pushUrl || "";
   if (currentFetchUrl !== expectedFetchUrl || currentPushUrl !== expectedPushUrl) {
+    if (remoteBranchAction) {
+      if (action === "setUpstream") {
+        throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面设置错误 upstream，请刷新后重新操作。`);
+      }
+      if (action === "deleteRemoteBranch") {
+        throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面删除错误远端分支，请刷新后重新操作。`);
+      }
+      throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面使用错误远端分支，请刷新后重新操作。`);
+    }
+    if (tagRemoteAction) {
+      throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面操作错误远端 Tag，请刷新后重新操作。`);
+    }
     throw new Error(`远端 ${remoteName} 的 URL 已经变化。为避免旧页面覆盖或删除新的远端配置，请刷新后重新操作。`);
   }
+}
+
+async function remoteNameForRemoteBranchSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!REMOTE_BRANCH_REMOTE_SNAPSHOT_ACTIONS.has(action)) return "";
+  const refValue = action === "createBranch" ? body.start : body.ref || body.branch || body.upstream;
+  const refText = String(refValue || "").trim();
+  if (!refText) return "";
+  const remoteNames = await readRemoteNames();
+  const ref = normalizeRefName(refText, "远端分支");
+  const alwaysRemote = action === "deleteRemoteBranch" || action === "setUpstream" || action === "checkoutRemoteBranch";
+  if (!alwaysRemote) {
+    const remoteBranches = await readRemoteBranchNames();
+    if (!remoteBranches.includes(ref)) return "";
+  }
+  return splitRemoteBranchRef(ref, remoteNames).remote;
 }
 
 async function ensureAllRemoteConfigSnapshot(body = {}) {
@@ -4048,6 +4097,45 @@ function normalizeRemoteSnapshotEntries(value) {
       pushUrl: String(item?.pushUrl || ""),
     };
   });
+}
+
+async function ensureTargetRefSnapshot(body = {}) {
+  const action = String(body.action || "");
+  if (!TARGET_REF_SNAPSHOT_ACTIONS.has(action)) return;
+  const target = await targetRefSnapshotRef(body);
+  if (!target) return;
+  const expectedSha = normalizeExpectedTargetRefSha(body.expectedTargetSha);
+  const actualSha = (await git(currentRepo, ["rev-parse", "--verify", `${target.ref}^{commit}`], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+  if (!actualSha) throw new Error(`${target.label} 已经不存在。请刷新后重新操作。`);
+  if (!actualSha.startsWith(expectedSha)) {
+    throw new Error(`${target.label} 已经变化。为避免旧页面使用错误提交，请刷新后重新操作。`);
+  }
+}
+
+async function targetRefSnapshotRef(body = {}) {
+  const action = String(body.action || "");
+  const rawRef = action === "createBranch" ? body.start : action === "createWorktree" ? body.ref || "HEAD" : body.ref || body.branch;
+  const refText = String(rawRef || "").trim();
+  if (!refText || refText === "HEAD" || refText === "@") return null;
+  const remoteNames = await readRemoteNames();
+  const remoteBranches = await readRemoteBranchNames();
+  const localBranches = parseSimpleLines(await git(currentRepo, ["branch", "--format=%(refname:short)"]).catch(() => ""));
+  if ((action === "checkoutRemoteBranch" || remoteBranches.includes(refText)) && isKnownRemoteBranch(refText, remoteNames)) {
+    const ref = normalizeRefName(refText, "远端分支");
+    return { ref: `refs/remotes/${ref}`, label: `远端分支 ${ref}` };
+  }
+  if (action === "checkoutBranch" || localBranches.includes(refText)) {
+    const branch = normalizeBranchName(refText);
+    return { ref: `refs/heads/${branch}`, label: `本地分支 ${branch}` };
+  }
+  return null;
+}
+
+function normalizeExpectedTargetRefSha(value) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha) throw new Error("目标分支状态已过期，请刷新后重新执行这个操作。");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error("目标分支身份不合法，请刷新后重新执行这个操作。");
+  return sha;
 }
 
 async function hasHeadCommit(repoPath) {

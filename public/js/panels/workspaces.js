@@ -408,7 +408,7 @@ async function submitWorktreeForm(form) {
   try {
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch, ...currentBranchSnapshotPayload() }),
+      body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(ref), ...remoteBranchConfigSnapshotPayload(ref) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || "已创建工作树");

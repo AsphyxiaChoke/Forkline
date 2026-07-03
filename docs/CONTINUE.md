@@ -37,7 +37,7 @@
 - 同步认证助手已接入：同步页会根据远端 URL 区分 SSH / HTTPS / 本地路径，读取本机 `~/.ssh` 中可见的 key 文件名和配对状态，检测 `ssh-agent`、Git Credential Manager，并提供 `git remote -v`、`ssh-add -l`、`ssh -T git@host`、`git credential-manager diagnose` 等可复制命令；不会读取或展示私钥内容。
 - PR/MR 快捷入口已接入：同步页会为当前本地分支生成 Pull Request / Merge Request 创建链接，支持 GitHub、GitLab、Bitbucket 和常见 Gitea / Forgejo 网页远端；可在同步页、命令面板、当前分支右键菜单中打开或复制链接，本地路径远端会显示中文不可用原因；快速切换仓库时，目标分支推断会使用请求发起时的仓库路径快照。
 - PR/MR 目标分支推断已跟随真实远端名切分：如果当前分支 upstream 是 `team/origin/main` 这类远端名含 `/` 的引用，目标分支会推断为 `main`，不会误生成 `origin/main`。
-- 当前分支 upstream 管理已接入：同步页显示远端分支下拉框，支持 `git branch --set-upstream-to=<远端分支> <当前分支>` 和 `git branch --unset-upstream <当前分支>`；远端分支右键菜单也支持“设为当前分支 upstream”，当前本地分支右键菜单支持“取消当前分支 upstream”。
+- 当前分支 upstream 管理已接入：同步页显示远端分支下拉框，支持 `git branch --set-upstream-to=<远端分支> <当前分支>` 和 `git branch --unset-upstream <当前分支>`；远端分支右键菜单也支持“设为当前分支 upstream”，当前本地分支右键菜单支持“取消当前分支 upstream”；设置 upstream 会携带页面看到的目标远端 URL，后端发现远端 URL 已被外部命令改过时会拒绝旧页面请求，避免把当前分支跟踪到错误远端。
 - 普通推送保护已接入：如果当前分支落后 upstream，或本地领先同时落后形成分叉，后端会阻止普通 `git push` 并返回中文“推送被保护”；如果当前分支名和 upstream 指向的远端主干/长期分支名不一致，后端也会拒绝普通推送，避免 `push.default=upstream` 这类配置把普通分支推到 `origin/main`；同步页会显示保护条、禁用普通推送按钮，并保留安全强推入口。
 - 同步操作旧页面保护已增强：拉取、变基拉取、推送、安全强推和取消 upstream 会校验页面看到的 upstream 和对应远端 URL；无 upstream 的智能推送会校验页面看到的默认推送远端，避免外部刚修改远端配置后旧页面把同步操作打到新的远端。
 - 变基拉取已接入：同步页新增“变基拉取”按钮，当前本地分支右键菜单新增“变基拉取当前分支”，后端执行 `git pull --rebase`；执行前会检查本地分支、upstream、未完成操作和干净工作区，确认弹窗说明会重写本地未推送提交 SHA。
@@ -48,7 +48,7 @@
 - merge 提交详情 Diff 已修复：`/api/commit` 检测到多父提交时会用第一父提交作为基准执行 `git diff <parent1> <merge>`，不再让 no-ff merge 提交详情显示空文件列表和空 Diff。
 - 本地静态资源响应已加 `Cache-Control: no-store`，避免开发验证时浏览器继续使用旧版 `app.js` / `styles.css`。
 - 本地静态资源路径边界已加固：服务端用解析后的 `public/` 绝对路径和路径分隔符判断静态文件范围，编码反斜杠目录穿越请求会返回 `403`，避免 Windows 下误读到 `public` 同级文件。
-- 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口；后端会拒绝删除 `main` / `master` / `develop` / `dev` / `trunk` 这类远端主干/长期分支；删除前会比较页面看到的 tracking SHA、当前本地 tracking SHA 和真实远端 SHA，如果同名远端分支已经变化或本地 tracking 已被外部 fetch 更新，会拒绝旧页面请求并提示刷新，避免删除别人新推送的分支。
+- 远端分支右键菜单已接入“删除远端分支”，后端执行 `git push <远端> --delete <分支>` 并随后 `fetch --prune`；无效远端引用不会给出删除入口；后端会拒绝删除 `main` / `master` / `develop` / `dev` / `trunk` 这类远端主干/长期分支；以本地或远端分支为目标的签出、合并、变基、新建分支和创建工作树会比较页面看到的目标分支 SHA，如果目标分支已被外部命令移动，会拒绝旧页面请求并提示刷新；以远端分支为目标的这些操作、设置 upstream 和删除远端分支还会比较页面看到的远端 URL，如果远端 URL 已被外部命令改过，会拒绝旧页面请求并提示刷新，避免使用错误远端分支；删除远端分支前还会比较页面看到的 tracking SHA、当前本地 tracking SHA 和真实远端 SHA，如果同名远端分支已经变化或本地 tracking 已被外部 fetch 更新，会拒绝旧页面请求并提示刷新，避免删除别人新推送的分支或删到错误远端。
 - 左侧分支行已瘦身：列表里只保留“切换/签出”主按钮，合并、重命名、删除等二级操作放右键菜单，避免低宽度侧边栏里文字和按钮挤压重叠。
 - 分支比较已接入：本地/远端分支右键菜单新增“与当前分支比较”，右侧新增“比较”页；后端 `/api/compare` 返回两边独有提交数量、最多 40 条独有提交、目标分支相对共同祖先的文件列表和 Diff，并复用最大化对照。
 - 远端分支过期保护已覆盖比较页：如果比较基准或目标是已删除的 `origin/...` 远端跟踪引用，`readCompare` 会自动 `fetch --prune` 并拒绝比较，避免展示过期提交和文件变化。
@@ -176,7 +176,10 @@
 - 远端追踪 API 验证：在 GitTest 创建 `forkline/remote-workflow-20260612155930`，第一次通过 Forkline `push` 自动设置 upstream 为 `origin/forkline/remote-workflow-20260612155930`；再次空提交后 API 返回 `ahead = 1`；第二次 `push` 后远端更新成功。
 - 远端删除 API 验证：通过 Forkline `deleteRemoteBranch` 删除 `origin/forkline/remote-workflow-20260612155930`，远端分支列表已移除，保留的本地分支显示 `upstreamGone = true` / `[gone]`。
 - 远端删除过期列表 API 验证：临时服务 `http://127.0.0.1:5322` 打开 GitTest，创建并推送 `forkline/stale-remote-delete-20260703` 后手动删除裸远端真实分支，保留本地 `origin/forkline/stale-remote-delete-20260703` 过期引用。修复前 `deleteRemoteBranch` 返回错误且本地过期引用仍存在；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，并通过 `fetch --prune` 清理本地远端跟踪引用。临时本地分支和远端引用已清理。
+- 远端删除旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 `origin/feature` 后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `deleteRemoteBranch origin/feature` 会删除 RemoteB 的同名分支，修复后带旧 URL 快照的请求返回“远端 origin 的 URL 已经变化”，RemoteB 分支保留。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常删除 RemoteA 的目标分支。
 - 合并过期远端分支 API 验证：临时服务 `http://127.0.0.1:5325` 打开 GitTest，创建远端分支 `forkline/stale-remote-merge-20260703`，让它比 `123` 多一个空提交并抓取出 `origin/forkline/stale-remote-merge-20260703`，随后手动删除裸远端真实分支。修复前 `mergeRef` 会从过期 tracking 创建 merge commit；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，没有创建 merge commit，并自动 prune 过期远端跟踪引用。GitTest 已重置回 `4fbce18` 且工作区干净。
+- 远端分支目标旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 RemoteA 的 `origin/feature`，外部把 `origin` 改成 `RemoteB.git`，且 RemoteB 有不同的 `feature` 提交；修复前旧 `mergeRef origin/feature` 会把本地残留的 RemoteA tracking 合并进当前分支并生成 merge commit，修复后带旧 URL 快照的请求返回“远端 origin 的 URL 已经变化”，当前分支不产生 merge commit。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常合并 RemoteA 的目标分支。
+- 本地目标分支旧页面 SHA 保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到本地 `feature` 指向提交 A，外部把 `feature` 推进到提交 B；修复前旧 `mergeRef feature` 会合并 B 并带入 `from-feature-b.txt`，修复后带旧目标 SHA 的请求返回“本地分支 feature 已经变化”，当前分支 HEAD 不变且没有合入 B。另验证刷新后的 B 快照可正常合并。
 - 远端 UI 验证：浏览器打开 `http://127.0.0.1:5183`，GitTest 左侧本地分支显示“未设置 upstream / origin/... / 上游丢失”徽标；分支行无重叠，控制台无错误；远端分支右键菜单显示“删除远端分支”，且对 `origin/1111` 启用。
 - 同步摘要 API 验证：浏览器服务 `http://127.0.0.1:5188` 打开 GitTest 后，验证 `fetch` 能显示“新增远端分支 origin/forkline/sync-fetch-*”；验证远端领先时 `fetch` 显示“落后 0 -> 1”，随后 `pull` 显示“落后 1 -> 0”；验证本地领先时 `push` 显示“领先 1 -> 0”；验证无 upstream 分支 `push` 会设置 upstream，并显示“跟踪变化：未设置 -> origin/...”。测试后 GitTest 已切回 `123` 且工作区干净。
 - 安全强推 API 验证：浏览器服务 `http://127.0.0.1:5190` 打开 GitTest 后，在 `forkline/lease-force-*` 分支验证改写历史后普通 `push` 返回非快进中文拒绝，`forcePushLease` 成功并显示“领先 1 -> 0，落后 1 -> 0”和“强制更新”；在 `forkline/lease-stale-*` 分支验证远端被其他克隆推进后 `forcePushLease` 被 `--force-with-lease` 拒绝并返回中文 stale 提示。
@@ -199,6 +202,7 @@
 - 远端仓库管理 UI 验证：浏览器服务 `http://127.0.0.1:5193` 打开 GitTest 的 `?tab=sync`，右侧同步页显示真实仓库 `origin` 的 fetch / push URL；249px 宽右侧内容无横向溢出，远端右键菜单显示“抓取此远端 / 修改 URL / 复制 fetch URL / 复制 push URL / 删除远端”，控制台无错误。
 - Upstream 管理 API 验证：浏览器服务 `http://127.0.0.1:5194` 打开 GitTest 后，在当前 `123` 分支调用 `setUpstream` 设置到 `origin/123`，API 返回 `sync.upstream = origin/123` 且领先/落后均为 0；随后调用 `unsetUpstream`，API 返回 upstream 为空。验证后 GitTest 已恢复为无 upstream、工作区干净。
 - Upstream 管理 UI 验证：浏览器打开 `http://127.0.0.1:5194/?tab=sync`，同步页“上游分支”下拉默认选中 `origin/123`，设置按钮可见，未设置 upstream 时取消按钮禁用；249px 右侧内容无横向溢出。远端分支 `origin/123` 右键菜单显示“设为当前分支 upstream git branch -u”，按钮启用，菜单无横向溢出，控制台无错误。
+- 设置 upstream 旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 `origin/feature` 后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `setUpstream origin/feature` 会把当前 `topic` 分支 upstream 写成 RemoteB 语义下的 `origin/feature`，修复后带旧 URL 快照的请求返回“远端 origin 的 URL 已经变化”，`topic` 仍无 upstream。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常设置 `topic -> origin/feature`。
 - 推送旧页面 upstream 远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `feature -> origin/feature` 且 `origin -> RemoteA.git` 后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `push` 会把领先提交推到 RemoteB，修复后返回“upstream 远端 origin 的 URL 已经变化”，RemoteB 不会新增分支。另验证无 upstream 智能推送在默认远端 URL 变化时也会拒绝，新鲜快照仍可正常推到 RemoteA 并建立 upstream。
 - 抓取全部旧页面远端保护 API 验证：临时服务打开 `C:\tmp` 仓库，页面看到 `origin -> RemoteA.git` 和 `origin/feature` 的 RemoteA 提交后，外部把 `origin` 改成 `RemoteB.git`；修复前旧 `fetch` 会执行 `git fetch --all --prune` 并把 `origin/feature` 强制更新到 RemoteB 的提交，修复后返回“远端 origin 的 URL 已经变化”，本地 tracking 仍停在 RemoteA 提交。另验证恢复 `origin` 到 RemoteA 并刷新状态后，新鲜快照可正常抓取 RemoteA 的后续提交。
 - Upstream 过期列表 API 验证：临时服务 `http://127.0.0.1:5324` 打开 GitTest，创建远端分支 `forkline/stale-upstream-20260703` 并抓取出 `origin/forkline/stale-upstream-20260703` 后，手动删除裸远端真实分支。修复前 `setUpstream` 会把当前 `123` 分支 upstream 设置到这个已不存在的远端分支，并显示“本地与上游一致”；修复后返回“远端分支 ... 已不存在，已刷新远端分支列表”，不会写入 upstream，并自动 prune 过期远端跟踪引用。

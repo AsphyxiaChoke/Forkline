@@ -3854,3 +3854,91 @@
 - `docs/CONTINUE.md`：同步当前状态和本轮抓取全部旧页面回归验证。
 - `progress.md`：追加本轮复现、修复、验证和回滚说明。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale remote URL for remote branch deletion
+
+### What was done
+- Reproduced a stale remote-branch deletion bug in a temporary `C:\tmp` repository: the page saw `origin -> RemoteA.git` and `origin/feature`, an external command changed `origin` to `RemoteB.git`, then an old `deleteRemoteBranch origin/feature` request deleted RemoteB's same-named branch while RemoteA remained untouched.
+- Added remote URL snapshot protection for `deleteRemoteBranch`, deriving the remote name from the remote branch ref before the server runs `git push <remote> --delete <branch>`.
+- Updated the frontend remote branch deletion request to send the page's fetch/push URL snapshot for the remote that owns the selected remote-tracking branch.
+- Updated README and continuation docs with the additional stale remote protection.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: stale `deleteRemoteBranch origin/feature` after `origin` changed from RemoteA to RemoteB returned HTTP 200 and deleted RemoteB's `feature`; RemoteA's `feature` still existed.
+- `C:\tmp` fixed regression: stale `deleteRemoteBranch origin/feature` with RemoteA URL snapshot after external switch to RemoteB returned HTTP 400 with `远端 origin 的 URL 已经变化...`; RemoteB's `feature` still existed.
+- `C:\tmp` fresh regression: after restoring `origin` to RemoteA and refreshing state, `deleteRemoteBranch origin/feature` succeeded and deleted RemoteA's `feature`; RemoteB's `feature` still existed.
+
+### Notes
+- `server.js`：删除远端分支前校验页面看到的远端 fetch/push URL，避免远端 URL 被外部改过后删到错误仓库。
+- `public/js/features/branches.js`：删除远端分支请求携带对应远端的 URL 快照。
+- `README.md`：补充远端分支删除会校验远端 URL。
+- `docs/CONTINUE.md`：同步当前状态和本轮远端分支删除旧页面回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale remote URL for setting upstream
+
+### What was done
+- Reproduced a stale upstream configuration bug in a temporary `C:\tmp` repository: the page saw `origin -> RemoteA.git` and `origin/feature`, an external command changed `origin` to `RemoteB.git`, then an old `setUpstream origin/feature` request configured the current `topic` branch to track RemoteB's `origin/feature` semantics.
+- Added remote URL snapshot protection for `setUpstream`, reusing the remote-branch ref to derive the target remote before writing branch config.
+- Updated the frontend upstream action to send the page's fetch/push URL snapshot for the selected remote branch.
+- Updated README and continuation docs with the additional stale remote protection.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: stale `setUpstream origin/feature` after `origin` changed from RemoteA to RemoteB returned HTTP 200 and wrote `topic -> origin/feature` while `origin` pointed to RemoteB.
+- `C:\tmp` fixed regression: stale `setUpstream origin/feature` with RemoteA URL snapshot after external switch to RemoteB returned HTTP 400 with `远端 origin 的 URL 已经变化...`; `topic` still had no upstream.
+- `C:\tmp` fresh regression: after restoring `origin` to RemoteA and refreshing state, `setUpstream origin/feature` succeeded and wrote `topic -> origin/feature` while `origin` pointed to RemoteA.
+
+### Notes
+- `server.js`：设置 upstream 前校验页面看到的目标远端 fetch/push URL，避免远端 URL 被外部改过后写入错误跟踪关系。
+- `public/js/features/git-actions.js`：设置 upstream 请求携带对应远端的 URL 快照。
+- `README.md`：补充设置 upstream 会校验目标远端 URL。
+- `docs/CONTINUE.md`：同步当前状态和本轮设置 upstream 旧页面回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale remote URL for remote branch target actions
+
+### What was done
+- Reproduced a stale remote-branch target bug in a temporary `C:\tmp` repository: the page saw `origin -> RemoteA.git` and RemoteA's `origin/feature`, an external command changed `origin` to `RemoteB.git`, then an old `mergeRef origin/feature` request merged the locally cached RemoteA tracking commit into the current branch while `origin` pointed at RemoteB.
+- Added remote URL snapshot protection for remote-branch target actions: remote branch checkout, merge, rebase, create branch from remote branch, create worktree from remote branch, set upstream, and delete remote branch.
+- Kept the server-side protection scoped to refs that are actually known remote-tracking branches, so local branch, Tag, `HEAD`, and SHA targets do not require a remote URL snapshot.
+- Updated the relevant frontend requests to send the selected remote branch's fetch/push URL snapshot.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: stale `mergeRef origin/feature` after `origin` changed from RemoteA to RemoteB returned HTTP 200, created a merge commit, and added `from-remote-a.txt` from RemoteA while `origin` pointed to RemoteB.
+- `C:\tmp` fixed regression: stale `mergeRef origin/feature` with RemoteA URL snapshot after external switch to RemoteB returned HTTP 400 with `远端 origin 的 URL 已经变化...`; no RemoteA or RemoteB feature file was merged and HEAD stayed on the original main commit.
+- `C:\tmp` fresh regression: after restoring `origin` to RemoteA and refreshing state, `mergeRef origin/feature` succeeded and merged RemoteA's feature commit.
+
+### Notes
+- `server.js`：远端分支目标写操作执行前会校验页面看到的远端 fetch/push URL，避免旧页面使用错误远端 tracking。
+- `public/js/features/git-actions.js`：远端分支签出、合并、变基和设置 upstream 请求携带目标远端 URL 快照。
+- `public/js/features/branches.js`：从远端分支新建分支和删除远端分支请求携带目标远端 URL 快照。
+- `public/js/panels/workspaces.js`：从远端分支创建 worktree 请求携带目标远端 URL 快照。
+- `README.md`：补充远端分支目标动作会校验远端 URL。
+- `docs/CONTINUE.md`：同步当前状态和本轮远端分支目标旧页面回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-03 - Task: Guard stale local target branch SHA for branch target actions
+
+### What was done
+- Reproduced a stale local target branch bug in a temporary `C:\tmp` repository: the page saw local `feature` at commit A, an external command advanced `feature` to commit B, then an old `mergeRef feature` request merged B into the current branch even though the page had shown A.
+- Added target ref SHA snapshot protection for local and remote branch target actions: local branch checkout, remote branch checkout, merge, rebase, create branch from a branch ref, and create worktree from a branch ref.
+- Updated frontend requests for those actions to send the page's target branch SHA when the selected target is a known local or remote branch.
+- Updated README and continuation docs with the additional stale target branch protection.
+
+### Testing
+- `C:\tmp` reproduced regression before the fix: stale `mergeRef feature` after local `feature` advanced from A to B returned HTTP 200, created a merge commit, and added `from-feature-b.txt`.
+- `C:\tmp` fixed regression after the fix: stale `mergeRef feature` with A as `expectedTargetSha` returned HTTP 400 with `本地分支 feature 已经变化。为避免旧页面使用错误提交，请刷新后重新操作。`; HEAD stayed on the original main commit and `from-feature-b.txt` was not merged.
+- `C:\tmp` fresh regression after the fix: repeating `mergeRef feature` with B as `expectedTargetSha` succeeded and merged `from-feature-b.txt`.
+
+### Notes
+- `server.js`：分支目标写操作执行前会校验页面看到的目标本地/远端分支 SHA，避免旧页面使用外部移动后的同名分支提交。
+- `public/js/features/git-actions.js`：本地/远端分支签出、合并和变基请求携带目标分支 SHA 快照。
+- `public/js/features/branches.js`：从本地/远端分支新建分支请求携带目标分支 SHA 快照，并保留远端 URL 快照。
+- `public/js/panels/workspaces.js`：从本地/远端分支创建 worktree 请求携带目标分支 SHA 快照，并保留远端 URL 快照。
+- `README.md`：补充分支目标动作会校验目标分支 SHA。
+- `docs/CONTINUE.md`：同步当前状态和本轮本地目标分支旧页面 SHA 回归验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚说明。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.

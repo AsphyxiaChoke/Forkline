@@ -41,7 +41,7 @@ async function checkoutBranch(branch, button) {
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode, ...currentBranchSnapshotPayload() }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(branch) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     rememberCheckoutStash(result.stash);
     toast(result.output || `已切换到 ${branch}`);
@@ -85,7 +85,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "checkoutRemoteBranch", ref: remoteRef, mode, ...currentBranchSnapshotPayload() }),
+      body: JSON.stringify({ action: "checkoutRemoteBranch", ref: remoteRef, mode, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(remoteRef), ...remoteBranchConfigSnapshotPayload(remoteRef) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     const nextBranch = result.branch || localBranch || remoteRef;
@@ -122,7 +122,7 @@ async function mergeBranchRef(ref) {
   if (!state.data.repo.isSample && !confirm(`确认将 ${ref} 合并到当前分支 ${current}？${dirtyNote}`)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref, ...currentBranchSnapshotPayload() }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(ref), ...remoteBranchConfigSnapshotPayload(ref) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已合并 ${ref}`);
     const data = await loadStateForRepoPath(repoPath);
@@ -153,7 +153,7 @@ async function rebaseOntoRef(ref) {
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref, ...currentBranchSnapshotPayload() }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(ref), ...remoteBranchConfigSnapshotPayload(ref) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已变基到 ${ref}`);
     const data = await loadStateForRepoPath(repoPath);
@@ -511,7 +511,7 @@ async function runUpstreamAction(action, ref = "", button = null) {
       toast("请选择远端分支");
       return;
     }
-    payload = { action: "setUpstream", ref: selectedRef, ...currentBranchSnapshotPayload() };
+    payload = { action: "setUpstream", ref: selectedRef, ...currentBranchSnapshotPayload(), ...remoteBranchConfigSnapshotPayload(selectedRef) };
     message = `确认设置当前分支 upstream？\n\n当前分支：${branch}\n目标：${selectedRef}\n命令：git branch --set-upstream-to=${selectedRef} ${branch}`;
   } else if (action === "unset") {
     const upstream = state.data?.sync?.upstream || state.data?.branchInfo?.[branch]?.upstream || "";

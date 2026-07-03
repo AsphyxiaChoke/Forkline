@@ -275,6 +275,16 @@ function remoteExpectedSha(remoteRef) {
   return state.data?.remoteInfo?.[remoteRef]?.sha || "";
 }
 
+function refExpectedSha(ref) {
+  if (!ref) return "";
+  return state.data?.branchInfo?.[ref]?.sha || state.data?.remoteInfo?.[ref]?.sha || "";
+}
+
+function targetRefSnapshotPayload(ref) {
+  const expectedTargetSha = refExpectedSha(ref);
+  return expectedTargetSha ? { expectedTargetSha } : {};
+}
+
 async function deleteBranch(branch, button) {
   if (!state.data || !branch) return;
   if (!confirm(`确认删除本地分支：${branch}？\n\n会使用安全删除；如果分支还没有合并，Git 会阻止删除。`)) return;
@@ -308,7 +318,7 @@ async function deleteRemoteBranch(remoteRef) {
   if (!confirm(`确认删除远端分支：${remoteRef}？\n\n此操作会删除远端仓库中的分支，不会删除本地分支。\n命令：${command}`)) return;
   const repoPath = repoPathSnapshot();
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef, sha: remoteExpectedSha(remoteRef) }) });
+    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef, sha: remoteExpectedSha(remoteRef), ...remoteBranchConfigSnapshotPayload(remoteRef) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已删除远端分支 ${remoteRef}`);
     const nextRef = state.selectedRef === remoteRef ? state.data.repo.branch || "" : state.selectedRef;
@@ -331,6 +341,11 @@ function remoteDeleteCommand(remoteRef) {
   const parsed = splitRemoteBranchRef(remoteRef);
   if (!parsed.remote || !parsed.branch) return "git push <远端> --delete <分支>";
   return `git push ${parsed.remote} --delete ${parsed.branch}`;
+}
+
+function remoteBranchConfigSnapshotPayload(remoteRef) {
+  const remote = findRemote(splitRemoteBranchRef(remoteRef).remote);
+  return remote?.name ? remoteConfigSnapshotPayload(remote) : {};
 }
 
 async function cleanupStaleWorktree(branch, button, options = {}) {
@@ -455,7 +470,7 @@ async function submitBranchForm(event) {
     submit.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
-      body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout, ...currentBranchSnapshotPayload() }),
+      body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(state.branchStartSha), ...remoteBranchConfigSnapshotPayload(state.branchStartSha) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || `已创建分支 ${branch}`);
