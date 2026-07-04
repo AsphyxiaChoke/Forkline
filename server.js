@@ -4259,6 +4259,17 @@ async function ensureTargetRefSnapshot(body = {}) {
   if (!actualSha.startsWith(expectedSha)) {
     throw new Error(`${target.label} 已经变化。为避免旧页面使用错误提交，请刷新后重新操作。`);
   }
+  if (target.remoteBranch) {
+    const remoteSha = (await readRemoteBranchHeadSha(target.parsedRemote)).trim().toLowerCase();
+    if (!remoteSha) {
+      await git(currentRepo, ["fetch", target.parsedRemote.remote, "--prune"], { timeout: 120000 }).catch(() => "");
+      throw new Error(`${target.label} 已不存在，已刷新远端分支列表。请刷新后重新操作。`);
+    }
+    if (!remoteSha.startsWith(expectedSha)) {
+      await git(currentRepo, ["fetch", target.parsedRemote.remote, "--prune"], { timeout: 120000 }).catch(() => "");
+      throw new Error(`${target.label} 已经变化，当前页面看到的不是最新远端分支。为避免旧页面使用错误提交，请刷新后重新操作。`);
+    }
+  }
 }
 
 async function targetRefSnapshotRef(body = {}) {
@@ -4271,7 +4282,7 @@ async function targetRefSnapshotRef(body = {}) {
   const localBranches = parseSimpleLines(await git(currentRepo, ["branch", "--format=%(refname:short)"]).catch(() => ""));
   if ((action === "checkoutRemoteBranch" || remoteBranches.includes(refText)) && isKnownRemoteBranch(refText, remoteNames)) {
     const ref = normalizeRefName(refText, "远端分支");
-    return { ref: `refs/remotes/${ref}`, label: `远端分支 ${ref}` };
+    return { ref: `refs/remotes/${ref}`, label: `远端分支 ${ref}`, remoteBranch: ref, parsedRemote: splitRemoteBranchRef(ref, remoteNames) };
   }
   if (action === "checkoutBranch" || localBranches.includes(refText)) {
     const branch = normalizeBranchName(refText);

@@ -4417,3 +4417,25 @@
 - `docs/CONTINUE.md`：同步远端 URL 管理当前能力说明。
 - `progress.md`：追加本轮多 push URL 边界的实施与验证记录。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Reject stale real remote branch targets before using local tracking refs
+
+### What was done
+- Reproduced a severe stale remote-target bug: a page saw `origin/feature` at commit A, another clone pushed commit B to the real remote, local tracking stayed at A, and the old page successfully created a new local branch from stale `origin/feature` at A.
+- Extended target-ref snapshot validation for remote branches so it checks both the local tracking ref and the real remote branch SHA from `git ls-remote`.
+- When the real remote branch is missing or no longer points at the page-seen SHA, Forkline now runs `fetch --prune` to refresh local remote refs and rejects the old-page request.
+- This protection covers remote branch checkout, setting upstream, merge, rebase, create branch, and create worktree because they share the same target-ref snapshot path.
+- Updated README and continuation notes to document real remote SHA validation for remote branch targets.
+
+### Testing
+- Reproduced before the fix with temp repo `C:\tmp\forkline-stale-remote-target-repro-20260704034747`: page state saw `origin/feature = d3f3376`, collaborator pushed real remote to `b325c49`, and stale `createBranch` created `from-remote-stale` at old local tracking `d3f3376`.
+- Ran `node --check server.js`.
+- Verified after the fix with temp repo `C:\tmp\forkline-stale-remote-target-fixed-20260704034926`: stale `createBranch` returned “远端分支 origin/feature 已经变化”, created no branch, refreshed state updated `origin/feature` to `92670a5`, and fresh `createBranch` created `from-remote-fresh` at `92670a5`.
+- The temporary verification repos were cleaned after both runs.
+
+### Notes
+- `server.js`：远端分支目标快照校验增加真实远端 SHA 对比，并在变化/缺失时抓取刷新后拒绝旧页面操作。
+- `README.md`：补充远端分支目标会校验真实远端 SHA。
+- `docs/CONTINUE.md`：同步远端分支目标旧页面保护说明。
+- `progress.md`：追加本轮真实远端推进但本地 tracking 未更新导致旧页面使用过期目标的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
