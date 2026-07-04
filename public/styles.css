@@ -53,7 +53,9 @@
   --history-cols: var(--graph-w) minmax(0, 1fr) minmax(104px, 150px) minmax(76px, 96px) minmax(70px, 96px);
   --row-h: 62px;
   --header-h: 58px;
-  font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  --font-ui: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  --font-code: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+  font-family: var(--font-ui);
 }
 
 html[data-theme="light"] {
@@ -2042,7 +2044,7 @@ body.resizing .workbench-resizer-y::before {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: color-mix(in srgb, var(--field) 92%, var(--surface));
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-code);
   font-size: 12px;
   box-shadow: var(--shadow-soft);
 }
@@ -2056,7 +2058,7 @@ body.resizing .workbench-resizer-y::before {
   border-bottom: 1px solid var(--line-soft);
   background: color-mix(in srgb, var(--surface) 88%, var(--field));
   color: var(--muted);
-  font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 800;
 }
@@ -2127,7 +2129,7 @@ body.resizing .workbench-resizer-y::before {
   border-bottom: 1px solid var(--line-soft);
   background: color-mix(in srgb, var(--surface) 88%, var(--field));
   color: var(--muted);
-  font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 800;
 }
 
@@ -2167,6 +2169,7 @@ body.resizing .workbench-resizer-y::before {
 .side-meta-text {
   min-width: 0;
   overflow: hidden;
+  font-family: var(--font-code);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2204,6 +2207,7 @@ body.resizing .workbench-resizer-y::before {
   min-height: 24px;
   height: 24px;
   padding: 0 7px;
+  font-family: var(--font-ui);
   font-size: 11px;
 }
 
@@ -2216,6 +2220,7 @@ body.resizing .workbench-resizer-y::before {
 .side-cell .ln {
   padding: 4px 8px;
   color: var(--quiet);
+  font-family: var(--font-code);
   text-align: right;
   user-select: none;
 }
@@ -2224,6 +2229,7 @@ body.resizing .workbench-resizer-y::before {
   overflow: hidden;
   padding: 4px 8px;
   color: var(--muted);
+  font-family: var(--font-code);
   text-overflow: ellipsis;
   white-space: pre;
 }
@@ -5948,6 +5954,7 @@ body.resizing .workbench-resizer-y::before {
   grid-template-rows: 64px minmax(0, 1fr);
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, var(--surface)), var(--bg));
   color: var(--text);
+  font-family: var(--font-ui);
   z-index: 70;
 }
 
@@ -6014,6 +6021,7 @@ body.resizing .workbench-resizer-y::before {
   width: max(1040px, 100%);
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--field) 94%, var(--surface));
+  font-family: var(--font-code);
   box-shadow: none;
 }
 
@@ -6025,6 +6033,7 @@ body.resizing .workbench-resizer-y::before {
   padding: 7px 12px;
   border-bottom-color: var(--line-strong);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, var(--field)), var(--surface));
+  font-family: var(--font-ui);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
@@ -6037,6 +6046,7 @@ body.resizing .workbench-resizer-y::before {
   z-index: 2;
   border-bottom-color: var(--line-strong);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 86%, var(--panel-2)), var(--surface));
+  font-family: var(--font-ui);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
 }
 
@@ -6054,6 +6064,7 @@ body.resizing .workbench-resizer-y::before {
 .diff-modal-body .side-cell code {
   padding-top: 5px;
   padding-bottom: 5px;
+  font-family: var(--font-code);
   line-height: 1.42;
 }
 
@@ -6073,11 +6084,13 @@ body.resizing .workbench-resizer-y::before {
 
 .diff-modal-body .side-meta {
   padding: 8px 12px;
+  font-family: var(--font-code);
 }
 
 .diff-modal-body .hunk-actions .mini-btn {
   min-height: 26px;
   height: 26px;
+  font-family: var(--font-ui);
 }
 
 .diff-modal-body .diff-empty {

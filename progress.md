@@ -4976,3 +4976,24 @@
 - `public/styles.css`: refined maximized diff modal styling and scoped sticky toolbar/header behavior to `.diff-modal-body`.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Normalize maximized diff fonts
+
+### What was done
+- Added shared UI/code font tokens so Forkline can consistently separate interface text from code text.
+- Normalized the maximized diff view so titles, close button, selected-line toolbar, column headers, and hunk action buttons use the UI font.
+- Normalized diff code, line numbers, and diff metadata so they all use the same code font stack.
+
+### Testing
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it only reported the existing LF-to-CRLF Git working-copy warning for `public/styles.css`.
+- Counted CSS braces and confirmed `826/826`.
+- Opened `D:/桌面/forkline-web` through the UI, selected the real `public/styles.css` worktree diff, opened the maximized diff view, and checked computed fonts for title, toolbar, toolbar button, column header, hunk button, close button, line number, code, and metadata.
+- Confirmed UI elements use `Microsoft YaHei UI` / `PingFang SC` / `Segoe UI`, while code, line numbers, and diff metadata use `Cascadia Mono` / `Consolas` / `SFMono-Regular`.
+- Closed the maximized diff view with Esc after verification and confirmed `modal-open` was removed from `body`.
+- Checked browser console error/warning logs after verification; none were present.
+
+### Notes
+- `public/styles.css`: added shared font tokens and scoped maximized diff font inheritance for UI controls versus code content.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
