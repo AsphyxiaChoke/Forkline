@@ -648,14 +648,25 @@ function renderDiffLineToolbar(action) {
 
 function renderSideMetaRow(line, text, options = {}) {
   const actions = options.hunkActions && text.startsWith("@@ ") ? workDiffHunkActionButtons(options.filePath, options.scope, line.hunkIndex) : "";
+  const hunkSummary = readableHunkHeader(text);
   return `
     <div class="side-row meta ${actions ? "has-actions" : ""}">
       <div class="side-meta">
-        <span class="side-meta-text">${escapeHtml(text)}</span>
+        <span class="side-meta-text ${hunkSummary ? "hunk-summary" : ""}" title="${escapeAttr(text)}">${escapeHtml(hunkSummary || text)}</span>
         ${actions}
       </div>
     </div>
   `;
+}
+
+function readableHunkHeader(text) {
+  const match = String(text || "").match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:\s*(.*))?$/);
+  if (!match) return "";
+  const oldStart = match[1];
+  const oldCount = match[2] || "1";
+  const newStart = match[3];
+  const newCount = match[4] || "1";
+  return `改动位置：旧版第 ${oldStart} 行，新版第 ${newStart} 行；范围：旧 ${oldCount} 行，新 ${newCount} 行`;
 }
 
 function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
@@ -667,7 +678,7 @@ function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
   if (normalizedScope === "untracked" && untracked && fileInfo.unstaged) {
     return `
       <span class="hunk-actions">
-        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="untracked" type="button" title="把这个未跟踪文件块加入暂存区">暂存此块</button>
+        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="untracked" type="button" title="把这个未跟踪文件片段加入暂存区">暂存这段</button>
       </span>
     `;
   }
@@ -675,15 +686,15 @@ function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
   if (normalizedScope === "unstaged" && fileInfo.unstaged) {
     return `
       <span class="hunk-actions">
-        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">暂存此块</button>
-        <button class="mini-btn danger" data-hunk-action="discardWorktreeHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">丢弃此块</button>
+        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">暂存这段</button>
+        <button class="mini-btn danger" data-hunk-action="discardWorktreeHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">丢弃这段</button>
       </span>
     `;
   }
   if (normalizedScope === "staged" && fileInfo.staged) {
     return `
       <span class="hunk-actions">
-        <button class="mini-btn" data-hunk-action="unstageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="staged" type="button">取消暂存此块</button>
+        <button class="mini-btn" data-hunk-action="unstageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="staged" type="button">取消暂存这段</button>
       </span>
     `;
   }

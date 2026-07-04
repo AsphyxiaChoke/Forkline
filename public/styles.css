@@ -2174,6 +2174,14 @@ body.resizing .workbench-resizer-y::before {
   white-space: nowrap;
 }
 
+.side-meta-text.hunk-summary {
+  flex: 1 1 auto;
+  font-family: var(--font-ui);
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: normal;
+}
+
 .side-row.diff-line-selectable {
   cursor: pointer;
 }
@@ -2201,6 +2209,11 @@ body.resizing .workbench-resizer-y::before {
   justify-content: flex-end;
   gap: 5px;
   min-width: 0;
+  position: sticky;
+  right: 8px;
+  z-index: 1;
+  padding-left: 10px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 88%, var(--field)) 24%);
 }
 
 .hunk-actions .mini-btn {

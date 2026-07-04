@@ -4997,3 +4997,27 @@
 - `public/styles.css`: added shared font tokens and scoped maximized diff font inheritance for UI controls versus code content.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Make diff hunk headers readable
+
+### What was done
+- Replaced raw Git hunk headers such as `@@ -48,17 +48,19 @@` with readable Chinese descriptions that explain the old/new line positions and changed range.
+- Kept the original Git hunk header in the hover title for advanced reference without forcing it into the main UI.
+- Renamed hunk action buttons from `暂存此块` / `丢弃此块` to `暂存这段` / `丢弃这段`.
+- Allowed readable hunk descriptions to wrap naturally and kept hunk action buttons sticky on the visible right side of the diff row.
+
+### Testing
+- Ran `node --check public\js\features\diff-workbench.js`.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it only reported the existing LF-to-CRLF Git working-copy warning for `public/js/features/diff-workbench.js` and `public/styles.css`.
+- Counted CSS braces and confirmed `827/827`.
+- Opened `D:/桌面/forkline-web` through the UI, selected the real `public/styles.css` worktree diff, opened the maximized diff view, and confirmed the hunk header renders as readable text such as `改动位置：旧版第 2169 行，新版第 2169 行；范围：旧 16 行，新 24 行`.
+- Confirmed hunk action buttons render as `暂存这段` and `丢弃这段`, and the action group remains visible at the right side of the maximized diff row.
+- Closed the maximized diff view with Esc after verification and confirmed `modal-open` was removed from `body`.
+- Checked browser console error/warning logs after verification; none were present.
+
+### Notes
+- `public/js/features/diff-workbench.js`: translates Git hunk headers into readable Chinese summaries and updates hunk action labels.
+- `public/styles.css`: styles readable hunk summaries with UI font, natural wrapping, and sticky visible hunk actions.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's changes in `public/js/features/diff-workbench.js`, `public/styles.css`, and `progress.md`, or reset to the commit before this task once it is committed.
