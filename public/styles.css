@@ -1015,8 +1015,13 @@ body.resizing .workspace-resizer::before {
 }
 
 .branch-badge.upstream {
-  flex: 1 1 88px;
   color: var(--blue);
+}
+
+.branch-row .branch-badge.upstream {
+  flex: 0 1 70px;
+  max-width: 70px;
+  cursor: help;
 }
 
 .branch-badge.ahead {

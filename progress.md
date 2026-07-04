@@ -4895,3 +4895,21 @@
 - `public/styles.css`: allowed local branch metadata badges to wrap and made upstream badges flex into the remaining width.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's changes in `public/js/features/branches.js`, `public/styles.css`, and `progress.md`, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Collapse long local branch upstream badges by default
+
+### What was done
+- Changed the left local branch list so long upstream badges stay compact by default instead of taking the full metadata line.
+- Kept the full upstream branch name available through the badge hover title.
+- Scoped the compact upstream badge rule to local branch rows so the branch cleanup panel keeps its normal badge layout.
+
+### Testing
+- Ran `node --check public\js\features\branches.js`.
+- Ran `node --check server.js`.
+- Ran `git diff --check`.
+- Refreshed `http://127.0.0.1:5177/` in the in-app browser and confirmed upstream badges render at `70px`, use a help cursor, and retain the full upstream value in `title`.
+
+### Notes
+- `public/styles.css`: made only left-list upstream badges compact and hover-informative.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
