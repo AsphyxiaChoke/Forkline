@@ -5945,10 +5945,10 @@ body.resizing .workbench-resizer-y::before {
   position: fixed;
   inset: 0;
   display: none;
-  grid-template-rows: 58px minmax(0, 1fr);
-  background: var(--bg);
+  grid-template-rows: 64px minmax(0, 1fr);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, var(--surface)), var(--bg));
   color: var(--text);
-  z-index: 50;
+  z-index: 70;
 }
 
 .diff-modal.show {
@@ -5961,13 +5961,16 @@ body.resizing .workbench-resizer-y::before {
   justify-content: space-between;
   gap: 16px;
   min-width: 0;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--topbar);
+  padding: 0 18px 0 20px;
+  border-bottom: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--topbar) 82%, var(--panel-2)), var(--topbar));
+  box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .diff-modal-head > div {
   min-width: 0;
+  padding-left: 12px;
+  border-left: 4px solid var(--teal);
 }
 
 .diff-modal-head strong,
@@ -5980,6 +5983,7 @@ body.resizing .workbench-resizer-y::before {
 
 .diff-modal-head strong {
   font-size: 15px;
+  font-weight: 950;
 }
 
 .diff-modal-head span {
@@ -5988,31 +5992,99 @@ body.resizing .workbench-resizer-y::before {
   font-size: 12px;
 }
 
+.diff-modal-head .icon-btn {
+  min-width: 68px;
+  border-color: var(--line-soft);
+  background: color-mix(in srgb, var(--field) 88%, var(--panel-2));
+}
+
 .diff-modal-body {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 14px;
+  padding: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, var(--surface)), var(--bg));
+  overscroll-behavior: contain;
   scrollbar-color: var(--scroll) transparent;
   scrollbar-width: thin;
 }
 
 .diff-modal-body .side-diff {
   min-width: 1040px;
+  width: max(1040px, 100%);
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--field) 94%, var(--surface));
+  box-shadow: none;
+}
+
+.diff-modal-body .diff-line-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  min-height: 38px;
+  padding: 7px 12px;
+  border-bottom-color: var(--line-strong);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 88%, var(--field)), var(--surface));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.diff-modal-body .diff-line-toolbar + .side-diff-head {
+  top: 38px;
+}
+
+.diff-modal-body .side-diff-head {
+  top: 0;
+  z-index: 2;
+  border-bottom-color: var(--line-strong);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 86%, var(--panel-2)), var(--surface));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
 }
 
 .diff-modal-body .side-diff-head span {
   padding: 9px 12px;
+  color: var(--text);
 }
 
 .diff-modal-body .side-cell {
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 62px minmax(0, 1fr);
+  min-height: 27px;
 }
 
 .diff-modal-body .side-cell .ln,
 .diff-modal-body .side-cell code {
   padding-top: 5px;
   padding-bottom: 5px;
+  line-height: 1.42;
+}
+
+.diff-modal-body .side-cell .ln {
+  background: color-mix(in srgb, var(--field) 88%, var(--surface));
+  border-right: 1px solid var(--line-soft);
+}
+
+.diff-modal-body .side-row:hover .side-cell code {
+  background-image: linear-gradient(90deg, rgba(103, 183, 255, 0.06), transparent);
+}
+
+.diff-modal-body .side-row.meta {
+  border-top-color: var(--line-strong);
+  border-bottom-color: var(--line-strong);
+}
+
+.diff-modal-body .side-meta {
+  padding: 8px 12px;
+}
+
+.diff-modal-body .hunk-actions .mini-btn {
+  min-height: 26px;
+  height: 26px;
+}
+
+.diff-modal-body .diff-empty {
+  min-height: calc(100vh - 128px);
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--field) 90%, var(--surface));
 }
 
 @media (prefers-reduced-motion: reduce) {

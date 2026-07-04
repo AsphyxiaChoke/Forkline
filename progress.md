@@ -4956,3 +4956,23 @@
 - `public/styles.css`: updated visual tokens, panel layering, interactive states, status colors, menus, dialogs, diff surfaces, and reduced-motion CSS.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Polish maximized diff view
+
+### What was done
+- Optimized the maximized diff window so it matches the refreshed main interface style.
+- Improved the maximized diff header, close button, modal background, sticky selected-line toolbar, sticky diff column header, code line spacing, line-number gutter, hunk action buttons, hover feedback, and empty state.
+- Raised the maximized diff layer above other app panels so it behaves like a true full-screen inspection mode.
+
+### Testing
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it only reported the existing LF-to-CRLF Git working-copy warning for `public/styles.css`.
+- Counted CSS braces and confirmed `826/826`.
+- Opened the current repository through `/api/open`, selected the real `public/styles.css` worktree diff, opened the maximized diff view, and confirmed the modal header/body/toolbar/table fit within the 1280x720 viewport without overlap.
+- Closed the maximized diff view after verification and confirmed `modal-open` was removed from `body`.
+- Checked browser console error/warning logs after the maximized diff verification; none were present.
+
+### Notes
+- `public/styles.css`: refined maximized diff modal styling and scoped sticky toolbar/header behavior to `.diff-modal-body`.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
