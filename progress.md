@@ -4934,3 +4934,25 @@
 - `docs/CONTINUE.md`: recorded the installed project-level UI/UX skills and restart/new-session requirement.
 - `progress.md`: appended this installation and verification record.
 - Rollback: delete `.codex/skills/`, revert the `docs/CONTINUE.md` and `progress.md` entries from this task, or reset to the commit before this task once it is committed.
+
+## 2026-07-04 - Task: Polish Forkline main interface with UI/UX Pro Max
+
+### What was done
+- Used the project-local UI/UX Pro Max skill to generate a dense dark developer dashboard direction for Forkline.
+- Refined the main interface visual hierarchy while keeping the existing teal/coral identity and Git status colors.
+- Improved topbar, repository path controls, action buttons, focus rings, side panels, branch chips, commit rows, worktree file rows, diff surfaces, inspector tabs, empty states, menus, dialogs, and reduced-motion behavior.
+- Fixed legacy undefined status color references by mapping deleted/alert states to existing danger/amber tokens.
+
+### Testing
+- Ran `python .codex\skills\ui-ux-pro-max\scripts\search.py "developer git visual dashboard dense dark productivity tool" --design-system -f markdown -p "Forkline Web" --variance 5 --motion 2 --density 8`.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it only reported the existing LF-to-CRLF Git working-copy warning for `public/styles.css`.
+- Counted CSS braces and confirmed `816/816`.
+- Searched for unresolved `var(--red)` / `var(--yellow)` references and confirmed none remain.
+- Refreshed `http://127.0.0.1:5177/` in the in-app browser and confirmed the topbar, path controls, workspace, sidebar, main area, and inspector do not overlap at the current 1280x720 viewport.
+- Checked browser console error/warning logs after refresh; none were present.
+
+### Notes
+- `public/styles.css`: updated visual tokens, panel layering, interactive states, status colors, menus, dialogs, diff surfaces, and reduced-motion CSS.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
