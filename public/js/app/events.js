@@ -243,6 +243,12 @@ els.detailBody.addEventListener("click", (event) => {
     if (!syncAction.disabled) runAction(syncAction.dataset.syncAction).catch((error) => toast(error.message));
     return;
   }
+  const authAction = event.target.closest("[data-auth-action]");
+  if (authAction) {
+    event.preventDefault();
+    if (!authAction.disabled && authAction.dataset.authAction === "refresh") loadAuthDiagnostics(true).catch((error) => toast(error.message));
+    return;
+  }
   const syncPrAction = event.target.closest("[data-sync-pr-action]");
   if (syncPrAction) {
     event.preventDefault();
@@ -334,6 +340,12 @@ els.detailBody.addEventListener("click", (event) => {
   if (recoveryRow) {
     event.preventDefault();
     selectRecoveryPoint(recoveryRow.dataset.recoveryRef || "");
+    return;
+  }
+  const reflogRefresh = event.target.closest("[data-reflog-refresh]");
+  if (reflogRefresh) {
+    event.preventDefault();
+    if (!reflogRefresh.disabled) loadReflogEntries(true).catch((error) => toast(error.message));
     return;
   }
   const reflogAction = event.target.closest("[data-reflog-action]");

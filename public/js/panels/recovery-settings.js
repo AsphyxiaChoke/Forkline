@@ -74,7 +74,8 @@ function selectTag(name) {
 
 function renderRecoveryTab() {
   const points = state.data?.recoveryPoints || [];
-  const reflogEntries = state.data?.reflogEntries || [];
+  const reflogState = prepareReflogState();
+  const reflogEntries = reflogState.entries || [];
   const filteredPoints = filteredRecoveryPoints(points);
   if (state.selectedRecoveryRef && !points.some((point) => point.ref === state.selectedRecoveryRef)) {
     state.selectedRecoveryRef = "";
@@ -84,27 +85,20 @@ function renderRecoveryTab() {
   }
   if (!state.selectedRecoveryRef && filteredPoints.length) state.selectedRecoveryRef = filteredPoints[0].ref;
   const selected = filteredPoints.find((point) => point.ref === state.selectedRecoveryRef);
-  if (state.selectedReflogSelector && !reflogEntries.some((entry) => entry.selector === state.selectedReflogSelector)) {
-    state.selectedReflogSelector = "";
+  if (Array.isArray(reflogState.entries)) {
+    if (state.selectedReflogSelector && !reflogEntries.some((entry) => entry.selector === state.selectedReflogSelector)) {
+      state.selectedReflogSelector = "";
+    }
+    if (!state.selectedReflogSelector && reflogEntries.length) state.selectedReflogSelector = reflogEntries[0].selector;
   }
-  if (!state.selectedReflogSelector && reflogEntries.length) state.selectedReflogSelector = reflogEntries[0].selector;
   const selectedReflog = reflogEntries.find((entry) => entry.selector === state.selectedReflogSelector);
   els.detailNode.style.borderColor = "var(--purple)";
   els.detailTitle.textContent = "恢复点";
   els.detailSub.textContent = [
     points.length ? `恢复点 ${filteredPoints.length} / ${points.length}` : "没有自动恢复点",
-    reflogEntries.length ? `引用日志 ${reflogEntries.length} 条` : "",
+    reflogState.loading ? "引用日志读取中" : reflogState.error ? "引用日志读取失败" : reflogEntries.length ? `引用日志 ${reflogEntries.length} 条` : "",
   ].filter(Boolean).join(" · ");
   setActiveDiff(null);
-  if (!points.length && !reflogEntries.length) {
-    els.detailBody.innerHTML = `
-      <div class="empty-panel">
-        <strong>没有恢复点</strong>
-        <span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点；HEAD 引用日志也会显示在这里。</span>
-      </div>
-    `;
-    return;
-  }
   els.detailBody.innerHTML = `
     <div class="recovery-layout">
       ${
@@ -125,9 +119,47 @@ function renderRecoveryTab() {
           `
           : `<div class="empty-panel compact"><strong>没有自动恢复点</strong><span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点。</span></div>`
       }
-      ${reflogSectionHtml(reflogEntries, selectedReflog)}
+      ${reflogSectionHtml(reflogState, selectedReflog)}
     </div>
   `;
+}
+
+function prepareReflogState() {
+  const inlineEntries = state.data?.reflogEntries;
+  if (Array.isArray(inlineEntries)) {
+    return { key: reflogStateKey(), entries: inlineEntries, loading: false, error: "", inline: true };
+  }
+  const key = reflogStateKey();
+  if (state.reflog.key !== key) {
+    state.reflogRequestId += 1;
+    state.reflog = { key, entries: null, loading: false, error: "", inline: false };
+  }
+  if (repoPathSnapshot() && !state.data?.repo?.isSample && state.reflog.entries === null && !state.reflog.loading && !state.reflog.error) {
+    loadReflogEntries();
+  }
+  return state.reflog;
+}
+
+function reflogStateKey() {
+  return [repoPathSnapshot(), state.data?.repo?.branch || "", state.data?.repo?.headSha || ""].join("\u0000");
+}
+
+async function loadReflogEntries(refresh = false) {
+  const repoPath = repoPathSnapshot();
+  if (!repoPath || state.data?.repo?.isSample) return;
+  const key = reflogStateKey();
+  const requestId = ++state.reflogRequestId;
+  state.reflog = { key, entries: null, loading: true, error: "", inline: false };
+  if (refresh && state.selectedTab === "recovery") renderInspector();
+  try {
+    const data = await api("/api/reflog");
+    if (requestId !== state.reflogRequestId || !isCurrentRepoPath(repoPath) || key !== reflogStateKey()) return;
+    state.reflog = { key, entries: Array.isArray(data.reflogEntries) ? data.reflogEntries : [], loading: false, error: "", inline: false };
+  } catch (error) {
+    if (requestId !== state.reflogRequestId || !isCurrentRepoPath(repoPath) || key !== reflogStateKey()) return;
+    state.reflog = { key, entries: null, loading: false, error: error.message, inline: false };
+  }
+  if (state.selectedTab === "recovery" && isCurrentRepoPath(repoPath)) renderInspector();
 }
 
 function recoveryRetentionHtml(points) {
@@ -403,7 +435,9 @@ function recoveryDetailHtml(point) {
   `;
 }
 
-function reflogSectionHtml(entries, selected) {
+function reflogSectionHtml(reflogState, selected) {
+  const entries = reflogState.entries || [];
+  const statusText = reflogState.loading ? "读取中" : reflogState.error ? "读取失败" : entries.length ? `${entries.length} 条` : "无记录";
   return `
     <section class="reflog-section">
       <div class="reflog-section-head">
@@ -411,10 +445,17 @@ function reflogSectionHtml(entries, selected) {
           <strong>引用日志</strong>
           <span>HEAD 最近经过的位置，用来找回被重置或切走的提交</span>
         </div>
-        <em>${escapeHtml(entries.length ? `${entries.length} 条` : "无记录")}</em>
+        <div class="reflog-section-tools">
+          <em>${escapeHtml(statusText)}</em>
+          ${reflogState.inline ? "" : `<button class="mini-btn" data-reflog-refresh type="button" ${reflogState.loading ? "disabled" : ""}>刷新</button>`}
+        </div>
       </div>
       ${
-        entries.length
+        reflogState.loading
+          ? `<div class="empty-panel compact"><span>正在读取 HEAD 引用日志...</span></div>`
+          : reflogState.error
+            ? `<div class="empty-panel compact"><strong>引用日志读取失败</strong><span>${escapeHtml(reflogState.error)}</span></div>`
+          : entries.length
           ? `
             <div class="reflog-list">
               ${entries.map((entry) => reflogRowHtml(entry, entry.selector === state.selectedReflogSelector)).join("")}
@@ -662,7 +703,8 @@ function selectRecoveryPoint(ref) {
 }
 
 function findReflogEntry(selector) {
-  return (state.data?.reflogEntries || []).find((entry) => entry.selector === selector);
+  const entries = Array.isArray(state.data?.reflogEntries) ? state.data.reflogEntries : state.reflog.entries || [];
+  return entries.find((entry) => entry.selector === selector);
 }
 
 function selectReflogEntry(selector) {
@@ -889,9 +931,6 @@ async function runReflogAction(action, selector, button) {
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     if (result.recovery?.ref) state.selectedRecoveryRef = result.recovery.ref;
-    if (!state.data.reflogEntries?.some((item) => item.selector === state.selectedReflogSelector)) {
-      state.selectedReflogSelector = state.data.reflogEntries?.[0]?.selector || "";
-    }
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
   } catch (error) {

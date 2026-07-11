@@ -1,9 +1,12 @@
 // Diff rendering, file trees, workbench diff, and active diff modal.
+const DIFF_PREVIEW_LINE_LIMIT = 400;
+
 function renderDiff(diff) {
   if (!diff?.length) return `<div class="diff"><div class="diff-line"><span class="ln">1</span><code>没有可显示的 Diff</code></div></div>`;
+  const visibleDiff = diff.slice(0, DIFF_PREVIEW_LINE_LIMIT);
   return `
     <div class="diff">
-      ${diff
+      ${visibleDiff
         .map(
           (line, index) => `
           <div class="diff-line ${line.type}">
@@ -12,6 +15,11 @@ function renderDiff(diff) {
           </div>`
         )
         .join("")}
+      ${
+        diff.length > visibleDiff.length
+          ? `<div class="diff-preview-truncated"><strong>仅显示前 ${visibleDiff.length} / ${diff.length} 行</strong><span>完整内容请在“文件”页按文件查看</span></div>`
+          : ""
+      }
     </div>
   `;
 }
@@ -883,6 +891,7 @@ function worktreeSignature(files) {
         file.staged ? "staged" : "",
         file.unstaged ? "unstaged" : "",
         file.conflict ? "conflict" : "",
+        file.snapshot || "",
       ].join(":")
     )
     .join("|");
@@ -926,9 +935,12 @@ async function refreshWorktree(silent = false) {
 }
 
 function initWorktreeAutoRefresh() {
-  window.addEventListener("focus", () => refreshWorktree(true));
-  setInterval(() => {
-    if (!document.hidden) refreshWorktree(true);
-  }, 5000);
+  const refreshWhenActive = () => {
+    const focused = typeof document.hasFocus !== "function" || document.hasFocus();
+    if (!document.hidden && focused) refreshWorktree(true);
+  };
+  window.addEventListener("focus", refreshWhenActive);
+  document.addEventListener("visibilitychange", refreshWhenActive);
+  setInterval(refreshWhenActive, 5000);
 }
 

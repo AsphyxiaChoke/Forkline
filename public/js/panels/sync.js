@@ -230,6 +230,7 @@ function renderSyncTab() {
   }
   const previewModel = selectedSyncCommit ? syncPreviewModel(selectedSyncCommit, selectedSyncDetail) : null;
   const remotes = sync.remotes || [];
+  const authState = prepareSyncAuthState(sync.auth, remotes);
   const pushGuard = syncPushGuard(sync);
   const pullRequest = sync.pullRequest || {};
   els.detailNode.style.borderColor = upstreamGone ? "var(--danger)" : hasUpstream ? "var(--teal)" : "var(--yellow)";
@@ -267,7 +268,7 @@ function renderSyncTab() {
     </div>
     ${remoteListHtml(remotes)}
     ${remoteCheckHtml(remotes)}
-    ${syncAuthHtml(sync.auth, remotes)}
+    ${syncAuthHtml(authState, remotes)}
     <div class="detail-section-title">待拉取提交</div>
     ${syncCommitListHtml(incoming, "远端没有本地缺少的提交")}
     <div class="detail-section-title">待推送提交</div>
@@ -723,9 +724,77 @@ function remoteCheckHtml(remotes) {
   `;
 }
 
-function syncAuthHtml(auth, remotes = []) {
-  if (!auth && !remotes.length) return "";
-  const model = auth || {};
+function prepareSyncAuthState(inlineAuth, remotes = []) {
+  if (inlineAuth) {
+    return { repoPath: repoPathSnapshot(), remoteKey: syncAuthRemoteKey(remotes), data: inlineAuth, loading: false, error: "", inline: true };
+  }
+  const repoPath = repoPathSnapshot();
+  const remoteKey = syncAuthRemoteKey(remotes);
+  const current = state.authDiagnostics || {};
+  if (current.repoPath !== repoPath || current.remoteKey !== remoteKey) {
+    state.authDiagnosticsRequestId += 1;
+    state.authDiagnostics = { repoPath, remoteKey, data: null, loading: false, error: "", inline: false };
+  }
+  if (repoPath && !state.data?.repo?.isSample && !state.authDiagnostics.data && !state.authDiagnostics.loading && !state.authDiagnostics.error) {
+    loadAuthDiagnostics();
+  }
+  return state.authDiagnostics;
+}
+
+function syncAuthRemoteKey(remotes = []) {
+  return remotes
+    .map((remote) => [remote.name, remote.fetchUrl, remote.pushUrl, ...(remote.pushUrls || [])].map((value) => String(value || "")).join("\u0000"))
+    .sort()
+    .join("\u0001");
+}
+
+async function loadAuthDiagnostics(refresh = false) {
+  const repoPath = repoPathSnapshot();
+  if (!repoPath || state.data?.repo?.isSample) return;
+  const remoteKey = syncAuthRemoteKey(state.data?.sync?.remotes || []);
+  const requestId = ++state.authDiagnosticsRequestId;
+  state.authDiagnostics = { repoPath, remoteKey, data: null, loading: true, error: "", inline: false };
+  if (refresh && state.selectedTab === "sync") renderInspector();
+  try {
+    const data = await api(`/api/auth-diagnostics${refresh ? "?refresh=1" : ""}`);
+    if (requestId !== state.authDiagnosticsRequestId || !isCurrentRepoPath(repoPath)) return;
+    if (remoteKey !== syncAuthRemoteKey(state.data?.sync?.remotes || [])) return;
+    state.authDiagnostics = { repoPath, remoteKey, data, loading: false, error: "", inline: false };
+  } catch (error) {
+    if (requestId !== state.authDiagnosticsRequestId || !isCurrentRepoPath(repoPath)) return;
+    state.authDiagnostics = { repoPath, remoteKey, data: null, loading: false, error: error.message, inline: false };
+  }
+  if (state.selectedTab === "sync" && isCurrentRepoPath(repoPath)) renderInspector();
+}
+
+function syncAuthHtml(authState, remotes = []) {
+  if (authState?.loading) {
+    return `
+      <section class="auth-card">
+        <div class="auth-card-head">
+          <div><strong>认证助手</strong><span>正在检测 SSH key、ssh-agent 和 HTTPS 凭据管理器</span></div>
+          <span class="auth-status">检测中</span>
+        </div>
+        <p class="auth-advice">认证环境只在打开同步页时检测，不再拖慢仓库历史和工作区刷新。</p>
+      </section>
+    `;
+  }
+  if (authState?.error) {
+    return `
+      <section class="auth-card auth-card-warn">
+        <div class="auth-card-head">
+          <div><strong>认证助手读取失败</strong><span>${escapeHtml(authState.error)}</span></div>
+          <div class="auth-card-tools">
+            <span class="auth-status">失败</span>
+            <button class="mini-btn" data-auth-action="refresh" type="button">重新检测</button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+  const model = authState?.data;
+  if (!model && !remotes.length) return "";
+  if (!model) return "";
   const level = model.level || "info";
   const remoteRows = Array.isArray(model.remotes) ? model.remotes : [];
   const ssh = model.ssh || {};
@@ -740,7 +809,10 @@ function syncAuthHtml(auth, remotes = []) {
           <strong>认证助手</strong>
           <span>${escapeHtml(model.summary || "检查 SSH key、ssh-agent 和 HTTPS 凭据管理器")}</span>
         </div>
-        <span class="auth-status">${escapeHtml(authLevelLabel(level))}</span>
+        <div class="auth-card-tools">
+          <span class="auth-status">${escapeHtml(authLevelLabel(level))}</span>
+          ${authState.inline ? "" : `<button class="mini-btn" data-auth-action="refresh" type="button">重新检测</button>`}
+        </div>
       </div>
       ${model.advice ? `<p class="auth-advice">${escapeHtml(model.advice)}</p>` : ""}
       <div class="auth-remote-list">

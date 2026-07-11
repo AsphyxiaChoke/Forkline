@@ -4439,3 +4439,441 @@
 - `docs/CONTINUE.md`：同步远端分支目标旧页面保护说明。
 - `progress.md`：追加本轮真实远端推进但本地 tracking 未更新导致旧页面使用过期目标的复现、修复和验证记录。
 - Rollback: revert this task's changes in the files above, or reset to the commit before this task once it is committed.
+
+## 2026-07-10 - Task: Make remote branch and Tag deletion atomic
+
+### What was done
+- Reproduced a fatal check-then-delete race for both remote branches and remote Tags: another collaborator could update the confirmed remote ref after Forkline's `ls-remote` check but before the delete push connected, and the old request would delete the newly updated ref.
+- Bound remote branch deletion to the confirmed remote branch SHA with an explicit `--force-with-lease`, so Git rejects the deletion atomically if the branch changes after validation.
+- Bound remote Tag deletion to the confirmed remote Tag object SHA with the same explicit lease protection.
+- Added operation-specific Chinese stale-lease errors for remote branch deletion and remote Tag deletion while preserving the existing safe-force-push message.
+- Updated README and continuation notes to document the atomic remote-ref deletion behavior.
+
+### Testing
+- Reproduced before the fix through the real Forkline API on `http://127.0.0.1:5510` with temp repo `C:\tmp\forkline-remote-delete-race-20260710`: the page confirmed `origin/feature = 60f888c`, a receive-pack test wrapper pushed collaborator commit `dbaeebb` before the delete push advertised refs, and `deleteRemoteBranch` still returned HTTP 200. The bare remote contained the `dbaeebb` commit object but no longer had `refs/heads/feature`.
+- Reproduced the same pre-fix race for Tag `race-tag`: the page confirmed object `60f888c`, the wrapper moved the remote Tag to collaborator object `a73e3d5`, and `deleteRemoteTag` still returned HTTP 200. The bare remote contained `a73e3d5` but no longer had `refs/tags/race-tag`.
+- Verified the fix through `http://127.0.0.1:5511`: stale branch deletion returned HTTP 400 with “远端分支删除被 Git 拒绝”, and `refs/heads/feature` remained at collaborator commit `a73e3d5`.
+- Verified stale Tag deletion returned HTTP 400 with “远端 Tag 删除被 Git 拒绝”, and `refs/tags/race-tag` remained at collaborator object `a73e3d5`.
+- Verified fresh branch and Tag snapshots still delete normally: both API requests returned HTTP 200, and the corresponding remote refs were absent afterward.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public\js README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped temporary services on ports `5510` and `5511`, then removed `C:\tmp\forkline-remote-delete-race-20260710` after verifying the target path was inside `C:\tmp`.
+
+### Notes
+- `server.js`：远端分支和远端 Tag 删除使用确认对象 SHA 的显式 lease，并为并发变化返回对应中文提示。
+- `README.md`：补充远端分支和 Tag 删除的原子 SHA 保护及实际 Git 命令。
+- `docs/CONTINUE.md`：同步远端引用删除的当前保护能力和协作竞态行为。
+- `progress.md`：追加本轮远端分支/Tag 并发删除数据丢失问题的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to commit `cdf4fdf` before this task is committed.
+
+## 2026-07-10 - Task: Block branch checkout during unfinished Git operations
+
+### What was done
+- Reproduced a destructive half-completed force-checkout flow while a rebase was paused: Forkline discarded the user's current work with `reset --hard` and `git clean`, then Git rejected `switch --force` because the rebase was still active.
+- Added a shared preflight for local branch checkout and remote branch checkout that rejects any checkout while merge, rebase, cherry-pick, or revert is unfinished.
+- Kept the current Git operation untouched and instructed the user to continue or abort it explicitly; Forkline does not silently abort an operation on the user's behalf.
+- Updated README and continuation notes to document that this guard runs before stash, reset, clean, or switch.
+
+### Testing
+- Confirmed the underlying Git sequence in temp repo `C:\tmp\forkline-force-checkout-20260710`: during a paused rebase, `git reset --hard HEAD` removed `resolution-work`, then `git switch --force main` failed with `cannot switch branch while rebasing`; HEAD stayed detached and `.git/rebase-merge` remained.
+- Reproduced before the fix through the real Forkline API on `http://127.0.0.1:5512`: `checkoutBranch main mode=force` returned HTTP 400 after deleting `api-resolution-work`; the repository remained on detached HEAD with the rebase still active.
+- Verified after the fix through `http://127.0.0.1:5513`: the same request returned HTTP 400 with “仓库还有未完成操作：变基未完成。请先继续或中止后再切换分支。” before destructive commands ran; `preserved-after-fix` remained in `base.txt`, the file stayed modified, and `.git/rebase-merge` remained.
+- Verified the normal force-checkout control after aborting the rebase: a dirty `feature` branch returned HTTP 200, discarded the confirmed test edit, switched to `main`, and ended with a clean worktree.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public\js README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped temporary services on ports `5512` and `5513`, then removed `C:\tmp\forkline-force-checkout-20260710` after verifying the target path was inside `C:\tmp`.
+
+### Notes
+- `server.js`：本地/远端分支签出在未完成 Git 操作存在时，于任何储藏或丢弃动作前拒绝执行。
+- `README.md`：补充未完成 merge/rebase/cherry-pick/revert 时的签出保护和业务原因。
+- `docs/CONTINUE.md`：同步签出前置保护及失败前不改动工作区的行为。
+- `progress.md`：追加本轮强制签出失败后修改已丢失问题的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to commit `cdf4fdf` before these uncommitted tasks.
+
+## 2026-07-10 - Task: Protect submodule data from parent discard-all operations
+
+### What was done
+- Reproduced that parent-repository “discard all” could report success while leaving an initialized submodule on a different local commit with modified and untracked files.
+- Confirmed a more destructive configuration-dependent variant: with `submodule.recurse=true`, the parent `reset --hard` silently moved the submodule from its local commit back to the recorded gitlink and deleted tracked submodule edits.
+- Added a preflight at the shared discard-all entry used by “丢弃全部” and local/remote force checkout. It rejects before parent reset/clean when an initialized submodule has internal changes, conflicts, or a commit mismatch.
+- Kept submodule cleanup explicit instead of recursively deleting a separate repository on the user's behalf, and included affected submodule paths in the Chinese error.
+- Updated README and continuation notes to document the submodule repository boundary.
+
+### Testing
+- Reproduced before the fix through the real Forkline API on `http://127.0.0.1:5514` with temp repo `C:\tmp\forkline-discard-submodule-20260710`: the parent had a normal file edit, while `modules/child` was at local commit `b7b0172`, ahead of recorded gitlink `2214d7e`, with one modified and one untracked file. `discardAll` returned HTTP 200 and removed the parent edit, but the API still reported `modules/child` dirty with both child changes intact.
+- Verified the Git configuration hazard in the same fixture: after setting `submodule.recurse=true`, parent `git reset --hard HEAD` moved the child HEAD from `b7b0172` to `2214d7e` and removed the tracked child edit, leaving only the untracked file.
+- Verified after the fix through `http://127.0.0.1:5515`: with both child worktree changes and commit mismatch present, `discardAll` returned HTTP 400 with the affected path and preserved the parent file, child HEAD, child modification, and untracked file.
+- Verified a clean child worktree still receives protection when only its HEAD differs from the parent gitlink: `dirtyCount = 0`, `status = changed`, and `discardAll` returned HTTP 400 before touching the parent edit.
+- Verified the normal control with the child aligned to `2214d7e` and clean: `discardAll` returned HTTP 200 and cleaned the parent edit.
+- Verified the shared force-checkout path: with the child on local commit `b7b0172`, `checkoutBranch target mode=force` returned HTTP 400 and preserved the current `main` branch, parent edit, and child commit.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public\js README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped temporary services on ports `5514` and `5515`, then removed `C:\tmp\forkline-discard-submodule-20260710` after verifying the target path was inside `C:\tmp`.
+
+### Notes
+- `server.js`：父仓库丢弃全部和强制签出在独立子模块状态存在时，于 reset/clean 前拒绝并列出路径。
+- `README.md`：补充子模块仓库边界及 `submodule.recurse=true` 下的风险保护。
+- `docs/CONTINUE.md`：同步对子模块内部修改、冲突和 gitlink 偏移的前置保护行为。
+- `progress.md`：追加本轮父仓库丢弃操作误报成功或静默删除子模块数据的复现、修复和验证记录。
+- Rollback: revert this task's changes in the files above, or reset to commit `cdf4fdf` before these uncommitted tasks.
+
+## 2026-07-10 - Task: Protect submodule data from parent single-file discard
+
+### What was done
+- Reproduced that selecting a submodule row and running the parent repository's single-file discard returned success even though the child repository remained dirty under the default Git configuration.
+- Confirmed the destructive configuration-dependent variant: with `submodule.recurse=true`, the same action silently removed tracked modifications inside the independent child repository.
+- Confirmed the existing file snapshot could not close this gap because a submodule worktree is represented as a directory; child changes added after the page snapshot did not change the parent file snapshot and were also deleted by the stale request.
+- Added a preflight that identifies index entries with gitlink mode `160000` and rejects parent-repository single-file discard before `git restore` can run.
+- Kept child-repository cleanup explicit and added a Chinese error directing the user to enter the submodule and commit, stash, or restore there.
+- Updated README and continuation notes with the single-file submodule boundary.
+
+### Testing
+- Reproduced before the fix through the real Forkline API on `http://127.0.0.1:5290` with temp repo `C:\tmp\forkline-submodule-discard-20260710-2`: under the default configuration, `discardWorktreeFile modules/child` returned HTTP 200 and “工作区改动已丢弃”, while the child still had ` M server.js` and the parent still had ` m modules/child`.
+- Reproduced the destructive variant after setting repository-local `submodule.recurse=true`: the same HTTP 200 action removed the child's uncommitted `server.js` modification and left both parent and child clean.
+- Reproduced the stale-page variant with snapshot `5cbdb7a9eb464c85a0ea4f11e03e5ca8f8713756517426041a9b23e24122d44b`: the page saw one child modification, a second tracked child file changed during the request delay, and the old request still returned HTTP 200 and removed both changes.
+- Verified after the fix with `submodule.recurse=true`: the API returned HTTP 400 with “路径 modules/child 是独立 Git 子模块”, and preserved child modifications in `README.md` and `server.js` plus parent status ` m modules/child`.
+- Verified the stale-page regression after the fix: a third child modification in `docs/CONTINUE.md` was added after the page snapshot; the old request returned HTTP 400 and all three child files remained modified.
+- Verified the default-configuration regression after unsetting `submodule.recurse`: the same submodule action returned HTTP 400 instead of false success and preserved the child changes.
+- Verified an ordinary parent file control: modifying `.gitmodules` and discarding only that file returned HTTP 200, restored `.gitmodules`, and left the independent child modifications untouched.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped temporary services on ports `5289` and `5290`; both returned HTTP code `000` afterward. Verified and removed `C:\tmp\forkline-submodule-discard-20260710-2`; the failed first fixture path and temporary API harness were also absent.
+
+### Notes
+- `server.js`：父仓库单文件丢弃在目标索引项是 gitlink 时，于执行 `git restore` 前拒绝。
+- `README.md`：补充工作区子模块路径不能作为普通父仓库文件丢弃，以及默认/递归配置下的风险。
+- `docs/CONTINUE.md`：同步 gitlink 前置检查、中文提示和普通父仓库文件控制行为。
+- `progress.md`：追加本轮单文件丢弃误报成功、递归删除和旧快照跨子模块删除的复现与验证证据。
+- Rollback: reverse this task's guard and documentation lines, or run `git restore --source=cdf4fdf -- server.js README.md docs/CONTINUE.md progress.md` to roll back the full current uncommitted batch.
+
+## 2026-07-10 - Task: Protect hidden submodule changes from hard reset operations
+
+### What was done
+- Reproduced that a parent repository can appear completely clean while an initialized submodule contains uncommitted changes when `submodule.<name>.ignore=dirty` is configured.
+- Confirmed three destructive paths crossed that hidden repository boundary when `submodule.recurse=true`: hard reset to a commit, restore from a Forkline recovery point, and restore from a reflog entry.
+- Reused the recursive submodule preflight before every confirmed parent `reset --hard` entry. It now blocks hard reset, recovery-point restore, and reflog restore before creating a recovery ref or changing HEAD when a child repository has internal changes, conflicts, or a gitlink commit mismatch.
+- Kept soft and mixed reset unchanged because they do not update the submodule worktree.
+- Added operation-specific Chinese errors so the user sees whether hard reset, recovery-point restore, or reflog restore was blocked.
+- Updated README and continuation notes with the hidden-dirty-submodule case and the affected reset operations.
+
+### Testing
+- Reproduced before the fix through the real Forkline API on `http://127.0.0.1:5291` with temp repo `C:\tmp\forkline-submodule-hard-reset-20260710`: parent `git status --short` and API `workingFiles` were empty, while the submodule panel reported `dirtyCount = 1` and child status was ` M server.js`.
+- With repository-local `submodule.recurse=true` and `submodule.modules/child.ignore=dirty`, `resetToCommit mode=hard` returned HTTP 200, moved parent HEAD from `022c68c` to `b7cfa90`, and silently removed the child `server.js` modification.
+- Recreated the hidden child edit and verified `restoreRecoveryPoint` returned HTTP 200, moved HEAD back to `022c68c`, and again removed the child modification despite the parent clean-worktree check.
+- Recreated it again and verified `restoreReflogEntry` returned HTTP 200, moved HEAD to the selected reflog commit, and removed the child modification.
+- Verified after the fix that hard reset returned HTTP 400 with “子模块包含独立仓库改动，不能执行硬重置”; child status remained ` M server.js`, parent HEAD stayed `b7cfa90`, and the recovery-ref count stayed at 6, proving the rejection happened before recovery-point creation.
+- Verified recovery-point restore returned HTTP 400 with “不能恢复到恢复点”, and reflog restore returned HTTP 400 with “不能恢复引用日志记录”; both preserved the child modification and parent HEAD.
+- Verified the non-destructive control: `resetToCommit mode=soft` returned HTTP 200, moved parent HEAD to `022c68c`, and preserved child status ` M server.js`.
+- Verified clean-submodule controls: after restoring the child file, hard reset returned HTTP 200 and moved HEAD to `b7cfa90`; restoring the existing recovery point also returned HTTP 200 and moved HEAD back to `022c68c`.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped the temporary service on port `5291` and verified it returned HTTP code `000`; removed the temporary API harness. Recursive deletion of `C:\tmp\forkline-submodule-hard-reset-20260710` was requested twice after verifying the absolute path, but the automatic permission review timed out both times, so that test-only fixture remains for later cleanup.
+
+### Notes
+- `server.js`：硬重置、恢复点恢复和引用日志恢复在创建恢复点或执行 `reset --hard` 前检查真实递归子模块状态，并输出对应中文阻止原因。
+- `README.md`：补充被 `ignore=dirty` 隐藏的子模块修改仍受保护，以及 soft / mixed reset 不受影响。
+- `docs/CONTINUE.md`：同步三个破坏性 reset 入口的子模块边界保护和控制行为。
+- `progress.md`：追加隐藏子模块修改被 hard reset、恢复点和 reflog 恢复删除的复现、修复、回归和清理缺口。
+- Rollback: reverse this task's three guard calls and documentation lines, or run `git restore --source=cdf4fdf -- server.js README.md docs/CONTINUE.md progress.md` to roll back the full current uncommitted batch.
+
+## 2026-07-10 - Task: Protect staged submodule changes from parent discard
+
+### What was done
+- Reproduced a configuration-dependent data-loss bug in the parent repository's “丢弃已暂存修改” action for a staged submodule gitlink.
+- Confirmed that `submodule.<name>.ignore=dirty` hid the child worktree modification from the parent status row, causing `discardStagedFile` to choose `git restore --source=HEAD --staged --worktree` instead of the index-only path.
+- Confirmed that `submodule.recurse=true` then moved the child checkout back to the parent-recorded commit and silently removed the independent child file modification.
+- Reused the submodule discard boundary for staged-file discard. Gitlink detection now checks both the index and `HEAD`, so staged submodule deletion cannot bypass the guard when the index entry is already absent.
+- Added a Chinese error that directs the user to “取消暂存” when they only want to undo the parent gitlink staging, or to enter the child repository before updating the parent record.
+- Kept ordinary staged-file discard and submodule unstage behavior unchanged.
+- Updated README and continuation notes with the staged gitlink rule and safe alternative.
+
+### Testing
+- Reproduced before the fix through the real Forkline API on `http://127.0.0.1:5292` with temp repo `C:\tmp\forkline-submodule-hard-reset-20260710`: parent status was only `M  modules/child`, the index gitlink pointed to `c4d4c9e`, child HEAD was `c4d4c9e`, and child status was ` M server.js` while `ignore=dirty` hid that worktree side.
+- `discardStagedFile modules/child` returned HTTP 200 and “已暂存改动已丢弃”, moved child HEAD and the parent index gitlink to `cdf4fdf`, and removed the child `server.js` modification.
+- Verified the safe alternative before the fix: recreating the same state and calling `unstageFile modules/child` returned HTTP 200, reset only the parent index to `cdf4fdf`, and preserved child HEAD `c4d4c9e` plus ` M server.js`.
+- Verified the configuration distinction by unsetting `ignore=dirty`: parent status became `Mm modules/child`, the old discard path changed only the parent index, and the child modification remained. This proved the destructive branch depended on the hidden worktree status rather than the staged gitlink itself.
+- Verified after the fix with the original hidden-dirty configuration: `discardStagedFile modules/child` returned HTTP 400 with “不能从父仓库丢弃它的已暂存修改”; parent status remained `M  modules/child`, the index and child HEAD stayed at `c4d4c9e`, and child status remained ` M server.js`.
+- Verified “取消暂存” still returned HTTP 200 after the fix and preserved the child repository state.
+- Verified an ordinary staged parent file control: staged `.gitmodules` discard returned HTTP 200, restored `.gitmodules`, and left child status ` M server.js` untouched.
+- Verified staged gitlink deletion cannot bypass the guard: after `git rm --cached modules/child`, the index had no submodule entry and parent status was `D  modules/child`; the API still recognized the `HEAD` gitlink, returned HTTP 400, and preserved child HEAD `c4d4c9e` plus its file modification.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped the temporary service on port `5292` and verified it returned HTTP code `000`; removed the temporary API harness. After one automatic approval timeout and one retry, removed the verified `C:\tmp\forkline-submodule-hard-reset-20260710` fixture, closing the cleanup gap recorded by the preceding task.
+
+### Notes
+- `server.js`：已暂存文件丢弃在目标由索引或 `HEAD` 识别为 gitlink 时拒绝，并提示改用“取消暂存”；工作区子模块丢弃也获得 staged-deletion 识别补强。
+- `README.md`：补充已暂存 gitlink 不能作为普通文件丢弃、取消暂存的安全语义，以及 staged deletion 保护。
+- `docs/CONTINUE.md`：同步索引与 `HEAD` 双重 gitlink 检查和普通文件控制行为。
+- `progress.md`：追加隐藏子模块修改被 staged discard 删除的复现、配置对照、修复、控制回归和完整清理证据。
+- Rollback: remove the `discardStagedFile` submodule preflight, restore index-only gitlink detection if required, and reverse the related documentation lines; or run `git restore --source=cdf4fdf -- server.js README.md docs/CONTINUE.md progress.md` to roll back the full current uncommitted batch.
+
+## 2026-07-11 - Task: Prevent partial pull failure when a dirty submodule is hidden
+
+### What was done
+- Reproduced a severe partial-success bug in fast-forward pull: the API returned an error, but the parent branch and upstream tracking ref had already moved to the fetched commit before recursive submodule update failed.
+- Confirmed the failure depended on an initialized submodule containing internal modifications hidden from the parent status by `submodule.<name>.ignore=dirty`, combined with `submodule.recurse=true` and an incoming gitlink change.
+- Added a reusable safety read for current recursive submodule state.
+- Pull and rebase-pull now detect initialized submodules with internal uncommitted files before starting Git. For that single command they append `--no-recurse-submodules`, allowing the parent repository operation to finish atomically from Forkline's perspective while leaving the independent child repository untouched.
+- Added an explicit Chinese success notice listing affected submodule paths and directing the user to handle the child changes before updating from the “子模块” page.
+- Preserved the existing behavior for clean submodules: when no internal changes exist, the user's recursive configuration is still honored and the child checkout updates automatically.
+- Updated README and continuation notes with the dirty/clean submodule pull behavior.
+
+### Testing
+- Built a real local-remote topology in `C:\tmp\forkline-submodule-pull-20260711`: a bare parent remote, a local clone, a writer clone, and a local child-submodule origin with multiple commits.
+- Reproduced before the fix through Forkline API `http://127.0.0.1:5294`: local parent and tracking HEAD were `548ab92`, the live remote was `7746227`, parent `workingFiles` was empty, and the child had ` M server.js` at `cdf4fdf` while the incoming gitlink targeted `c4d4c9e`.
+- The old `pull` returned HTTP 400 with a generic overwrite warning, but afterward local HEAD and `origin/main` were already `7746227`; child HEAD and its modification remained at `cdf4fdf`, leaving parent status ` M modules/child`. This proved the operation was not rolled back despite being reported as failed.
+- Verified the fixed dirty-submodule path with a second incoming gitlink update to `2af9ce0`: `pull` returned HTTP 200 with `submoduleUpdateSkipped = true` and the Chinese protection notice; parent HEAD and tracking moved to `0bd7c19`, while child HEAD stayed `c4d4c9e` and ` M server.js` remained intact.
+- Verified the clean-submodule control with a third incoming gitlink update to `cdf4fdf`: `pull` returned HTTP 200 without the skip flag, recursively moved the clean child from `2af9ce0` to `cdf4fdf`, and left both parent and child status clean.
+- Verified rebase-pull with a real divergence: local had one unpushed empty commit, the remote had one different empty commit, and the child had hidden ` M server.js`. `pullRebase` returned HTTP 200 with the same submodule protection notice, rebased the local commit, created the normal `pull-rebase` recovery point, left the branch ahead by one commit, and preserved child HEAD `cdf4fdf` plus its modification.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped the temporary service on port `5294` and verified it returned HTTP code `000`; removed the temporary API harness and the verified `C:\tmp\forkline-submodule-pull-20260711` bare remote, clones, and submodule data.
+
+### Notes
+- `server.js`：pull / pull-rebase 在子模块内部脏时仅对本次命令禁用递归子模块更新，并在成功摘要中列出保护原因；现有破坏性操作复用同一子模块状态读取。
+- `README.md`：补充脏子模块时只同步父仓库、干净子模块仍递归更新的行为。
+- `docs/CONTINUE.md`：同步 pull 半完成问题、`--no-recurse-submodules` 保护和后续子模块更新指引。
+- `progress.md`：追加 pull 错误返回但 HEAD 已移动的复现、修复、三组真实 API 回归和完整清理证据。
+- Rollback: remove `readDirtySubmoduleWorktrees`, `appendSkippedSubmoduleUpdate`, and the conditional `--no-recurse-submodules` arguments from pull/pull-rebase, then reverse the related documentation lines; or run `git restore --source=cdf4fdf -- server.js README.md docs/CONTINUE.md progress.md` to roll back the full current uncommitted batch.
+
+## 2026-07-11 - Task: Prevent submodule stash loss and partial stash checkout
+
+### What was done
+- Reproduced that a Git stash containing a staged submodule gitlink change was accepted by `stash apply` as a successful no-op: the parent gitlink stayed unchanged and the worktree remained clean even though the stash stored `modules/child` moving from `cdf4fdf` to `c4d4c9e`.
+- Confirmed the destructive `stash pop` variant: Git again restored nothing, returned success, and dropped the only stash, removing the saved parent gitlink change from the stash list.
+- Added structured raw-diff inspection for both the current staged/unstaged storage range and an existing stash's worktree/index trees. New Forkline stashes reject included submodule paths before `git stash`; existing gitlink stashes reject apply, pop, branch creation, and checkout-stash recovery while preserving the original stash.
+- Added Chinese errors explaining that submodule contents and gitlinks are not reliably saved/restored by Git stash and directing the user to handle the independent child repository explicitly.
+- Reproduced a second partial-operation bug with `submodule.recurse=true` and `submodule.<name>.ignore=dirty`: “储藏并签出” first moved an ordinary parent `.gitmodules` edit into a new stash, then failed to switch because the hidden child modification blocked recursive submodule checkout. The API returned an error while the parent edit had already disappeared from the worktree.
+- Local and remote “储藏并签出” now read the real recursive submodule state before creating a stash. Internal child modifications, conflicts, or gitlink mismatch reject the whole action before changing the parent worktree, branch, or stash list.
+- Kept manual storage of ordinary parent files available when a hidden child modification is not part of the parent stash; the child modification remains in its own repository.
+- Updated README and continuation notes with the submodule stash boundary and recovery behavior.
+
+### Testing
+- Used real Forkline API fixture `C:\tmp\forkline-submodule-checkout-20260711` with parent branches `main` / `target`, child commits `cdf4fdf` / `c4d4c9e`, `submodule.recurse=true`, and `submodule.modules/child.ignore=dirty`.
+- Before the fix on `http://127.0.0.1:5295`, `applyStash` returned HTTP 200 with `nothing to commit, working tree clean`, left the parent gitlink at `cdf4fdf`, and preserved the stash; `popStash` then returned HTTP 200, still restored nothing, and dropped stash SHA `41875bd`.
+- After the fix on `http://127.0.0.1:5296`, applying and popping the reconstructed bad stash returned HTTP 400 with the affected `modules/child` path; parent HEAD/worktree stayed unchanged and stash SHA `41875bd` remained. `branchFromStash` was also rejected before creating a branch.
+- Verified current-range guards through `http://127.0.0.1:5297`: both unstaged and staged submodule pointer changes were rejected before stash creation; local and remote “储藏并签出” were rejected before creating a stash when the gitlink was in range.
+- Verified ordinary controls on `5297`: a `.gitmodules`-only stash was created successfully, `applyStash` restored the file while retaining the stash, and `popStash` restored the file and removed only that ordinary stash.
+- Reproduced the hidden-dirty partial checkout on `5297`: the request returned HTTP 400 and stayed on `main`, but `.gitmodules` disappeared from the worktree and a new Forkline checkout stash was created while the child modification remained.
+- Verified the hidden-dirty fix on `http://127.0.0.1:5298`: local and remote stash checkout both returned HTTP 400 before mutation; `.gitmodules`, `main`, parent HEAD, child `M  server.js`, and the existing stash list all stayed unchanged. A manual ordinary-parent stash still returned HTTP 200 and left the hidden child modification intact.
+- Ran `node --check server.js`.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public README.md docs\CONTINUE.md progress.md`; no debug markers were found.
+- Stopped temporary services on ports `5295` through `5298`; verified no listeners remained. Removed both temporary API/patch harnesses and the verified `C:\tmp\forkline-submodule-checkout-20260711` fixture.
+
+### Notes
+- `server.js`：储藏创建范围和已有 stash 使用 raw diff 识别子模块路径；应用、弹出、建分支和签出储藏恢复在危险 gitlink 前拒绝；本地/远端储藏并签出在创建 stash 前检查真实子模块状态。
+- `README.md`：补充 Git stash 对子模块内容与 gitlink 的限制、旧坏储藏保留策略，以及隐藏脏子模块下储藏并签出的原子性保护。
+- `docs/CONTINUE.md`：同步 stash 子模块边界、已有 stash 工作树/索引树检查、隐藏脏子模块前置阻止和普通父仓库储藏控制行为。
+- `progress.md`：追加 gitlink stash 弹出丢失、隐藏脏子模块签出半完成、修复、真实 API 回归和完整清理证据。
+- Rollback: remove `ensureStashSelectionHasNoSubmoduleChanges`, `ensureStashHasNoGitlinkChanges`, their raw-diff helpers and call sites, and the two stash-checkout submodule preflights; then reverse the related README/CONTINUE entries and this progress block. To roll back the full current uncommitted batch, run `git restore --source=cdf4fdf -- server.js README.md docs/CONTINUE.md progress.md`.
+
+## 2026-07-11 - Task: Add deterministic real Git API regression tests
+
+### What was done
+- Added a zero-dependency `npm test` entry using Node's built-in `node:test` runner with file-level concurrency fixed to one because Forkline currently owns one active repository context per service process.
+- Added a reusable integration harness that starts the real Forkline server on a random local port, drives `/api/open`, `/api/state`, and `/api/action`, captures server output for assertion failures, and terminates the child service after the suite.
+- Added deterministic temporary Git fixtures with a parent repository, `main` / `target` branches, two child commits, a real submodule, `submodule.recurse=true`, and `submodule.<name>.ignore=dirty`. Test Git commands isolate global/system configuration and use repository-local identity.
+- Locked down three recent high-risk workflows at the actual HTTP/Git boundary: ordinary stash create/apply/pop, current and legacy gitlink stash protection, and hidden-dirty-submodule stash checkout atomicity.
+- Updated README and architecture/continuation documentation with the test command, fixture boundaries, and rule that Git behavior regressions should be tested through real repositories instead of shallow mocks.
+
+### Testing
+- Ran `node --check tests\git-api.test.js`.
+- Ran `node --check server.js`.
+- Ran `npm test`: 3 tests passed, 0 failed, total duration about 30.4 seconds.
+- Verified ordinary parent stash creates successfully, apply restores the file while keeping the stash, and pop restores the file while removing that stash.
+- Verified a staged gitlink change is rejected before Forkline creates a stash; a direct-Git legacy gitlink stash is rejected by apply and pop while its SHA remains in the stash list.
+- Verified `ignore=dirty` hides the child modification from parent `git status`, but local stash checkout still returns HTTP 400 before changing the current branch, parent file, child file, or stash list.
+- Confirmed no `forkline-ordinary-stash-*`, `forkline-gitlink-stash-*`, or `forkline-checkout-stash-*` fixture directories remained in the system temporary directory after the suite.
+- Ran `git diff --check`; it passed with only Windows LF-to-CRLF working-copy warnings.
+- Ran `rg -n "\[DEBUG-[A-Za-z0-9]+\]" server.js public tests README.md docs\CONTINUE.md docs\ARCHITECTURE.md progress.md`; no debug markers were found.
+
+### Notes
+- `package.json`：新增无第三方依赖的 `npm test` 命令，并固定测试文件串行执行。
+- `tests/git-api.test.js`：新增真实 Forkline 服务、临时父仓库/子模块夹具、API 请求助手及三条 stash 回归。
+- `README.md`：新增测试入口、临时仓库边界和首批覆盖范围说明。
+- `docs/ARCHITECTURE.md`：记录集成测试运行方式、夹具隔离规则和真实 API 测试原则。
+- `docs/CONTINUE.md`：同步自动回归底座、首批覆盖范围，以及不使用 GitTest/业务仓库的约束。
+- `progress.md`：追加本轮测试底座实现、真实执行结果和清理证据。
+- Rollback: remove `package.json` and `tests/git-api.test.js`, then reverse this task's README, ARCHITECTURE, CONTINUE, and progress additions. The implementation changes from earlier uncommitted tasks are independent and should not be reverted with this test-only rollback.
+
+## 2026-07-11 - Task: 按需加载并缓存同步认证诊断
+
+### What was done
+- 将 SSH key、`ssh-agent` 和 Git Credential Manager 探测从每次 `/api/state` 全量刷新中移出，新增只读 `/api/auth-diagnostics` 接口；普通提交历史、工作区和仓库状态刷新不再等待本机认证工具。
+- 认证结果按规范化仓库路径和完整 fetch/push URL 配置缓存 60 秒，缓存上限 12 条；远端 URL 变化会使用新缓存键，`refresh=1` 可显式绕过缓存，接口要求当前仓库路径上下文。
+- 同步页首次打开时按需加载认证信息，显示中文检测中/失败状态和“重新检测”按钮；仓库或远端配置变化会使前端状态失效，请求 id、仓库路径和远端签名共同阻止旧响应覆盖当前页面。
+- 扩展真实 Git API 回归，覆盖状态接口不含认证探测、仓库上下文保护、缓存命中、手动刷新绕过缓存和远端 URL 变化失效，并同步 README、架构说明和继续开发记录。
+
+### Testing
+- `npm test` 通过：4 tests passed、0 failed，总耗时约 28.0 秒；认证诊断用例同时验证 HTTPS -> SSH 远端变化不会复用旧结果。
+- `node --check server.js`、`node --check tests\git-api.test.js`、`node --check public\js\panels\sync.js`、`node --check public\js\app\events.js`、`node --check public\js\core.js`、`node --check public\js\features\repositories.js` 均通过。
+- 新启动临时 Forkline 服务并打开当前仓库，连续 5 次 `/api/state` 耗时为 1149.0 / 1119.9 / 1137.9 / 1130.6 / 1110.8 ms，平均 1129.6 ms，响应确认不含 `sync.auth`；首次 `/api/auth-diagnostics` 为 479.5 ms、`cached = false`，第二次为 48.8 ms、`cached = true`，且 `checkedAt` 相同。临时服务测量后已关闭。
+- HTTP 静态资源检查确认最新同步脚本包含 `/api/auth-diagnostics`、中文检测中状态和 `data-auth-action="refresh"`，最新样式包含 `.auth-card-tools`。
+- 确认系统临时目录没有残留 `forkline-ordinary-stash-*`、`forkline-gitlink-stash-*`、`forkline-checkout-stash-*` 或 `forkline-auth-diagnostics-*` 测试目录。
+- `git diff --check` 通过，仅有 Windows LF -> CRLF 工作区提示；调试标记搜索无结果。
+- 浏览器自动视觉检查未计为通过：Windows 自动化无法可靠确认当前浏览器 URL 后主动停止；本轮已有真实 API、静态资源和语法验证，但右侧栏窄宽度视觉效果仍需人工查看。
+
+### Notes
+- `server.js`：移除全量状态中的认证探测，新增仓库上下文保护的按需接口、60 秒有界缓存、远端配置缓存键和强制刷新入口。
+- `public/js/core.js`：新增认证诊断数据和请求序号状态。
+- `public/js/features/repositories.js`：切换仓库时清理认证诊断状态并使旧请求失效。
+- `public/js/panels/sync.js`：同步页按需请求认证诊断，处理检测中、失败、缓存结果、手动刷新和旧响应丢弃。
+- `public/js/app/events.js`：接入认证助手“重新检测”点击事件。
+- `public/styles.css`：补充认证状态和重新检测按钮的紧凑布局。
+- `tests/git-api.test.js`：新增认证诊断接口、缓存、强制刷新和远端变化真实 API 回归。
+- `README.md`：说明认证诊断的按需加载、缓存、刷新方式和新增测试覆盖。
+- `docs/ARCHITECTURE.md`：记录全量状态与可选诊断的边界、缓存键和前端旧响应保护。
+- `docs/CONTINUE.md`：同步当前完成状态、测试范围，并移除已经过期的“真实 SSH key 检测待完成”建议。
+- `progress.md`：追加本轮实现、性能数据、测试结果和视觉验证缺口。
+- Rollback: 本轮尚未单独提交；回滚时只反向移除上述认证诊断接口/缓存、前端认证状态与刷新入口、认证 API 测试及对应文档块，保留此前的子模块安全修复和测试底座。若本轮后续形成独立提交，可执行 `git revert <该提交 SHA>`。
+
+## 2026-07-11 - Task: 优化仓库全量状态读取性能
+
+### What was done
+- 使用临时 Forkline 服务和 Git Trace2 对 `/api/state` 做真实命令级分析，确认无子模块仓库仍执行的 `git submodule status --recursive` 单次约耗时 1040 ms，是首要瓶颈。
+- 仓库根目录没有 `.gitmodules` 时，状态读取和危险操作前的子模块安全检查直接返回空列表，不再启动 submodule helper；存在 `.gitmodules` 的仓库继续执行原递归读取和子模块安全检查。
+- 全量状态首轮读取新增 `remote -v` 并复用已有的当前分支、HEAD、tracking、远端详情和工作区状态；同步状态、PR 目标分支和当前 worktree 不再重复启动相同 Git 命令。
+- 工作树详情、子模块详情、工作区文件快照和同步详情从串行改为在基础快照完成后并行生成；当前 worktree 直接复用同一轮 `git status` 输出，使工作树脏状态和工作区文件列表来自同一快照。
+- 新增真实状态语义回归，覆盖 upstream、ahead/behind、当前 worktree 脏状态、无子模块、detached HEAD 和无首提交分支，并同步 README、架构说明和继续开发记录。
+
+### Testing
+- 优化前旧服务与优化后新服务针对同一当前仓库交替请求 5 次：旧服务耗时 1144.5 / 1261.7 / 1282.6 / 1355.5 / 1425.7 ms，平均 1294.0 ms；新服务耗时 308.5 / 310.5 / 296.0 / 424.7 / 318.1 ms，平均 331.6 ms，下降 74.4%。
+- 对两套服务的 `repo`、分支、branchInfo/cleanup、worktree、子模块、远端、同步、工作区、stash、恢复点、reflog、Tag 和 commits 做 JSON 投影比较，结果完全一致；两边子模块数量均为 0。
+- 优化后 Trace2 不再出现 `git submodule status --recursive`；剩余最慢单条 Git 读取约 94.2 ms，没有第二条同等级异常命令。中间只跳过子模块 helper 时，5 次状态刷新平均从 1129.6 ms 降到 600.6 ms。
+- `npm test` 通过：5 tests passed、0 failed，总耗时约 27.1 秒；既有真实子模块三条安全回归继续通过，新增状态用例确认 upstream 为 `origin/main`、ahead = 1、behind = 0、脏 worktree 计数为 1、detached/unborn 状态正确。
+- `node --check server.js`、`node --check tests\git-api.test.js` 通过。
+- `git diff --check` 通过，仅有 Windows LF -> CRLF 工作区提示；调试标记搜索无结果。
+- 两份 `C:\tmp\forkline-state-trace*.json` 性能记录已删除；系统临时目录没有残留本轮及既有 API 测试夹具。
+
+### Notes
+- `server.js`：无 `.gitmodules` 时跳过递归子模块命令，复用基础状态快照，并行生成后续只读详情，减少重复 branch/HEAD/upstream/remote/status 读取。
+- `tests/git-api.test.js`：新增 tracked、dirty worktree、detached HEAD、unborn 和无子模块状态语义回归及本地 bare 远端夹具。
+- `README.md`：说明全量刷新复用同轮快照、并行生成详情和无子模块快速路径，并更新自动回归覆盖范围。
+- `docs/ARCHITECTURE.md`：记录状态读取的基础快照复用、后处理并行边界和 `.gitmodules` 快速判断规则。
+- `docs/CONTINUE.md`：同步当前状态读取优化、真实前后性能数据和新增测试覆盖。
+- `progress.md`：追加命令级诊断、实现、响应一致性、性能对比、回归和清理证据。
+- Rollback: 本轮尚未单独提交；回滚时恢复 `readState` 原来的子模块命令、串行后处理和独立同步读取，移除 `repoHasSubmoduleConfig`、`readCurrentSyncState/readCurrentSyncDetails/readPullRequestLink/inferPullRequestTarget` 的可选快照参数、状态语义测试及对应文档块，保留上一轮认证诊断优化与此前安全修复。若后续形成独立提交，可执行 `git revert <该提交 SHA>`。
+
+## 2026-07-11 - Task: 将 HEAD 引用日志改为恢复点页按需加载
+
+### What was done
+- 将真实仓库固定返回的 80 条 HEAD reflog 从 `/api/state` 移出，新增只读 `/api/reflog`；接口要求当前仓库路径上下文，无首提交仓库返回空列表，示例模式继续使用内置 reflog 数据。
+- 恢复点页首次打开时加载 reflog，显示中文读取中/失败/空状态并提供“刷新”；加载结果按仓库路径、当前分支和 HEAD SHA 关联，切仓库、切分支或 HEAD 变化后旧请求不会写回当前页面。
+- 仓库切换时清理 reflog 请求状态和上下文；reflog 查看、复制、创建恢复点、恢复和右键菜单继续使用同一份按需数据，自动恢复点仍保留在 `/api/state`，没有扩大危险操作流程的改动范围。
+- 新增真实 API 断言和零依赖前端状态测试，并同步 README、架构说明和继续开发记录；修正续作文档中仍写着 `/api/state` 返回 reflog 的旧描述。
+
+### Testing
+- 旧服务与临时新服务打开同一当前仓库：旧 `/api/state` 为 62,981 bytes，新响应为 38,264 bytes，减少 39.2%；排除 reflog 后其余 repo/分支/worktree/子模块/远端/同步/工作区/stash/恢复点/Tag/commits JSON 完全一致，旧状态中的 reflog 与新 `/api/reflog` JSON 完全一致。
+- 最新 `http://127.0.0.1:5287` 服务验证：`/api/state` 为 38,513 bytes 且不含 `reflogEntries`；`/api/reflog` 返回 80 条，首条 selector 使用 Git 真实 `HEAD@{...}` 格式；缺少仓库上下文返回 HTTP 400 和中文“页面缺少仓库上下文”。
+- 临时无首提交仓库验证：状态为 `branch = main`、`sync.unborn = true`、全量状态不含 reflog，`/api/reflog` 返回空数组；验证后服务已重新打开当前 Forkline 仓库，临时目录按 `C:\tmp\forkline-reflog-unborn-manual-*` 路径边界检查后删除。
+- `node --test tests\reflog-ui-state.test.js` 通过：2 tests passed、0 failed；验证当前仓库结果会保存并重绘恢复点页，切到另一仓库后旧请求返回不会写回或触发重绘。
+- `node --check` 已通过 `server.js`、`public/js/panels/recovery-settings.js`、`public/js/app/events.js`、`public/js/core.js`、`public/js/features/repositories.js`、`tests/git-api.test.js` 和 `tests/reflog-ui-state.test.js`。
+- HTTP 静态资源检查确认最新恢复点脚本包含按需加载、刷新按钮和 request id 旧响应保护，最新样式包含 `.reflog-section-tools`。
+- `git diff --check` 通过，仅有 Windows LF -> CRLF 工作区提示；调试标记搜索无结果。
+- 完整 `npm test` 本轮未得到执行结果：两次 unsandboxed 请求都在权限审批检查阶段超时，受限沙箱又在启动 PowerShell 时返回 Windows `CreateProcessAsUserW failed: 5`。上一轮完整套件为 5/5 通过，但本日志不把它冒充成本轮通过；新增真实 API 路径已由上述定向服务验证，完整套件仍需在审批可用后补跑。
+
+### Notes
+- `server.js`：从全量状态移除 reflog Git 命令和响应字段，新增仓库上下文保护的 `/api/reflog`。
+- `public/js/core.js`：新增 reflog 数据、加载状态和请求序号。
+- `public/js/features/repositories.js`：切换仓库时清理 reflog 状态并使旧请求失效。
+- `public/js/panels/recovery-settings.js`：恢复点页按需加载、刷新、中文状态、分支/HEAD 数据键和旧响应保护。
+- `public/js/app/events.js`：接入 reflog 刷新按钮事件。
+- `public/styles.css`：补充 reflog 状态和刷新按钮的紧凑布局。
+- `tests/git-api.test.js`：新增 reflog 独立接口、仓库上下文、真实 HEAD selector 和无首提交空日志断言。
+- `tests/reflog-ui-state.test.js`：新增当前结果写入和跨仓库旧响应丢弃的 Node VM 状态测试。
+- `README.md`：说明 reflog 的按需接口、刷新和旧响应保护，并更新测试覆盖。
+- `docs/ARCHITECTURE.md`：记录 reflog 与基础状态的边界、示例模式和前端数据键规则。
+- `docs/CONTINUE.md`：同步响应体缩减、当前实现和历史验证描述。
+- `progress.md`：追加实现、响应拼回对比、定向验证、完整套件缺口和回滚说明。
+- Rollback: 本轮尚未单独提交；回滚时把 `readReflogOutput(80)` 和 `reflogEntries` 恢复到 `readState`，删除 `/api/reflog`、前端 reflog 独立状态/加载/刷新入口、两处新增测试和对应文档块，保留此前认证及全量状态性能优化。若后续形成独立提交，可执行 `git revert <该提交 SHA>`。
+
+## 2026-07-11 - Task: 优化工作区自动刷新开销和内容变化识别
+
+### What was done
+- 将每个工作区文件的内容快照加入前端刷新签名；文件保持相同 `M` 状态但内容继续变化时，自动刷新仍会更新文件列表和当前 Diff。
+- 将 5 秒工作区轮询限制在页面可见且浏览器窗口有焦点时运行；重新聚焦窗口或切回标签页会立即静默刷新，现有进行中请求保护继续阻止重叠读取。
+- 新增零依赖前端状态测试，并同步 README、架构说明和继续开发记录；未改变菜单、Git 写操作或危险操作确认流程。
+
+### Testing
+- 当前 Forkline 仓库 `/api/worktree` 实测平均 `128.2 ms`；原 5 秒轮询在持续运行时每分钟会请求 12 次，约占用 `1538.4 ms/min`，失焦和隐藏页面现在不再产生这部分后台读取。
+- `node --test tests\worktree-refresh.test.js` 通过：2 tests passed、0 failed；覆盖同状态文件内容快照变化，以及失焦/隐藏暂停轮询、恢复焦点立即刷新。
+- 完整 `npm test` 通过：9 tests passed、0 failed，总耗时约 30.69 秒；同时关闭上一轮 reflog 任务中未能执行完整套件的验证缺口。
+- `node --check public\js\features\diff-workbench.js` 和 `node --check tests\worktree-refresh.test.js` 通过。
+- HTTP 静态资源检查确认最新脚本包含 `file.snapshot`、`document.hasFocus` 和 `visibilitychange`。
+- `git diff --check` 通过，仅有 Windows LF -> CRLF 工作区提示；调试标记搜索无结果。
+
+### Notes
+- `public/js/features/diff-workbench.js`：工作区签名加入文件内容快照，并按页面可见性和窗口焦点约束自动轮询。
+- `tests/worktree-refresh.test.js`：新增快照签名与焦点/可见性轮询边界测试。
+- `README.md`：说明相同 Git 状态下的内容刷新和后台轮询暂停规则，并更新测试覆盖。
+- `docs/ARCHITECTURE.md`：记录 `/api/worktree` 轮询边界、即时恢复刷新和 snapshot 签名规则。
+- `docs/CONTINUE.md`：同步当前行为、性能数据、测试状态和后续优化落点。
+- `progress.md`：追加本轮实现、性能依据、完整回归和回滚说明。
+- Rollback: 本轮尚未单独提交；回滚时从工作区签名移除 `file.snapshot`，把 `initWorktreeAutoRefresh` 恢复为原来的 focus 监听和仅检查 `document.hidden` 的 5 秒轮询，删除 `tests/worktree-refresh.test.js` 及本轮对应文档段落，保留此前认证、全量状态和 reflog 按需加载优化。若后续形成独立提交，可执行 `git revert <该提交 SHA>`。
+
+## 2026-07-11 - Task: 修复中文仓库路径导致 fetch 请求头失败
+
+### What was done
+- 复现并确认浏览器错误发生在请求发出前：仓库路径包含中文时，原始 `X-Forkline-Repo-Path` 无法转换为 Fetch `ByteString`。
+- 前端统一把仓库路径发送为 `v1:` 加 `encodeURIComponent` 的 ASCII 请求头；所有通过共享 `api()` 发起的状态读取和 Git 操作同时生效。
+- 服务端统一解码版本化仓库上下文，拒绝畸形转义和解码后的控制字符，并继续接受旧页面发送的无前缀英文原始路径。
+- 新增前端请求头边界测试和真实 Unicode Git 仓库 API 测试，同步 README、架构说明和继续开发记录；未改变菜单、Git 命令或写操作确认流程。
+
+### Testing
+- 修复前最小 `Headers` 构造和新增测试均稳定失败，错误为 `TypeError: Cannot convert argument to a ByteString ... value ... greater than 255`，调用栈落在 `public/js/api.js` 的 `fetch` 请求头。
+- `node --test tests\api-repo-context.test.js` 修复后通过：1 test passed、0 failed；确认 `D:\桌面\GitTest` 会发送为 `v1:D%3A%5C%E6%A1%8C%E9%9D%A2%5CGitTest`。
+- 真实 API 测试在系统临时目录创建名为“中文仓库”的 Git 仓库，验证编码头读取成功、畸形 `v1:` 返回中文错误、旧英文原始头仍成功。
+- 完整 `npm test` 通过：11 tests passed、0 failed，总耗时约 30.79 秒。
+- 重启 `http://127.0.0.1:5287` 到新后端 PID `16820` 后，真实打开 `D:\桌面\GitTest` 成功；`/api/state` 返回同一路径和分支 `123`，`/api/worktree` 返回 0 个改动，最新 `js/api.js` 返回 HTTP 200 并包含编码函数。
+- 向最新服务发送畸形 `v1:%E0%A4%A` 返回 HTTP 400 和中文“页面仓库上下文编码无效。请刷新页面后再试。”，服务保持正常。
+- `node --check` 已通过 `public/js/api.js`、`server.js`、`tests/api-repo-context.test.js` 和 `tests/git-api.test.js`。
+- `git diff --check` 通过，仅有 Windows LF -> CRLF 工作区提示；调试标记搜索无结果。
+
+### Notes
+- `public/js/api.js`：新增版本化仓库路径请求头编码，避免 Unicode 字符进入 Fetch Header 值。
+- `server.js`：新增版本化仓库上下文解码、畸形编码提示和旧 ASCII 头兼容。
+- `tests/api-repo-context.test.js`：新增真实 `Headers` 边界的中文路径回归测试。
+- `tests/git-api.test.js`：请求辅助函数改用版本化编码，并新增 Unicode 仓库、畸形编码和旧头兼容测试。
+- `README.md`：说明中文/Unicode 仓库路径支持和测试覆盖。
+- `docs/ARCHITECTURE.md`：记录 `X-Forkline-Repo-Path` 的 `v1:` 编码协议与兼容边界。
+- `docs/CONTINUE.md`：同步错误根因、修复行为和后续接手信息。
+- `progress.md`：追加复现、红绿测试、真实服务验证和回滚说明。
+- Rollback: 本轮尚未单独提交；回滚时恢复 `public/js/api.js` 直接发送原始路径，删除 `decodeRepoPathHeader` 及其调用、`tests/api-repo-context.test.js`、`tests/git-api.test.js` 中本轮协议测试和对应文档段落。该回滚会重新引入中文路径无法请求的问题；若后续形成独立提交，优先执行 `git revert <该提交 SHA>`。
+
+## 2026-07-11 - Task: 限制大提交详情 Diff 预览以消除页面卡顿
+
+### What was done
+- 对当前页面做后端和真实浏览器分段诊断，确认服务端没有空闲 CPU 异常，也没有工作区响应变化导致的周期性误重绘。
+- 定位到右侧提交“详情”页会把聚合提交 Diff 全量绑定到 DOM；当前大提交一次性渲染 34,851 行，产生超过 10 万个节点。
+- 将详情页聚合 Diff 小预览限制为前 400 行，并显示当前预览行数和完整总行数；后端完整 Diff 数据、提交“文件”页和按文件对照保持不变。
+- 新增大/小 Diff 渲染回归测试，并同步 README、架构说明和继续开发记录；没有修改业务仓库、Git 命令、菜单或危险操作。
+
+### Testing
+- 当前页面仓库只读基线：19 条提交、78 个工作区文件、9 条储藏；Node 服务空闲 5 秒仅消耗约 0.016 秒 CPU，工作集约 50 MB。
+- 只读接口各测 5 次：`/api/state` 平均 453.1 ms、`/api/worktree` 平均 350.7 ms、`/api/reflog` 平均 61.2 ms；连续 6 次工作区响应 SHA-256、工作区快照和文件快照完全一致，排除周期性误重绘。
+- 修复前 Playwright 页面有 105,885 个 DOM 节点，其中 `.diff-line` 为 34,851 行；对应 `/api/commit` 响应为 3,579,170 bytes、约 489 ms。三次强制详情重绘在 50 秒内未完成，符合用户卡顿现象。
+- 最小回归修复前确认 1000 行全部渲染且没有限制提示；修复后只渲染 400 行，包含“仅显示前 400 / 1000 行”，第 401 行不进入 HTML。
+- 修复后真实页面降到 2,545 个 DOM 节点、400 行 Diff，节点减少约 97.6%；连续 5 次详情重绘为 19.6 / 19.2 / 21.7 / 25.2 / 23.1 ms，平均 21.8 ms。
+- Playwright 调整到 1100 × 700 后，预览提示、右侧详情和页面均无横向溢出；隔离浏览器会话已关闭，`.playwright-cli` 临时目录已按仓库路径边界检查后删除。
+- 完整 `npm test` 通过：13 tests passed、0 failed，总耗时约 31.97 秒。
+- `node --check public\js\features\diff-workbench.js` 和 `node --check tests\diff-preview.test.js` 通过。
+- 最新 `http://127.0.0.1:5287` 静态脚本和样式均返回 HTTP 200，并包含 400 行限制、中文提示和 `.diff-preview-truncated` 样式。
+- `git diff --check` 通过，仅有 Windows LF -> CRLF 工作区提示；调试标记搜索无结果。
+
+### Notes
+- `public/js/features/diff-workbench.js`：提交详情聚合 Diff 小预览最多生成 400 行，并在截断时显示完整总数。
+- `public/styles.css`：新增紧凑的 Diff 预览截断提示布局，窄右栏可正常换行。
+- `tests/diff-preview.test.js`：新增大 Diff 限量和小 Diff 完整渲染测试。
+- `README.md`：说明大提交小预览的 400 行边界和完整按文件查看入口。
+- `docs/ARCHITECTURE.md`：固定详情页轻量渲染规则和对应回归测试。
+- `docs/CONTINUE.md`：同步卡顿根因、真实前后 DOM 指标和当前行为。
+- `progress.md`：追加分段诊断、浏览器指标、完整回归和回滚说明。
+- Rollback: 本轮尚未单独提交；回滚时删除 `DIFF_PREVIEW_LINE_LIMIT` 和截断提示逻辑，恢复 `renderDiff` 对完整数组直接 `.map()`，删除 `.diff-preview-truncated` 样式、`tests/diff-preview.test.js` 及本轮对应文档段落。该回滚会重新引入大提交详情生成十万级 DOM 节点的问题；若后续形成独立提交，优先执行 `git revert <该提交 SHA>`。

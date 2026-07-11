@@ -17,12 +17,15 @@ const PROTECTED_BRANCH_NAMES = new Set(["main", "master", "develop", "developmen
 const GIT_LOG_FIELD_SEPARATOR = "\0";
 const BASIC_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%P";
 const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
+const AUTH_DIAGNOSTICS_CACHE_TTL_MS = 60 * 1000;
+const AUTH_DIAGNOSTICS_CACHE_LIMIT = 12;
 
 let currentRepo = null;
 let nextOperationId = 1;
 let repoSwitchInProgress = false;
 const activeOperations = new Map();
 const operationLog = [];
+const authDiagnosticsCache = new Map();
 const REPO_SWITCHING_ACTIONS = new Set(["openWorktree", "cloneRepository", "initRepository"]);
 const REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetchRemote", "setRemoteUrl", "deleteRemote"]);
 const TAG_REMOTE_SNAPSHOT_ACTIONS = new Set(["pushTag", "deleteRemoteTag"]);
@@ -264,8 +267,9 @@ async function readState(ref = "") {
   if (!currentRepo) return sampleState();
   const repoPath = currentRepo;
   const selectedRef = String(ref || "").trim();
+  const hasSubmoduleConfig = repoHasSubmoduleConfig(repoPath);
   await ensureLiveRemoteBranchRef(selectedRef, repoPath);
-  const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, remoteMetaOutput, mergedBranchOutput, remoteOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, reflogOutput, logOutput] = await Promise.all([
+  const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, remoteMetaOutput, mergedBranchOutput, remoteOutput, remoteVerboseOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
     readBranchDisplayName(repoPath),
     git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(repoPath, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
@@ -274,14 +278,14 @@ async function readState(ref = "") {
     git(repoPath, ["for-each-ref", "refs/remotes", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)"]).catch(() => ""),
     git(repoPath, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => ""),
     git(repoPath, ["remote"]).catch(() => ""),
+    git(repoPath, ["remote", "-v"]).catch(() => ""),
     git(repoPath, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(creatordate:relative)\t%(subject)\t%(objecttype)"]).catch(() => ""),
     git(repoPath, ["worktree", "list", "--porcelain"]).catch(() => ""),
-    git(repoPath, submoduleConfigArgs()).catch(() => ""),
-    git(repoPath, ["submodule", "status", "--recursive"]).catch(() => ""),
+    hasSubmoduleConfig ? git(repoPath, submoduleConfigArgs()).catch(() => "") : "",
+    hasSubmoduleConfig ? git(repoPath, ["submodule", "status", "--recursive"]).catch(() => "") : "",
     git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(repoPath, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%cr"]).catch(() => ""),
     git(repoPath, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
-    readReflogOutput(80, repoPath).catch(() => ""),
     git(repoPath, logArgs(selectedRef)).catch(() => ""),
   ]);
 
@@ -315,10 +319,9 @@ async function readState(ref = "") {
 
   const worktreeRows = parseWorktreeList(worktreeOutput, repoPath);
   const worktreePruneSnapshot = buildWorktreePruneSnapshot(worktreeRows);
-  const worktrees = await enrichWorktreeList(worktreeRows);
   const branchMeta = parseBranchCleanupMeta(branchMetaOutput);
-  const branchInfo = mergeBranchInfo(parseBranchTracking(trackingOutput), branchMeta, parseWorktreeBranches(worktreeOutput, repoPath));
-  const submodules = await enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput), repoPath);
+  const branchTracking = parseBranchTracking(trackingOutput);
+  const branchInfo = mergeBranchInfo(branchTracking, branchMeta, parseWorktreeBranches(worktreeOutput, repoPath));
   const branchCleanup = buildBranchCleanup({
     branches,
     branchInfo,
@@ -326,8 +329,20 @@ async function readState(ref = "") {
     mergedBranches: parseSimpleLines(mergedBranchOutput),
     currentBranch,
   });
-  const working = await readWorkingStatus(repoPath, statusOutput);
-  const sync = await readCurrentSyncDetails(repoPath);
+  const syncOptions = {
+    branch: currentBranch,
+    hasCommit: Boolean(headShaOutput.trim()),
+    remotes: parseRemoteDetails(remoteVerboseOutput, remoteNames),
+    localBranches: branches,
+    remoteNames,
+  };
+  if (branchTracking[currentBranch]) syncOptions.upstream = branchTracking[currentBranch].upstream;
+  const [worktrees, submodules, working, sync] = await Promise.all([
+    enrichWorktreeList(worktreeRows, { repoPath, statusOutput }),
+    enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput), repoPath),
+    readWorkingStatus(repoPath, statusOutput),
+    readCurrentSyncDetails(repoPath, syncOptions),
+  ]);
   return {
     repo: {
       name: path.basename(repoPath),
@@ -352,12 +367,16 @@ async function readState(ref = "") {
     worktreeSnapshot: working.snapshot,
     stashes: parseStashList(stashOutput),
     recoveryPoints: parseRecoveryPoints(recoveryOutput),
-    reflogEntries: parseReflogEntries(reflogOutput),
     tags: parseTags(tagOutput),
     runningOperations: listRunningOperations(),
     operationLog,
     commits: parseLog(logOutput),
   };
+}
+
+async function readReflogState(repoPath = currentRepo) {
+  const output = await readReflogOutput(80, repoPath).catch(() => "");
+  return { reflogEntries: parseReflogEntries(output) };
 }
 
 async function readRefState(ref = "") {
@@ -1202,10 +1221,12 @@ async function runAction(body) {
   }
   if (action === "applyStash") {
     const ref = await ensureCurrentStashRef(body);
+    await ensureStashHasNoGitlinkChanges(ref);
     return commandResult(await git(currentRepo, ["stash", "apply", ref], { timeout: 120000 }));
   }
   if (action === "popStash") {
     const ref = await ensureCurrentStashRef(body);
+    await ensureStashHasNoGitlinkChanges(ref);
     return commandResult(await git(currentRepo, ["stash", "pop", ref], { timeout: 120000 }));
   }
   if (action === "dropStash") {
@@ -1511,9 +1532,15 @@ function checkoutModeText(mode) {
   return "";
 }
 
+function ensureCheckoutOperationComplete() {
+  const operation = detectRepoOperation(currentRepo);
+  if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再切换分支。`);
+}
+
 async function checkoutBranch(body) {
   const branch = normalizeBranchName(body.branch);
   const mode = normalizeCheckoutMode(body.mode);
+  ensureCheckoutOperationComplete();
   const sourceBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   const branchOutput = await git(currentRepo, ["branch", "--format=%(refname:short)"]);
   const branches = branchOutput.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
@@ -1525,12 +1552,14 @@ async function checkoutBranch(body) {
     throw new Error(`分支 ${branch} 已在其他工作树签出：${info.worktreePath}${suffix}`);
   }
   if (mode === "stash") {
+    await ensureNoDirtySubmodulesForDiscard("储藏并签出");
     const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     let stash = null;
     if (dirty.trim()) {
       if (!(await hasHeadCommit(currentRepo))) {
         throw new Error(`当前分支 ${sourceBranch || "HEAD"} 还没有任何提交，不能储藏并签出。请先创建首个提交，或改用“强制签出”丢弃这些改动。`);
       }
+      await ensureStashSelectionHasNoSubmoduleChanges([]);
       validateStashFiles(parseStatus(dirty), []);
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${branch} ${stamp}`;
@@ -1553,6 +1582,7 @@ async function checkoutBranch(body) {
 async function checkoutRemoteBranch(body) {
   const remoteRef = normalizeRefName(body.ref, "远端分支");
   const mode = normalizeCheckoutMode(body.mode);
+  ensureCheckoutOperationComplete();
   const sourceBranch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   const remoteNames = await readRemoteNames();
   const remoteBranches = (await git(currentRepo, ["branch", "--remotes", "--format=%(refname:short)"]))
@@ -1577,12 +1607,14 @@ async function checkoutRemoteBranch(body) {
 
   const switchArgs = localExists ? ["switch", localBranch] : ["switch", "--track", "-c", localBranch, remoteRef];
   if (mode === "stash") {
+    await ensureNoDirtySubmodulesForDiscard("储藏并签出");
     const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     let stash = null;
     if (dirty.trim()) {
       if (!(await hasHeadCommit(currentRepo))) {
         throw new Error(`当前分支 ${sourceBranch || "HEAD"} 还没有任何提交，不能储藏并签出。请先创建首个提交，或改用“强制签出”丢弃这些改动。`);
       }
+      await ensureStashSelectionHasNoSubmoduleChanges([]);
       validateStashFiles(parseStatus(dirty), []);
       const stamp = new Date().toISOString().replace("T", " ").slice(0, 19);
       const message = `Forkline: checkout ${localBranch} ${stamp}`;
@@ -2006,9 +2038,12 @@ async function pullCurrentBranch() {
   if (before.upstreamGone) {
     throw new Error(`当前分支的 upstream ${before.upstream} 已不存在，不能拉取。请先抓取远端并重新设置 upstream。`);
   }
-  const output = await git(currentRepo, ["pull", "--ff-only"], { timeout: 120000 });
+  const dirtySubmodules = await readDirtySubmoduleWorktrees();
+  const args = ["pull", "--ff-only"];
+  if (dirtySubmodules.length) args.push("--no-recurse-submodules");
+  const output = await git(currentRepo, args, { timeout: 120000 });
   const after = await readCurrentSyncState();
-  return syncCommandResult("pull", output, before, after);
+  return appendSkippedSubmoduleUpdate(syncCommandResult("pull", output, before, after), dirtySubmodules);
 }
 
 async function pullRebaseCurrentBranch() {
@@ -2023,10 +2058,24 @@ async function pullRebaseCurrentBranch() {
   if (before.upstreamGone) {
     throw new Error(`当前分支的 upstream ${before.upstream} 已不存在，不能执行变基拉取。请先抓取远端并重新设置 upstream。`);
   }
+  const dirtySubmodules = await readDirtySubmoduleWorktrees();
   const recovery = await createRecoveryPoint("pull-rebase");
-  const output = await git(currentRepo, ["pull", "--rebase"], { timeout: 120000 });
+  const args = ["pull", "--rebase"];
+  if (dirtySubmodules.length) args.push("--no-recurse-submodules");
+  const output = await git(currentRepo, args, { timeout: 120000 });
   const after = await readCurrentSyncState();
-  return appendRecoveryLine(syncCommandResult("pullRebase", output, before, after), recovery);
+  return appendRecoveryLine(appendSkippedSubmoduleUpdate(syncCommandResult("pullRebase", output, before, after), dirtySubmodules), recovery);
+}
+
+function appendSkippedSubmoduleUpdate(result, dirtySubmodules) {
+  if (!dirtySubmodules.length) return result;
+  const details = dirtySubmodules.slice(0, 5).map((item) => `${item.path}（${item.dirtyCount} 个未提交改动）`);
+  const remaining = dirtySubmodules.length > details.length ? `；另有 ${dirtySubmodules.length - details.length} 个` : "";
+  return {
+    ...result,
+    output: `${result.output}\n子模块保护：检测到 ${details.join("；")}${remaining}，本次只更新父仓库，没有递归切换子模块。请先处理子模块修改，再在“子模块”页更新。`,
+    submoduleUpdateSkipped: true,
+  };
 }
 
 async function cloneRepository(body) {
@@ -2235,10 +2284,10 @@ async function deleteRemoteBranch(body) {
   if (isProtectedBranchName(parsed.branch)) {
     throw new Error(`远端分支 ${remoteRef} 是主干/长期分支，Forkline 默认保护，不允许从这里删除。`);
   }
-  await ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed, normalizeExpectedRemoteBranchSha(body.sha));
+  const deleteSha = await ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed, normalizeExpectedRemoteBranchSha(body.sha));
   let output = "";
   try {
-    output = await git(currentRepo, ["push", parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
+    output = await git(currentRepo, ["push", `--force-with-lease=refs/heads/${parsed.branch}:${deleteSha}`, parsed.remote, "--delete", parsed.branch], { timeout: 120000 });
   } catch (error) {
     if (!isMissingRemoteBranchDeleteError(error)) throw error;
     const pruneOutput = await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
@@ -2262,6 +2311,7 @@ async function ensureRemoteBranchDeleteTargetFresh(remoteRef, parsed, expectedSh
     await git(currentRepo, ["fetch", parsed.remote, "--prune"], { timeout: 120000 }).catch(() => "");
     throw new Error(`远端分支 ${remoteRef} 已经变化，当前页面看到的不是最新远端分支。为避免删除别人新推送的分支，请刷新后重新选择。`);
   }
+  return remoteSha;
 }
 
 async function readRemoteBranchHeadSha(parsed) {
@@ -2374,8 +2424,8 @@ async function deleteRemoteTag(body) {
   const name = normalizeTagName(body.name);
   await ensureCurrentLocalTag(body);
   const remote = await defaultRemoteName(body.remote);
-  await ensureRemoteTag(remote, name, normalizeExpectedTagSha(body.sha));
-  const output = await git(currentRepo, ["push", remote, `:refs/tags/${name}`], { timeout: 120000 });
+  const deleteSha = await ensureRemoteTag(remote, name, normalizeExpectedTagSha(body.sha));
+  const output = await git(currentRepo, ["push", `--force-with-lease=refs/tags/${name}:${deleteSha}`, remote, `:refs/tags/${name}`], { timeout: 120000 });
   return commandResultWithSummary(`已删除远端 Tag ${name}`, output);
 }
 
@@ -2407,6 +2457,7 @@ async function restoreCheckoutStash(body) {
   }
   const stash = await findForklineStash(branch, String(body.message || "").trim(), expectedSha);
   if (!stash) throw new Error("这条切换储藏已经不存在或已经变化，请刷新储藏列表后重新选择。");
+  await ensureStashHasNoGitlinkChanges(stash.ref);
   await git(currentRepo, ["stash", "pop", stash.ref], { timeout: 120000 });
   return "已恢复储藏的本地更改";
 }
@@ -2419,11 +2470,69 @@ async function createStash(body) {
   if (!(await hasHeadCommit(currentRepo))) {
     throw new Error("当前分支还没有任何提交，不能创建储藏。请先创建首个提交，或使用“丢弃全部”清理这些未跟踪文件。");
   }
+  await ensureStashSelectionHasNoSubmoduleChanges(files);
   validateStashFiles(parseStatus(statusOutput), files);
   const args = ["stash", "push", "-u", "-m", message];
   if (files.length) args.push("--", ...files);
   const output = await git(currentRepo, args, { timeout: 120000 });
   return commandResult(output || `已创建储藏：${message}`);
+}
+
+async function ensureStashSelectionHasNoSubmoduleChanges(files = []) {
+  const [stagedOutput, worktreeOutput] = await Promise.all([
+    git(currentRepo, ["diff", "--cached", "--raw", "--no-abbrev", "-z"]),
+    git(currentRepo, ["diff", "--raw", "--no-abbrev", "-z"]),
+  ]);
+  const selected = new Set(files);
+  const changes = uniqueGitlinkChanges([
+    ...parseRawGitlinkChanges(stagedOutput),
+    ...parseRawGitlinkChanges(worktreeOutput),
+  ]).filter((item) => !selected.size || selected.has(item.path) || selected.has(item.previousPath));
+  if (!changes.length) return;
+  throw new Error(`储藏范围包含子模块改动：${gitlinkChangeSummary(changes)}。Git stash 不能可靠保存或恢复子模块内部内容和 gitlink，弹出时还可能删除储藏但不恢复对应修改。请先进入子模块提交、储藏或还原；如果只是父仓库的子模块指针变化，请先提交该指针或切回父仓库记录的提交。`);
+}
+
+async function ensureStashHasNoGitlinkChanges(ref) {
+  const [worktreeOutput, indexOutput] = await Promise.all([
+    git(currentRepo, ["diff", "--raw", "--no-abbrev", "-z", `${ref}^1`, ref], { timeout: 60000 }),
+    git(currentRepo, ["diff", "--raw", "--no-abbrev", "-z", `${ref}^1`, `${ref}^2`], { timeout: 60000 }),
+  ]);
+  const changes = uniqueGitlinkChanges([
+    ...parseRawGitlinkChanges(worktreeOutput),
+    ...parseRawGitlinkChanges(indexOutput),
+  ]);
+  if (!changes.length) return;
+  throw new Error(`这条储藏包含子模块指针变化：${gitlinkChangeSummary(changes)}。Git stash apply/pop 不能可靠恢复这类 gitlink，弹出时还可能删除储藏但不恢复修改。Forkline 已阻止本次操作，原储藏仍保留；请先在子模块中确认目标提交，再手动更新父仓库的子模块指针。`);
+}
+
+function parseRawGitlinkChanges(output) {
+  const records = String(output || "").split("\0");
+  const changes = [];
+  for (let index = 0; index < records.length;) {
+    const header = records[index++];
+    const match = header.match(/^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])\d*$/);
+    if (!match) continue;
+    const previousPath = records[index++] || "";
+    const path = match[5] === "R" || match[5] === "C" ? records[index++] || previousPath : previousPath;
+    if (match[1] !== "160000" && match[2] !== "160000") continue;
+    changes.push({ path, previousPath });
+  }
+  return changes;
+}
+
+function uniqueGitlinkChanges(changes) {
+  const unique = new Map();
+  for (const item of changes) {
+    const key = `${item.previousPath}\0${item.path}`;
+    if (!unique.has(key)) unique.set(key, item);
+  }
+  return [...unique.values()];
+}
+
+function gitlinkChangeSummary(changes) {
+  const details = changes.slice(0, 5).map((item) => item.previousPath && item.previousPath !== item.path ? `${item.previousPath} -> ${item.path}` : item.path);
+  const remaining = changes.length > details.length ? `；另有 ${changes.length - details.length} 个` : "";
+  return `${details.join("；")}${remaining}`;
 }
 
 function validateStashFiles(statusFiles, files) {
@@ -2470,6 +2579,7 @@ function selectedStashFilesHaveChanges(statusFiles, files) {
 async function branchFromStash(body) {
   const ref = await ensureCurrentStashRef(body);
   const branch = normalizeBranchName(body.branch);
+  await ensureStashHasNoGitlinkChanges(ref);
   await ensureCleanWorktree("从储藏创建分支前，请先提交、储藏或丢弃当前工作区改动。");
   const existing = (await git(currentRepo, ["show-ref", "--verify", `refs/heads/${branch}`]).catch(() => "")).trim();
   if (existing) throw new Error(`本地分支 ${branch} 已存在，请换一个分支名。`);
@@ -2590,6 +2700,7 @@ function checkoutStashMessagePart(subject, branch) {
 
 async function discardWorktreeFile(body) {
   const file = normalizeRepoFile(body.file);
+  await ensureNotSubmoduleDiscardTarget(file);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
   const target = selectStatusFile(parseStatus(statusOutput), file, "unstaged");
   if (!target?.unstaged) throw new Error("这个文件没有可丢弃的工作区改动");
@@ -2599,6 +2710,15 @@ async function discardWorktreeFile(body) {
     await git(currentRepo, ["restore", "--worktree", "--", file], { timeout: 60000 });
   }
   return "工作区改动已丢弃";
+}
+
+async function ensureNotSubmoduleDiscardTarget(file, message = "") {
+  const [indexOutput, headOutput] = await Promise.all([
+    git(currentRepo, ["ls-files", "-s", "-z", "--", file]).catch(() => ""),
+    git(currentRepo, ["ls-tree", "-z", "HEAD", "--", file]).catch(() => ""),
+  ]);
+  if (![indexOutput, headOutput].some((output) => output.split("\0").some((record) => record.startsWith("160000 ")))) return;
+  throw new Error(message || `路径 ${file} 是独立 Git 子模块，不能从父仓库丢弃它的修改。请进入该子模块提交、储藏或还原后再刷新。`);
 }
 
 async function unstageFile(body) {
@@ -2612,6 +2732,7 @@ async function unstageFile(body) {
 
 async function discardStagedFile(body) {
   const file = normalizeRepoFile(body.file);
+  await ensureNotSubmoduleDiscardTarget(file, `路径 ${file} 是独立 Git 子模块，不能从父仓库丢弃它的已暂存修改。请使用“取消暂存”仅撤销 gitlink 暂存，或进入子模块处理后再更新父仓库记录。`);
   const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
   const statusFiles = parseStatus(statusOutput);
   const target = selectStatusFile(statusFiles, file, "staged");
@@ -3379,6 +3500,7 @@ async function resetToCommit(body) {
   const target = await resolveCommit(body.sha);
   const mode = normalizeResetMode(body.mode);
   const args = mode === "mixed" ? ["reset", target] : ["reset", `--${mode}`, target];
+  if (mode === "hard") await ensureNoDirtySubmodulesForDiscard("执行硬重置");
   const hasCurrentHead = await hasHeadCommit(currentRepo);
   const recovery = hasCurrentHead ? await createRecoveryPoint(`reset-${mode}`) : null;
   await git(currentRepo, args, { timeout: 120000 });
@@ -4398,7 +4520,34 @@ async function hasHeadCommit(repoPath) {
   return Boolean((await git(repoPath, ["rev-parse", "--verify", "HEAD^{commit}"]).catch(() => "")).trim());
 }
 
+async function readSubmodulesForSafety() {
+  if (!repoHasSubmoduleConfig(currentRepo)) return [];
+  const [configOutput, statusOutput] = await Promise.all([
+    git(currentRepo, submoduleConfigArgs()).catch(() => ""),
+    git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => ""),
+  ]);
+  return enrichSubmodules(parseSubmodules(configOutput, statusOutput));
+}
+
+async function readDirtySubmoduleWorktrees() {
+  const submodules = await readSubmodulesForSafety();
+  return submodules.filter((item) => item.initialized && item.dirtyCount);
+}
+
+async function ensureNoDirtySubmodulesForDiscard(actionText = "直接丢弃父仓库全部更改") {
+  const submodules = await readSubmodulesForSafety();
+  const dirty = submodules.filter((item) => item.initialized && (item.dirtyCount || item.status === "changed" || item.status === "conflict"));
+  if (!dirty.length) return;
+  const details = dirty.slice(0, 5).map((item) => {
+    const mismatch = item.status === "changed" ? "，提交与父仓库记录不一致" : item.status === "conflict" ? "，存在冲突" : "";
+    return `${item.path}（${item.dirtyCount ? `${item.dirtyCount} 个未提交改动` : "独立提交状态"}${mismatch}）`;
+  });
+  const remaining = dirty.length > details.length ? `；另有 ${dirty.length - details.length} 个` : "";
+  throw new Error(`子模块包含独立仓库改动，不能${actionText}：${details.join("；")}${remaining}。请先进入子模块提交、储藏或还原，再重新操作。`);
+}
+
 async function discardAllWorktreeChanges() {
+  await ensureNoDirtySubmodulesForDiscard();
   if (await hasHeadCommit(currentRepo)) {
     await git(currentRepo, ["reset", "--hard", "HEAD"], { timeout: 60000 });
   } else {
@@ -4450,6 +4599,7 @@ async function restoreRecoveryPoint(body) {
   const ref = await ensureRecoveryRef(body.ref, normalizeExpectedRecoverySha(body.sha));
   await currentLocalBranch("恢复恢复点");
   await ensureCleanWorktree("恢复到恢复点前，请先提交、储藏或还原当前工作区改动。");
+  await ensureNoDirtySubmodulesForDiscard("恢复到恢复点");
   const target = (await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`])).trim();
   const hasCurrentHead = await hasHeadCommit(currentRepo);
   const before = hasCurrentHead ? await createRecoveryPoint("restore-recovery") : null;
@@ -4474,6 +4624,7 @@ async function restoreReflogEntry(body) {
   const entry = await ensureReflogEntry(body);
   await currentLocalBranch("恢复引用日志记录");
   await ensureCleanWorktree("恢复到引用日志记录前，请先提交、储藏或还原当前工作区改动。");
+  await ensureNoDirtySubmodulesForDiscard("恢复引用日志记录");
   const before = await createRecoveryPoint("restore-reflog");
   await git(currentRepo, ["reset", "--hard", entry.sha], { timeout: 120000 });
   const short = (await git(currentRepo, ["rev-parse", "--short", "HEAD"])).trim();
@@ -5064,11 +5215,14 @@ function worktreePruneEntries(rows = []) {
   return (rows || []).filter((row) => row.prunable);
 }
 
-async function enrichWorktreeList(rows) {
+async function enrichWorktreeList(rows, options = {}) {
   return Promise.all((rows || []).map(async (row) => {
     if (!row.exists || row.prunable || row.bare) return row;
+    const statusPromise = options.statusOutput !== undefined && sameFsPath(row.path, options.repoPath)
+      ? Promise.resolve(options.statusOutput)
+      : git(row.path, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
     const [statusOutput, operation] = await Promise.all([
-      git(row.path, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+      statusPromise,
       Promise.resolve().then(() => detectRepoOperation(row.path)).catch(() => null),
     ]);
     const files = parseStatus(statusOutput);
@@ -5083,6 +5237,10 @@ async function enrichWorktreeList(rows) {
 
 function submoduleConfigArgs() {
   return ["config", "-z", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url|branch)$"];
+}
+
+function repoHasSubmoduleConfig(repoPath = currentRepo) {
+  return Boolean(repoPath && fs.existsSync(path.join(repoPath, ".gitmodules")));
 }
 
 function parseSubmodules(configOutput, statusOutput) {
@@ -5539,6 +5697,7 @@ async function ensureRemoteTag(remote, name, expectedSha = "") {
   if (expectedSha && !remoteSha.startsWith(expectedSha)) {
     throw new Error(`远端 Tag ${name} 已经变化。为避免删除别人新推送的同名 Tag，请刷新 Tag 列表后重新选择。`);
   }
+  return remoteSha;
 }
 
 function remoteTagObjectSha(output, name) {
@@ -5602,13 +5761,17 @@ function commandResultWithSummary(summary, output) {
   return { ok: true, output: detail ? `${summary}\n${detail}` : summary };
 }
 
-async function readCurrentSyncState(repoPath = currentRepo) {
-  const branch = (await readBranchDisplayName(repoPath).catch(() => "")).trim();
+async function readCurrentSyncState(repoPath = currentRepo, options = {}) {
+  const branch = options.branch !== undefined
+    ? String(options.branch || "").trim()
+    : (await readBranchDisplayName(repoPath).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
     return { branch: "HEAD", detached: true, unborn: false, upstream: "", upstreamSha: "", upstreamGone: false, ahead: 0, behind: 0 };
   }
-  const upstream = (await git(repoPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
-  const hasCommit = await hasHeadCommit(repoPath);
+  const upstream = options.upstream !== undefined
+    ? String(options.upstream || "").trim()
+    : (await git(repoPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+  const hasCommit = typeof options.hasCommit === "boolean" ? options.hasCommit : await hasHeadCommit(repoPath);
   if (!hasCommit) {
     const upstreamSha = upstream ? (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim() : "";
     return { branch, detached: false, unborn: true, upstream, upstreamSha, upstreamGone: Boolean(upstream && !upstreamSha), ahead: 0, behind: 0 };
@@ -5978,19 +6141,12 @@ function parseLog(output) {
   return commits;
 }
 
-async function readCurrentSyncDetails(repoPath = currentRepo) {
-  const [state, remotes] = await Promise.all([readCurrentSyncState(repoPath), readRemoteDetails(repoPath)]);
-  const auth = await readAuthDiagnostics(remotes).catch((error) => ({
-    summary: "认证助手读取失败",
-    level: "warn",
-    advice: `无法读取本机认证信息：${String(error?.message || error || "未知错误")}`,
-    remotes: remotes.map((remote) => remoteAuthSummary(remote)),
-    ssh: { directory: "~/.ssh", exists: false, keys: [], configExists: false, knownHostsExists: false },
-    agent: { available: false, loaded: false, keyCount: 0, message: "未检测" },
-    credentialManager: { available: false, name: "Git Credential Manager", version: "", message: "未检测" },
-    commands: ["git remote -v"],
-  }));
-  const pullRequest = await readPullRequestLink(state, remotes, repoPath).catch((error) => ({
+async function readCurrentSyncDetails(repoPath = currentRepo, options = {}) {
+  const [state, remotes] = await Promise.all([
+    readCurrentSyncState(repoPath, options),
+    Array.isArray(options.remotes) ? options.remotes : readRemoteDetails(repoPath),
+  ]);
+  const pullRequest = await readPullRequestLink(state, remotes, repoPath, options).catch((error) => ({
     available: false,
     reason: `无法生成 PR 链接：${String(error?.message || error || "未知错误")}`,
     url: "",
@@ -5998,7 +6154,6 @@ async function readCurrentSyncDetails(repoPath = currentRepo) {
   const details = {
     ...state,
     remotes,
-    auth,
     pullRequest,
     incoming: [],
     outgoing: [],
@@ -6041,6 +6196,57 @@ function parseSyncCommits(output) {
       };
     })
     .filter((commit) => commit.sha);
+}
+
+async function readCachedAuthDiagnostics(repoPath = currentRepo, options = {}) {
+  const remotes = await readRemoteDetails(repoPath);
+  const cacheKey = authDiagnosticsCacheKey(repoPath, remotes);
+  const now = Date.now();
+  const cached = authDiagnosticsCache.get(cacheKey);
+  if (!options.refresh && cached && cached.expiresAt > now) {
+    return authDiagnosticsCacheResult(cached, true);
+  }
+
+  const diagnostics = await readAuthDiagnostics(remotes).catch((error) => authDiagnosticsFailure(error, remotes));
+  const entry = {
+    data: { ...diagnostics, checkedAt: new Date(now).toISOString() },
+    expiresAt: now + AUTH_DIAGNOSTICS_CACHE_TTL_MS,
+  };
+  authDiagnosticsCache.set(cacheKey, entry);
+  while (authDiagnosticsCache.size > AUTH_DIAGNOSTICS_CACHE_LIMIT) {
+    authDiagnosticsCache.delete(authDiagnosticsCache.keys().next().value);
+  }
+  return authDiagnosticsCacheResult(entry, false);
+}
+
+function authDiagnosticsCacheKey(repoPath, remotes) {
+  const repoKey = path.resolve(String(repoPath || "")).replace(/[\\/]+/g, "\\").toLowerCase();
+  const remoteKey = remotes
+    .map((remote) => [remote.name, remote.fetchUrl, remote.pushUrl, ...(remote.pushUrls || [])].map((value) => String(value || "")).join("\u0000"))
+    .sort()
+    .join("\u0001");
+  return `${repoKey}\u0002${remoteKey}`;
+}
+
+function authDiagnosticsCacheResult(entry, cached) {
+  return {
+    ...entry.data,
+    cached,
+    cacheExpiresAt: new Date(entry.expiresAt).toISOString(),
+  };
+}
+
+function authDiagnosticsFailure(error, remotes) {
+  return {
+    summary: "认证助手读取失败",
+    level: "warn",
+    advice: `无法读取本机认证信息：${String(error?.message || error || "未知错误")}`,
+    remotes: remotes.map((remote) => remoteAuthSummary(remote)),
+    ssh: { directory: "~/.ssh", exists: false, keys: [], configExists: false, knownHostsExists: false },
+    agent: { available: false, loaded: false, keyCount: 0, message: "未检测" },
+    credentialManager: { available: false, name: "Git Credential Manager", version: "", message: "未检测" },
+    commands: ["git remote -v"],
+  };
 }
 
 async function readAuthDiagnostics(remotes = []) {
@@ -6269,7 +6475,7 @@ function authSummaryText(remotes, ssh, agent, credentialManager) {
   return `${remoteText}；${sshText}；${agentText}；${gcmText}`;
 }
 
-async function readPullRequestLink(syncState = {}, remotes = [], repoPath = currentRepo) {
+async function readPullRequestLink(syncState = {}, remotes = [], repoPath = currentRepo, options = {}) {
   const branch = String(syncState.branch || "").trim();
   if (!branch || branch === "HEAD" || branch === "detached HEAD" || syncState.detached) {
     return { available: false, reason: "当前处于游离 HEAD，请先切换或创建本地分支。", url: "" };
@@ -6278,7 +6484,7 @@ async function readPullRequestLink(syncState = {}, remotes = [], repoPath = curr
   if (!remote?.webBase) {
     return { available: false, reason: "当前仓库没有可识别的 GitHub / GitLab / Bitbucket / Gitea 网页远端。", url: "" };
   }
-  const targetBranch = await inferPullRequestTarget(branch, syncState, repoPath);
+  const targetBranch = await inferPullRequestTarget(branch, syncState, repoPath, options);
   if (!targetBranch) {
     return { available: false, reason: "没有找到可作为目标的主分支。", url: "" };
   }
@@ -6314,9 +6520,11 @@ function preferredWebRemote(remotes = []) {
   return null;
 }
 
-async function inferPullRequestTarget(branch, syncState = {}, repoPath = currentRepo) {
-  const localBranches = parseSimpleLines(await git(repoPath, ["branch", "--format=%(refname:short)"]).catch(() => ""));
-  const remoteNames = await readRemoteNames(repoPath);
+async function inferPullRequestTarget(branch, syncState = {}, repoPath = currentRepo, options = {}) {
+  const localBranches = Array.isArray(options.localBranches)
+    ? options.localBranches
+    : parseSimpleLines(await git(repoPath, ["branch", "--format=%(refname:short)"]).catch(() => ""));
+  const remoteNames = Array.isArray(options.remoteNames) ? options.remoteNames : await readRemoteNames(repoPath);
   const upstreamBranch = syncState.upstream ? splitRemoteBranchRef(syncState.upstream, remoteNames).branch : "";
   if (upstreamBranch && upstreamBranch !== branch) return upstreamBranch;
   const preferred = ["main", "master", "develop", "development", "dev", "trunk"];
@@ -6727,8 +6935,20 @@ function sendError(res, error, context = {}) {
   sendJson(res, 400, { error: friendlyErrorMessage(error, context), ...extra, operationLog, runningOperations: listRunningOperations(context.operation?.id) });
 }
 
+function decodeRepoPathHeader(value) {
+  const raw = String(value || "").trim();
+  if (!raw.startsWith("v1:")) return raw;
+  try {
+    const decoded = decodeURIComponent(raw.slice(3));
+    if (/[\u0000-\u001f\u007f]/.test(decoded)) throw new Error("invalid control character");
+    return decoded;
+  } catch {
+    throw new Error("页面仓库上下文编码无效。请刷新页面后再试。");
+  }
+}
+
 function ensureRequestRepoMatchesCurrent(req, options = {}) {
-  const expectedRepo = String(req.headers["x-forkline-repo-path"] || "").trim();
+  const expectedRepo = decodeRepoPathHeader(req.headers["x-forkline-repo-path"]);
   if (!expectedRepo) {
     if (options.requireRepo && currentRepo) {
       throw new Error("页面缺少仓库上下文。为避免把操作执行到错误仓库，请刷新页面后再试。");
@@ -6890,7 +7110,16 @@ function friendlyErrorMessage(error, context = {}) {
   if (lower.includes("ambiguous argument 'head'") && lower.includes("unknown revision")) {
     return "当前分支还没有首个提交，HEAD 暂时不是有效引用。请先创建首个提交，或选择不依赖 HEAD 的操作。";
   }
-  if (lower.includes("stale info") || (context.body?.action === "forcePushLease" && lower.includes("rejected"))) {
+  if (lower.includes("stale info")) {
+    if (context.body?.action === "deleteRemoteBranch") {
+      return "远端分支删除被 Git 拒绝：确认后该分支又有了新提交。为避免删除别人刚推送的内容，本次没有删除；请抓取并刷新后重新确认。";
+    }
+    if (context.body?.action === "deleteRemoteTag") {
+      return "远端 Tag 删除被 Git 拒绝：确认后这个 Tag 又指向了新的对象。为避免删除别人刚更新的 Tag，本次没有删除；请刷新后重新确认。";
+    }
+    return "安全强推被 Git 拒绝：远端分支在你上次抓取后可能已经变化。请先抓取远端，确认远端新增提交是否可以覆盖，再重新操作。";
+  }
+  if (context.body?.action === "forcePushLease" && lower.includes("rejected")) {
     return "安全强推被 Git 拒绝：远端分支在你上次抓取后可能已经变化。请先抓取远端，确认远端新增提交是否可以覆盖，再重新操作。";
   }
   if (lower.includes("failed to push some refs") && (lower.includes("non-fast-forward") || lower.includes("fetch first") || lower.includes("rejected"))) {
@@ -7251,6 +7480,19 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readState(parsed.searchParams.get("ref") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/auth-diagnostics") {
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再检测认证环境。");
+      const refresh = ["1", "true"].includes(String(parsed.searchParams.get("refresh") || "").toLowerCase());
+      sendJson(res, 200, await readCachedAuthDiagnostics(currentRepo, { refresh }));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/reflog") {
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再读取引用日志。");
+      sendJson(res, 200, await readReflogState(currentRepo));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/ref-state") {

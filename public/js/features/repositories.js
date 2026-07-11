@@ -347,7 +347,11 @@ function clearOpenedRepoState() {
   state.fileBlame = { file: "", ref: "", data: null, loading: false, error: "" };
   state.historyPlan = null;
   state.historyQueue = { items: [], loading: false, preview: null, error: "" };
+  state.reflogRequestId += 1;
+  state.reflog = { key: "", entries: null, loading: false, error: "", inline: false };
   state.remoteCheck = null;
+  state.authDiagnosticsRequestId += 1;
+  state.authDiagnostics = { repoPath: "", remoteKey: "", data: null, loading: false, error: "", inline: false };
 }
 
 function clearRepoScopedActionState() {
