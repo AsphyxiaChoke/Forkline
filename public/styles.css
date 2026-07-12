@@ -1846,8 +1846,8 @@ button.file-row {
 }
 
 .tree-children {
-  margin-left: calc(var(--depth, 0) * 12px + 10px);
-  padding-left: 8px;
+  margin-left: 8px;
+  padding-left: 6px;
   border-left: 1px solid var(--line-soft);
 }
 
@@ -1860,7 +1860,7 @@ button.file-row {
   min-width: 0;
   height: 28px;
   margin: 2px 0;
-  padding: 0 8px 0 calc(var(--depth, 0) * 10px + 4px);
+  padding: 0 8px 0 4px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -1908,7 +1908,7 @@ button.file-row {
 }
 
 .leaf-row {
-  margin-left: calc(var(--depth, 0) * 12px);
+  margin-left: 0;
 }
 
 .file-leaf {

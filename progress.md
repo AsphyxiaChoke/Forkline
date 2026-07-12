@@ -5114,3 +5114,21 @@
 - `docs/CONTINUE.md`：记录过长代码行的水平滚动行为。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述五个文件。
+
+## 2026-07-12 - Task: 缩小工作区文件树缩进
+
+### What was done
+- 修正工作区文件树同时使用 DOM 嵌套和绝对深度缩进造成的重复叠加。
+- 改为每层目录固定增加一次紧凑缩进，保留层级引导线和展开箭头。
+- 深层目录与文件获得更多横向显示空间，不改变文件选择、展开和多选逻辑。
+
+### Testing
+- 运行 `git diff --check`，确认差异没有空白错误。
+- 在真实 `forkline-web` 工作区验证根目录 `progress.md` 与一级目录 `docs/CONTINUE.md`、`public/styles.css`，文件行左边距固定相差 15px，层级仍清晰。
+- 在 213px 宽的工作区文件树下确认 `clientWidth = scrollWidth = 213px`，没有横向溢出。
+
+### Notes
+- `public/styles.css`：将文件树缩进改为随 DOM 嵌套固定递增，移除绝对深度的重复计算。
+- `docs/CONTINUE.md`：记录紧凑文件树层级规则。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述三个文件。
