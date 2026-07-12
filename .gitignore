@@ -2,5 +2,6 @@ server.log
 server.err.log
 *.log
 node_modules/
+.codex/skills/
 .DS_Store
 Thumbs.db

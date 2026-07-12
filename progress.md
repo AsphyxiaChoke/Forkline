@@ -5071,3 +5071,24 @@
 - `docs/CONTINUE.md`：以中文记录双语功能范围和后续开发约束。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可仅还原上述文件并删除 `public/js/i18n-catalog.js`、`public/js/i18n.js`、`tests/i18n.test.js`。
+
+## 2026-07-12 - Task: 从远端移除项目级 Codex skills
+
+### What was done
+- 将 `.codex/skills/` 从 Git 跟踪中移除，使远端仓库不再包含项目级 skills。
+- 将 `.codex/skills/` 加入忽略规则，防止本机 skills 后续被误提交。
+- 保留本机现有 skill 文件，不影响当前电脑继续使用。
+- 更新继续开发说明，明确 skills 仅供本地 Codex 使用，不进入项目远端。
+
+### Testing
+- 确认移除前 `.codex/skills/` 为 Git 已跟踪目录。
+- 使用 `git check-ignore` 确认 `.codex/skills/` 受忽略规则保护。
+- 确认取消跟踪后本机 `.codex/skills/` 目录及现有文件仍然存在。
+- 运行 `git diff --cached --check`，确认待提交差异没有空白错误。
+
+### Notes
+- `.gitignore`：忽略本机 `.codex/skills/` 目录。
+- `.codex/skills/`：从 Git 索引和远端交付范围移除，本机文件保留。
+- `docs/CONTINUE.md`：改为记录 skills 仅限本机使用。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>` 可恢复远端中的 skill 文件；如尚未提交，可执行 `git restore --staged .codex/skills .gitignore docs/CONTINUE.md progress.md` 并还原这三处文档改动。
