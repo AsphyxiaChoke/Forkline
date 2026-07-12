@@ -4913,3 +4913,24 @@
 - `public/styles.css`: made only left-list upstream badges compact and hover-informative.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's changes in `public/styles.css` and `progress.md`, or reset to the commit before this task once it is committed.
+## 2026-07-04 - Task: Install UI/UX Pro Max Codex skills for the project
+
+### What was done
+- Verified `ui-ux-pro-max-cli` on npm and installed the Codex templates into the current project with `npx ui-ux-pro-max-cli@2.10.1 init --ai codex`.
+- Added project-local skills under `.codex/skills/`, including `ui-ux-pro-max`, `ui-styling`, `design-system`, `brand`, `design`, `slides`, and `banner-design`.
+- Documented that the new project-level skills require a new Codex session or restart before they are automatically detected.
+
+### Testing
+- Ran `npm view ui-ux-pro-max-cli name version bin description`.
+- Ran `npx --yes ui-ux-pro-max-cli@2.10.1 --help`.
+- Ran `npx --yes ui-ux-pro-max-cli@2.10.1 init --help`.
+- Ran `npx --yes ui-ux-pro-max-cli@2.10.1 init --ai codex`.
+- Confirmed `.codex/skills/ui-ux-pro-max/SKILL.md` exists and declares the `ui-ux-pro-max` skill.
+- Ran `python .codex\skills\ui-ux-pro-max\scripts\search.py --help`.
+- Ran `python .codex\skills\ui-ux-pro-max\scripts\search.py dashboard --domain style --max-results 2`; the script loaded `styles.csv` and returned design results.
+
+### Notes
+- `.codex/skills/`: added UI/UX Pro Max project-level skill files and supporting data/scripts.
+- `docs/CONTINUE.md`: recorded the installed project-level UI/UX skills and restart/new-session requirement.
+- `progress.md`: appended this installation and verification record.
+- Rollback: delete `.codex/skills/`, revert the `docs/CONTINUE.md` and `progress.md` entries from this task, or reset to the commit before this task once it is committed.
