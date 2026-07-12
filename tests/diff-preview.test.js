@@ -41,3 +41,15 @@ test("commit diff previews keep small diffs complete", () => {
   assert.doesNotMatch(html, /仅显示前/);
   assert.match(html, /small-line-12/);
 });
+
+test("side-by-side diffs reserve horizontal space for long code lines", () => {
+  const context = createContext();
+  const widths = context.diffColumnCharacterWidths([
+    { type: "ctx", text: ` ${"a".repeat(80)}` },
+    { type: "add", text: `+${"中".repeat(60)}` },
+    { type: "del", text: `-${"b".repeat(100)}` },
+  ]);
+
+  assert.equal(widths.old, 100);
+  assert.equal(widths.new, 120);
+});

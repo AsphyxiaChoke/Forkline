@@ -5092,3 +5092,25 @@
 - `docs/CONTINUE.md`：改为记录 skills 仅限本机使用。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>` 可恢复远端中的 skill 文件；如尚未提交，可执行 `git restore --staged .codex/skills .gitignore docs/CONTINUE.md progress.md` 并还原这三处文档改动。
+
+## 2026-07-12 - Task: 为过长代码行增加水平滚动
+
+### What was done
+- 调整并排 Diff 的列宽计算，旧版和新版分别按各自最长代码行预留展示宽度。
+- 移除代码单元的截断省略，过长代码保持单行完整显示，由文件 Diff 容器提供水平滚动。
+- 同步覆盖底部工作区 Diff、提交文件 Diff、储藏 Diff 和最大化 Diff，并保持两侧行号及列分隔对齐。
+
+### Testing
+- 运行 `node --check public/js/features/diff-workbench.js`，语法检查通过。
+- 运行 `node --test tests/diff-preview.test.js`，3 项测试全部通过，包含英文长行和中文宽字符列宽验证。
+- 运行 `npm test`，21 项测试全部通过。
+- 运行 `git diff --check`，确认差异没有空白错误。
+- 使用包含超长代码行的 Diff 验证底部视图和最大化视图均出现水平滚动，滚动后可查看完整代码且旧版/新版列保持对齐。
+
+### Notes
+- `public/js/features/diff-workbench.js`：计算旧版和新版最长代码行的显示宽度并传给 Diff 布局。
+- `public/styles.css`：按计算宽度展开并排 Diff，取消代码省略并启用外层水平滚动。
+- `tests/diff-preview.test.js`：新增长代码行和中文宽字符列宽测试。
+- `docs/CONTINUE.md`：记录过长代码行的水平滚动行为。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述五个文件。

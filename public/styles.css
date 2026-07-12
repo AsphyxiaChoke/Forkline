@@ -2039,7 +2039,12 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .side-diff {
+  --diff-gutter-width: 44px;
+  --diff-code-padding: 16px;
+  --diff-old-width: max(320px, calc(var(--diff-old-ch, 48) * 1ch + var(--diff-gutter-width) + var(--diff-code-padding) + 2ch));
+  --diff-new-width: max(320px, calc(var(--diff-new-ch, 48) * 1ch + var(--diff-gutter-width) + var(--diff-code-padding) + 2ch));
   min-width: 640px;
+  width: max(100%, calc(var(--diff-old-width) + var(--diff-new-width)));
   overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -2099,6 +2104,8 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .commit-file-diff .side-diff {
+  --diff-gutter-width: 34px;
+  --diff-code-padding: 12px;
   min-width: 0;
   border: 0;
   border-radius: 0;
@@ -2119,7 +2126,7 @@ body.resizing .workbench-resizer-y::before {
 .side-diff-head,
 .side-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: var(--diff-old-width) var(--diff-new-width);
 }
 
 .side-diff-head {
@@ -2239,11 +2246,11 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .side-cell code {
-  overflow: hidden;
+  overflow: visible;
   padding: 4px 8px;
   color: var(--muted);
   font-family: var(--font-code);
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: pre;
 }
 
@@ -5266,6 +5273,8 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .stash-diff .side-diff {
+  --diff-gutter-width: 34px;
+  --diff-code-padding: 12px;
   min-width: 0;
   border: 0;
   border-radius: 0;
@@ -6030,8 +6039,9 @@ body.resizing .workbench-resizer-y::before {
 }
 
 .diff-modal-body .side-diff {
+  --diff-gutter-width: 62px;
   min-width: 1040px;
-  width: max(1040px, 100%);
+  width: max(1040px, 100%, calc(var(--diff-old-width) + var(--diff-new-width)));
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--field) 94%, var(--surface));
   font-family: var(--font-code);

@@ -471,13 +471,38 @@ function closeDiffModal() {
 function renderSideDiff(diff, emptyText, options = {}) {
   if (!diff?.length) return `<div class="diff-empty">${escapeHtml(t(emptyText))}</div>`;
   const lineAction = options.lineAction && diffHasSelectableLines(diff) ? options.lineAction : null;
+  const columnWidths = diffColumnCharacterWidths(diff);
   return `
-    <div class="side-diff ${lineAction ? "line-selectable" : ""}">
+    <div class="side-diff ${lineAction ? "line-selectable" : ""}" style="--diff-old-ch:${columnWidths.old};--diff-new-ch:${columnWidths.new}">
       ${lineAction ? renderDiffLineToolbar(lineAction) : ""}
       <div class="side-diff-head"><span>${t("旧版本")}</span><span>${t("新版本")}</span></div>
       ${sideBySideRows(diff, { ...options, lineAction })}
     </div>
   `;
+}
+
+function diffColumnCharacterWidths(diff) {
+  let old = 0;
+  let next = 0;
+  for (const line of diff || []) {
+    if (line?.type === "meta") continue;
+    const width = diffTextVisualWidth(trimDiffPrefix(line?.text));
+    if (line?.type !== "add") old = Math.max(old, width);
+    if (line?.type !== "del") next = Math.max(next, width);
+  }
+  return { old: Math.max(48, old), new: Math.max(48, next) };
+}
+
+function diffTextVisualWidth(text) {
+  let width = 0;
+  for (const char of String(text || "")) {
+    if (char === "\t") {
+      width += 4 - (width % 4);
+      continue;
+    }
+    width += char.codePointAt(0) > 0xff ? 2 : 1;
+  }
+  return width;
 }
 
 function diffHasSelectableLines(diff) {
