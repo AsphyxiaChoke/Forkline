@@ -18,7 +18,7 @@ function renderStage() {
   if (!files.length) {
     state.selectedFile = "";
     state.selectedChanges.clear();
-    els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">没有未提交的更改</span><span></span></div>`;
+    els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">${t("没有未提交的更改")}</span><span></span></div>`;
     if (state.activeDiff?.source !== "history") renderWorkDiffEmpty("没有未提交的更改");
   } else {
     const groups = changeGroups(visibleFiles);
@@ -27,7 +27,7 @@ function renderStage() {
     if (!visibleChangeFiles.length) {
       state.selectedFile = "";
       state.selectedChanges.clear();
-      els.changeList.innerHTML = `${operationBanner}<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? "没有匹配的更改" : "没有未提交的更改"}</span><span></span></div>`;
+      els.changeList.innerHTML = `${operationBanner}<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? t("没有匹配的更改") : t("没有未提交的更改")}</span><span></span></div>`;
       if (state.activeDiff?.source !== "history") renderWorkDiffEmpty(terms.length ? "没有匹配的更改" : "没有未提交的更改");
     } else {
       const previousFile = state.selectedFile;
@@ -61,11 +61,23 @@ function renderStage() {
   }
   const counts = countFiles(files);
   const groups = changeGroups(files);
-  const filterText = terms.length ? ` · 筛选 ${visibleFiles.length}/${files.length}` : "";
-  els.draftNote.textContent = `${groups.unstaged.length} 个未暂存，${groups.staged.length} 个已暂存 · ${counts.C} 个冲突，${counts.M} 个修改，${counts.A} 个新增，${counts.D} 个删除，${counts.R} 个重命名${filterText}`;
+  const filterText = terms.length ? t(" · 筛选 {visible}/{total}", { visible: visibleFiles.length, total: files.length }) : "";
+  els.draftNote.textContent = t(
+    "{unstaged} 个未暂存，{staged} 个已暂存 · {conflicts} 个冲突，{modified} 个修改，{added} 个新增，{deleted} 个删除，{renamed} 个重命名{filter}",
+    {
+      unstaged: groups.unstaged.length,
+      staged: groups.staged.length,
+      conflicts: counts.C,
+      modified: counts.M,
+      added: counts.A,
+      deleted: counts.D,
+      renamed: counts.R,
+      filter: filterText,
+    }
+  );
   const unborn = Boolean(state.data?.sync?.unborn);
   els.stashChanges.disabled = unborn;
-  els.stashChanges.title = unborn ? "当前分支还没有首个提交，不能创建储藏" : "储藏全部未提交更改";
+  els.stashChanges.title = unborn ? t("当前分支还没有首个提交，不能创建储藏") : t("储藏全部未提交更改");
 }
 
 function ensureSelectedFileChangeKey() {
@@ -143,7 +155,7 @@ function worktreeRawStatusLabel(file) {
 function updateWorktreeFilterMeta(terms, visibleCount, totalCount) {
   const active = terms.length > 0;
   els.worktreeFilterCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
-  els.worktreeFilterCount.title = active ? `工作区筛选结果：${visibleCount} / ${totalCount}` : "";
+  els.worktreeFilterCount.title = active ? t("工作区筛选结果：{visible} / {total}", { visible: visibleCount, total: totalCount }) : "";
   els.worktreeFilterCount.hidden = !active;
   els.clearWorktreeFilter.hidden = !active;
 }
@@ -171,32 +183,32 @@ function renderRepoOperationBanner(files) {
   const isCherryPick = operation?.type === "cherryPick";
   const isMerge = operation?.type === "merge";
   const isRebase = operation?.type === "rebase";
-  const actionName = isRebase ? "变基" : isMerge ? "合并" : isCherryPick ? "挑选" : isRevert ? "还原" : "操作";
-  const title = isRebase ? "变基发生冲突" : isMerge ? "合并发生冲突" : isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作";
+  const actionName = t(isRebase ? "变基" : isMerge ? "合并" : isCherryPick ? "挑选" : isRevert ? "还原" : "操作");
+  const title = t(isRebase ? "变基发生冲突" : isMerge ? "合并发生冲突" : isRevert ? "还原提交发生冲突" : isCherryPick ? "挑选提交发生冲突" : operation?.label || "仓库有未完成操作");
   const text = conflicts.length
-    ? `${conflicts.length} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续${actionName}；不想保留这次${actionName}就中止。`
-    : `当前${actionName}已经没有冲突文件，确认解决结果后可以继续${actionName}。`;
+    ? t("{count} 个冲突文件还没有解决。解决后先暂存冲突文件，再继续{action}；不想保留这次{action}就中止。", { count: conflicts.length, action: actionName })
+    : t("当前{action}已经没有冲突文件，确认解决结果后可以继续{action}。", { action: actionName });
   const actions = isRevert
     ? `
-      <button class="mini-btn" data-repo-operation="continueRevert" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git revert --continue"}"><span>继续还原</span><span class="command-hint">git revert --continue</span></button>
-      <button class="mini-btn danger" data-repo-operation="abortRevert" type="button" title="git revert --abort"><span>中止还原</span><span class="command-hint">git revert --abort</span></button>
+      <button class="mini-btn" data-repo-operation="continueRevert" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? t("先解决并暂存所有冲突文件") : "git revert --continue"}"><span>${t("继续还原")}</span><span class="command-hint">git revert --continue</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortRevert" type="button" title="git revert --abort"><span>${t("中止还原")}</span><span class="command-hint">git revert --abort</span></button>
     `
     : isCherryPick
     ? `
-      <button class="mini-btn" data-repo-operation="continueCherryPick" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git cherry-pick --continue"}"><span>继续挑选</span><span class="command-hint">git cherry-pick --continue</span></button>
-      <button class="mini-btn" data-repo-operation="skipCherryPick" type="button" title="git cherry-pick --skip"><span>跳过挑选</span><span class="command-hint">git cherry-pick --skip</span></button>
-      <button class="mini-btn danger" data-repo-operation="abortCherryPick" type="button" title="git cherry-pick --abort"><span>中止挑选</span><span class="command-hint">git cherry-pick --abort</span></button>
+      <button class="mini-btn" data-repo-operation="continueCherryPick" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? t("先解决并暂存所有冲突文件") : "git cherry-pick --continue"}"><span>${t("继续挑选")}</span><span class="command-hint">git cherry-pick --continue</span></button>
+      <button class="mini-btn" data-repo-operation="skipCherryPick" type="button" title="git cherry-pick --skip"><span>${t("跳过挑选")}</span><span class="command-hint">git cherry-pick --skip</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortCherryPick" type="button" title="git cherry-pick --abort"><span>${t("中止挑选")}</span><span class="command-hint">git cherry-pick --abort</span></button>
     `
     : isMerge
     ? `
-      <button class="mini-btn" data-repo-operation="continueMerge" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git merge --continue"}"><span>继续合并</span><span class="command-hint">git merge --continue</span></button>
-      <button class="mini-btn danger" data-repo-operation="abortMerge" type="button" title="git merge --abort"><span>中止合并</span><span class="command-hint">git merge --abort</span></button>
+      <button class="mini-btn" data-repo-operation="continueMerge" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? t("先解决并暂存所有冲突文件") : "git merge --continue"}"><span>${t("继续合并")}</span><span class="command-hint">git merge --continue</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortMerge" type="button" title="git merge --abort"><span>${t("中止合并")}</span><span class="command-hint">git merge --abort</span></button>
     `
     : isRebase
     ? `
-      <button class="mini-btn" data-repo-operation="continueRebase" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? "先解决并暂存所有冲突文件" : "git rebase --continue"}"><span>继续变基</span><span class="command-hint">git rebase --continue</span></button>
-      <button class="mini-btn" data-repo-operation="skipRebase" type="button" title="git rebase --skip"><span>跳过提交</span><span class="command-hint">git rebase --skip</span></button>
-      <button class="mini-btn danger" data-repo-operation="abortRebase" type="button" title="git rebase --abort"><span>中止变基</span><span class="command-hint">git rebase --abort</span></button>
+      <button class="mini-btn" data-repo-operation="continueRebase" type="button" ${conflicts.length ? "disabled" : ""} title="${conflicts.length ? t("先解决并暂存所有冲突文件") : "git rebase --continue"}"><span>${t("继续变基")}</span><span class="command-hint">git rebase --continue</span></button>
+      <button class="mini-btn" data-repo-operation="skipRebase" type="button" title="git rebase --skip"><span>${t("跳过提交")}</span><span class="command-hint">git rebase --skip</span></button>
+      <button class="mini-btn danger" data-repo-operation="abortRebase" type="button" title="git rebase --abort"><span>${t("中止变基")}</span><span class="command-hint">git rebase --abort</span></button>
     `
     : "";
   return `
@@ -222,8 +234,8 @@ function renderConflictChoiceRows(conflicts) {
             <div class="conflict-choice-row">
               <span class="conflict-choice-path" title="${escapeAttr(filePath)}">${escapeHtml(filePath)}</span>
               <div class="conflict-choice-actions">
-                <button class="mini-btn" data-conflict-choice="resolveConflictOurs" data-file="${escapeAttr(filePath)}" type="button"><span>当前</span><span class="command-hint">--ours</span></button>
-                <button class="mini-btn" data-conflict-choice="resolveConflictTheirs" data-file="${escapeAttr(filePath)}" type="button"><span>对方</span><span class="command-hint">--theirs</span></button>
+                <button class="mini-btn" data-conflict-choice="resolveConflictOurs" data-file="${escapeAttr(filePath)}" type="button"><span>${t("当前")}</span><span class="command-hint">--ours</span></button>
+                <button class="mini-btn" data-conflict-choice="resolveConflictTheirs" data-file="${escapeAttr(filePath)}" type="button"><span>${t("对方")}</span><span class="command-hint">--theirs</span></button>
               </div>
             </div>
           `;
@@ -241,22 +253,23 @@ function changeGroups(files) {
 }
 
 function renderChangeSection(scope, title, files, actions) {
-  const emptyText = title === "工作区" ? "工作区没有未暂存的更改" : "没有已暂存的更改";
+  const emptyText = scope === "unstaged" ? t("工作区没有未暂存的更改") : t("没有已暂存的更改");
+  const localizedTitle = t(title);
   const selectedCount = selectedFilesInScope(scope, files).length;
   return `
     <section class="change-section">
       <div class="change-section-title">
         <div class="change-section-label">
-          <span>${title}</span>
+          <span>${localizedTitle}</span>
           <em>${files.length}</em>
         </div>
         <div class="change-section-actions">
-          ${selectedCount ? `<span class="selected-count">${selectedCount} 已选</span>` : ""}
+          ${selectedCount ? `<span class="selected-count">${t("{count} 已选", { count: selectedCount })}</span>` : ""}
           ${actions
             .map(
               (item) => `
                 <button class="mini-btn bulk-action ${item.danger ? "danger" : ""}" type="button" data-bulk-file-action="${escapeAttr(item.action)}" data-scope="${escapeAttr(scope)}" ${selectedCount ? "" : "disabled"}>
-                  ${escapeHtml(item.bulkLabel || item.label || "操作")}
+                  ${escapeHtml(t(item.bulkLabel || item.label || "操作"))}
                 </button>
               `
             )

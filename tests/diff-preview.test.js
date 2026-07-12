@@ -11,6 +11,9 @@ const source = fs.readFileSync(path.resolve(__dirname, "..", "public", "js", "fe
 function createContext() {
   const context = vm.createContext({
     escapeHtml: (value) => String(value ?? ""),
+    t: (value, params) => String(value).replace(/\{([A-Za-z0-9_]+)\}/g, (match, key) => (
+      Object.hasOwn(params || {}, key) ? String(params[key]) : match
+    )),
   });
   vm.runInContext(source, context);
   return context;

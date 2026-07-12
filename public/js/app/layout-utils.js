@@ -18,8 +18,8 @@ function applyTheme(theme, persist = true) {
   state.theme = theme;
   document.documentElement.dataset.theme = theme;
   if (persist) localStorage.setItem("forkline-theme", theme);
-  els.themeToggle.textContent = theme === "light" ? "深色" : "浅色";
-  els.themeToggle.title = theme === "light" ? "切换到深色模式" : "切换到浅色模式";
+  els.themeToggle.textContent = theme === "light" ? t("深色") : t("浅色");
+  els.themeToggle.title = theme === "light" ? t("切换到深色模式") : t("切换到浅色模式");
 }
 
 function toggleTheme() {
@@ -40,7 +40,7 @@ function resetLayoutPreferences() {
     }
     document.documentElement.style.removeProperty(variable);
   });
-  toast("布局已恢复默认");
+  toast(t("布局已恢复默认"));
   renderInspector();
 }
 

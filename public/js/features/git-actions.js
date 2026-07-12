@@ -17,7 +17,7 @@ async function selectRef(ref) {
     if (state.selectedSha) {
       await renderSelectedCommitForRepoPath(repoPath);
     }
-    toast(ref ? `已查看 ${ref}` : "已显示全部分支");
+    toast(ref ? t("已查看 {ref}", { ref }) : t("已显示全部分支"));
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -27,7 +27,7 @@ async function selectRef(ref) {
 async function checkoutBranch(branch, button) {
   if (!state.data || !branch) return;
   if (branch === state.data.repo.branch) {
-    toast("已经在这个分支上");
+    toast(t("已经在这个分支上"));
     return;
   }
   const dirtyCount = (state.data.workingFiles || []).length;
@@ -35,7 +35,7 @@ async function checkoutBranch(branch, button) {
   if (!state.data.repo.isSample && dirtyCount) {
     mode = await chooseCheckoutMode(branch, dirtyCount);
     if (!mode) return;
-  } else if (!state.data.repo.isSample && !confirm(`确认切换到分支：${branch}？`)) {
+  } else if (!state.data.repo.isSample && !confirm(t("确认切换到分支：{branch}？", { branch }))) {
     return;
   }
   const repoPath = repoPathSnapshot();
@@ -44,7 +44,7 @@ async function checkoutBranch(branch, button) {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "checkoutBranch", branch, mode, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(branch) }) });
     if (!isCurrentRepoPath(repoPath)) return;
     rememberCheckoutStash(result.stash);
-    toast(result.output || `已切换到 ${branch}`);
+    toast(result.output || t("已切换到 {branch}", { branch }));
     const data = await loadStateForRepoPath(repoPath, branch);
     if (!data) return;
     state.commitDetails.clear();
@@ -68,7 +68,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
   if (!state.data || !remoteRef) return;
   const localBranch = remoteCheckoutBranch(remoteRef);
   if (localBranch && localBranch === state.data.repo.branch) {
-    toast("对应的本地分支已经是当前分支");
+    toast(t("对应的本地分支已经是当前分支"));
     return;
   }
   const dirtyCount = (state.data.workingFiles || []).length;
@@ -77,7 +77,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
   if (!state.data.repo.isSample && dirtyCount) {
     mode = await chooseCheckoutMode(targetText, dirtyCount);
     if (!mode) return;
-  } else if (!state.data.repo.isSample && !confirm(`确认将远端分支签出为本地分支：${targetText}？`)) {
+  } else if (!state.data.repo.isSample && !confirm(t("确认将远端分支签出为本地分支：{target}？", { target: targetText }))) {
     return;
   }
   const repoPath = repoPathSnapshot();
@@ -90,7 +90,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
     if (!isCurrentRepoPath(repoPath)) return;
     const nextBranch = result.branch || localBranch || remoteRef;
     rememberCheckoutStash(result.stash);
-    toast(result.output || `已签出 ${nextBranch}`);
+    toast(result.output || t("已签出 {branch}", { branch: nextBranch }));
     const data = await loadStateForRepoPath(repoPath, nextBranch);
     if (!data) return;
     state.commitDetails.clear();
@@ -112,19 +112,19 @@ async function checkoutRemoteBranch(remoteRef, button) {
 
 async function mergeBranchRef(ref) {
   if (!state.data || !ref) return;
-  const current = state.data.repo.branch || "当前分支";
+  const current = state.data.repo.branch || t("当前分支");
   if (ref === current) {
-    toast("不能把当前分支合并到自己");
+    toast(t("不能把当前分支合并到自己"));
     return;
   }
   const dirtyCount = (state.data.workingFiles || []).length;
-  const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 可能会阻止合并。建议先提交或储藏。` : "";
-  if (!state.data.repo.isSample && !confirm(`确认将 ${ref} 合并到当前分支 ${current}？${dirtyNote}`)) return;
+  const dirtyNote = dirtyCount ? t("\n\n当前还有 {count} 个未提交改动，Git 可能会阻止合并。建议先提交或储藏。", { count: dirtyCount }) : "";
+  if (!state.data.repo.isSample && !confirm(t("确认将 {ref} 合并到当前分支 {current}？{dirtyNote}", { ref, current, dirtyNote }))) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "mergeRef", ref, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(ref), ...remoteBranchConfigSnapshotPayload(ref) }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已合并 ${ref}`);
+    toast(result.output || t("已合并 {ref}", { ref }));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.commitDetails.clear();
@@ -142,20 +142,20 @@ async function mergeBranchRef(ref) {
 
 async function rebaseOntoRef(ref) {
   if (!state.data || !ref) return;
-  const current = state.data.repo.branch || "当前分支";
+  const current = state.data.repo.branch || t("当前分支");
   if (ref === current) {
-    toast("不能把当前分支变基到自己");
+    toast(t("不能把当前分支变基到自己"));
     return;
   }
   const dirtyCount = (state.data.workingFiles || []).length;
-  const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 会阻止变基。请先提交或储藏。` : "";
-  const message = `确认把当前分支 ${current} 变基到 ${ref}？\n\n命令：git rebase ${ref}\n这会重写当前分支尚未合入 ${ref} 的提交 SHA。${dirtyNote}`;
+  const dirtyNote = dirtyCount ? t("\n\n当前还有 {count} 个未提交改动，Git 会阻止变基。请先提交或储藏。", { count: dirtyCount }) : "";
+  const message = t("确认把当前分支 {current} 变基到 {ref}？\n\n命令：git rebase {ref}\n这会重写当前分支尚未合入 {ref} 的提交 SHA。{dirtyNote}", { current, ref, dirtyNote });
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "rebaseOntoRef", ref, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(ref), ...remoteBranchConfigSnapshotPayload(ref) }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已变基到 ${ref}`);
+    toast(result.output || t("已变基到 {ref}", { ref }));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.commitDetails.clear();
@@ -172,7 +172,7 @@ async function rebaseOntoRef(ref) {
 }
 
 function chooseCheckoutMode(branch, count) {
-  els.checkoutModalText.textContent = `切换到 ${branch} 前，当前工作区有 ${count} 个未提交改动。`;
+  els.checkoutModalText.textContent = t("切换到 {branch} 前，当前工作区有 {count} 个未提交改动。", { branch, count });
   els.checkoutModal.classList.add("show");
   els.checkoutModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -248,7 +248,7 @@ async function maybeRestoreCheckoutStash(branch) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     forgetCheckoutStash(stash);
-    toast(result.output || "已恢复储藏的本地更改");
+    toast(result.output || t("已恢复储藏的本地更改"));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.commitDetails.clear();
@@ -267,11 +267,16 @@ async function maybeRestoreCheckoutStash(branch) {
 
 function isMissingCheckoutStashError(error) {
   const message = String(error?.message || error || "");
-  return message.includes("没有找到可恢复的 Forkline 储藏") || message.includes("这条切换储藏已经不存在或已经变化");
+  return [
+    "没有找到可恢复的 Forkline 储藏",
+    "这条切换储藏已经不存在或已经变化",
+    t("没有找到可恢复的 Forkline 储藏"),
+    t("这条切换储藏已经不存在或已经变化"),
+  ].some((text) => message.includes(text));
 }
 
 function chooseStashRestore(stash) {
-  els.stashRestoreText.textContent = `${stash.label || stash.message} 可以恢复到当前分支。`;
+  els.stashRestoreText.textContent = t("{stash} 可以恢复到当前分支。", { stash: t(stash.label || stash.message) });
   els.stashRestoreModal.classList.add("show");
   els.stashRestoreModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -321,7 +326,7 @@ async function runAction(action) {
     }
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `${names[action]}完成`);
+    toast(result.output || t("{action}完成", { action: t(names[action]) }));
     if (action === "commit") {
       els.commitSummary.value = "";
       els.commitBody.value = "";
@@ -401,13 +406,13 @@ async function runRepoOperation(action, button) {
     skipRebase: "确认跳过当前变基提交？这会放弃当前这一个提交的变基，继续处理后续提交。",
     abortRebase: "确认中止变基？这会放弃当前这次 rebase，并回到变基前的状态。",
   };
-  if (!state.data.repo.isSample && !confirm(messages[action] || "确认继续？")) return;
+  if (!state.data.repo.isSample && !confirm(t(messages[action] || "确认继续？"))) return;
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action, ...currentBranchSnapshotPayload(), ...operationSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "操作已完成");
+    toast(result.output || t("操作已完成"));
     state.commitDetails.clear();
     state.selectedChanges.clear();
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
@@ -433,7 +438,7 @@ async function fillLatestCommitMessage() {
   if (!canAmendCurrentHead() || !commit) {
     els.amendToggle.checked = false;
     updateAmendMode();
-    toast("没有可追加的上一次提交");
+    toast(t("没有可追加的上一次提交"));
     return;
   }
   const repoPath = repoPathSnapshot();
@@ -455,10 +460,10 @@ function updateAmendMode() {
   const canAmend = canAmendCurrentHead();
   if (!canAmend && els.amendToggle.checked) els.amendToggle.checked = false;
   els.amendToggle.disabled = !canAmend;
-  els.amendToggle.title = canAmend ? "追加到上一次提交" : "当前分支还没有上一次提交";
+  els.amendToggle.title = canAmend ? t("追加到上一次提交") : t("当前分支还没有上一次提交");
   const enabled = canAmend && Boolean(els.amendToggle.checked);
-  els.commitSubmit.textContent = enabled ? "追加提交" : "创建提交";
-  els.commitSubmit.title = enabled ? "追加到上一次提交" : "创建新的提交";
+  els.commitSubmit.textContent = enabled ? t("追加提交") : t("创建提交");
+  els.commitSubmit.title = enabled ? t("追加到上一次提交") : t("创建新的提交");
 }
 
 function canAmendCurrentHead() {
@@ -479,61 +484,61 @@ function operationSnapshotPayload() {
 }
 
 function actionConfirmMessage(action, name) {
-  if (action === "amendCommit") return "确认追加到上一次提交？这会重写最新提交 SHA。";
-  if (action === "discardAll") return "确认丢弃全部未提交更改？这会清空已暂存、未暂存和未跟踪文件，无法撤销。";
+  if (action === "amendCommit") return t("确认追加到上一次提交？这会重写最新提交 SHA。");
+  if (action === "discardAll") return t("确认丢弃全部未提交更改？这会清空已暂存、未暂存和未跟踪文件，无法撤销。");
   if (action === "pullRebase") {
     const sync = state.data?.sync || {};
-    const branch = sync.branch || state.data?.repo?.branch || "当前分支";
-    const upstream = sync.upstream || "未设置 upstream";
-    const stateText = `领先 ${sync.ahead || 0}，落后 ${sync.behind || 0}${sync.upstreamGone ? "，上游丢失" : ""}`;
-    return `确认变基拉取当前分支：${branch}？\n\n目标：${upstream}\n当前状态：${stateText}\n命令：git pull --rebase\n\n这会先拉取远端提交，再把本地未推送提交重新应用到远端之后；本地这些提交的 SHA 可能会改变。遇到冲突时，工作区会显示“继续变基 / 跳过变基 / 中止变基”。`;
+    const branch = sync.branch || state.data?.repo?.branch || t("当前分支");
+    const upstream = sync.upstream || t("未设置 upstream");
+    const stateText = t("领先 {ahead}，落后 {behind}{gone}", { ahead: sync.ahead || 0, behind: sync.behind || 0, gone: sync.upstreamGone ? t("，上游丢失") : "" });
+    return t("确认变基拉取当前分支：{branch}？\n\n目标：{upstream}\n当前状态：{state}\n命令：git pull --rebase\n\n这会先拉取远端提交，再把本地未推送提交重新应用到远端之后；本地这些提交的 SHA 可能会改变。遇到冲突时，工作区会显示“继续变基 / 跳过变基 / 中止变基”。", { branch, upstream, state: stateText });
   }
   if (action === "push") {
-    const branch = state.data?.repo?.branch || "当前分支";
+    const branch = state.data?.repo?.branch || t("当前分支");
     const info = state.data?.branchInfo?.[branch] || {};
     const sync = state.data?.sync || {};
     const guard = syncPushGuard(sync);
     if (guard.blocked) {
-      const nextStep = sync.unborn ? "请先创建首个提交后再推送。" : "通常请先使用“变基拉取”；只有确认要改写远端历史时，再使用“安全强推”。";
-      return `${guard.text}\n\nForkline 会阻止这次普通推送。${nextStep}`;
+      const nextStep = t(sync.unborn ? "请先创建首个提交后再推送。" : "通常请先使用“变基拉取”；只有确认要改写远端历史时，再使用“安全强推”。");
+      return t("{guard}\n\nForkline 会阻止这次普通推送。{nextStep}", { guard: guard.text, nextStep });
     }
     if (info.upstream) {
-      return `确认推送当前分支：${branch}？\n\n目标：${info.upstream}\n当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}\n命令：git push`;
+      return t("确认推送当前分支：{branch}？\n\n目标：{upstream}\n当前状态：领先 {ahead}，落后 {behind}{gone}\n命令：git push", { branch, upstream: info.upstream, ahead: info.ahead || 0, behind: info.behind || 0, gone: info.upstreamGone ? t("，上游丢失") : "" });
     }
-    return `当前分支 ${branch} 没有 upstream。确认推送并自动设置 upstream？\n\n默认命令：git push -u origin ${branch}\n如果仓库没有 origin，会使用第一个远端。`;
+    return t("当前分支 {branch} 没有 upstream。确认推送并自动设置 upstream？\n\n默认命令：git push -u origin {branch}\n如果仓库没有 origin，会使用第一个远端。", { branch });
   }
   if (action === "forcePushLease") {
-    const branch = state.data?.repo?.branch || "当前分支";
+    const branch = state.data?.repo?.branch || t("当前分支");
     const info = state.data?.branchInfo?.[branch] || {};
     const sync = state.data?.sync || {};
-    const upstream = info.upstream || "未设置 upstream";
+    const upstream = info.upstream || t("未设置 upstream");
     const divergence = info.upstream
-      ? `当前状态：领先 ${info.ahead || 0}，落后 ${info.behind || 0}${info.upstreamGone ? "，上游丢失" : ""}`
+      ? t("当前状态：领先 {ahead}，落后 {behind}{gone}", { ahead: info.ahead || 0, behind: info.behind || 0, gone: info.upstreamGone ? t("，上游丢失") : "" })
       : sync.unborn
-        ? "当前分支还没有首个提交，后端会拒绝安全强推。"
-        : "当前分支没有 upstream，后端会拒绝安全强推。";
-    return `确认安全强推当前分支：${branch}？\n\n目标：${upstream}\n命令：git push --force-with-lease\n${divergence}\n\n这会改写远端分支历史。--force-with-lease 会在远端分支自你上次抓取后又变化时拒绝推送；如果不确定，请先抓取并检查远端提交。`;
+        ? t("当前分支还没有首个提交，后端会拒绝安全强推。")
+        : t("当前分支没有 upstream，后端会拒绝安全强推。");
+    return t("确认安全强推当前分支：{branch}？\n\n目标：{upstream}\n命令：git push --force-with-lease\n{divergence}\n\n这会改写远端分支历史。--force-with-lease 会在远端分支自你上次抓取后又变化时拒绝推送；如果不确定，请先抓取并检查远端提交。", { branch, upstream, divergence });
   }
-  return `确认执行：${name}？`;
+  return t("确认执行：{action}？", { action: t(name) });
 }
 
 async function runUpstreamAction(action, ref = "", button = null) {
   if (!state.data) return;
-  const branch = state.data?.repo?.branch || "当前分支";
+  const branch = state.data?.repo?.branch || t("当前分支");
   const selectedRef = ref || els.detailBody.querySelector("[data-upstream-select]")?.value || "";
   let payload = null;
   let message = "";
   if (action === "set") {
     if (!selectedRef) {
-      toast("请选择远端分支");
+      toast(t("请选择远端分支"));
       return;
     }
     payload = { action: "setUpstream", ref: selectedRef, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(selectedRef), ...remoteBranchConfigSnapshotPayload(selectedRef) };
-    message = `确认设置当前分支 upstream？\n\n当前分支：${branch}\n目标：${selectedRef}\n命令：git branch --set-upstream-to=${selectedRef} ${branch}`;
+    message = t("确认设置当前分支 upstream？\n\n当前分支：{branch}\n目标：{target}\n命令：git branch --set-upstream-to={target} {branch}", { branch, target: selectedRef });
   } else if (action === "unset") {
     const upstream = state.data?.sync?.upstream || state.data?.branchInfo?.[branch]?.upstream || "";
     payload = { action: "unsetUpstream", ...currentBranchSnapshotPayload() };
-    message = `确认取消当前分支 upstream？\n\n当前分支：${branch}\n原 upstream：${upstream || "未设置"}\n命令：git branch --unset-upstream ${branch}`;
+    message = t("确认取消当前分支 upstream？\n\n当前分支：{branch}\n原 upstream：{upstream}\n命令：git branch --unset-upstream {branch}", { branch, upstream: upstream || t("未设置") });
   }
   if (!payload) return;
   if (!state.data.repo.isSample && !confirm(message)) return;
@@ -542,7 +547,7 @@ async function runUpstreamAction(action, ref = "", button = null) {
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "upstream 操作完成");
+    toast(result.output || t("upstream 操作完成"));
     state.commitDetails.clear();
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
@@ -566,29 +571,29 @@ async function runRemoteAction(action, remoteName = "", button = null) {
   if (action === "add") {
     const existingNames = syncRemotes().map((item) => item.name);
     const defaultName = existingNames.includes("origin") ? "upstream" : "origin";
-    const nameInput = prompt("远端名称：", defaultName);
+    const nameInput = prompt(t("远端名称："), defaultName);
     if (nameInput === null) return;
     const name = cleanPromptValue(nameInput, "远端名称");
     if (!name) return;
-    const urlInput = prompt("远端 URL：", "git@github.com:用户名/仓库名.git");
+    const urlInput = prompt(t("远端 URL："), t("git@github.com:用户名/仓库名.git"));
     if (urlInput === null) return;
     const url = cleanPromptValue(urlInput, "远端 URL");
     if (!url) return;
     payload = { action: "addRemote", name, url };
-    message = `确认添加远端：${name}？\n\nURL：${url}\n命令：git remote add ${name} ${url}`;
+    message = t("确认添加远端：{name}？\n\nURL：{url}\n命令：git remote add {name} {url}", { name, url });
   } else if (action === "edit") {
     if (!remote?.name) return;
     const currentUrl = remote.pushUrl || remote.fetchUrl || "";
-    const urlInput = prompt(`修改远端 ${remote.name} 的 URL：`, currentUrl);
+    const urlInput = prompt(t("修改远端 {name} 的 URL：", { name: remote.name }), currentUrl);
     if (urlInput === null) return;
     const url = cleanPromptValue(urlInput, "远端 URL");
     if (!url) return;
     payload = { action: "setRemoteUrl", name: remote.name, url, ...remoteConfigSnapshotPayload(remote) };
-    message = `确认修改远端 URL：${remote.name}？\n\n新 URL：${url}\n命令：git remote set-url ${remote.name} ${url}`;
+    message = t("确认修改远端 URL：{name}？\n\n新 URL：{url}\n命令：git remote set-url {name} {url}", { name: remote.name, url });
   } else if (action === "delete") {
     if (!remote?.name) return;
     payload = { action: "deleteRemote", name: remote.name, ...remoteConfigSnapshotPayload(remote) };
-    message = `确认删除远端：${remote.name}？\n\n命令：git remote remove ${remote.name}\n这个操作只会删除当前仓库里的远端配置，不会删除 GitHub 或服务器上的仓库。`;
+    message = t("确认删除远端：{name}？\n\n命令：git remote remove {name}\n这个操作只会删除当前仓库里的远端配置，不会删除 GitHub 或服务器上的仓库。", { name: remote.name });
   } else if (action === "test") {
     if (!remote?.name) return;
     payload = { action: "testRemote", name: remote.name };
@@ -596,7 +601,7 @@ async function runRemoteAction(action, remoteName = "", button = null) {
   } else if (action === "fetch") {
     if (!remote?.name) return;
     payload = { action: "fetchRemote", name: remote.name, ...remoteConfigSnapshotPayload(remote) };
-    message = `确认抓取远端：${remote.name}？\n\n命令：git fetch ${remote.name} --prune`;
+    message = t("确认抓取远端：{name}？\n\n命令：git fetch {name} --prune", { name: remote.name });
   }
   if (!payload) return;
   if (message && !state.data.repo.isSample && !confirm(message)) return;
@@ -615,13 +620,13 @@ async function runRemoteAction(action, remoteName = "", button = null) {
         fetchUrl: check.fetchUrl || remote.fetchUrl || "",
         pushUrl: check.pushUrl || remote.pushUrl || remote.fetchUrl || "",
         command: check.command || `git ls-remote --heads ${check.remote || remote.name}`,
-        output: check.output || result.output || "远端连接正常",
+        output: check.output || result.output || t("远端连接正常"),
         checkedAt: remoteCheckTime(),
       };
     } else if (action === "add" || action === "edit" || action === "delete") {
       state.remoteCheck = null;
     }
-    toast(result.output || "远端操作完成");
+    toast(result.output || t("远端操作完成"));
     state.commitDetails.clear();
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
@@ -659,16 +664,16 @@ async function runRemoteMenuAction(action) {
   if (action === "copyFetch" || action === "copyPush") {
     const url = action === "copyFetch" ? remote.fetchUrl : remote.pushUrl || remote.fetchUrl;
     if (!url) {
-      toast("这个远端没有可复制的 URL");
+      toast(t("这个远端没有可复制的 URL"));
       return;
     }
     await copyText(url);
-    toast(action === "copyFetch" ? "已复制 fetch URL" : "已复制 push URL");
+    toast(t(action === "copyFetch" ? "已复制 fetch URL" : "已复制 push URL"));
     return;
   }
   if (action === "copyCheckCommand") {
     await copyText(`git ls-remote --heads ${remote.name}`);
-    toast("已复制诊断命令");
+    toast(t("已复制诊断命令"));
     return;
   }
   const mapped = action === "test" || action === "fetch" || action === "edit" || action === "delete" ? action : "";
@@ -709,7 +714,7 @@ function remotePushUrls(remote) {
 
 function cleanPromptValue(value, label) {
   const text = String(value || "").trim();
-  if (!text) toast(`请填写${label}`);
+  if (!text) toast(t("请填写{label}", { label: t(label) }));
   return text;
 }
 
@@ -731,23 +736,23 @@ async function createStashFromSelection(files = null) {
   const stashFiles = selectedOnly ? files : [];
   const allFiles = state.data.workingFiles || [];
   if (!allFiles.length) {
-    toast("没有可储藏的未提交更改");
+    toast(t("没有可储藏的未提交更改"));
     return;
   }
   if (state.data?.sync?.unborn) {
-    toast("当前分支还没有首个提交，不能创建储藏。请先提交一次，或使用“丢弃全部”清理未跟踪文件。");
+    toast(t("当前分支还没有首个提交，不能创建储藏。请先提交一次，或使用“丢弃全部”清理未跟踪文件。"));
     return;
   }
   if (selectedOnly && !stashFiles.length) {
-    toast("没有选中的文件可储藏");
+    toast(t("没有选中的文件可储藏"));
     return;
   }
-  const targetText = selectedOnly ? `${stashFiles.length} 个所选文件` : "全部未提交更改";
-  const defaultMessage = `Forkline: 手动储藏 ${new Date().toISOString().replace("T", " ").slice(0, 19)}`;
-  const message = state.data.repo.isSample ? defaultMessage : prompt(`为${targetText}填写储藏说明：`, defaultMessage);
+  const targetText = selectedOnly ? t("{count} 个所选文件", { count: stashFiles.length }) : t("全部未提交更改");
+  const defaultMessage = t("Forkline: 手动储藏 {time}", { time: new Date().toISOString().replace("T", " ").slice(0, 19) });
+  const message = state.data.repo.isSample ? defaultMessage : prompt(t("为{target}填写储藏说明：", { target: targetText }), defaultMessage);
   if (message === null) return;
   const trimmedMessage = String(message || "").trim() || defaultMessage;
-  if (!state.data.repo.isSample && !confirm(`确认储藏${targetText}？\n\n说明：${trimmedMessage}`)) return;
+  if (!state.data.repo.isSample && !confirm(t("确认储藏{target}？\n\n说明：{message}", { target: targetText, message: trimmedMessage }))) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
@@ -755,7 +760,7 @@ async function createStashFromSelection(files = null) {
       body: JSON.stringify({ action: "createStash", message: trimmedMessage, files: selectedOnly ? stashFiles : [], ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast("已创建储藏，工作区更改已移到右侧“储藏”列表");
+    toast(t("已创建储藏，工作区更改已移到右侧“储藏”列表"));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.stashDetails.clear();
@@ -776,20 +781,20 @@ async function ignoreWorktreePath(action, file) {
   const mode = action === "ignoreDirectory" ? "directory" : "file";
   const target = mode === "directory" ? worktreeDirectoryForFile(file) : file;
   if (!target) {
-    toast("根目录文件没有可忽略的所在目录");
+    toast(t("根目录文件没有可忽略的所在目录"));
     return;
   }
   const command = mode === "directory" ? `/${target}/` : `/${file}`;
   const message =
     mode === "directory"
-      ? `确认把目录加入 .gitignore？\n\n目录：${target}/\n规则：${command}\n\n这个操作只写入 .gitignore，不会删除本地文件。`
-      : `确认把文件加入 .gitignore？\n\n文件：${file}\n规则：${command}\n\n这个操作只写入 .gitignore，不会删除本地文件。`;
+      ? t("确认把目录加入 .gitignore？\n\n目录：{target}/\n规则：{rule}\n\n这个操作只写入 .gitignore，不会删除本地文件。", { target, rule: command })
+      : t("确认把文件加入 .gitignore？\n\n文件：{file}\n规则：{rule}\n\n这个操作只写入 .gitignore，不会删除本地文件。", { file, rule: command });
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "ignoreWorktreePath", file, mode, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "已更新 .gitignore");
+    toast(result.output || t("已更新 .gitignore"));
     state.selectedChanges.delete(changeKey("unstaged", file));
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
@@ -827,7 +832,7 @@ async function runSingleFileAction(action, file) {
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(singleFileActionPayload(action, file)) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `${names[action] || "操作"}完成`);
+    toast(result.output || t("{action}完成", { action: t(names[action] || "操作") }));
     state.selectedChanges.delete(changeKey("unstaged", file));
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
@@ -896,8 +901,8 @@ function isConflictResolveAction(action) {
 }
 
 function conflictResolveConfirmMessage(action, file) {
-  const side = action === "resolveConflictOurs" ? "当前版本（git checkout --ours）" : "对方版本（git checkout --theirs）";
-  return `确认使用${side}解决冲突并暂存？\n\n文件：${file}\n这会覆盖此文件里的冲突标记。`;
+  const side = t(action === "resolveConflictOurs" ? "当前版本（git checkout --ours）" : "对方版本（git checkout --theirs）");
+  return t("确认使用{side}解决冲突并暂存？\n\n文件：{file}\n这会覆盖此文件里的冲突标记。", { side, file });
 }
 
 async function runFileBatchAction(action, scope, button) {
@@ -920,7 +925,7 @@ async function runFileBatchAction(action, scope, button) {
       if (!isCurrentRepoPath(repoPath)) return;
       state.selectedChanges.delete(changeKey(scope, file));
     }
-    toast(`${name}完成：${files.length} 个文件`);
+    toast(t("{action}完成：{count} 个文件", { action: t(name), count: files.length }));
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
     state.data.workingFiles = data.workingFiles || [];
@@ -943,11 +948,11 @@ function isDiscardAction(action) {
 
 function discardConfirmMessage(action, files) {
   const count = files.length;
-  const target = count === 1 ? files[0] : `${count} 个文件`;
+  const target = count === 1 ? files[0] : t("{count} 个文件", { count });
   if (action === "discardStagedFile") {
-    return `确认丢弃已暂存改动：${target}？\n\n这会丢弃暂存区里的改动；如果同一文件还有未暂存内容，会保留在工作区。没有未暂存内容时，文件可能被恢复到 HEAD 或删除，无法撤销。`;
+    return t("确认丢弃已暂存改动：{target}？\n\n这会丢弃暂存区里的改动；如果同一文件还有未暂存内容，会保留在工作区。没有未暂存内容时，文件可能被恢复到 HEAD 或删除，无法撤销。", { target });
   }
-  return `确认丢弃工作区改动：${target}？此操作无法撤销。`;
+  return t("确认丢弃工作区改动：{target}？此操作无法撤销。", { target });
 }
 
 async function rewordSelectedCommit(form) {
@@ -958,12 +963,12 @@ async function rewordSelectedCommit(form) {
   const summary = form.elements.summary.value.trim();
   const body = form.elements.body.value.trim();
   if (!summary) {
-    toast("请填写新的提交摘要");
+    toast(t("请填写新的提交摘要"));
     return;
   }
   const previousIndex = state.data.commits.findIndex((item) => item.sha === sha);
-  const targetName = sha === state.data.commits[0]?.sha ? "最新提交" : "历史提交";
-  if (!state.data.repo.isSample && !confirm(`确认修改 ${targetName} ${commit.short} 的提交信息？这会重写相关历史 SHA。`)) return;
+  const targetName = t(sha === state.data.commits[0]?.sha ? "最新提交" : "历史提交");
+  if (!state.data.repo.isSample && !confirm(t("确认修改 {target} {sha} 的提交信息？这会重写相关历史 SHA。", { target: targetName, sha: commit.short }))) return;
   const button = form.querySelector("button[type='submit']");
   button.disabled = true;
   const repoPath = repoPathSnapshot();
@@ -973,7 +978,7 @@ async function rewordSelectedCommit(form) {
       body: JSON.stringify({ action: "rewordCommit", sha, summary, body, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "提交信息已修改");
+    toast(result.output || t("提交信息已修改"));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.commitDetails.clear();

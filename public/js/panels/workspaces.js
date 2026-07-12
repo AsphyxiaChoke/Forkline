@@ -4,10 +4,10 @@ function renderBranchesTab(commit) {
   const summary = branchCleanupSummary(rows);
   const realRepo = Boolean(state.data && !state.data.repo.isSample);
   els.detailNode.style.borderColor = "var(--teal)";
-  els.detailTitle.textContent = "分支整理";
-  els.detailSub.textContent = rows.length ? `${rows.length} 个本地分支 · 基准 ${state.data?.repo?.branch || "HEAD"}` : "没有本地分支";
+  els.detailTitle.textContent = t("分支整理");
+  els.detailSub.textContent = rows.length ? t("{count} 个本地分支 · 基准 {base}", { count: rows.length, base: state.data?.repo?.branch || "HEAD" }) : t("没有本地分支");
   if (!rows.length) {
-    els.detailBody.innerHTML = `
+    els.detailBody.innerHTML = tt`
       <div class="empty-panel">
         <strong>没有本地分支</strong>
         <span>打开真实 Git 仓库后会在这里显示分支整理建议。</span>
@@ -21,7 +21,7 @@ function renderBranchesTab(commit) {
     .filter((item) => item.label && item.ref)
     .slice(0, 8);
   const relatedHtml = relatedRefs.length
-    ? `
+    ? tt`
       <div class="branch-focus">
         <div class="detail-section-title">当前提交引用</div>
         <div class="branch-focus-list">
@@ -30,7 +30,7 @@ function renderBranchesTab(commit) {
       </div>
     `
     : "";
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="branch-cleanup-layout">
       <div class="branch-cleanup-summary">
         <div><span>已合并</span><strong>${summary.merged}</strong></div>
@@ -80,8 +80,8 @@ function branchCleanupRows() {
       lastCommit: info.sha || "",
       lastCommitShort: info.short || "",
       canDelete: !protectedBranch && !info.worktreePath,
-      statusLabel: branch === current ? "当前" : protectedBranch ? "保护" : info.upstreamGone ? "上游丢失" : "活跃",
-      reason: branch === current ? "当前所在分支不能删除" : protectedBranch ? "主干或长期分支默认保留" : info.upstreamGone ? "上游分支已经不存在，删除前先确认本地提交是否还需要" : "等待 Git 状态刷新",
+      statusLabel: t(branch === current ? "当前" : protectedBranch ? "保护" : info.upstreamGone ? "上游丢失" : "活跃"),
+      reason: t(branch === current ? "当前所在分支不能删除" : protectedBranch ? "主干或长期分支默认保留" : info.upstreamGone ? "上游分支已经不存在，删除前先确认本地提交是否还需要" : "等待 Git 状态刷新"),
     };
   });
 }
@@ -104,20 +104,22 @@ function branchCleanupRowHtml(row, index, realRepo) {
   const classes = ["branch-cleanup-row", branchCleanupStatusClass(row), row.recommended ? "recommended" : "", row.attention ? "attention" : ""].filter(Boolean).join(" ");
   const branch = row.branch || "";
   const meta = branchCleanupMetaHtml(row);
-  const deleteTitle = canDelete ? `安全删除本地分支 ${branch}` : row.deleteBlockedReason || row.protectedReason || (realRepo ? "这个分支暂不适合删除" : "示例仓库不能执行删除");
-  return `
+  const deleteTitle = canDelete
+    ? t("安全删除本地分支 {branch}", { branch })
+    : t(row.deleteBlockedReason || row.protectedReason || (realRepo ? "这个分支暂不适合删除" : "示例仓库不能执行删除"));
+  return tt`
     <div class="${classes}" data-branch-name="${escapeAttr(branch)}">
       <div class="branch-cleanup-head">
         <strong title="${escapeAttr(branch)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span></strong>
-        <span class="branch-cleanup-status">${escapeHtml(row.statusLabel || "活跃")}</span>
+        <span class="branch-cleanup-status">${escapeHtml(t(row.statusLabel || "活跃"))}</span>
       </div>
       ${meta}
       <div class="branch-cleanup-last">
         <code>${escapeHtml(row.lastCommitShort || "")}</code>
-        <span title="${escapeAttr(row.lastSubject || "")}">${escapeHtml(row.lastSubject || "没有提交摘要")}</span>
+        <span title="${escapeAttr(row.lastSubject || "")}">${escapeHtml(row.lastSubject || t("没有提交摘要"))}</span>
         <em>${escapeHtml(row.lastUpdated || "")}</em>
       </div>
-      <p title="${escapeAttr(row.reason || "")}">${escapeHtml(row.reason || "")}</p>
+      <p title="${escapeAttr(t(row.reason || ""))}">${escapeHtml(t(row.reason || ""))}</p>
       <div class="branch-cleanup-row-actions">
         <button class="mini-btn" data-branch-cleanup-action="view" data-branch="${escapeAttr(branch)}" type="button">查看</button>
         <button class="mini-btn" data-branch-cleanup-action="compare" data-branch="${escapeAttr(branch)}" type="button" ${row.current ? "disabled" : ""}>比较</button>
@@ -132,15 +134,15 @@ function branchCleanupRowHtml(row, index, realRepo) {
 function branchCleanupMetaHtml(row) {
   const badges = [];
   if (row.upstream) badges.push(`<span class="branch-badge upstream" title="${escapeAttr(row.upstream)}">${escapeHtml(row.upstream)}</span>`);
-  else if (row.current) badges.push(`<span class="branch-badge muted">未设置 upstream</span>`);
-  if (row.upstreamGone) badges.push(`<span class="branch-badge danger">上游丢失</span>`);
-  if (row.ahead) badges.push(`<span class="branch-badge ahead">领先 ${escapeHtml(row.ahead)}</span>`);
-  if (row.behind) badges.push(`<span class="branch-badge behind">落后 ${escapeHtml(row.behind)}</span>`);
-  if (row.mergedIntoCurrent) badges.push(`<span class="branch-badge merged">已合并</span>`);
-  if (row.stale) badges.push(`<span class="branch-badge stale">${escapeHtml(row.staleDays || 0)} 天未动</span>`);
-  if (row.occupied) badges.push(`<span class="branch-badge danger">worktree 占用</span>`);
-  if (row.protected && !row.current) badges.push(`<span class="branch-badge muted">保护</span>`);
-  return badges.length ? `<div class="branch-cleanup-meta">${badges.join("")}</div>` : `<div class="branch-cleanup-meta"><span class="branch-badge muted">无 upstream</span></div>`;
+  else if (row.current) badges.push(`<span class="branch-badge muted">${t("未设置 upstream")}</span>`);
+  if (row.upstreamGone) badges.push(`<span class="branch-badge danger">${t("上游丢失")}</span>`);
+  if (row.ahead) badges.push(`<span class="branch-badge ahead">${t("领先 {count}", { count: escapeHtml(row.ahead) })}</span>`);
+  if (row.behind) badges.push(`<span class="branch-badge behind">${t("落后 {count}", { count: escapeHtml(row.behind) })}</span>`);
+  if (row.mergedIntoCurrent) badges.push(`<span class="branch-badge merged">${t("已合并")}</span>`);
+  if (row.stale) badges.push(`<span class="branch-badge stale">${t("{count} 天未动", { count: escapeHtml(row.staleDays || 0) })}</span>`);
+  if (row.occupied) badges.push(`<span class="branch-badge danger">${t("worktree 占用")}</span>`);
+  if (row.protected && !row.current) badges.push(`<span class="branch-badge muted">${t("保护")}</span>`);
+  return badges.length ? `<div class="branch-cleanup-meta">${badges.join("")}</div>` : `<div class="branch-cleanup-meta"><span class="branch-badge muted">${t("无 upstream")}</span></div>`;
 }
 
 function branchCleanupStatusClass(row) {
@@ -189,7 +191,7 @@ async function refreshBranchCleanup(button) {
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
     renderInspector();
-    toast("分支整理已刷新");
+    toast(t("分支整理已刷新"));
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -205,13 +207,13 @@ async function deleteMergedCleanupBranches(button) {
     .map((row) => ({ branch: row.branch, sha: row.lastCommit || branchExpectedSha(row.branch) }))
     .filter((entry) => entry.branch);
   if (!branches.length) {
-    toast("没有可安全删除的已合并分支");
+    toast(t("没有可安全删除的已合并分支"));
     return;
   }
   const branchNames = branches.map((entry) => entry.branch);
   const preview = branchNames.slice(0, 8).join("\n");
-  const suffix = branches.length > 8 ? `\n... 还有 ${branches.length - 8} 个` : "";
-  if (!confirm(`确认安全删除这些已合并分支？\n\n${preview}${suffix}\n\n命令：git branch -d <分支>\n如果 Git 判断未完全合并，会自动阻止。`)) return;
+  const suffix = branches.length > 8 ? t("\n... 还有 {count} 个", { count: branches.length - 8 }) : "";
+  if (!confirm(t("确认安全删除这些已合并分支？\n\n{preview}{suffix}\n\n命令：git branch -d <分支>\n如果 Git 判断未完全合并，会自动阻止。", { preview, suffix }))) return;
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
   try {
@@ -220,7 +222,7 @@ async function deleteMergedCleanupBranches(button) {
       body: JSON.stringify({ action: "deleteBranches", branches }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已删除 ${branches.length} 个分支`);
+    toast(result.output || t("已删除 {count} 个分支", { count: branches.length }));
     const nextRef = branchNames.includes(state.selectedRef) ? state.data.repo.branch || "" : state.selectedRef;
     const data = await loadStateForRepoPath(repoPath, nextRef);
     if (!data) return;
@@ -263,10 +265,10 @@ function renderWorktreesTab() {
   const realRepo = Boolean(state.data && !state.data.repo.isSample);
   const summary = worktreeSummary(rows);
   els.detailNode.style.borderColor = summary.dirty || summary.prunable ? "var(--amber)" : "var(--blue)";
-  els.detailTitle.textContent = "工作树";
-  els.detailSub.textContent = rows.length ? `${rows.length} 个 Git worktree · 当前 ${state.data?.repo?.branch || "HEAD"}` : "没有工作树";
+  els.detailTitle.textContent = t("工作树");
+  els.detailSub.textContent = rows.length ? t("{count} 个 Git worktree · 当前 {branch}", { count: rows.length, branch: state.data?.repo?.branch || "HEAD" }) : t("没有工作树");
   setActiveDiff(null);
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="worktree-dashboard">
       <div class="worktree-summary">
         <div><span>总数</span><strong>${rows.length}</strong></div>
@@ -283,7 +285,7 @@ function renderWorktreesTab() {
         ${
           rows.length
             ? rows.map((row, index) => worktreeRowHtml(row, index, realRepo)).join("")
-            : `<div class="empty-panel compact"><span>当前仓库还没有额外工作树。</span></div>`
+            : `<div class="empty-panel compact"><span>${t("当前仓库还没有额外工作树。")}</span></div>`
         }
       </div>
     </div>
@@ -306,7 +308,7 @@ function worktreeCreateHtml(realRepo) {
   const defaultRef = worktreeDefaultRef();
   const refs = compareRefOptions([defaultRef]);
   const target = worktreeTargetSuggestion(defaultRef);
-  return `
+  return tt`
     <form class="worktree-create" data-worktree-form>
       <datalist id="worktreeRefOptions">
         ${refs.map((item) => `<option value="${escapeAttr(item.ref)}" label="${escapeAttr(item.label)}"></option>`).join("")}
@@ -356,19 +358,19 @@ function worktreeRowHtml(row, index, realRepo) {
   const branch = row.label || row.branch || "detached HEAD";
   const openDisabled = !realRepo || row.current || !row.exists || row.prunable;
   const pruneDisabled = !realRepo || !row.prunable;
-  return `
+  return tt`
     <article class="worktree-row ${row.current ? "current" : ""} ${row.prunable || !row.exists ? "prunable" : ""}">
       <div class="worktree-row-head">
         <strong title="${escapeAttr(branch)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(branch)}</span></strong>
         <span class="worktree-status ${status.className}">${escapeHtml(status.label)}</span>
       </div>
-      <div class="worktree-path" title="${escapeAttr(row.path || "")}">${escapeHtml(row.path || "未知路径")}</div>
+      <div class="worktree-path" title="${escapeAttr(row.path || "")}">${escapeHtml(row.path || t("未知路径"))}</div>
       <div class="worktree-meta">
-        <span>${escapeHtml(row.shortHead || "无 HEAD")}</span>
-        ${row.detached ? `<span>游离 HEAD</span>` : ""}
-        ${row.locked ? `<span title="${escapeAttr(row.lockReason || "locked")}">已锁定</span>` : ""}
-        ${row.operation?.label ? `<span title="${escapeAttr(row.operation.label)}">操作中</span>` : ""}
-        ${row.prunable && row.pruneReason ? `<span title="${escapeAttr(row.pruneReason)}">可清理</span>` : ""}
+        <span>${escapeHtml(row.shortHead || t("无 HEAD"))}</span>
+        ${row.detached ? `<span>${t("游离 HEAD")}</span>` : ""}
+        ${row.locked ? `<span title="${escapeAttr(t(row.lockReason || "locked"))}">${t("已锁定")}</span>` : ""}
+        ${row.operation?.label ? `<span title="${escapeAttr(t(row.operation.label))}">${t("操作中")}</span>` : ""}
+        ${row.prunable && row.pruneReason ? `<span title="${escapeAttr(t(row.pruneReason))}">${t("可清理")}</span>` : ""}
       </div>
       <div class="worktree-row-actions">
         <button class="mini-btn" data-worktree-action="open" data-worktree-path="${escapeAttr(row.path || "")}" type="button" ${openDisabled ? "disabled" : ""}>打开</button>
@@ -380,11 +382,11 @@ function worktreeRowHtml(row, index, realRepo) {
 }
 
 function worktreeStatus(row) {
-  if (row.prunable || !row.exists) return { label: "失效", className: "danger" };
-  if (row.operation?.label) return { label: "操作中", className: "warn" };
-  if (row.status === "dirty") return { label: `${row.dirtyCount || 0} 个改动`, className: "warn" };
-  if (row.status === "clean") return { label: "干净", className: "ok" };
-  return { label: "未知", className: "muted" };
+  if (row.prunable || !row.exists) return { label: t("失效"), className: "danger" };
+  if (row.operation?.label) return { label: t("操作中"), className: "warn" };
+  if (row.status === "dirty") return { label: t("{count} 个改动", { count: row.dirtyCount || 0 }), className: "warn" };
+  if (row.status === "clean") return { label: t("干净"), className: "ok" };
+  return { label: t("未知"), className: "muted" };
 }
 
 async function submitWorktreeForm(form) {
@@ -393,15 +395,16 @@ async function submitWorktreeForm(form) {
   const ref = form.querySelector('[data-worktree-field="ref"]')?.value.trim() || "HEAD";
   const branch = form.querySelector('[data-worktree-field="branch"]')?.value.trim() || "";
   if (!targetPath) {
-    toast("请输入工作树目标文件夹");
+    toast(t("请输入工作树目标文件夹"));
     return;
   }
   if (!ref) {
-    toast("请输入工作树起点引用");
+    toast(t("请输入工作树起点引用"));
     return;
   }
   const command = branch ? `git worktree add -b ${branch} ${targetPath} ${ref}` : `git worktree add ${targetPath} ${ref}`;
-  if (!state.data.repo.isSample && !confirm(`确认创建工作树？\n\n位置：${targetPath}\n起点：${ref}${branch ? `\n新分支：${branch}` : ""}\n命令：${command}`)) return;
+  const branchText = branch ? t("\n新分支：{branch}", { branch }) : "";
+  if (!state.data.repo.isSample && !confirm(t("确认创建工作树？\n\n位置：{path}\n起点：{ref}{branchText}\n命令：{command}", { path: targetPath, ref, branchText, command }))) return;
   const submit = form.querySelector('button[type="submit"]');
   if (submit) submit.disabled = true;
   const repoPath = repoPathSnapshot();
@@ -411,7 +414,7 @@ async function submitWorktreeForm(form) {
       body: JSON.stringify({ action: "createWorktree", targetPath, ref, branch, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(ref), ...remoteBranchConfigSnapshotPayload(ref) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "已创建工作树");
+    toast(result.output || t("已创建工作树"));
     const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
     state.commitDetails.clear();
@@ -431,7 +434,7 @@ async function runWorktreeAction(action, button) {
   const worktreePath = button?.dataset?.worktreePath || "";
   if (action === "copyPath") {
     await copyText(worktreePath);
-    toast("已复制工作树路径");
+    toast(t("已复制工作树路径"));
     return;
   }
   if (action === "refresh") {
@@ -457,7 +460,7 @@ async function refreshWorktreeDashboard(button) {
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
-    toast("工作树列表已刷新");
+    toast(t("工作树列表已刷新"));
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -474,7 +477,7 @@ async function openWorktreePath(worktreePath, button) {
       method: "POST",
       body: JSON.stringify({ action: "openWorktree", path: worktreePath }),
     });
-    toast(result.output || "已打开工作树");
+    toast(result.output || t("已打开工作树"));
     clearOpenedRepoState();
     state.selectedRef = "";
     state.data = result.state;
@@ -494,7 +497,7 @@ async function openWorktreePath(worktreePath, button) {
 }
 
 async function pruneWorktreeRecords(button) {
-  if (!state.data?.repo?.isSample && !confirm("确认清理失效工作树记录？\n\n命令：git worktree prune --verbose\n这只清理 Git 中已经失效的 worktree 元数据，不会删除仍存在的工作区文件。")) return;
+  if (!state.data?.repo?.isSample && !confirm(t("确认清理失效工作树记录？\n\n命令：git worktree prune --verbose\n这只清理 Git 中已经失效的 worktree 元数据，不会删除仍存在的工作区文件。"))) return;
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
   try {
@@ -503,7 +506,7 @@ async function pruneWorktreeRecords(button) {
       body: JSON.stringify({ action: "pruneAllWorktrees", ...worktreePruneSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "已清理失效工作树记录");
+    toast(result.output || t("已清理失效工作树记录"));
     const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
     state.data = data;
@@ -522,10 +525,10 @@ function renderSubmodulesTab() {
   const realRepo = Boolean(state.data && !state.data.repo.isSample);
   const summary = submoduleSummary(rows);
   els.detailNode.style.borderColor = summary.conflict || summary.changed ? "var(--amber)" : "var(--blue)";
-  els.detailTitle.textContent = "子模块";
-  els.detailSub.textContent = rows.length ? `${rows.length} 个 Git submodule` : "没有子模块";
+  els.detailTitle.textContent = t("子模块");
+  els.detailSub.textContent = rows.length ? t("{count} 个 Git submodule", { count: rows.length }) : t("没有子模块");
   setActiveDiff(null);
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="submodule-dashboard">
       <div class="submodule-summary">
         <div><span>总数</span><strong>${rows.length}</strong></div>
@@ -543,7 +546,7 @@ function renderSubmodulesTab() {
         ${
           rows.length
             ? rows.map((row, index) => submoduleRowHtml(row, index, realRepo)).join("")
-            : `<div class="empty-panel compact"><span>当前仓库没有 .gitmodules 配置。添加子模块后会显示初始化和更新入口。</span></div>`
+            : `<div class="empty-panel compact"><span>${t("当前仓库没有 .gitmodules 配置。添加子模块后会显示初始化和更新入口。")}</span></div>`
         }
       </div>
     </div>
@@ -566,24 +569,24 @@ function submoduleSummary(rows) {
 function submoduleRowHtml(row, index, realRepo) {
   const status = submoduleStatus(row);
   const pathText = row.path || "";
-  const updateTitle = row.initialized ? `更新子模块 ${pathText}` : `初始化子模块 ${pathText}`;
-  return `
+  const updateTitle = row.initialized ? t("更新子模块 {path}", { path: pathText }) : t("初始化子模块 {path}", { path: pathText });
+  return tt`
     <article class="submodule-row ${status.className}">
       <div class="submodule-row-head">
         <strong title="${escapeAttr(row.name || pathText)}"><span class="branch-dot" style="--branch:${laneColor(index)}"></span><span>${escapeHtml(row.name || pathText)}</span></strong>
         <span class="submodule-status ${status.className}">${escapeHtml(status.label)}</span>
       </div>
       <div class="submodule-path" title="${escapeAttr(pathText)}">${escapeHtml(pathText)}</div>
-      <div class="submodule-url" title="${escapeAttr(row.url || "")}">${escapeHtml(row.url || "未配置 URL")}</div>
+      <div class="submodule-url" title="${escapeAttr(row.url || "")}">${escapeHtml(row.url || t("未配置 URL"))}</div>
       <div class="submodule-meta">
-        <span>${escapeHtml(row.shortSha || "无提交")}</span>
+        <span>${escapeHtml(row.shortSha || t("无提交"))}</span>
         ${row.branch ? `<span title="${escapeAttr(row.branch)}">${escapeHtml(row.branch)}</span>` : ""}
         ${row.worktreeBranch ? `<span title="${escapeAttr(row.worktreeBranch)}">${escapeHtml(row.worktreeBranch)}</span>` : ""}
-        ${row.summary ? `<span title="${escapeAttr(row.summary)}">${escapeHtml(row.summary)}</span>` : ""}
-        ${row.dirtyCount ? `<span>${escapeHtml(row.dirtyCount)} 个改动</span>` : ""}
+        ${row.summary ? `<span title="${escapeAttr(t(row.summary))}">${escapeHtml(t(row.summary))}</span>` : ""}
+        ${row.dirtyCount ? `<span>${t("{count} 个改动", { count: escapeHtml(row.dirtyCount) })}</span>` : ""}
       </div>
       <div class="submodule-row-actions">
-        <button class="mini-btn" data-submodule-action="update" data-submodule-path="${escapeAttr(pathText)}" type="button" ${realRepo ? "" : "disabled"} title="${escapeAttr(updateTitle)}"><span>${row.initialized ? "更新" : "初始化"}</span><span class="command-hint">update</span></button>
+        <button class="mini-btn" data-submodule-action="update" data-submodule-path="${escapeAttr(pathText)}" type="button" ${realRepo ? "" : "disabled"} title="${escapeAttr(updateTitle)}"><span>${t(row.initialized ? "更新" : "初始化")}</span><span class="command-hint">update</span></button>
         <button class="mini-btn" data-submodule-action="copyPath" data-submodule-path="${escapeAttr(pathText)}" type="button">复制路径</button>
         <button class="mini-btn" data-submodule-action="copyUrl" data-submodule-url="${escapeAttr(row.url || "")}" type="button" ${row.url ? "" : "disabled"}>复制 URL</button>
       </div>
@@ -592,12 +595,12 @@ function submoduleRowHtml(row, index, realRepo) {
 }
 
 function submoduleStatus(row) {
-  if (row.status === "conflict") return { label: "冲突", className: "danger" };
-  if (!row.initialized || row.status === "uninitialized") return { label: "未初始化", className: "warn" };
-  if (row.status === "changed") return { label: "提交不一致", className: "warn" };
-  if (row.dirtyCount) return { label: `${row.dirtyCount} 个改动`, className: "warn" };
-  if (row.status === "ok") return { label: "已就绪", className: "ok" };
-  return { label: row.statusLabel || "已配置", className: "muted" };
+  if (row.status === "conflict") return { label: t("冲突"), className: "danger" };
+  if (!row.initialized || row.status === "uninitialized") return { label: t("未初始化"), className: "warn" };
+  if (row.status === "changed") return { label: t("提交不一致"), className: "warn" };
+  if (row.dirtyCount) return { label: t("{count} 个改动", { count: row.dirtyCount }), className: "warn" };
+  if (row.status === "ok") return { label: t("已就绪"), className: "ok" };
+  return { label: t(row.statusLabel || "已配置"), className: "muted" };
 }
 
 async function runSubmoduleAction(action, button) {
@@ -605,14 +608,14 @@ async function runSubmoduleAction(action, button) {
   const submodulePath = button?.dataset?.submodulePath || "";
   if (action === "copyPath") {
     await copyText(submodulePath);
-    toast("已复制子模块路径");
+    toast(t("已复制子模块路径"));
     return;
   }
   if (action === "copyUrl") {
     const url = button?.dataset?.submoduleUrl || "";
     if (!url) return;
     await copyText(url);
-    toast("已复制子模块 URL");
+    toast(t("已复制子模块 URL"));
     return;
   }
   if (action === "refresh") {
@@ -628,7 +631,7 @@ async function runSubmoduleAction(action, button) {
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ ...payload, ...currentBranchSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "子模块操作完成");
+    toast(result.output || t("子模块操作完成"));
     const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
     state.data = data;
@@ -651,10 +654,10 @@ function submoduleActionPayload(action, submodulePath) {
 }
 
 function submoduleConfirmMessage(action, submodulePath) {
-  if (action === "syncAll") return "确认同步子模块 URL 配置？\n\n命令：git submodule sync --recursive\n这会根据 .gitmodules 更新本地子模块 URL 配置。";
-  if (action === "initAll") return "确认初始化并更新所有子模块？\n\n命令：git submodule update --init --recursive\n这可能需要访问子模块远端仓库。";
-  if (action === "updateAll") return "确认更新所有子模块？\n\n命令：git submodule update --init --recursive\n这会把子模块签出到父仓库记录的提交。";
-  return `确认更新子模块：${submodulePath}？\n\n命令：git submodule update --init --recursive -- ${submodulePath}`;
+  if (action === "syncAll") return t("确认同步子模块 URL 配置？\n\n命令：git submodule sync --recursive\n这会根据 .gitmodules 更新本地子模块 URL 配置。");
+  if (action === "initAll") return t("确认初始化并更新所有子模块？\n\n命令：git submodule update --init --recursive\n这可能需要访问子模块远端仓库。");
+  if (action === "updateAll") return t("确认更新所有子模块？\n\n命令：git submodule update --init --recursive\n这会把子模块签出到父仓库记录的提交。");
+  return t("确认更新子模块：{path}？\n\n命令：git submodule update --init --recursive -- {path}", { path: submodulePath });
 }
 
 async function refreshSubmodules(button) {
@@ -667,7 +670,7 @@ async function refreshSubmodules(button) {
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     renderAll();
-    toast("子模块列表已刷新");
+    toast(t("子模块列表已刷新"));
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);

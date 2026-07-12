@@ -37,7 +37,8 @@ function renderAll() {
 function renderRepo() {
   const repo = state.data.repo;
   els.repoName.textContent = repo.name;
-  els.repoPath.textContent = state.selectedRef ? `${repo.path} · ${state.selectedRef}` : repo.path;
+  const repoPath = repo.isSample ? t(repo.path) : repo.path;
+  els.repoPath.textContent = state.selectedRef ? `${repoPath} · ${state.selectedRef}` : repoPath;
   els.sideRepoName.textContent = repo.name;
   els.sideRepoBranch.textContent = state.selectedRef || repo.branch;
   if (!repo.isSample) els.repoInput.value = repo.path;

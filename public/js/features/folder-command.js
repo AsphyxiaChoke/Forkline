@@ -4,7 +4,8 @@ async function openFolderModal() {
   els.folderModal.classList.add("show");
   els.folderModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
-  await loadFolder(els.repoInput.value.trim() || state.data?.repo?.path || "");
+  const currentPath = state.data?.repo && !state.data.repo.isSample ? state.data.repo.path : recentRepos()[0]?.path || "";
+  await loadFolder(els.repoInput.value.trim() || currentPath);
 }
 
 function closeFolderModal() {
@@ -15,7 +16,7 @@ function closeFolderModal() {
 
 async function loadFolder(pathValue = "") {
   const requestId = ++state.folderBrowseRequestId;
-  els.folderList.innerHTML = `<div class="folder-empty">正在读取目录...</div>`;
+  els.folderList.innerHTML = `<div class="folder-empty">${t("正在读取目录...")}</div>`;
   try {
     const data = await api(`/api/browse?path=${encodeURIComponent(pathValue || "")}`);
     if (requestId !== state.folderBrowseRequestId) return;
@@ -34,10 +35,10 @@ function renderFolderBrowser() {
   els.folderCurrentPath.textContent = data.current || "";
   els.folderPathInput.value = data.current || "";
   els.folderParent.disabled = !data.parent;
-  els.folderOpen.textContent = data.isGit ? "打开 Git 仓库" : "打开此目录";
-  els.folderOpen.title = data.isGit ? "打开当前 Git 仓库" : "把当前目录填入路径并尝试打开";
+  els.folderOpen.textContent = data.isGit ? t("打开 Git 仓库") : t("打开此目录");
+  els.folderOpen.title = data.isGit ? t("打开当前 Git 仓库") : t("把当前目录填入路径并尝试打开");
   const shortcuts = (data.shortcuts || [])
-    .map((item) => `<button class="folder-root folder-shortcut" type="button" data-folder-path="${escapeAttr(item.path)}">${escapeHtml(item.name)}</button>`)
+    .map((item) => `<button class="folder-root folder-shortcut" type="button" data-folder-path="${escapeAttr(item.path)}">${escapeHtml(t(item.name))}</button>`)
     .join("");
   const roots = (data.roots || [])
     .map((root) => `<button class="folder-root" type="button" data-folder-path="${escapeAttr(root.path)}">${escapeHtml(root.name)}</button>`)
@@ -50,12 +51,12 @@ function renderFolderBrowser() {
             <button class="folder-row ${entry.isGit ? "is-git" : ""}" type="button" data-folder-path="${escapeAttr(entry.path)}" title="${escapeAttr(entry.path)}">
               <span class="folder-icon">${entry.isGit ? "Git" : ""}</span>
               <span class="folder-name">${escapeHtml(entry.name)}</span>
-              <span class="folder-meta">${entry.isGit ? "仓库" : ""}</span>
+              <span class="folder-meta">${entry.isGit ? t("仓库") : ""}</span>
             </button>
           `
         )
         .join("")
-    : `<div class="folder-empty">这个目录下没有可进入的文件夹</div>`;
+    : `<div class="folder-empty">${t("这个目录下没有可进入的文件夹")}</div>`;
 }
 
 async function openSelectedFolder() {
@@ -109,7 +110,7 @@ function renderCommandPalette() {
   const items = filteredCommandItems();
   normalizeCommandPaletteIndex(items);
   if (!items.length) {
-    els.commandList.innerHTML = `<div class="command-empty">没有匹配的命令</div>`;
+    els.commandList.innerHTML = `<div class="command-empty">${t("没有匹配的命令")}</div>`;
     return;
   }
   els.commandList.innerHTML = items
@@ -161,7 +162,7 @@ function commandPaletteItems() {
   const remoteCommit = hasCommit ? commitRemoteUrl(commit.sha) : "";
   const sync = state.data?.sync || {};
   const pullRequest = sync.pullRequest || {};
-  const branch = state.data?.repo?.branch || "当前分支";
+  const branch = state.data?.repo?.branch || t("当前分支");
   const hasUsableUpstream = Boolean(sync.upstream && !sync.upstreamGone);
   const canPush = realRepo && !syncPushGuard(sync).blocked;
   return [
@@ -193,20 +194,20 @@ function commandPaletteItems() {
     commandItem("stashAll", "储藏工作区", "把当前未提交改动移入储藏列表", "git stash", "stash changes", realRepo && hasChanges && !sync.unborn, () => createStashFromSelection(null)),
     commandItem("discardAll", "丢弃全部", "清空已暂存、未暂存和未跟踪改动", "危险", "discard clean reset", realRepo && hasChanges, () => runAction("discardAll"), true),
     commandItem("fetch", "抓取", "从远端更新引用", "git fetch", "remote sync", realRepo, () => runAction("fetch")),
-    commandItem("pull", "拉取", `快进拉取 ${branch}`, "git pull", "remote sync", realRepo && hasUsableUpstream, () => runAction("pull")),
-    commandItem("pullRebase", "变基拉取", `把 ${branch} 的本地提交重放到远端之后`, "git pull --rebase", "remote rebase", realRepo && hasUsableUpstream, () => runAction("pullRebase")),
-    commandItem("push", "推送", `推送 ${branch}`, "git push", "remote sync", canPush, () => runAction("push")),
+    commandItem("pull", "拉取", t("快进拉取 {branch}", { branch }), "git pull", "remote sync", realRepo && hasUsableUpstream, () => runAction("pull")),
+    commandItem("pullRebase", "变基拉取", t("把 {branch} 的本地提交重放到远端之后", { branch }), "git pull --rebase", "remote rebase", realRepo && hasUsableUpstream, () => runAction("pullRebase")),
+    commandItem("push", "推送", t("推送 {branch}", { branch }), "git push", "remote sync", canPush, () => runAction("push")),
     commandItem("forcePushLease", "安全强推", "使用 force-with-lease 更新远端分支", "危险", "force push lease", realRepo && hasUsableUpstream && !sync.unborn, () => runAction("forcePushLease"), true),
-    commandItem("openPullRequest", pullRequest.title || "创建 PR", `为 ${branch} 打开 ${pullRequest.platformLabel || "远端"} PR/MR 页面`, "web", "pull request merge request pr mr github gitlab", Boolean(pullRequest.available), () => runSyncPullRequestAction("open")),
+    commandItem("openPullRequest", pullRequest.title || "创建 PR", t("为 {branch} 打开 {platform} PR/MR 页面", { branch, platform: t(pullRequest.platformLabel || "远端") }), "web", "pull request merge request pr mr github gitlab", Boolean(pullRequest.available), () => runSyncPullRequestAction("open")),
     commandItem("copyPullRequest", "复制 PR 链接", "复制当前分支的 PR/MR 创建地址", "copy", "pull request merge request pr mr clipboard", Boolean(pullRequest.available), () => runSyncPullRequestAction("copy")),
-    commandItem("newBranch", "新建分支", hasCommit ? `从选中提交 ${commit.short} 创建本地分支` : "从当前 HEAD 创建本地分支", "git branch", "branch checkout commit", hasRepo, openBranchModal),
+    commandItem("newBranch", "新建分支", hasCommit ? t("从选中提交 {sha} 创建本地分支", { sha: commit.short }) : "从当前 HEAD 创建本地分支", "git branch", "branch checkout commit", hasRepo, openBranchModal),
     commandItem("applyPatch", "应用补丁", "粘贴 .patch / diff 到当前仓库", "git apply", "patch diff apply format-patch", realRepo, openPatchModal),
     commandItem("copyPatch", "复制选中提交补丁", "把选中提交导出为 format-patch 文本", "format-patch", "patch diff copy", hasCommit, () => copyCommitPatch(commit)),
     commandItem("downloadPatch", "下载选中提交补丁", "把选中提交保存为 .patch 文件", ".patch", "patch diff download format-patch", hasCommit, () => downloadCommitPatch(commit)),
     commandItem("createTag", "创建 Tag", "基于当前提交创建 Tag", "git tag", "release tag", hasCommit, () => openTagModal(commit)),
     commandItem("copySha", "复制提交 SHA", "复制当前选中提交的完整 SHA", "复制", "clipboard commit sha", hasCommit, async () => {
       await copyText(commit.sha);
-      toast("已复制提交 SHA");
+      toast(t("已复制提交 SHA"));
     }),
     commandItem("openRemoteCommit", "在远端查看", "打开当前提交的网页远端地址", "web", "github gitlab bitbucket", Boolean(remoteCommit), () => openRemoteCommit(commit)),
     commandItem("cloneRepo", "克隆仓库", "从远端 URL 或本地裸仓库创建工作区", "git clone", "clone repository", true, openCloneModal),
@@ -217,9 +218,9 @@ function commandPaletteItems() {
 function commandItem(id, title, description, hint, keywords, enabled, run, danger = false) {
   return {
     id,
-    title,
-    description,
-    hint,
+    title: t(title),
+    description: t(description),
+    hint: t(hint),
     keywords,
     disabled: !enabled,
     danger,
@@ -296,7 +297,7 @@ async function executeCommandPaletteItem(id) {
   const item = commandPaletteItems().find((candidate) => candidate.id === id);
   if (!item) return;
   if (item.disabled) {
-    toast("当前命令不可用");
+    toast(t("当前命令不可用"));
     renderCommandPalette();
     return;
   }

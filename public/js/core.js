@@ -2,6 +2,7 @@
 const $ = (selector) => document.querySelector(selector);
 const recentRepoStorageKey = "forkline-recent-repos";
 const recoveryPolicyStorageKey = "forkline-recovery-policy";
+const localeStorageKey = "forkline-locale";
 
 const state = {
   data: null,
@@ -11,6 +12,7 @@ const state = {
   inspectorContext: "commit",
   selectedRef: "",
   theme: "dark",
+  locale: "zh-CN",
   selectedFile: "",
   workDiffScope: "unstaged",
   selectedCommitFile: "",
@@ -231,6 +233,7 @@ window.Forkline = {
   storageKeys: {
     recentRepo: recentRepoStorageKey,
     recoveryPolicy: recoveryPolicyStorageKey,
+    locale: localeStorageKey,
   },
   constants: {
     graphWidth,

@@ -10,7 +10,7 @@ function renderBranches() {
   const allChip = document.createElement("button");
   allChip.className = `branch-chip ${state.selectedRef ? "" : "active"}`;
   allChip.type = "button";
-  allChip.innerHTML = `<span class="branch-dot" style="--branch:var(--quiet)"></span><span>全部分支</span>`;
+  allChip.innerHTML = `<span class="branch-dot" style="--branch:var(--quiet)"></span><span>${t("全部分支")}</span>`;
   allChip.addEventListener("click", () => selectRef(""));
   els.branchStrip.appendChild(allChip);
 
@@ -101,7 +101,7 @@ function branchSearchText(branch, options = {}) {
 function updateBranchFilterMeta(terms, visibleCount, totalCount) {
   const active = terms.length > 0;
   els.branchFilterCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
-  els.branchFilterCount.title = active ? `分支筛选结果：${visibleCount} / ${totalCount}` : "";
+  els.branchFilterCount.title = active ? t("分支筛选结果：{visible} / {total}", { visible: visibleCount, total: totalCount }) : "";
   els.branchFilterCount.hidden = !active;
   els.clearBranchFilter.hidden = !active;
 }
@@ -109,7 +109,7 @@ function updateBranchFilterMeta(terms, visibleCount, totalCount) {
 function appendBranchEmpty(root, text) {
   const empty = document.createElement("div");
   empty.className = "branch-empty";
-  empty.textContent = text;
+  empty.textContent = t(text);
   root.appendChild(empty);
 }
 
@@ -147,7 +147,7 @@ function branchButton(branch, index, active, options = {}) {
     const canPrune = blocked && options.prunable;
     checkout.className = "branch-checkout";
     checkout.type = "button";
-    checkout.textContent = options.current ? "当前" : canPrune ? "清理" : blocked ? "占用" : "切换";
+    checkout.textContent = t(options.current ? "当前" : canPrune ? "清理" : blocked ? "占用" : "切换");
     checkout.disabled = Boolean(options.current || (blocked && !canPrune));
     checkout.title = branchCheckoutTitle(branch, options, blocked);
     if (canPrune) {
@@ -171,13 +171,13 @@ function branchButton(branch, index, active, options = {}) {
     const localBranch = remoteCheckoutBranch(branch);
     checkout.className = "branch-checkout remote";
     checkout.type = "button";
-    checkout.textContent = "签出";
+    checkout.textContent = t("签出");
     checkout.disabled = Boolean(!localBranch || localBranch === state.data.repo.branch);
     checkout.title = !localBranch
-      ? "这个远端引用不能自动推导本地分支名"
+      ? t("这个远端引用不能自动推导本地分支名")
       : checkout.disabled
-        ? "对应的本地分支已经是当前分支"
-        : `签出 ${branch} 为本地分支 ${localBranch}`;
+        ? t("对应的本地分支已经是当前分支")
+        : t("签出 {remote} 为本地分支 {local}", { remote: branch, local: localBranch });
     checkout.addEventListener("click", (event) => {
       event.stopPropagation();
       checkoutRemoteBranch(branch, checkout);
@@ -188,9 +188,9 @@ function branchButton(branch, index, active, options = {}) {
     const merge = document.createElement("button");
     merge.className = "branch-merge";
     merge.type = "button";
-    merge.textContent = "合并";
+    merge.textContent = t("合并");
     merge.disabled = Boolean(options.current);
-    merge.title = options.current ? "不能把当前分支合并到自己" : `合并 ${branch} 到当前分支`;
+    merge.title = options.current ? t("不能把当前分支合并到自己") : t("合并 {branch} 到当前分支", { branch });
     merge.addEventListener("click", (event) => {
       event.stopPropagation();
       mergeBranchRef(branch);
@@ -202,9 +202,9 @@ function branchButton(branch, index, active, options = {}) {
     const renameBlocked = Boolean(options.occupied && !options.current);
     rename.className = "branch-rename";
     rename.type = "button";
-    rename.textContent = "改";
+    rename.textContent = t("改");
     rename.disabled = renameBlocked;
-    rename.title = renameBlocked ? "分支被其他工作树占用，不能重命名" : `重命名本地分支 ${branch}`;
+    rename.title = renameBlocked ? t("分支被其他工作树占用，不能重命名") : t("重命名本地分支 {branch}", { branch });
     rename.addEventListener("click", (event) => {
       event.stopPropagation();
       openRenameBranchModal(branch);
@@ -215,7 +215,7 @@ function branchButton(branch, index, active, options = {}) {
     const blocked = Boolean(options.current || options.occupied);
     remove.className = "branch-delete";
     remove.type = "button";
-    remove.textContent = "删";
+    remove.textContent = t("删");
     remove.disabled = blocked;
     remove.title = branchDeleteTitle(branch, options, blocked);
     remove.addEventListener("click", (event) => {
@@ -231,8 +231,8 @@ function branchTrackingHtml(options = {}) {
   if (!options.local) return "";
   const badges = [];
   if (options.upstream) badges.push(`<span class="branch-badge upstream" title="${escapeAttr(options.upstream)}">${escapeHtml(options.upstream)}</span>`);
-  else if (options.current) badges.push(`<span class="branch-badge muted">未设置 upstream</span>`);
-  if (options.upstreamGone) badges.push(`<span class="branch-badge danger">上游丢失</span>`);
+  else if (options.current) badges.push(`<span class="branch-badge muted">${t("未设置 upstream")}</span>`);
+  if (options.upstreamGone) badges.push(`<span class="branch-badge danger">${t("上游丢失")}</span>`);
   if (options.ahead) badges.push(`<span class="branch-badge ahead">↑${Number(options.ahead)}</span>`);
   if (options.behind) badges.push(`<span class="branch-badge behind">↓${Number(options.behind)}</span>`);
   return badges.length ? `<span class="branch-meta">${badges.join("")}</span>` : "";
@@ -241,26 +241,26 @@ function branchTrackingHtml(options = {}) {
 function branchTrackingTitle(branch, options = {}) {
   if (!options.local) return branch;
   const parts = [branch];
-  if (options.current) parts.push("当前分支");
-  if (options.upstream) parts.push(`upstream：${options.upstream}`);
-  else if (options.current) parts.push("未设置 upstream，推送时会自动设置");
-  if (options.upstreamGone) parts.push("上游分支已不存在");
-  if (options.ahead) parts.push(`领先 ${options.ahead} 个提交`);
-  if (options.behind) parts.push(`落后 ${options.behind} 个提交`);
+  if (options.current) parts.push(t("当前分支"));
+  if (options.upstream) parts.push(t("upstream：{upstream}", { upstream: options.upstream }));
+  else if (options.current) parts.push(t("未设置 upstream，推送时会自动设置"));
+  if (options.upstreamGone) parts.push(t("上游分支已不存在"));
+  if (options.ahead) parts.push(t("领先 {count} 个提交", { count: options.ahead }));
+  if (options.behind) parts.push(t("落后 {count} 个提交", { count: options.behind }));
   return parts.join("\n");
 }
 
 function branchCheckoutTitle(branch, options, blocked) {
-  if (options.current) return "当前分支";
-  if (!blocked) return `切换到 ${branch}`;
-  if (options.prunable) return `失效 worktree 占用：${options.worktreePath || "未知路径"}。点击清理后可再切换`;
-  return `已在其他工作树签出：${options.worktreePath || "未知路径"}`;
+  if (options.current) return t("当前分支");
+  if (!blocked) return t("切换到 {branch}", { branch });
+  if (options.prunable) return t("失效 worktree 占用：{path}。点击清理后可再切换", { path: options.worktreePath || t("未知路径") });
+  return t("已在其他工作树签出：{path}", { path: options.worktreePath || t("未知路径") });
 }
 
 function branchDeleteTitle(branch, options, blocked) {
-  if (options.current) return "不能删除当前分支";
-  if (options.occupied) return "分支被其他工作树占用，先清理或切换后再删除";
-  return `删除本地分支 ${branch}`;
+  if (options.current) return t("不能删除当前分支");
+  if (options.occupied) return t("分支被其他工作树占用，先清理或切换后再删除");
+  return t("删除本地分支 {branch}", { branch });
 }
 
 function branchExpectedSha(branch) {
@@ -288,13 +288,13 @@ function targetRefSnapshotPayload(ref) {
 
 async function deleteBranch(branch, button) {
   if (!state.data || !branch) return;
-  if (!confirm(`确认删除本地分支：${branch}？\n\n会使用安全删除；如果分支还没有合并，Git 会阻止删除。`)) return;
+  if (!confirm(t("确认删除本地分支：{branch}？\n\n会使用安全删除；如果分支还没有合并，Git 会阻止删除。", { branch }))) return;
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteBranch", branch, sha: branchExpectedSha(branch) }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已删除本地分支 ${branch}`);
+    toast(result.output || t("已删除本地分支 {branch}", { branch }));
     const nextRef = state.selectedRef === branch ? state.data.repo.branch || "" : state.selectedRef;
     const data = await loadStateForRepoPath(repoPath, nextRef);
     if (!data) return;
@@ -316,12 +316,12 @@ async function deleteBranch(branch, button) {
 async function deleteRemoteBranch(remoteRef) {
   if (!state.data || !remoteRef) return;
   const command = remoteDeleteCommand(remoteRef);
-  if (!confirm(`确认删除远端分支：${remoteRef}？\n\n此操作会删除远端仓库中的分支，不会删除本地分支。\n命令：${command}`)) return;
+  if (!confirm(t("确认删除远端分支：{branch}？\n\n此操作会删除远端仓库中的分支，不会删除本地分支。\n命令：{command}", { branch: remoteRef, command }))) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRemoteBranch", ref: remoteRef, sha: remoteExpectedSha(remoteRef), ...remoteBranchConfigSnapshotPayload(remoteRef) }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已删除远端分支 ${remoteRef}`);
+    toast(result.output || t("已删除远端分支 {branch}", { branch: remoteRef }));
     const nextRef = state.selectedRef === remoteRef ? state.data.repo.branch || "" : state.selectedRef;
     const data = await loadStateForRepoPath(repoPath, nextRef);
     if (!data) return;
@@ -340,7 +340,7 @@ async function deleteRemoteBranch(remoteRef) {
 
 function remoteDeleteCommand(remoteRef) {
   const parsed = splitRemoteBranchRef(remoteRef);
-  if (!parsed.remote || !parsed.branch) return "git push <远端> --delete <分支>";
+  if (!parsed.remote || !parsed.branch) return t("git push <远端> --delete <分支>");
   return `git push ${parsed.remote} --delete ${parsed.branch}`;
 }
 
@@ -356,14 +356,14 @@ function worktreePruneSnapshotPayload() {
 
 async function cleanupStaleWorktree(branch, button, options = {}) {
   if (!state.data) return;
-  const pathText = options.worktreePath ? `\n占用路径：${options.worktreePath}` : "";
-  if (!state.data.repo.isSample && !confirm(`确认清理 ${branch} 的失效 worktree 记录？${pathText}\n\n这只清理 Git 的失效 worktree 元数据，不会删除当前工作区文件。`)) return;
+  const pathText = options.worktreePath ? t("\n占用路径：{path}", { path: options.worktreePath }) : "";
+  if (!state.data.repo.isSample && !confirm(t("确认清理 {branch} 的失效 worktree 记录？{pathText}\n\n这只清理 Git 的失效 worktree 元数据，不会删除当前工作区文件。", { branch, pathText }))) return;
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "pruneWorktrees", branch, ...worktreePruneSnapshotPayload() }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "已清理失效 worktree 记录");
+    toast(result.output || t("已清理失效 worktree 记录"));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.commitDetails.clear();
@@ -386,19 +386,19 @@ function openBranchModal() {
   state.branchRenameOld = "";
   state.branchStartSha = commit?.sha || "";
   els.branchNameInput.value = "";
-  els.branchModalTitle.textContent = "新建分支";
-  els.branchNameInput.placeholder = "例如 feature/login";
+  els.branchModalTitle.textContent = t("新建分支");
+  els.branchNameInput.placeholder = t("例如 feature/login");
   const unborn = Boolean(state.data?.sync?.unborn && !commit);
   els.branchCheckoutToggle.checked = true;
   els.branchCheckoutToggle.disabled = unborn;
-  els.branchCheckoutToggle.title = unborn ? "当前分支还没有首个提交，只能创建并切换到新的无提交分支" : "";
+  els.branchCheckoutToggle.title = unborn ? t("当前分支还没有首个提交，只能创建并切换到新的无提交分支") : "";
   els.branchCheckoutLabel.style.display = "";
-  els.branchSubmit.textContent = "创建分支";
+  els.branchSubmit.textContent = t("创建分支");
   els.branchStartText.textContent = commit
-    ? `从选中提交 ${commit.short} 创建分支。`
+    ? t("从选中提交 {sha} 创建分支。", { sha: commit.short })
     : unborn
-      ? "当前分支还没有提交，只能创建并切换到新的无提交分支。"
-    : "从当前 HEAD 创建分支。";
+      ? t("当前分支还没有提交，只能创建并切换到新的无提交分支。")
+    : t("从当前 HEAD 创建分支。");
   els.branchModal.classList.add("show");
   els.branchModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -411,14 +411,14 @@ function openBranchModalFromRef(ref, label = "分支") {
   state.branchRenameOld = "";
   state.branchStartSha = ref;
   els.branchNameInput.value = "";
-  els.branchModalTitle.textContent = "新建分支";
-  els.branchNameInput.placeholder = "例如 feature/login";
+  els.branchModalTitle.textContent = t("新建分支");
+  els.branchNameInput.placeholder = t("例如 feature/login");
   els.branchCheckoutToggle.checked = true;
   els.branchCheckoutToggle.disabled = false;
   els.branchCheckoutToggle.title = "";
   els.branchCheckoutLabel.style.display = "";
-  els.branchSubmit.textContent = "创建分支";
-  els.branchStartText.textContent = `从${label} ${ref} 的最新提交创建分支。`;
+  els.branchSubmit.textContent = t("创建分支");
+  els.branchStartText.textContent = t("从{label} {ref} 的最新提交创建分支。", { label: t(label), ref });
   els.branchModal.classList.add("show");
   els.branchModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -431,13 +431,13 @@ function openRenameBranchModal(branch) {
   state.branchRenameOld = branch;
   state.branchStartSha = "";
   els.branchNameInput.value = branch;
-  els.branchNameInput.placeholder = "新的分支名";
-  els.branchModalTitle.textContent = "重命名分支";
-  els.branchStartText.textContent = `将 ${branch} 重命名为新的本地分支名。`;
+  els.branchNameInput.placeholder = t("新的分支名");
+  els.branchModalTitle.textContent = t("重命名分支");
+  els.branchStartText.textContent = t("将 {branch} 重命名为新的本地分支名。", { branch });
   els.branchCheckoutToggle.disabled = false;
   els.branchCheckoutToggle.title = "";
   els.branchCheckoutLabel.style.display = "none";
-  els.branchSubmit.textContent = "重命名";
+  els.branchSubmit.textContent = t("重命名");
   els.branchModal.classList.add("show");
   els.branchModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -461,7 +461,7 @@ async function submitBranchForm(event) {
   if (!state.data) return;
   const branch = els.branchNameInput.value.trim();
   if (!branch) {
-    toast("请输入分支名");
+    toast(t("请输入分支名"));
     els.branchNameInput.focus();
     return;
   }
@@ -479,7 +479,7 @@ async function submitBranchForm(event) {
       body: JSON.stringify({ action: "createBranch", branch, start: state.branchStartSha, checkout, ...currentBranchSnapshotPayload(), ...targetRefSnapshotPayload(state.branchStartSha), ...remoteBranchConfigSnapshotPayload(state.branchStartSha) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已创建分支 ${branch}`);
+    toast(result.output || t("已创建分支 {branch}", { branch }));
     const nextRef = result.checkedOut ? branch : state.selectedRef;
     const data = await loadStateForRepoPath(repoPath, nextRef);
     if (!data) return;
@@ -515,7 +515,7 @@ async function renameBranchFromForm(nextBranch) {
       body: JSON.stringify({ action: "renameBranch", branch: oldBranch, sha: branchExpectedSha(oldBranch), newBranch: nextBranch, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已重命名为 ${nextBranch}`);
+    toast(result.output || t("已重命名为 {branch}", { branch: nextBranch }));
     const nextRef = state.selectedRef === oldBranch || state.data.repo.branch === oldBranch ? nextBranch : state.selectedRef;
     const data = await loadStateForRepoPath(repoPath, nextRef);
     if (!data) return;

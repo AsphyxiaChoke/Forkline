@@ -21,14 +21,14 @@ function renderCommits(options = {}) {
   els.commitGraph.style.minHeight = `${minHeight}px`;
   els.commitGraph.classList.toggle("branch-scope", isBranchScope);
   els.commitGraph.classList.toggle("all-scope", !isBranchScope);
-  els.graphModeLabel.textContent = isBranchScope ? state.selectedRef : "全部分支";
-  els.graphModeLabel.title = isBranchScope ? `当前只显示 ${state.selectedRef}` : "当前显示所有分支";
+  els.graphModeLabel.textContent = isBranchScope ? state.selectedRef : t("全部分支");
+  els.graphModeLabel.title = isBranchScope ? t("当前只显示 {branch}", { branch: state.selectedRef }) : t("当前显示所有分支");
   const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
   els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef);
 
   if (!state.filtered.length) {
-    const emptyTitle = terms.length ? "没有匹配的提交" : "还没有提交";
-    const emptySub = terms.length ? "换一个关键词试试" : "暂存文件后创建第一次提交";
+    const emptyTitle = terms.length ? t("没有匹配的提交") : t("还没有提交");
+    const emptySub = terms.length ? t("换一个关键词试试") : t("暂存文件后创建第一次提交");
     els.commitGraph.insertAdjacentHTML(
       "beforeend",
       `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>${emptyTitle}</strong><span>${emptySub}</span></div></div>`
@@ -49,7 +49,7 @@ function renderCommits(options = {}) {
       </div>
       <div class="message">
         <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, highlightPattern)}</strong>
-        <span class="commit-ref-line" title="${escapeAttr(commit.refs || "提交历史")}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || "提交历史", highlightPattern)}</span></span>
+        <span class="commit-ref-line" title="${escapeAttr(commit.refs || t("提交历史"))}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || t("提交历史"), highlightPattern)}</span></span>
       </div>
       <div class="author">
         <span class="author-badge" style="--avatar:${commit.color}">${initials(commit.author)}</span>
@@ -121,7 +121,7 @@ function isHeadCommit(commit) {
 function updateCommitSearchMeta(terms, visibleCount, totalCount) {
   const active = terms.length > 0;
   els.searchCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
-  els.searchCount.title = active ? `搜索结果：${visibleCount} / ${totalCount} 个提交` : "";
+  els.searchCount.title = active ? t("搜索结果：{visible} / {total} 个提交", { visible: visibleCount, total: totalCount }) : "";
   els.searchCount.hidden = !active;
   els.clearSearch.hidden = !active;
   els.searchInput.closest(".search")?.classList.toggle("active", active);

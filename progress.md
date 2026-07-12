@@ -5021,3 +5021,53 @@
 - `public/styles.css`: styles readable hunk summaries with UI font, natural wrapping, and sticky visible hunk actions.
 - `progress.md`: appended this implementation and verification record.
 - Rollback: revert this task's changes in `public/js/features/diff-workbench.js`, `public/styles.css`, and `progress.md`, or reset to the commit before this task once it is committed.
+
+## 2026-07-12 - Task: 新增完整中英双语支持
+
+### What was done
+- 新增应用级国际化目录和运行时，默认使用中文，可在设置中切换英语，并将语言偏好持久化到当前浏览器。
+- 完成主要界面、弹窗、提示、操作日志、诊断信息、后端错误和相对时间的中英双语覆盖；仓库路径、分支名、标签、提交信息、作者、引用、提交哈希、命令及原始 Git 输出保持原值。
+- API 请求携带当前语言，服务端按单次请求返回本地化响应副本，避免修改共享仓库状态。
+- 修复英语界面按钮溢出、示例模式目录选择使用伪路径，以及拉取请求判断依赖翻译标题的问题。
+- 保持 `README.md`、`docs/` 和 `progress.md` 为中文，并补充国际化架构与后续开发说明。
+
+### Testing
+- 运行 `npm test`，20 项测试全部通过。
+- 对 30 个 JavaScript 文件运行 `node --check`，全部通过。
+- 运行 `git diff --check`，无空白错误，仅保留现有 LF/CRLF 工作区提示。
+- 扫描显式前端翻译缺口，结果为 0。
+- 在内置浏览器验证设置、提交、分支整理、同步、比较、工作树、子模块、储藏、恢复点、操作日志、文件历史、逐行、命令面板、目录、克隆和初始化等界面；在 1280x720、900x700、734x912 三种视口下未发现控件文字溢出。
+- 验证英语刷新后保持英语；验证结束后恢复中文并确认刷新后仍保持中文，随后关闭验证标签页。
+
+### Notes
+- `public/index.html`：接入国际化脚本并为可翻译界面提供运行时挂载点。
+- `public/js/i18n-catalog.js`：新增中英双语文案目录。
+- `public/js/i18n.js`：新增语言切换、持久化、插值和界面翻译运行时。
+- `public/js/api.js`：为 API 请求附加当前界面语言。
+- `public/js/bootstrap.js`：在应用启动阶段初始化语言环境。
+- `public/js/core.js`：接入共享翻译与本地化辅助逻辑。
+- `public/js/app/events.js`：本地化应用级交互事件文案。
+- `public/js/app/init.js`：本地化初始化流程和启动提示。
+- `public/js/app/layout-utils.js`：本地化布局相关提示。
+- `public/js/features/branches.js`：本地化分支操作界面和反馈。
+- `public/js/features/commit-actions.js`：本地化提交与追加提交界面和反馈。
+- `public/js/features/context-menus.js`：本地化上下文菜单及其操作提示。
+- `public/js/features/diff-workbench.js`：本地化 Diff 工作台、变更段说明和按行操作反馈。
+- `public/js/features/folder-command.js`：本地化目录、克隆、初始化和命令面板。
+- `public/js/features/git-actions.js`：本地化通用 Git 操作提示与确认。
+- `public/js/features/history-list.js`：本地化提交历史展示和相对时间。
+- `public/js/features/repositories.js`：本地化仓库打开、切换和路径选择流程。
+- `public/js/features/worktree-changes.js`：本地化工作区、暂存区和文件操作界面。
+- `public/js/panels/inspector.js`：本地化详情、文件、标签、历史和逐行面板。
+- `public/js/panels/recovery-settings.js`：本地化恢复点与设置面板，并接入语言选项。
+- `public/js/panels/sync.js`：本地化同步状态和远端操作界面。
+- `public/js/panels/workspaces.js`：本地化工作树、子模块、储藏和操作日志面板。
+- `server.js`：根据请求语言本地化响应错误、诊断、操作日志和相对时间，同时保留原始 Git 数据。
+- `tests/i18n.test.js`：新增国际化目录、运行时和服务端本地化测试。
+- `tests/api-repo-context.test.js`：适配请求语言头并验证仓库上下文行为不回归。
+- `tests/diff-preview.test.js`：适配双语 Diff 输出并保持预览行为覆盖。
+- `tests/git-api.test.js`：补充双语 API 错误和操作结果验证。
+- `docs/ARCHITECTURE.md`：以中文记录国际化模块、加载顺序、服务端边界和测试方式。
+- `docs/CONTINUE.md`：以中文记录双语功能范围和后续开发约束。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可仅还原上述文件并删除 `public/js/i18n-catalog.js`、`public/js/i18n.js`、`tests/i18n.test.js`。

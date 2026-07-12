@@ -258,7 +258,7 @@ els.detailBody.addEventListener("click", (event) => {
   const remoteCommandCopy = event.target.closest("[data-copy-remote-command]");
   if (remoteCommandCopy) {
     event.preventDefault();
-    copyText(remoteCommandCopy.dataset.copyRemoteCommand || "").then(() => toast("已复制诊断命令")).catch((error) => toast(error.message));
+    copyText(remoteCommandCopy.dataset.copyRemoteCommand || "").then(() => toast(t("已复制诊断命令"))).catch((error) => toast(error.message));
     return;
   }
   const remoteAction = event.target.closest("[data-remote-action]");
@@ -366,6 +366,18 @@ els.detailBody.addEventListener("click", (event) => {
   if (logRefresh) {
     event.preventDefault();
     refreshLogsTab().catch((error) => toast(error.message));
+    return;
+  }
+  const settingsLocale = event.target.closest("[data-settings-locale]");
+  if (settingsLocale) {
+    event.preventDefault();
+    const locale = normalizeLocale(settingsLocale.dataset.settingsLocale);
+    if (locale) {
+      applyLocale(locale);
+      applyTheme(state.theme, false);
+      renderRecentRepos();
+      renderAll();
+    }
     return;
   }
   const settingsTheme = event.target.closest("[data-settings-theme]");

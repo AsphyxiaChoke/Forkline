@@ -7,11 +7,11 @@ function renderTagsTab() {
   if (!state.selectedTag && tags.length) state.selectedTag = tags[0].name;
   const selected = tags.find((tag) => tag.name === state.selectedTag);
   els.detailNode.style.borderColor = "var(--blue)";
-  els.detailTitle.textContent = "标签列表";
-  els.detailSub.textContent = tags.length ? `${tags.length} 个 Tag` : "没有 Tag";
+  els.detailTitle.textContent = t("标签列表");
+  els.detailSub.textContent = tags.length ? t("{count} 个 Tag", { count: tags.length }) : t("没有 Tag");
   setActiveDiff(null);
   if (!tags.length) {
-    els.detailBody.innerHTML = `
+    els.detailBody.innerHTML = tt`
       <div class="empty-panel">
         <strong>没有 Tag</strong>
         <span>在提交右键菜单中选择“创建 Tag”后会显示在这里。</span>
@@ -19,7 +19,7 @@ function renderTagsTab() {
     `;
     return;
   }
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="tag-layout">
       <div class="tag-list">
         ${tags.map((tag) => tagRowHtml(tag, tag.name === state.selectedTag)).join("")}
@@ -38,14 +38,14 @@ function tagRowHtml(tag, active) {
         <strong>${escapeHtml(tag.name)}</strong>
         <em>${escapeHtml(tag.time || "")}</em>
       </span>
-      <span class="stash-message" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || "无说明")}</span>
+      <span class="stash-message" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || t("无说明"))}</span>
       <span class="stash-branch">${escapeHtml(tag.short || tag.object ? `${tag.short || tag.object} · ${tag.type || "commit"}` : tag.type || "commit")}</span>
     </button>
   `;
 }
 
 function tagDetailHtml(tag) {
-  return `
+  return tt`
     <div class="tag-actions">
       <button class="mini-btn" data-tag-action="view" data-tag-name="${escapeAttr(tag.name)}" type="button">查看提交</button>
       <button class="mini-btn" data-tag-action="copy" data-tag-name="${escapeAttr(tag.name)}" type="button">复制名称</button>
@@ -55,10 +55,10 @@ function tagDetailHtml(tag) {
     </div>
     <div class="meta-grid stash-meta">
       <span>名称</span><div class="meta-value">${escapeHtml(tag.name)}</div>
-      <span>对象</span><div class="meta-value">${escapeHtml(tag.short || tag.object || "未知")}</div>
+      <span>对象</span><div class="meta-value">${escapeHtml(tag.short || tag.object || t("未知"))}</div>
       <span>类型</span><div class="meta-value">${escapeHtml(tag.type || "commit")}</div>
-      <span>时间</span><div class="meta-value">${escapeHtml(tag.time || "未知")}</div>
-      <span>说明</span><div class="meta-value" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || "无说明")}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(tag.time || t("未知"))}</div>
+      <span>说明</span><div class="meta-value" title="${escapeAttr(tag.subject || "")}">${escapeHtml(tag.subject || t("无说明"))}</div>
     </div>
     <div class="empty-panel compact">
       <span>推送 Tag 会把这个本地标签发布到远端；删除远端 Tag 不会删除本地 Tag。</span>
@@ -93,31 +93,31 @@ function renderRecoveryTab() {
   }
   const selectedReflog = reflogEntries.find((entry) => entry.selector === state.selectedReflogSelector);
   els.detailNode.style.borderColor = "var(--purple)";
-  els.detailTitle.textContent = "恢复点";
+  els.detailTitle.textContent = t("恢复点");
   els.detailSub.textContent = [
-    points.length ? `恢复点 ${filteredPoints.length} / ${points.length}` : "没有自动恢复点",
-    reflogState.loading ? "引用日志读取中" : reflogState.error ? "引用日志读取失败" : reflogEntries.length ? `引用日志 ${reflogEntries.length} 条` : "",
+    points.length ? t("恢复点 {visible} / {total}", { visible: filteredPoints.length, total: points.length }) : t("没有自动恢复点"),
+    reflogState.loading ? t("引用日志读取中") : reflogState.error ? t("引用日志读取失败") : reflogEntries.length ? t("引用日志 {count} 条", { count: reflogEntries.length }) : "",
   ].filter(Boolean).join(" · ");
   setActiveDiff(null);
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="recovery-layout">
       ${
         points.length
-          ? `
+          ? tt`
             ${recoveryFilterHtml(points, filteredPoints)}
             ${recoveryRetentionHtml(points)}
             <div class="recovery-list">
               ${
                 filteredPoints.length
                   ? filteredPoints.map((point) => recoveryRowHtml(point, point.ref === state.selectedRecoveryRef)).join("")
-                  : `<div class="empty-panel compact"><span>没有匹配的恢复点。可以调整搜索、分支或动作筛选。</span></div>`
+                  : `<div class="empty-panel compact"><span>${t("没有匹配的恢复点。可以调整搜索、分支或动作筛选。")}</span></div>`
               }
             </div>
             <div class="recovery-detail">
-              ${selected ? recoveryDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一个恢复点查看详情。</span></div>`}
+              ${selected ? recoveryDetailHtml(selected) : `<div class="empty-panel compact"><span>${t("选择一个恢复点查看详情。")}</span></div>`}
             </div>
           `
-          : `<div class="empty-panel compact"><strong>没有自动恢复点</strong><span>执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点。</span></div>`
+          : `<div class="empty-panel compact"><strong>${t("没有自动恢复点")}</strong><span>${t("执行变基、追加、历史编辑或重置前，Forkline 会自动在这里留下恢复点。")}</span></div>`
       }
       ${reflogSectionHtml(reflogState, selectedReflog)}
     </div>
@@ -166,11 +166,11 @@ function recoveryRetentionHtml(points) {
   const policy = normalizedRecoveryPolicy();
   const plan = recoveryRetentionPlan(points, policy);
   const active = recoveryPolicyActive(policy);
-  const buttonText = !active ? "设置策略" : plan.deleteCount ? "按策略清理" : "无需清理";
+  const buttonText = t(!active ? "设置策略" : plan.deleteCount ? "按策略清理" : "无需清理");
   const summary = active
-    ? `将清理 ${plan.deleteCount} 个，保留 ${plan.keepCount} 个`
-    : `当前共有 ${points.length} 个恢复点`;
-  return `
+    ? t("将清理 {deleteCount} 个，保留 {keepCount} 个", { deleteCount: plan.deleteCount, keepCount: plan.keepCount })
+    : t("当前共有 {count} 个恢复点", { count: points.length });
+  return tt`
     <section class="recovery-retention">
       <div class="recovery-retention-head">
         <strong>保留策略</strong>
@@ -180,16 +180,16 @@ function recoveryRetentionHtml(points) {
         <label class="recovery-retention-rule">
           <span>保留最近</span>
           <input data-recovery-policy="keepDays" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.keepDays)}" />
-          <em>天</em>
+          <em>${t("天")}</em>
         </label>
         <label class="recovery-retention-rule">
           <span>每分支</span>
           <input data-recovery-policy="maxPerBranch" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.maxPerBranch)}" />
-          <em>个</em>
+          <em>${t("个")}</em>
         </label>
       </div>
       <div class="recovery-retention-actions">
-        <span>${escapeHtml(recoveryPolicyLabel(policy) || "策略未启用")}</span>
+        <span>${escapeHtml(recoveryPolicyLabel(policy) || t("策略未启用"))}</span>
         <button class="mini-btn danger" data-recovery-prune type="button" ${active && plan.deleteCount ? "" : "disabled"}>
           <span>${buttonText}</span><span class="command-hint">update-ref -d</span>
         </button>
@@ -203,24 +203,24 @@ function recoveryRetentionPreviewHtml(plan, active) {
   if (!active || !plan.deleteCount) return "";
   const preview = plan.deletePoints.slice(0, 6);
   const extra = Math.max(0, plan.deleteCount - preview.length);
-  return `
+  return tt`
     <div class="recovery-retention-preview">
       <div class="recovery-retention-preview-head">
         <strong>将清理</strong>
-        <span>${escapeHtml(`${plan.deleteCount} 个候选`)}</span>
+        <span>${escapeHtml(t("{count} 个候选", { count: plan.deleteCount }))}</span>
       </div>
       <div class="recovery-retention-preview-list">
         ${preview.map(recoveryRetentionPreviewRow).join("")}
       </div>
-      ${extra ? `<div class="recovery-retention-more">另有 ${escapeHtml(String(extra))} 个恢复点也会被清理</div>` : ""}
+      ${extra ? `<div class="recovery-retention-more">${t("另有 {count} 个恢复点也会被清理", { count: escapeHtml(String(extra)) })}</div>` : ""}
     </div>
   `;
 }
 
 function recoveryRetentionPreviewRow(point) {
-  return `
+  return tt`
     <div class="recovery-retention-preview-row">
-      <strong title="${escapeAttr(point.actionLabel || point.action || "恢复点")}">${escapeHtml(point.actionLabel || point.action || "恢复点")}</strong>
+      <strong title="${escapeAttr(t(point.actionLabel || point.action || "恢复点"))}">${escapeHtml(t(point.actionLabel || point.action || "恢复点"))}</strong>
       <span title="${escapeAttr(point.branch || "HEAD")}">${escapeHtml(point.branch || "HEAD")}</span>
       <em title="${escapeAttr(point.shortRef || point.ref || "")}">${escapeHtml(point.short || point.sha?.slice(0, 7) || point.shortRef || "")}</em>
       <small>${escapeHtml(point.time || "")}</small>
@@ -233,8 +233,8 @@ function recoveryFilterHtml(points, filteredPoints) {
   const branches = uniqueSorted(points.map((point) => point.branch || "HEAD"));
   const actions = uniqueRecoveryActions(points);
   const active = recoveryFilterActive();
-  const deleteText = filteredPoints.length === points.length ? "删除全部" : "删除筛选结果";
-  return `
+  const deleteText = t(filteredPoints.length === points.length ? "删除全部" : "删除筛选结果");
+  return tt`
     <div class="recovery-filterbar">
       <input data-recovery-filter="query" autocomplete="off" placeholder="搜索恢复点、提交、分支" value="${escapeAttr(filter.query || "")}" />
       <select data-recovery-filter="branch">
@@ -243,7 +243,7 @@ function recoveryFilterHtml(points, filteredPoints) {
       </select>
       <select data-recovery-filter="action">
         <option value="">全部动作</option>
-        ${actions.map((item) => `<option value="${escapeAttr(item.value)}" ${item.value === filter.action ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+        ${actions.map((item) => `<option value="${escapeAttr(item.value)}" ${item.value === filter.action ? "selected" : ""}>${escapeHtml(t(item.label))}</option>`).join("")}
       </select>
       <div class="recovery-filter-actions">
         <button class="mini-btn" data-recovery-filter-reset type="button" ${active ? "" : "disabled"}>重置</button>
@@ -251,7 +251,7 @@ function recoveryFilterHtml(points, filteredPoints) {
           <span>${deleteText}</span><span class="command-hint">update-ref -d</span>
         </button>
       </div>
-      <div class="recovery-filter-count">${escapeHtml(`显示 ${filteredPoints.length} / ${points.length} 个恢复点`)}</div>
+      <div class="recovery-filter-count">${escapeHtml(t("显示 {visible} / {total} 个恢复点", { visible: filteredPoints.length, total: points.length }))}</div>
     </div>
   `;
 }
@@ -391,12 +391,11 @@ function recoveryPointTimeMs(point) {
 }
 
 function recoveryPolicyLabel(policy = normalizedRecoveryPolicy()) {
-  return [
-    policy.keepDays ? `保留最近 ${policy.keepDays} 天` : "",
-    policy.maxPerBranch ? `每个分支保留 ${policy.maxPerBranch} 个` : "",
-  ]
-    .filter(Boolean)
-    .join("；");
+  const labels = [
+    policy.keepDays ? t("保留最近 {count} 天", { count: policy.keepDays }) : "",
+    policy.maxPerBranch ? t("每个分支保留 {count} 个", { count: policy.maxPerBranch }) : "",
+  ].filter(Boolean);
+  return labels.join(currentLocale() === "en" ? "; " : "；");
 }
 
 function uniqueSorted(values) {
@@ -404,10 +403,10 @@ function uniqueSorted(values) {
 }
 
 function recoveryRowHtml(point, active) {
-  return `
+  return tt`
     <button class="recovery-row ${active ? "active" : ""}" data-recovery-ref="${escapeAttr(point.ref)}" type="button">
       <span class="stash-row-top">
-        <strong>${escapeHtml(point.actionLabel || "恢复点")}</strong>
+        <strong>${escapeHtml(t(point.actionLabel || "恢复点"))}</strong>
         <em>${escapeHtml(point.time || "")}</em>
       </span>
       <span class="stash-message" title="${escapeAttr(point.shortRef)}">${escapeHtml(point.shortRef)}</span>
@@ -417,16 +416,16 @@ function recoveryRowHtml(point, active) {
 }
 
 function recoveryDetailHtml(point) {
-  return `
+  return tt`
     <div class="recovery-actions">
       <button class="mini-btn" data-recovery-action="restore" data-recovery-ref="${escapeAttr(point.ref)}" type="button"><span>恢复到此处</span><span class="command-hint">reset --hard</span></button>
       <button class="mini-btn danger" data-recovery-action="delete" data-recovery-ref="${escapeAttr(point.ref)}" type="button"><span>删除恢复点</span><span class="command-hint">update-ref -d</span></button>
     </div>
     <div class="meta-grid stash-meta">
-      <span>提交</span><div class="meta-value">${escapeHtml(point.short || point.sha || "未知")}</div>
-      <span>动作</span><div class="meta-value">${escapeHtml(point.actionLabel || point.action || "危险操作前")}</div>
+      <span>提交</span><div class="meta-value">${escapeHtml(point.short || point.sha || t("未知"))}</div>
+      <span>动作</span><div class="meta-value">${escapeHtml(t(point.actionLabel || point.action || "危险操作前"))}</div>
       <span>分支</span><div class="meta-value">${escapeHtml(point.branch || "HEAD")}</div>
-      <span>时间</span><div class="meta-value">${escapeHtml(point.time || "未知")}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(point.time || t("未知"))}</div>
       <span>引用</span><div class="meta-value" title="${escapeAttr(point.ref)}">${escapeHtml(point.shortRef || point.ref)}</div>
     </div>
     <div class="empty-panel compact">
@@ -437,8 +436,8 @@ function recoveryDetailHtml(point) {
 
 function reflogSectionHtml(reflogState, selected) {
   const entries = reflogState.entries || [];
-  const statusText = reflogState.loading ? "读取中" : reflogState.error ? "读取失败" : entries.length ? `${entries.length} 条` : "无记录";
-  return `
+  const statusText = t(reflogState.loading ? "读取中" : reflogState.error ? "读取失败" : entries.length ? "{count} 条" : "无记录", { count: entries.length });
+  return tt`
     <section class="reflog-section">
       <div class="reflog-section-head">
         <div>
@@ -447,44 +446,44 @@ function reflogSectionHtml(reflogState, selected) {
         </div>
         <div class="reflog-section-tools">
           <em>${escapeHtml(statusText)}</em>
-          ${reflogState.inline ? "" : `<button class="mini-btn" data-reflog-refresh type="button" ${reflogState.loading ? "disabled" : ""}>刷新</button>`}
+          ${reflogState.inline ? "" : `<button class="mini-btn" data-reflog-refresh type="button" ${reflogState.loading ? "disabled" : ""}>${t("刷新")}</button>`}
         </div>
       </div>
       ${
         reflogState.loading
-          ? `<div class="empty-panel compact"><span>正在读取 HEAD 引用日志...</span></div>`
+          ? `<div class="empty-panel compact"><span>${t("正在读取 HEAD 引用日志...")}</span></div>`
           : reflogState.error
-            ? `<div class="empty-panel compact"><strong>引用日志读取失败</strong><span>${escapeHtml(reflogState.error)}</span></div>`
+            ? `<div class="empty-panel compact"><strong>${t("引用日志读取失败")}</strong><span>${escapeHtml(t(reflogState.error))}</span></div>`
           : entries.length
-          ? `
+          ? tt`
             <div class="reflog-list">
               ${entries.map((entry) => reflogRowHtml(entry, entry.selector === state.selectedReflogSelector)).join("")}
             </div>
             <div class="reflog-detail">
-              ${selected ? reflogDetailHtml(selected) : `<div class="empty-panel compact"><span>选择一条引用日志查看可恢复位置。</span></div>`}
+              ${selected ? reflogDetailHtml(selected) : `<div class="empty-panel compact"><span>${t("选择一条引用日志查看可恢复位置。")}</span></div>`}
             </div>
           `
-          : `<div class="empty-panel compact"><span>当前仓库没有可读取的 HEAD 引用日志。</span></div>`
+          : `<div class="empty-panel compact"><span>${t("当前仓库没有可读取的 HEAD 引用日志。")}</span></div>`
       }
     </section>
   `;
 }
 
 function reflogRowHtml(entry, active) {
-  return `
+  return tt`
     <button class="reflog-row ${active ? "active" : ""}" data-reflog-selector="${escapeAttr(entry.selector)}" data-reflog-sha="${escapeAttr(entry.sha)}" type="button">
       <span class="stash-row-top">
-        <strong title="${escapeAttr(entry.message || "")}">${escapeHtml(entry.message || "HEAD 位置变更")}</strong>
+        <strong title="${escapeAttr(entry.message || "")}">${escapeHtml(entry.message || t("HEAD 位置变更"))}</strong>
         <em>${escapeHtml(entry.selector || "")}</em>
       </span>
-      <span class="stash-message" title="${escapeAttr(entry.sha || "")}">${escapeHtml(`${entry.short || ""} · ${entry.time || "未知时间"}`)}</span>
-      <span class="stash-branch">${escapeHtml([entry.actionLabel, entry.author].filter(Boolean).join(" · ") || "移动")}</span>
+      <span class="stash-message" title="${escapeAttr(entry.sha || "")}">${escapeHtml(`${entry.short || ""} · ${entry.time || t("未知时间")}`)}</span>
+      <span class="stash-branch">${escapeHtml([t(entry.actionLabel || ""), entry.author].filter(Boolean).join(" · ") || t("移动"))}</span>
     </button>
   `;
 }
 
 function reflogDetailHtml(entry) {
-  return `
+  return tt`
     <div class="reflog-actions">
       <button class="mini-btn" data-reflog-action="view" data-reflog-selector="${escapeAttr(entry.selector)}" type="button">查看提交</button>
       <button class="mini-btn" data-reflog-action="copy" data-reflog-selector="${escapeAttr(entry.selector)}" type="button">复制 SHA</button>
@@ -493,10 +492,10 @@ function reflogDetailHtml(entry) {
     </div>
     <div class="meta-grid stash-meta">
       <span>位置</span><div class="meta-value">${escapeHtml(entry.selector || "HEAD")}</div>
-      <span>提交</span><div class="meta-value" title="${escapeAttr(entry.sha || "")}">${escapeHtml(entry.short || entry.sha || "未知")}</div>
-      <span>动作</span><div class="meta-value">${escapeHtml(entry.actionLabel || "移动")}</div>
-      <span>时间</span><div class="meta-value">${escapeHtml(entry.time || "未知")}</div>
-      <span>说明</span><div class="meta-value" title="${escapeAttr(entry.message || "")}">${escapeHtml(entry.message || "HEAD 位置变更")}</div>
+      <span>提交</span><div class="meta-value" title="${escapeAttr(entry.sha || "")}">${escapeHtml(entry.short || entry.sha || t("未知"))}</div>
+      <span>动作</span><div class="meta-value">${escapeHtml(t(entry.actionLabel || "移动"))}</div>
+      <span>时间</span><div class="meta-value">${escapeHtml(entry.time || t("未知"))}</div>
+      <span>说明</span><div class="meta-value" title="${escapeAttr(entry.message || "")}">${escapeHtml(entry.message || t("HEAD 位置变更"))}</div>
     </div>
     <div class="empty-panel compact">
       <span>引用日志是 Git 记录 HEAD 曾经指向哪里。创建恢复点只保存引用；恢复到此处会执行 git reset --hard，执行前 Forkline 会再创建一个恢复前恢复点。</span>
@@ -507,15 +506,15 @@ function reflogDetailHtml(entry) {
 function renderLogsTab() {
   const logs = state.data?.operationLog || [];
   const running = state.data?.runningOperations || [];
-  els.detailTitle.textContent = "操作日志";
+  els.detailTitle.textContent = t("操作日志");
   els.detailSub.textContent = running.length
-    ? `${running.length} 个 Git 操作正在执行`
+    ? t("{count} 个 Git 操作正在执行", { count: running.length })
     : logs.length
-      ? `最近 ${logs.length} 条 Git 操作`
-      : "还没有执行过 Git 操作";
+      ? t("最近 {count} 条 Git 操作", { count: logs.length })
+      : t("还没有执行过 Git 操作");
   els.detailNode.style.borderColor = running.length || logs.some((item) => item.status === "error") ? "var(--amber)" : "var(--teal)";
   setActiveDiff(null);
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="logs-toolbar">
       <div>
         <strong>最近操作</strong>
@@ -535,7 +534,7 @@ function renderLogsTab() {
       ${
         logs.length
           ? logs.map(renderOperationLogItem).join("")
-          : `<div class="log-empty">执行抓取、提交、切换、合并、储藏等操作后，会在这里显示结果。</div>`
+          : `<div class="log-empty">${t("执行抓取、提交、切换、合并、储藏等操作后，会在这里显示结果。")}</div>`
       }
     </div>
   `;
@@ -544,12 +543,12 @@ function renderLogsTab() {
 function renderSettingsTab() {
   const repos = recentRepos();
   const policy = normalizedRecoveryPolicy();
-  const policyLabel = recoveryPolicyLabel(policy) || "策略未启用";
-  els.detailTitle.textContent = "设置";
-  els.detailSub.textContent = "本机偏好和界面行为";
+  const policyLabel = t(recoveryPolicyLabel(policy) || "策略未启用");
+  els.detailTitle.textContent = t("设置");
+  els.detailSub.textContent = t("本机偏好和界面行为");
   els.detailNode.style.borderColor = "var(--violet)";
   setActiveDiff(null);
-  els.detailBody.innerHTML = `
+  els.detailBody.innerHTML = tt`
     <div class="settings-layout">
       <section class="settings-card">
         <div class="settings-card-head">
@@ -559,8 +558,21 @@ function renderSettingsTab() {
           </div>
         </div>
         <div class="settings-choice-row">
-          ${settingsThemeButton("dark", "深色", "适合长时间查看提交图谱")}
-          ${settingsThemeButton("light", "浅色", "适合明亮环境")}
+          ${settingsThemeButton("dark", t("深色"), t("适合长时间查看提交图谱"))}
+          ${settingsThemeButton("light", t("浅色"), t("适合明亮环境"))}
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>语言</strong>
+            <span>界面语言会保存在当前浏览器。</span>
+          </div>
+        </div>
+        <div class="settings-choice-row">
+          ${settingsLocaleButton("zh-CN", "中文", t("使用中文界面"))}
+          ${settingsLocaleButton("en", "English", t("使用英文界面"))}
         </div>
       </section>
 
@@ -568,7 +580,7 @@ function renderSettingsTab() {
         <div class="settings-card-head">
           <div>
             <strong>最近仓库</strong>
-            <span>${repos.length ? `已保存 ${repos.length} 个本机仓库入口` : "当前没有最近仓库记录"}</span>
+            <span>${repos.length ? t("已保存 {count} 个本机仓库入口", { count: repos.length }) : t("当前没有最近仓库记录")}</span>
           </div>
           <button class="mini-btn danger" data-settings-action="clearRecentRepos" type="button" ${repos.length ? "" : "disabled"}>清空</button>
         </div>
@@ -576,7 +588,7 @@ function renderSettingsTab() {
           ${
             repos.length
               ? repos.slice(0, 6).map(settingsRecentRepoRow).join("")
-              : `<div class="empty-panel compact"><span>成功打开真实仓库后，这里会显示最近仓库。</span></div>`
+              : `<div class="empty-panel compact"><span>${t("成功打开真实仓库后，这里会显示最近仓库。")}</span></div>`
           }
         </div>
         <button class="mini-btn settings-wide-action" data-settings-action="chooseRepo" type="button">选择 Git 仓库目录</button>
@@ -593,12 +605,12 @@ function renderSettingsTab() {
           <label class="recovery-retention-rule">
             <span>保留最近</span>
             <input data-recovery-policy="keepDays" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.keepDays)}" />
-            <em>天</em>
+            <em>${t("天")}</em>
           </label>
           <label class="recovery-retention-rule">
             <span>每分支</span>
             <input data-recovery-policy="maxPerBranch" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.maxPerBranch)}" />
-            <em>个</em>
+            <em>${t("个")}</em>
           </label>
         </div>
       </section>
@@ -626,6 +638,16 @@ function settingsThemeButton(theme, label, description) {
   `;
 }
 
+function settingsLocaleButton(locale, label, description) {
+  const active = state.locale === locale;
+  return `
+    <button class="settings-choice ${active ? "active" : ""}" data-settings-locale="${escapeAttr(locale)}" type="button">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(description)}</span>
+    </button>
+  `;
+}
+
 function settingsRecentRepoRow(repo) {
   return `
     <div class="settings-repo-row">
@@ -633,18 +655,18 @@ function settingsRecentRepoRow(repo) {
         <strong title="${escapeAttr(repo.name || repo.path)}">${escapeHtml(repo.name || repo.path)}</strong>
         <span title="${escapeAttr(repo.path)}">${escapeHtml(repo.path || "")}</span>
       </div>
-      <em>${escapeHtml(repo.branch || "未记录分支")}</em>
+      <em>${escapeHtml(repo.branch || t("未记录分支"))}</em>
     </div>
   `;
 }
 
 function renderRunningOperationItem(item) {
   const duration = item.elapsed || formatDurationText(item.durationMs);
-  return `
+  return tt`
     <article class="operation-log-item running">
       <div class="operation-log-head">
         <span class="log-status">进行中</span>
-        <strong title="${escapeAttr(item.label || "")}">${escapeHtml(item.label || "Git 操作")}</strong>
+        <strong title="${escapeAttr(t(item.label || ""))}">${escapeHtml(t(item.label || "Git 操作"))}</strong>
         <em>${escapeHtml(duration)}</em>
       </div>
       <div class="operation-log-meta">
@@ -658,14 +680,14 @@ function renderRunningOperationItem(item) {
 
 function renderOperationLogItem(item) {
   const ok = item.status === "success";
-  const label = ok ? "成功" : "失败";
+  const label = t(ok ? "成功" : "失败");
   const duration = formatDurationText(item.durationMs);
-  const summary = String(item.summary || (ok ? "操作已完成" : "操作失败")).trim();
-  return `
+  const summary = t(String(item.summary || (ok ? "操作已完成" : "操作失败")).trim());
+  return tt`
     <article class="operation-log-item ${ok ? "success" : "error"}">
       <div class="operation-log-head">
         <span class="log-status">${label}</span>
-        <strong title="${escapeAttr(item.label || "")}">${escapeHtml(item.label || "Git 操作")}</strong>
+        <strong title="${escapeAttr(t(item.label || ""))}">${escapeHtml(t(item.label || "Git 操作"))}</strong>
         <em>${escapeHtml(duration)}</em>
       </div>
       <div class="operation-log-meta">
@@ -760,23 +782,19 @@ async function pruneRecoveryPointsByPolicy(button) {
   if (!state.data) return;
   const policy = normalizedRecoveryPolicy();
   if (!recoveryPolicyActive(policy)) {
-    toast("请先设置恢复点保留策略。");
+    toast(t("请先设置恢复点保留策略。"));
     return;
   }
   const plan = recoveryRetentionPlan(state.data.recoveryPoints || [], policy);
   if (!plan.deleteCount) {
-    toast("当前没有需要清理的恢复点。");
+    toast(t("当前没有需要清理的恢复点。"));
     return;
   }
-  const message = [
-    `确认按保留策略清理 ${plan.deleteCount} 个恢复点？`,
-    "",
-    recoveryPolicyLabel(policy),
-    `保留：${plan.keepCount} 个`,
-    "命令：git update-ref -d <恢复点引用>",
-    "",
-    "删除后不能再通过 Forkline 恢复到这些引用。",
-  ].join("\n");
+  const message = t("确认按保留策略清理 {deleteCount} 个恢复点？\n\n{policy}\n保留：{keepCount} 个\n命令：git update-ref -d <恢复点引用>\n\n删除后不能再通过 Forkline 恢复到这些引用。", {
+    deleteCount: plan.deleteCount,
+    policy: recoveryPolicyLabel(policy),
+    keepCount: plan.keepCount,
+  });
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
@@ -791,7 +809,7 @@ async function pruneRecoveryPointsByPolicy(button) {
       }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "恢复点清理完成");
+    toast(result.output || t("恢复点清理完成"));
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
     state.data = data;
@@ -810,24 +828,24 @@ async function deleteFilteredRecoveryPoints(button) {
   if (!state.data) return;
   const points = filteredRecoveryPoints();
   if (!points.length) {
-    toast("当前筛选结果没有可删除的恢复点");
+    toast(t("当前筛选结果没有可删除的恢复点"));
     return;
   }
   const filter = state.recoveryFilter || {};
   const conditions = [
-    filter.query ? `搜索：${filter.query}` : "",
-    filter.branch ? `分支：${filter.branch}` : "",
-    filter.action ? `动作：${points[0]?.actionLabel || filter.action}` : "",
+    filter.query ? t("搜索：{query}", { query: filter.query }) : "",
+    filter.branch ? t("分支：{branch}", { branch: filter.branch }) : "",
+    filter.action ? t("动作：{action}", { action: t(points[0]?.actionLabel || filter.action) }) : "",
   ].filter(Boolean);
-  const scopeText = conditions.length ? conditions.join("\n") : "未设置筛选，将删除当前全部恢复点";
-  const message = `确认删除当前列表里的 ${points.length} 个恢复点？\n\n${scopeText}\n\n命令：git update-ref -d <恢复点引用>\n\n删除后不能再通过 Forkline 恢复到这些引用。`;
+  const scopeText = conditions.length ? conditions.join("\n") : t("未设置筛选，将删除当前全部恢复点");
+  const message = t("确认删除当前列表里的 {count} 个恢复点？\n\n{scope}\n\n命令：git update-ref -d <恢复点引用>\n\n删除后不能再通过 Forkline 恢复到这些引用。", { count: points.length, scope: scopeText });
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "deleteRecoveryPoints", refs: points.map((point) => ({ ref: point.ref, sha: point.sha })) }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "恢复点已删除");
+    toast(result.output || t("恢复点已删除"));
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
     state.data = data;
@@ -846,13 +864,13 @@ async function runRecoveryAction(action, ref, button) {
   if (!state.data || !ref) return;
   const point = (state.data.recoveryPoints || []).find((item) => item.ref === ref);
   if (!point) {
-    toast("恢复点已经不存在，请刷新后再试");
+    toast(t("恢复点已经不存在，请刷新后再试"));
     return;
   }
   const message =
     action === "restore"
-      ? `确认恢复当前分支到这个恢复点？\n\n恢复点：${point.shortRef}\n提交：${point.short || point.sha}\n命令：git reset --hard ${point.ref}\n\n这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。`
-      : `确认删除这个恢复点？\n\n${point.shortRef}\n\n删除后不能再通过 Forkline 恢复到这个引用。`;
+      ? t("确认恢复当前分支到这个恢复点？\n\n恢复点：{ref}\n提交：{sha}\n命令：git reset --hard {fullRef}\n\n这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。", { ref: point.shortRef, sha: point.short || point.sha, fullRef: point.ref })
+      : t("确认删除这个恢复点？\n\n{ref}\n\n删除后不能再通过 Forkline 恢复到这个引用。", { ref: point.shortRef });
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
@@ -861,7 +879,7 @@ async function runRecoveryAction(action, ref, button) {
     const snapshot = action === "restore" ? currentBranchSnapshotPayload() : {};
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ref, sha: point.sha, ...snapshot }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "恢复点操作完成");
+    toast(result.output || t("恢复点操作完成"));
     state.commitDetails.clear();
     state.selectedChanges.clear();
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
@@ -889,7 +907,7 @@ async function runReflogAction(action, selector, button) {
   if (!state.data || !selector) return;
   const entry = findReflogEntry(selector);
   if (!entry) {
-    toast("引用日志记录已经变化，请刷新后再试");
+    toast(t("引用日志记录已经变化，请刷新后再试"));
     return;
   }
   if (action === "view") {
@@ -898,23 +916,19 @@ async function runReflogAction(action, selector, button) {
   }
   if (action === "copy") {
     await copyText(entry.sha);
-    toast("已复制提交 SHA");
+    toast(t("已复制提交 SHA"));
     return;
   }
   if (action !== "create" && action !== "restore") return;
   const body = { selector: entry.selector, sha: entry.sha };
   const apiAction = action === "create" ? "createRecoveryPointFromReflog" : "restoreReflogEntry";
   if (action === "restore") {
-    const message = [
-      "确认把当前分支恢复到这条引用日志？",
-      "",
-      `位置：${entry.selector}`,
-      `提交：${entry.short || entry.sha}`,
-      `说明：${entry.message || "HEAD 位置变更"}`,
-      `命令：git reset --hard ${entry.sha}`,
-      "",
-      "这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。",
-    ].join("\n");
+    const message = t("确认把当前分支恢复到这条引用日志？\n\n位置：{position}\n提交：{sha}\n说明：{message}\n命令：git reset --hard {fullSha}\n\n这会移动当前分支并覆盖工作区。Forkline 会在恢复前再自动创建一个恢复点。", {
+      position: entry.selector,
+      sha: entry.short || entry.sha,
+      message: entry.message || t("HEAD 位置变更"),
+      fullSha: entry.sha,
+    });
     if (!state.data.repo.isSample && !confirm(message)) return;
   }
   const repoPath = repoPathSnapshot();
@@ -923,7 +937,7 @@ async function runReflogAction(action, selector, button) {
     const snapshot = action === "restore" || action === "create" ? currentBranchSnapshotPayload() : {};
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: apiAction, ...body, ...snapshot }) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "引用日志操作完成");
+    toast(result.output || t("引用日志操作完成"));
     state.commitDetails.clear();
     state.selectedChanges.clear();
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
@@ -958,12 +972,12 @@ async function runTagAction(action, tagName, button) {
   }
   if (action === "copy") {
     await copyText(tag.name);
-    toast("已复制 Tag 名称");
+    toast(t("已复制 Tag 名称"));
     return;
   }
   const remote = action === "push" || action === "deleteRemote" ? defaultTagRemote() : null;
   if ((action === "push" || action === "deleteRemote") && !remote?.name) {
-    toast("当前仓库没有远端。请先添加远端仓库后再操作 Tag。");
+    toast(t("当前仓库没有远端。请先添加远端仓库后再操作 Tag。"));
     return;
   }
   const message = tagActionConfirmMessage(action, tag.name, remote?.name);
@@ -980,7 +994,7 @@ async function runTagAction(action, tagName, button) {
     if (remote?.name) Object.assign(payload, { remote: remote.name }, remoteConfigSnapshotPayload(remote));
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "Tag 操作完成");
+    toast(result.output || t("Tag 操作完成"));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     state.commitDetails.clear();
@@ -1007,9 +1021,10 @@ function defaultTagRemote() {
 }
 
 function tagActionConfirmMessage(action, name, remoteName = "<远端>") {
-  if (action === "push") return `确认推送 Tag：${name}？\n\n命令：git push ${remoteName} refs/tags/${name}:refs/tags/${name}`;
-  if (action === "deleteLocal") return `确认删除本地 Tag：${name}？\n\n命令：git tag -d ${name}\n此操作不会删除远端 Tag。`;
-  if (action === "deleteRemote") return `确认删除远端 Tag：${name}？\n\n命令：git push ${remoteName} :refs/tags/${name}\n此操作不会删除本地 Tag。`;
-  return `确认操作 Tag：${name}？`;
+  const remote = remoteName === "<远端>" ? t("<远端>") : remoteName;
+  if (action === "push") return t("确认推送 Tag：{name}？\n\n命令：git push {remote} refs/tags/{name}:refs/tags/{name}", { name, remote });
+  if (action === "deleteLocal") return t("确认删除本地 Tag：{name}？\n\n命令：git tag -d {name}\n此操作不会删除远端 Tag。", { name });
+  if (action === "deleteRemote") return t("确认删除远端 Tag：{name}？\n\n命令：git push {remote} :refs/tags/{name}\n此操作不会删除本地 Tag。", { name, remote });
+  return t("确认操作 Tag：{name}？", { name });
 }
 

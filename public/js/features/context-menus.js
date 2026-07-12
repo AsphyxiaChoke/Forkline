@@ -33,43 +33,43 @@ function showCommitContextMenu(event, commit) {
   const queueRewordButton = menu.querySelector('[data-commit-action="queueReword"]');
   if (openRemoteButton) {
     openRemoteButton.disabled = !remoteUrl;
-    openRemoteButton.title = remoteUrl ? `打开远端提交：${remoteUrl}` : "当前仓库没有可识别的网页远端 URL";
+    openRemoteButton.title = remoteUrl ? t("打开远端提交：{url}", { url: remoteUrl }) : t("当前仓库没有可识别的网页远端 URL");
   }
   if (cherryPickButton) {
     cherryPickButton.disabled = false;
-    cherryPickButton.title = isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支";
+    cherryPickButton.title = t(isMergeCommit ? "git cherry-pick -m：挑选 merge 提交前选择主线" : "git cherry-pick：把此提交复制到当前分支");
   }
   if (revertButton) {
     revertButton.disabled = false;
-    revertButton.title = isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交";
+    revertButton.title = t(isMergeCommit ? "git revert -m：还原 merge 提交前选择主线" : "git revert：创建一个反向提交来抵消此提交");
   }
   if (squashButton) {
     squashButton.disabled = !canFold;
-    squashButton.title = isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩";
+    squashButton.title = t(isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩");
   }
   if (fixupButton) {
     fixupButton.disabled = !canFold;
-    fixupButton.title = isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补";
+    fixupButton.title = t(isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补");
   }
   if (dropButton) {
     dropButton.disabled = !canDrop;
-    dropButton.title = isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交";
+    dropButton.title = t(isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交");
   }
   if (queueSquashButton) {
     queueSquashButton.disabled = !canFold;
-    queueSquashButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : canFold ? "加入历史编辑队列：执行时用 squash 压缩进前一条提交" : "根提交没有父提交，不能压缩";
+    queueSquashButton.title = t(isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : canFold ? "加入历史编辑队列：执行时用 squash 压缩进前一条提交" : "根提交没有父提交，不能压缩");
   }
   if (queueFixupButton) {
     queueFixupButton.disabled = !canFold;
-    queueFixupButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : canFold ? "加入历史编辑队列：执行时用 fixup 修补进前一条提交" : "根提交没有父提交，不能修补";
+    queueFixupButton.title = t(isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : canFold ? "加入历史编辑队列：执行时用 fixup 修补进前一条提交" : "根提交没有父提交，不能修补");
   }
   if (queueDropButton) {
     queueDropButton.disabled = !canDrop;
-    queueDropButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 drop 丢弃此提交";
+    queueDropButton.title = t(isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 drop 丢弃此提交");
   }
   if (queueRewordButton) {
     queueRewordButton.disabled = !canDrop;
-    queueRewordButton.title = isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 reword 修改提交信息";
+    queueRewordButton.title = t(isMergeCommit ? "merge 提交暂不支持加入历史编辑队列" : "加入历史编辑队列：执行时用 reword 修改提交信息");
   }
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
@@ -125,58 +125,58 @@ function showBranchContextMenu(event, branch, options = {}) {
   const canSetUpstream = Boolean(isRemote && currentBranch && currentBranch !== "detached HEAD" && !currentSync.unborn && !branch.endsWith("/HEAD"));
   const pullRequest = state.data?.sync?.pullRequest || {};
   const canOpenPullRequest = Boolean(isLocal && isCurrent && pullRequest.available && pullRequest.url);
-  const pullRequestUnavailable = !isLocal || !isCurrent
+  const pullRequestUnavailable = t(!isLocal || !isCurrent
     ? "只能为当前本地分支创建 PR/MR，请先切换到这个分支。"
-    : pullRequest.reason || "当前分支暂时不能生成 PR 链接。";
-  checkoutButton.textContent = isRemote ? "签出为本地分支" : "切换到此分支";
+    : pullRequest.reason || "当前分支暂时不能生成 PR 链接。");
+  checkoutButton.textContent = t(isRemote ? "签出为本地分支" : "切换到此分支");
   compareButton.disabled = !branch || (isLocal && isCurrent);
-  compareButton.title = isLocal && isCurrent ? "不能把当前分支和自己比较" : `比较当前分支与 ${branch}`;
+  compareButton.title = isLocal && isCurrent ? t("不能把当前分支和自己比较") : t("比较当前分支与 {branch}", { branch });
   checkoutButton.disabled = isRemote ? !remoteLocalBranch || remoteIsCurrent : !isLocal || isCurrent || occupied;
   checkoutButton.title = isRemote
     ? !remoteLocalBranch
-      ? "这个远端引用不能自动推导本地分支名"
+      ? t("这个远端引用不能自动推导本地分支名")
       : remoteIsCurrent
-      ? "对应的本地分支已经是当前分支"
-      : `签出 ${branch} 为本地分支 ${remoteLocalBranch || ""}`
+      ? t("对应的本地分支已经是当前分支")
+      : t("签出 {remote} 为本地分支 {local}", { remote: branch, local: remoteLocalBranch || "" })
     : isCurrent
-      ? "当前分支"
+      ? t("当前分支")
       : occupied
-        ? "分支被其他工作树占用"
+        ? t("分支被其他工作树占用")
         : "";
   mergeButton.disabled = isCurrent || currentSync.unborn || (isRemote && !remoteLocalBranch);
   mergeButton.title = isCurrent
-    ? "不能把当前分支合并到自己"
+    ? t("不能把当前分支合并到自己")
     : currentSync.unborn
-      ? "当前分支还没有首个提交，不能合并分支"
+      ? t("当前分支还没有首个提交，不能合并分支")
       : isRemote && !remoteLocalBranch
-        ? "这个远端引用不能自动推导本地分支名"
-        : `合并 ${branch} 到当前分支`;
+        ? t("这个远端引用不能自动推导本地分支名")
+        : t("合并 {branch} 到当前分支", { branch });
   rebaseButton.disabled = isCurrent || currentSync.unborn || (isRemote && !remoteLocalBranch);
   rebaseButton.title = isCurrent
-    ? "不能把当前分支变基到自己"
+    ? t("不能把当前分支变基到自己")
     : currentSync.unborn
-      ? "当前分支还没有首个提交，不能变基"
+      ? t("当前分支还没有首个提交，不能变基")
       : isRemote && !remoteLocalBranch
-        ? "这个远端引用不能自动推导本地分支名"
-        : `把当前分支 ${state.data?.repo?.branch || ""} 变基到 ${branch}`;
+        ? t("这个远端引用不能自动推导本地分支名")
+        : t("把当前分支 {current} 变基到 {target}", { current: state.data?.repo?.branch || "", target: branch });
   pullRebaseButton.disabled = !isLocal || !isCurrent || !currentInfo.upstream || currentInfo.upstreamGone;
   pullRebaseButton.title = !isLocal || !isCurrent
-    ? "只能对当前本地分支执行变基拉取"
+    ? t("只能对当前本地分支执行变基拉取")
     : !currentInfo.upstream
-      ? "当前分支没有 upstream，请先设置 upstream"
+      ? t("当前分支没有 upstream，请先设置 upstream")
       : currentInfo.upstreamGone
-        ? "当前分支的 upstream 已不存在，请先抓取并重新设置"
-        : `从 ${currentInfo.upstream} 执行 git pull --rebase`;
+        ? t("当前分支的 upstream 已不存在，请先抓取并重新设置")
+        : t("从 {upstream} 执行 git pull --rebase", { upstream: currentInfo.upstream });
   forcePushButton.disabled = !isLocal || !isCurrent || currentSync.unborn;
   forcePushButton.title = !isLocal
-    ? "只能对当前本地分支执行安全强推"
+    ? t("只能对当前本地分支执行安全强推")
     : !isCurrent
-      ? "请先切换到这个分支后再安全强推"
+      ? t("请先切换到这个分支后再安全强推")
       : currentSync.unborn
-        ? "当前分支还没有首个提交，不能安全强推"
-        : "使用 git push --force-with-lease 推送当前分支";
+        ? t("当前分支还没有首个提交，不能安全强推")
+        : t("使用 git push --force-with-lease 推送当前分支");
   if (openPullRequestButton) {
-    openPullRequestButton.querySelector(".menu-label").textContent = pullRequest.title || "创建 Pull Request";
+    openPullRequestButton.querySelector(".menu-label").textContent = t(pullRequest.title || "创建 Pull Request");
     openPullRequestButton.disabled = !canOpenPullRequest;
     openPullRequestButton.title = canOpenPullRequest ? pullRequest.url : pullRequestUnavailable;
   }
@@ -187,29 +187,29 @@ function showBranchContextMenu(event, branch, options = {}) {
   setUpstreamButton.disabled = !canSetUpstream || currentInfo.upstream === branch;
   setUpstreamButton.title = !canSetUpstream
     ? currentSync.unborn
-      ? "当前分支还没有首个提交，不能设置 upstream"
-      : "只能把远端分支设为当前本地分支的 upstream"
+      ? t("当前分支还没有首个提交，不能设置 upstream")
+      : t("只能把远端分支设为当前本地分支的 upstream")
     : currentInfo.upstream === branch
-      ? "当前分支已经跟踪这个远端分支"
-      : `把当前分支 ${currentBranch} 跟踪到 ${branch}`;
+      ? t("当前分支已经跟踪这个远端分支")
+      : t("把当前分支 {current} 跟踪到 {remote}", { current: currentBranch, remote: branch });
   unsetUpstreamButton.disabled = !isLocal || !isCurrent || !options.upstream;
-  unsetUpstreamButton.title = !isLocal || !isCurrent ? "只能在当前本地分支上取消 upstream" : options.upstream ? `取消 ${branch} -> ${options.upstream}` : "当前分支没有 upstream";
+  unsetUpstreamButton.title = !isLocal || !isCurrent ? t("只能在当前本地分支上取消 upstream") : options.upstream ? t("取消 {branch} -> {upstream}", { branch, upstream: options.upstream }) : t("当前分支没有 upstream");
   cleanupButton.hidden = !prunable;
   cleanupButton.disabled = !prunable;
-  renameButton.textContent = isRemote ? "重命名分支" : "重命名本地分支";
+  renameButton.textContent = t(isRemote ? "重命名分支" : "重命名本地分支");
   renameButton.disabled = !isLocal || (occupied && !isCurrent);
-  renameButton.title = isRemote ? "远端分支不能在本地直接重命名" : occupied && !isCurrent ? "分支被其他工作树占用，不能重命名" : "";
-  deleteButton.textContent = isRemote ? "删除远端分支" : "删除本地分支";
+  renameButton.title = isRemote ? t("远端分支不能在本地直接重命名") : occupied && !isCurrent ? t("分支被其他工作树占用，不能重命名") : "";
+  deleteButton.textContent = t(isRemote ? "删除远端分支" : "删除本地分支");
   deleteButton.classList.toggle("danger", true);
   deleteButton.disabled = isRemote ? !remoteLocalBranch : !isLocal || isCurrent || occupied;
   deleteButton.title = isRemote
     ? remoteLocalBranch
-      ? `删除远端分支 ${branch}`
-      : "这个远端引用不能自动推导分支名"
+      ? t("删除远端分支 {branch}", { branch })
+      : t("这个远端引用不能自动推导分支名")
     : isCurrent
-      ? "不能删除当前分支"
+      ? t("不能删除当前分支")
       : occupied
-        ? "分支被其他工作树占用"
+        ? t("分支被其他工作树占用")
         : "";
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
@@ -413,7 +413,7 @@ async function runBranchContextAction(action) {
       return;
     }
     if (!isLocal) {
-      toast("这个分支不能直接切换");
+      toast(t("这个分支不能直接切换"));
       return;
     }
     await checkoutBranch(branch);
@@ -445,7 +445,7 @@ async function runBranchContextAction(action) {
   }
   if (action === "setUpstream") {
     if (!isRemote) {
-      toast("请选择远端分支作为 upstream");
+      toast(t("请选择远端分支作为 upstream"));
       return;
     }
     await runUpstreamAction("set", branch);
@@ -460,17 +460,17 @@ async function runBranchContextAction(action) {
     return;
   }
   if (action === "branch") {
-    openBranchModalFromRef(branch, isRemote ? "远端分支" : "分支");
+    openBranchModalFromRef(branch, t(isRemote ? "远端分支" : "分支"));
     return;
   }
   if (action === "copy") {
     await copyText(branch);
-    toast("已复制分支名");
+    toast(t("已复制分支名"));
     return;
   }
   if (action === "rename") {
     if (!isLocal) {
-      toast("远端分支不能在本地直接重命名");
+      toast(t("远端分支不能在本地直接重命名"));
       return;
     }
     openRenameBranchModal(branch);
@@ -482,7 +482,7 @@ async function runBranchContextAction(action) {
       return;
     }
     if (!isLocal) {
-      toast("这个引用不能直接删除");
+      toast(t("这个引用不能直接删除"));
       return;
     }
     await deleteBranch(branch);

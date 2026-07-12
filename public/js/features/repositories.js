@@ -35,7 +35,7 @@ function renderRecentRepos() {
   if (!els.recentRepoSelect) return;
   const records = recentRepos();
   els.recentRepoSelect.innerHTML = [
-    `<option value="">最近仓库</option>`,
+    `<option value="">${t("最近仓库")}</option>`,
     ...records.map((repo) => `<option value="${escapeAttr(repo.path)}">${escapeHtml(recentRepoLabel(repo))}</option>`),
   ].join("");
   els.recentRepoSelect.disabled = !records.length;
@@ -71,15 +71,15 @@ async function openRecentRepo() {
 
 function clearRecentRepos() {
   if (!recentRepos().length) return;
-  if (!confirm("确认清除最近仓库列表？\n\n这只会清除当前浏览器里的 Forkline 记录，不会删除任何本地仓库。")) return;
+  if (!confirm(t("确认清除最近仓库列表？\n\n这只会清除当前浏览器里的 Forkline 记录，不会删除任何本地仓库。"))) return;
   try {
     localStorage.removeItem(recentRepoStorageKey);
   } catch {
-    toast("浏览器阻止访问最近仓库记录");
+    toast(t("浏览器阻止访问最近仓库记录"));
     return;
   }
   renderRecentRepos();
-  toast("最近仓库已清除");
+  toast(t("最近仓库已清除"));
 }
 
 function openCloneModal() {
@@ -144,24 +144,20 @@ async function submitCloneForm(event) {
   const source = els.cloneUrlInput.value.trim();
   const targetPath = els.cloneTargetInput.value.trim();
   if (!source) {
-    toast("请输入克隆来源");
+    toast(t("请输入克隆来源"));
     els.cloneUrlInput.focus();
     return;
   }
   if (!targetPath) {
-    toast("请输入保存位置");
+    toast(t("请输入保存位置"));
     els.cloneTargetInput.focus();
     return;
   }
   const openAfter = els.cloneOpenToggle.checked;
-  const message = [
-    "确认克隆仓库？",
-    "",
-    `来源：${source}`,
-    `保存到：${targetPath}`,
-    "",
-    "命令：git clone <来源> <保存到>",
-  ].join("\n");
+  const message = t(
+    "确认克隆仓库？\n\n来源：{source}\n保存到：{target}\n\n命令：git clone <来源> <保存到>",
+    { source, target: targetPath }
+  );
   if (!confirm(message)) return;
 
   els.cloneSubmit.disabled = true;
@@ -179,7 +175,7 @@ async function submitCloneForm(event) {
       }
     }
     closeCloneModal();
-    toast(result.output || "克隆完成");
+    toast(result.output || t("克隆完成"));
   } catch (error) {
     toast(error.message);
   } finally {
@@ -206,7 +202,7 @@ function closeInitModal() {
 
 function openPatchModal() {
   if (!state.data || state.data.repo.isSample) {
-    toast("请先打开真实 Git 仓库");
+    toast(t("请先打开真实 Git 仓库"));
     return;
   }
   els.patchTextInput.value = "";
@@ -226,18 +222,21 @@ function closePatchModal() {
 async function submitPatchForm(event) {
   event.preventDefault();
   if (!state.data || state.data.repo.isSample) {
-    toast("请先打开真实 Git 仓库");
+    toast(t("请先打开真实 Git 仓库"));
     return;
   }
   const patch = els.patchTextInput.value;
   const stage = els.patchStageToggle.checked;
   if (!patch.trim()) {
-    toast("请粘贴补丁内容");
+    toast(t("请粘贴补丁内容"));
     els.patchTextInput.focus();
     return;
   }
   const command = stage ? "git apply --index" : "git apply";
-  if (!confirm(`确认应用补丁？\n\n命令：${command}\n${stage ? "补丁会应用并进入暂存区。" : "补丁会应用到工作区，不会自动暂存。"}`)) return;
+  if (!confirm(t("确认应用补丁？\n\n命令：{command}\n{effect}", {
+    command,
+    effect: stage ? t("补丁会应用并进入暂存区。") : t("补丁会应用到工作区，不会自动暂存。"),
+  }))) return;
   const repoPath = repoPathSnapshot();
   try {
     els.patchSubmit.disabled = true;
@@ -247,7 +246,7 @@ async function submitPatchForm(event) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     closePatchModal();
-    toast(result.output || "补丁已应用");
+    toast(result.output || t("补丁已应用"));
     const data = result.state || await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
     if (!isCurrentRepoPath(repoPath)) return;
     state.commitDetails.clear();
@@ -266,18 +265,12 @@ async function submitInitForm(event) {
   event.preventDefault();
   const targetPath = els.initPathInput.value.trim();
   if (!targetPath) {
-    toast("请输入要初始化的文件夹");
+    toast(t("请输入要初始化的文件夹"));
     els.initPathInput.focus();
     return;
   }
   const openAfter = els.initOpenToggle.checked;
-  const message = [
-    "确认初始化 Git 仓库？",
-    "",
-    `位置：${targetPath}`,
-    "",
-    "命令：git init <文件夹>",
-  ].join("\n");
+  const message = t("确认初始化 Git 仓库？\n\n位置：{path}\n\n命令：git init <文件夹>", { path: targetPath });
   if (!confirm(message)) return;
 
   els.initSubmit.disabled = true;
@@ -295,7 +288,7 @@ async function submitInitForm(event) {
       }
     }
     closeInitModal();
-    toast(result.output || "初始化仓库完成");
+    toast(result.output || t("初始化仓库完成"));
   } catch (error) {
     toast(error.message);
   } finally {
@@ -385,7 +378,7 @@ function clearRepoScopedActionState() {
 async function openRepo(pathOverride = "") {
   const repoPath = typeof pathOverride === "string" && pathOverride ? pathOverride.trim() : els.repoInput.value.trim();
   if (!repoPath) {
-    toast("请输入仓库路径");
+    toast(t("请输入仓库路径"));
     return;
   }
   const requestId = ++state.openRepoRequestId;
@@ -396,7 +389,7 @@ async function openRepo(pathOverride = "") {
     const opened = await applyOpenedRepoData(data, requestId);
     if (!opened) return;
     saveRecentRepo(state.data.repo);
-    toast(`已打开 ${state.data.repo.name}`);
+    toast(t("已打开 {name}", { name: state.data.repo.name }));
     await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     if (requestId !== state.openRepoRequestId) return;

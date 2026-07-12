@@ -50,6 +50,17 @@ test.after(async () => {
   await stopServer();
 });
 
+test("sample state localizes display metadata without translating commit data", async () => {
+  const response = await request("/api/state", { locale: "en" });
+  assertStatus(response, 200);
+  assert.equal(response.body.repo.isSample, true);
+  assert.equal(response.body.commits[0].time, "12 minutes ago");
+  assert.equal(response.body.commits[0].message, "打磨提交图连线动画");
+  assert.equal(response.body.branchCleanup[0].lastUpdated, "12 minutes ago");
+  assert.match(response.body.sync.auth.summary, /SSH remote/);
+  assert.doesNotMatch(response.body.sync.auth.summary, /[\u3400-\u9fff]/);
+});
+
 test("repository context headers support non-Latin paths and legacy ASCII values", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-repo-context-"));
   t.after(() => removeFixture(root));
@@ -72,6 +83,52 @@ test("repository context headers support non-Latin paths and legacy ASCII values
   const legacy = await request("/api/state", { repoPathHeader: legacyRepo });
   assertStatus(legacy, 200);
   assert.equal(path.resolve(legacy.body.repo.path), path.resolve(legacyRepo));
+});
+
+test("backend locale follows the request without translating Git data", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-i18n-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "中文仓库");
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "说明.txt"), "base\n", "utf8");
+  await git(repo, ["add", "说明.txt"]);
+  await git(repo, ["commit", "-m", "设置 分支 桌面"]);
+  const state = await openRepo(repo);
+
+  const englishState = await request("/api/state", { repoPath: repo, locale: "en-US" });
+  assertStatus(englishState, 200);
+  assert.equal(path.resolve(englishState.body.repo.path), path.resolve(repo));
+  assert.equal(englishState.body.commits[0].message, "设置 分支 桌面");
+
+  const englishError = await request("/api/state", { repoPathHeader: "v1:%E0%A4%A", locale: "en" });
+  assertStatus(englishError, 400);
+  assert.match(englishError.body.error, /repository context encoding is invalid/i);
+  assert.doesNotMatch(englishError.body.error, /[\u3400-\u9fff]/);
+
+  const unsupportedLocale = await request("/api/state", { repoPathHeader: "v1:%E0%A4%A", locale: "fr" });
+  assertStatus(unsupportedLocale, 400);
+  assert.match(unsupportedLocale.body.error, /仓库上下文编码无效/);
+
+  const branch = "功能/保留中文";
+  const created = await request("/api/action", {
+    method: "POST",
+    repoPath: repo,
+    locale: "en",
+    body: {
+      action: "createBranch",
+      branch,
+      checkout: true,
+      expectedBranch: state.repo.branch,
+      expectedHead: state.repo.headSha,
+      expectedWorktreeSnapshot: state.worktreeSnapshot,
+    },
+  });
+  assertStatus(created, 200);
+  assert.equal(created.body.output, `Created and switched to ${branch}`);
+  const afterCreate = await request("/api/state", { repoPath: repo, locale: "en" });
+  assertStatus(afterCreate, 200);
+  assert.equal(afterCreate.body.repo.branch, branch);
 });
 
 test("ordinary parent stash still creates, applies, and pops", { timeout: 120000 }, async (t) => {
@@ -405,6 +462,7 @@ async function action(repoPath, state, payload) {
 
 async function request(pathname, options = {}) {
   const headers = { "Content-Type": "application/json" };
+  if (options.locale) headers["X-Forkline-Locale"] = options.locale;
   if (Object.hasOwn(options, "repoPathHeader")) {
     headers["X-Forkline-Repo-Path"] = options.repoPathHeader;
   } else if (options.repoPath) {

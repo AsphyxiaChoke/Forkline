@@ -6,6 +6,7 @@ function encodeRepoPathHeader(repoPath) {
 async function api(path, options = {}) {
   const requestRepoPath = repoPathSnapshot();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  headers["X-Forkline-Locale"] = currentLocale();
   if (requestRepoPath && !state.data?.repo?.isSample) {
     headers["X-Forkline-Repo-Path"] = encodeRepoPathHeader(requestRepoPath);
   }
@@ -19,7 +20,7 @@ async function api(path, options = {}) {
     if (data.runningOperations) state.data.runningOperations = data.runningOperations;
   }
   if (!response.ok || data.error) {
-    const error = new Error(data.error || "请求失败");
+    const error = new Error(data.error || t("请求失败"));
     error.data = data;
     if (data.remoteCheck) error.remoteCheck = data.remoteCheck;
     throw error;

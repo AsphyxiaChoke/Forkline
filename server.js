@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { execFile, execFileSync } = require("child_process");
+const i18nCatalog = require("./public/js/i18n-catalog.js");
 
 const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -6920,13 +6921,138 @@ async function readJson(req) {
 }
 
 function sendJson(res, status, data) {
-  const body = JSON.stringify(data);
+  const body = JSON.stringify(localizeResponseData(data, res.forklineLocale));
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "Cache-Control": "no-store",
   });
   res.end(body);
+}
+
+function requestLocale(req) {
+  return i18nCatalog.normalizeLocale(req.headers["x-forkline-locale"]) || i18nCatalog.defaultLocale;
+}
+
+function localizeResponseData(value, locale, pathParts = []) {
+  if (i18nCatalog.normalizeLocale(locale) !== "en" || value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    if (pathParts.at(-1) === "steps") return value.map((item) => (typeof item === "string" ? translateServerText(locale, item) : localizeResponseData(item, locale, pathParts)));
+    return value.map((item, index) => localizeResponseData(item, locale, [...pathParts, String(index)]));
+  }
+  if (typeof value !== "object") return value;
+  const localized = {};
+  Object.entries(value).forEach(([key, item]) => {
+    const nextPath = [...pathParts, key];
+    if (typeof item === "string" && shouldLocalizeResponseField(key, nextPath, value)) {
+      localized[key] = localizeResponseString(key, item, nextPath, value, locale);
+    } else {
+      localized[key] = localizeResponseData(item, locale, nextPath);
+    }
+  });
+  return localized;
+}
+
+function shouldLocalizeResponseField(key, pathParts, parent) {
+  if (key === "error") return true;
+  if (key === "output") return true;
+  if (["time", "lastUpdated", "elapsed"].includes(key)) return true;
+  if (["actionLabel", "statusLabel", "deleteBlockedReason", "protectedReason", "pruneReason", "reason", "advice", "categoryLabel", "kindLabel"].includes(key)) return true;
+  const pathText = pathParts.join(".");
+  if (key === "label") return /(?:operationLog|runningOperations|\.operation\.)/.test(pathText);
+  if (key === "title") return pathText.includes("pullRequest") || pathText.includes("diagnosis") || Array.isArray(parent.steps);
+  if (key === "summary") return pathText.includes("operationLog") || pathText.includes("auth") || pathText.includes("diagnosis") || Array.isArray(parent.steps);
+  if (key === "message") return pathText.includes("auth") && !pathText.includes("operationLog");
+  return false;
+}
+
+function localizeResponseString(key, value, pathParts, parent, locale) {
+  const pathText = pathParts.join(".");
+  if (key === "error") return translateServerError(locale, value);
+  if (key === "output") return translateServerOutput(locale, value);
+  if (["time", "lastUpdated", "elapsed"].includes(key)) return translateServerTime(locale, value);
+  if (key === "summary" && pathText.includes("operationLog")) {
+    return parent?.status === "error" ? translateServerError(locale, value) : translateServerOutput(locale, value);
+  }
+  if (key === "summary" && isAuthDiagnosticsSummary(parent, value)) return translateAuthDiagnosticsSummary(parent);
+  if (key === "message") return i18nCatalog.translateKnown(locale, value);
+  return translateServerText(locale, value);
+}
+
+function isAuthDiagnosticsSummary(parent, value) {
+  return String(value || "").includes("；")
+    && Array.isArray(parent?.remotes)
+    && parent?.ssh
+    && parent?.agent
+    && parent?.credentialManager;
+}
+
+function translateAuthDiagnosticsSummary(model) {
+  const remotes = model.remotes || [];
+  const remoteParts = [
+    countLabel(remotes.filter((remote) => remote.kind === "ssh").length, "SSH remote"),
+    countLabel(remotes.filter((remote) => remote.kind === "https").length, "HTTPS remote"),
+    countLabel(remotes.filter((remote) => remote.kind === "local").length, "local remote"),
+  ].filter(Boolean);
+  const remoteText = remoteParts.length ? remoteParts.join(", ") : "No remotes";
+  const keyCount = Number(model.ssh?.keys?.length) || 0;
+  const sshText = model.ssh?.exists ? countLabel(keyCount, "SSH key pair", true) : "~/.ssh not found";
+  const agentCount = Number(model.agent?.keyCount) || 0;
+  const agentText = model.agent?.loaded ? countLabel(agentCount, "key in the agent", true, "keys in the agent") : "No keys loaded in the agent";
+  const gcmText = model.credentialManager?.available ? "GCM available" : "GCM not detected";
+  return `${remoteText}; ${sshText}; ${agentText}; ${gcmText}`;
+}
+
+function countLabel(count, label, includeZero = false, plural = `${label}s`) {
+  if (!count && !includeZero) return "";
+  return `${count} ${count === 1 ? label : plural}`;
+}
+
+function translateServerText(locale, text) {
+  return i18nCatalog.translate(locale, String(text || ""));
+}
+
+function translateServerTime(locale, text) {
+  const source = String(text || "");
+  if (i18nCatalog.normalizeLocale(locale) !== "en") return source;
+  const relative = source.match(/^(\d+)\s*(秒|分钟|小时|天|周|个月|年)(前)?$/);
+  if (relative) {
+    const count = Number(relative[1]);
+    const units = { 秒: "second", 分钟: "minute", 小时: "hour", 天: "day", 周: "week", 个月: "month", 年: "year" };
+    const unit = units[relative[2]] || relative[2];
+    const amount = `${count} ${unit}${count === 1 ? "" : "s"}`;
+    return relative[3] ? `${amount} ago` : amount;
+  }
+  return translateServerText(locale, source);
+}
+
+function translateServerOutput(locale, text) {
+  const source = String(text || "");
+  const whole = i18nCatalog.translateKnown(locale, source);
+  if (whole !== source) return whole;
+  return source.split(/(\r?\n)/).map((line) => {
+    if (/^\r?\n$/.test(line)) return line;
+    const match = line.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    const inner = match?.[2] || line;
+    if (inner.startsWith("Git 输出：")) return `${match?.[1] || ""}Git output:${inner.slice("Git 输出：".length)}${match?.[3] || ""}`;
+    const translated = i18nCatalog.translateKnown(locale, inner);
+    return `${match?.[1] || ""}${translated}${match?.[3] || ""}`;
+  }).join("");
+}
+
+function translateServerError(locale, text) {
+  const source = String(text || "");
+  const gitOutputMarker = source.indexOf("\n\nGit 输出：");
+  const messageSource = gitOutputMarker >= 0 ? source.slice(0, gitOutputMarker) : source;
+  const gitOutput = gitOutputMarker >= 0 ? source.slice(gitOutputMarker + "\n\nGit 输出：".length).trim() : "";
+  const translated = i18nCatalog.translateKnown(locale, messageSource);
+  if (!/[\u3400-\u9fff]/.test(translated)) {
+    return [translated, gitOutput ? `Git output:\n${gitOutput}` : ""].filter(Boolean).join("\n\n");
+  }
+  return [
+    "The operation could not be completed. Refresh the repository state and try again.",
+    gitOutput ? `Git output:\n${gitOutput}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 function sendError(res, error, context = {}) {
@@ -7476,6 +7602,7 @@ function mime(filePath) {
 
 const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url, `http://localhost:${PORT}`);
+  res.forklineLocale = requestLocale(req);
   try {
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       ensureRequestRepoMatchesCurrent(req);

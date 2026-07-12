@@ -32,7 +32,7 @@ async function refreshCompare() {
   const base = picker.base || current.base || currentCompareBaseRef();
   const head = picker.head || current.head || "";
   if (!head) {
-    toast("请选择要比较的目标引用");
+    toast(t("请选择要比较的目标引用"));
     return;
   }
   await openCompareBranch(head, base);
@@ -65,12 +65,12 @@ async function runCommitContextAction(action) {
   }
   if (action === "copySha") {
     await copyText(commit.sha);
-    toast("已复制提交 SHA");
+    toast(t("已复制提交 SHA"));
     return;
   }
   if (action === "copyMessage") {
     await copyText(commit.message);
-    toast("已复制提交信息");
+    toast(t("已复制提交信息"));
     return;
   }
   if (action === "copyPatch") {
@@ -165,27 +165,27 @@ async function runCommitToolAction(action, sha) {
 function historyRewriteConfig(mode) {
   return {
     squash: {
-      title: "压缩进父提交",
+      title: t("压缩进父提交"),
       command: "git rebase -i / squash",
-      effect: "此提交的改动和提交信息会合并进它的父提交，此提交本身会消失。",
+      effect: t("此提交的改动和提交信息会合并进它的父提交，此提交本身会消失。"),
       needsParent: true,
     },
     fixup: {
-      title: "修补进父提交",
+      title: t("修补进父提交"),
       command: "git rebase -i / fixup",
-      effect: "此提交的改动会合并进它的父提交，但此提交信息会被丢弃。",
+      effect: t("此提交的改动会合并进它的父提交，但此提交信息会被丢弃。"),
       needsParent: true,
     },
     drop: {
-      title: "丢弃此提交",
+      title: t("丢弃此提交"),
       command: "git rebase -i / drop",
-      effect: "此提交会从当前分支历史中删除，后续提交会被重新播放。",
+      effect: t("此提交会从当前分支历史中删除，后续提交会被重新播放。"),
       needsParent: false,
     },
     reword: {
-      title: "修改提交信息",
+      title: t("修改提交信息"),
       command: "git rebase -i / reword",
-      effect: "只修改此提交的提交信息，后续提交会被重新播放。",
+      effect: t("只修改此提交的提交信息，后续提交会被重新播放。"),
       needsParent: false,
     },
   }[mode];
@@ -228,11 +228,11 @@ async function addHistoryQueueItem(commit, mode) {
   const config = historyRewriteConfig(mode);
   if (!config) return;
   if (needsMainline(commit)) {
-    toast("merge 提交暂不支持加入历史编辑队列。");
+    toast(t("merge 提交暂不支持加入历史编辑队列。"));
     return;
   }
   if (config.needsParent && !(commit.parents || []).length) {
-    toast("根提交没有父提交，不能压缩或修补。");
+    toast(t("根提交没有父提交，不能压缩或修补。"));
     return;
   }
   const existing = state.historyQueue.items.find((item) => item.sha === commit.sha);
@@ -250,7 +250,7 @@ async function addHistoryQueueItem(commit, mode) {
     ? state.historyQueue.items.map((item) => (item.sha === commit.sha ? { ...item, ...nextItem } : item))
     : [...state.historyQueue.items, nextItem];
   if (items.length > 12) {
-    toast("历史编辑队列一次最多 12 条动作。");
+    toast(t("历史编辑队列一次最多 12 条动作。"));
     return;
   }
   state.selectedTab = "details";
@@ -260,7 +260,9 @@ async function addHistoryQueueItem(commit, mode) {
   renderCommits();
   await loadCommit(commit.sha);
   renderInspector();
-  toast(existing ? `已更新队列：${commit.short} -> ${config.title}` : `已加入历史编辑队列：${commit.short} ${config.title}`);
+  toast(existing
+    ? t("已更新队列：{sha} -> {action}", { sha: commit.short, action: config.title })
+    : t("已加入历史编辑队列：{sha} {action}", { sha: commit.short, action: config.title }));
   await refreshHistoryRewriteQueuePreview();
 }
 
@@ -360,18 +362,17 @@ async function runHistoryRewriteQueue(action, button) {
   if (action !== "execute") return;
   const preview = state.historyQueue.preview;
   if (!preview?.canRun) {
-    toast((preview?.blockers || [state.historyQueue.error || "历史编辑队列还不能执行"]).join("\n"));
+    toast((preview?.blockers || [state.historyQueue.error || "历史编辑队列还不能执行"]).map((item) => t(item)).join("\n"));
     return;
   }
-  const message = [
-    `确认执行历史编辑队列 ${state.historyQueue.items.length} 项？`,
-    "",
-    `分支：${preview.branch || state.data?.repo?.branch || "当前分支"}`,
-    `影响提交：${preview.affectedCount || 0} 个`,
-    "命令：git rebase -i / queue",
-    "",
-    "这会重写队列影响范围内的历史 SHA。执行前会创建恢复点。",
-  ].join("\n");
+  const message = t(
+    "确认执行历史编辑队列 {count} 项？\n\n分支：{branch}\n影响提交：{affected} 个\n命令：git rebase -i / queue\n\n这会重写队列影响范围内的历史 SHA。执行前会创建恢复点。",
+    {
+      count: state.historyQueue.items.length,
+      branch: preview.branch || state.data?.repo?.branch || t("当前分支"),
+      affected: preview.affectedCount || 0,
+    }
+  );
   if (!state.data.repo.isSample && !confirm(message)) return;
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
@@ -386,7 +387,7 @@ async function runHistoryRewriteQueue(action, button) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
-    toast(result.output || "历史编辑队列已执行");
+    toast(result.output || t("历史编辑队列已执行"));
     await reloadAfterHistoryAction(repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -404,11 +405,11 @@ async function openHistoryRewritePlan(commit, mode) {
   const config = historyRewriteConfig(mode);
   if (!config) return;
   if (needsMainline(commit)) {
-    toast("暂不支持对 merge 提交执行自动历史编辑。");
+    toast(t("暂不支持对 merge 提交执行自动历史编辑。"));
     return;
   }
   if (config.needsParent && !(commit.parents || []).length) {
-    toast("根提交没有父提交，不能压缩或修补。");
+    toast(t("根提交没有父提交，不能压缩或修补。"));
     return;
   }
   state.selectedTab = "details";
@@ -447,7 +448,7 @@ async function runHistoryRewritePlan(action, button) {
   if (action !== "execute") return;
   const preview = plan.preview;
   if (!preview?.canRun) {
-    toast((preview?.blockers || ["当前计划还不能执行"]).join("\n"));
+    toast((preview?.blockers || ["当前计划还不能执行"]).map((item) => t(item)).join("\n"));
     return;
   }
   if (button) button.disabled = true;
@@ -460,7 +461,7 @@ async function runHistoryRewritePlan(action, button) {
     if (!isCurrentRepoPath(repoPath)) return;
     state.historyPlan = null;
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
-    toast(result.output || `已${preview.title || "编辑历史"} ${preview.target?.short || ""}`);
+    toast(result.output || t("已{action} {sha}", { action: t(preview.title || "编辑历史"), sha: preview.target?.short || "" }));
     await reloadAfterHistoryAction(repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -478,18 +479,27 @@ async function rewriteHistoryCommit(commit, mode) {
   const config = historyRewriteConfig(mode);
   if (!config) return;
   if (needsMainline(commit)) {
-    toast("暂不支持对 merge 提交执行自动历史编辑。");
+    toast(t("暂不支持对 merge 提交执行自动历史编辑。"));
     return;
   }
   if (config.needsParent && !(commit.parents || []).length) {
-    toast("根提交没有父提交，不能压缩或修补。");
+    toast(t("根提交没有父提交，不能压缩或修补。"));
     return;
   }
   const dirtyCount = (state.data.workingFiles || []).length;
-  const dirtyNote = dirtyCount ? `\n\n当前还有 ${dirtyCount} 个未提交改动，Git 会阻止历史编辑。请先提交或储藏。` : "";
-  const warning = mode === "drop" ? "\n\n危险：如果后续提交依赖此提交，可能会产生冲突。" : "";
-  const current = state.data.repo.branch || "当前分支";
-  const message = `确认${config.title} ${commit.short}？\n\n命令：${config.command}\n分支：${current}\n效果：${config.effect}\n这会重写此提交之后的历史 SHA。${warning}${dirtyNote}\n\n提交信息：${commit.message}`;
+  const dirtyNote = dirtyCount ? t("\n\n当前还有 {count} 个未提交改动，Git 会阻止历史编辑。请先提交或储藏。", { count: dirtyCount }) : "";
+  const warning = mode === "drop" ? t("\n\n危险：如果后续提交依赖此提交，可能会产生冲突。") : "";
+  const current = state.data.repo.branch || t("当前分支");
+  const message = t("确认{action} {sha}？\n\n命令：{command}\n分支：{branch}\n效果：{effect}\n这会重写此提交之后的历史 SHA。{warning}{dirtyNote}\n\n提交信息：{message}", {
+    action: config.title,
+    sha: commit.short,
+    command: config.command,
+    branch: current,
+    effect: config.effect,
+    warning,
+    dirtyNote,
+    message: commit.message,
+  });
   if (!state.data.repo.isSample && !confirm(message)) return;
   const repoPath = repoPathSnapshot();
   try {
@@ -498,7 +508,7 @@ async function rewriteHistoryCommit(commit, mode) {
       body: JSON.stringify({ action: "rewriteHistoryCommit", sha: commit.sha, mode, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已${config.title} ${commit.short}`);
+    toast(result.output || t("已{action} {sha}", { action: config.title, sha: commit.short }));
     await reloadAfterHistoryAction(repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -509,8 +519,12 @@ async function rewriteHistoryCommit(commit, mode) {
 
 async function cherryPickCommit(commit, mainline = null) {
   if (!state.data || !commit) return;
-  const mainlineText = mainline ? `\n主线：父提交 ${mainline}` : "";
-  if (!state.data.repo.isSample && !confirm(`确认挑选提交 ${commit.short} 到当前分支？\n\n这会在当前分支创建一个内容相同的新提交，不会移动原分支。${mainlineText}\n提交信息：${commit.message}`)) return;
+  const mainlineText = mainline ? t("\n主线：父提交 {mainline}", { mainline }) : "";
+  if (!state.data.repo.isSample && !confirm(t("确认挑选提交 {sha} 到当前分支？\n\n这会在当前分支创建一个内容相同的新提交，不会移动原分支。{mainline}\n提交信息：{message}", {
+    sha: commit.short,
+    mainline: mainlineText,
+    message: commit.message,
+  }))) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
@@ -518,7 +532,7 @@ async function cherryPickCommit(commit, mainline = null) {
       body: JSON.stringify({ action: "cherryPickCommit", sha: commit.sha, mainline, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已挑选提交 ${commit.short}`);
+    toast(result.output || t("已挑选提交 {sha}", { sha: commit.short }));
     await reloadAfterHistoryAction(repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -529,8 +543,12 @@ async function cherryPickCommit(commit, mainline = null) {
 
 async function revertCommit(commit, mainline = null) {
   if (!state.data || !commit) return;
-  const mainlineText = mainline ? `\n主线：父提交 ${mainline}` : "";
-  if (!state.data.repo.isSample && !confirm(`确认还原提交 ${commit.short}？\n\n这会创建一个新的反向提交，不会删除历史提交。${mainlineText}\n提交信息：${commit.message}`)) return;
+  const mainlineText = mainline ? t("\n主线：父提交 {mainline}", { mainline }) : "";
+  if (!state.data.repo.isSample && !confirm(t("确认还原提交 {sha}？\n\n这会创建一个新的反向提交，不会删除历史提交。{mainline}\n提交信息：{message}", {
+    sha: commit.short,
+    mainline: mainlineText,
+    message: commit.message,
+  }))) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
@@ -538,7 +556,7 @@ async function revertCommit(commit, mainline = null) {
       body: JSON.stringify({ action: "revertCommit", sha: commit.sha, mainline, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已还原提交 ${commit.short}`);
+    toast(result.output || t("已还原提交 {sha}", { sha: commit.short }));
     await reloadAfterHistoryAction(repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -555,21 +573,21 @@ function openMainlineModal(action, commit) {
   if (!commit || parents.length <= 1) return;
   state.mainlineAction = action;
   state.mainlineCommitSha = commit.sha;
-  const actionText = action === "cherryPick" ? "挑选" : "还原";
+  const actionText = t(action === "cherryPick" ? "挑选" : "还原");
   const command = action === "cherryPick" ? "git cherry-pick -m" : "git revert -m";
-  els.mainlineModalTitle.textContent = `${actionText} merge 提交`;
-  els.mainlineStartText.textContent = `提交 ${commit.short} 有 ${parents.length} 个父提交。选择主线后会执行 ${command}。`;
-  els.mainlineSubmit.textContent = `继续${actionText}`;
+  els.mainlineModalTitle.textContent = t("{action} merge 提交", { action: actionText });
+  els.mainlineStartText.textContent = t("提交 {sha} 有 {count} 个父提交。选择主线后会执行 {command}。", { sha: commit.short, count: parents.length, command });
+  els.mainlineSubmit.textContent = t("继续{action}", { action: actionText });
   els.mainlineOptions.innerHTML = parents
     .map((parentSha, index) => {
       const mainline = index + 1;
       const checked = index === 0 ? "checked" : "";
-      const hint = index === 0 ? "通常是执行合并时所在的分支方向" : "通常是被合并进来的分支方向";
+      const hint = t(index === 0 ? "通常是执行合并时所在的分支方向" : "通常是被合并进来的分支方向");
       return `
         <label class="mainline-option">
           <input type="radio" name="mainline" value="${mainline}" ${checked} />
           <span>
-            <strong>父提交 ${mainline} · ${escapeHtml(parentSha.slice(0, 7))}</strong>
+            <strong>${t("父提交 {mainline} · {sha}", { mainline, sha: escapeHtml(parentSha.slice(0, 7)) })}</strong>
             <em>${escapeHtml(hint)}</em>
           </span>
         </label>
@@ -597,7 +615,7 @@ async function submitMainlineForm(event) {
   const action = state.mainlineAction;
   const selected = Number.parseInt(els.mainlineOptions.querySelector("input[name='mainline']:checked")?.value || "", 10);
   if (!commit || !Number.isInteger(selected)) {
-    toast("请选择主线");
+    toast(t("请选择主线"));
     return;
   }
   closeMainlineModal();
@@ -612,14 +630,20 @@ async function submitMainlineForm(event) {
 
 async function resetToCommit(commit, mode) {
   if (!state.data || !commit) return;
-  const modeText = { soft: "软重置（soft）", mixed: "混合重置（mixed）", hard: "硬重置（hard）" }[mode] || "混合重置（mixed）";
+  const modeText = t({ soft: "软重置（soft）", mixed: "混合重置（mixed）", hard: "硬重置（hard）" }[mode] || "混合重置（mixed）");
   const effects = {
-    soft: "当前分支会移动到此提交；后续提交的改动会保留在已暂存区。",
-    mixed: "当前分支会移动到此提交；后续提交的改动会保留在工作区，且不会暂存。",
-    hard: "当前分支会移动到此提交；后续提交和当前工作区改动都会被丢弃，无法从工作区恢复。",
+    soft: t("当前分支会移动到此提交；后续提交的改动会保留在已暂存区。"),
+    mixed: t("当前分支会移动到此提交；后续提交的改动会保留在工作区，且不会暂存。"),
+    hard: t("当前分支会移动到此提交；后续提交和当前工作区改动都会被丢弃，无法从工作区恢复。"),
   };
-  const warning = mode === "hard" ? "\n\n危险：Hard Reset 会丢弃未提交改动，请确认你真的不需要它们。" : "";
-  if (!state.data.repo.isSample && !confirm(`确认执行${modeText}到提交 ${commit.short}？\n\n${effects[mode]}${warning}\n\n提交信息：${commit.message}`)) return;
+  const warning = mode === "hard" ? t("\n\n危险：Hard Reset 会丢弃未提交改动，请确认你真的不需要它们。") : "";
+  if (!state.data.repo.isSample && !confirm(t("确认执行{mode}到提交 {sha}？\n\n{effect}{warning}\n\n提交信息：{message}", {
+    mode: modeText,
+    sha: commit.short,
+    effect: effects[mode],
+    warning,
+    message: commit.message,
+  }))) return;
   const repoPath = repoPathSnapshot();
   try {
     const result = await api("/api/action", {
@@ -627,7 +651,7 @@ async function resetToCommit(commit, mode) {
       body: JSON.stringify({ action: "resetToCommit", sha: commit.sha, mode, ...currentBranchSnapshotPayload() }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已${modeText}到 ${commit.short}`);
+    toast(result.output || t("已{mode}到 {sha}", { mode: modeText, sha: commit.short }));
     await reloadAfterHistoryAction(repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -674,20 +698,20 @@ async function copyText(text) {
 function openRemoteCommit(commit) {
   const url = commitRemoteUrl(commit?.sha);
   if (!url) {
-    toast("当前仓库没有可识别的网页远端 URL");
+    toast(t("当前仓库没有可识别的网页远端 URL"));
     return;
   }
   const opened = window.open(url, "_blank");
   if (!opened) {
-    toast(`浏览器拦截了新窗口，可以复制地址手动打开：\n${url}`);
+    toast(t("浏览器拦截了新窗口，可以复制地址手动打开：\n{url}", { url }));
     return;
   }
   opened.opener = null;
-  toast("已打开远端提交页面");
+  toast(t("已打开远端提交页面"));
 }
 
 async function fetchCommitPatch(commit) {
-  if (!commit?.sha) throw new Error("没有选中的提交");
+  if (!commit?.sha) throw new Error(t("没有选中的提交"));
   return api(`/api/patch?sha=${encodeURIComponent(commit.sha)}`);
 }
 
@@ -696,7 +720,7 @@ async function copyCommitPatch(commit) {
   const result = await fetchCommitPatch(commit);
   if (!isCurrentRepoPath(repoPath)) return;
   await copyText(result.patch || "");
-  toast(`已复制补丁：${result.fileName || result.short || commit.short}`);
+  toast(t("已复制补丁：{file}", { file: result.fileName || result.short || commit.short }));
 }
 
 async function downloadCommitPatch(commit) {
@@ -704,7 +728,7 @@ async function downloadCommitPatch(commit) {
   const result = await fetchCommitPatch(commit);
   if (!isCurrentRepoPath(repoPath)) return;
   downloadTextFile(result.fileName || `${commit.short || "commit"}.patch`, result.patch || "", "text/x-patch;charset=utf-8");
-  toast(`已下载补丁：${result.fileName || commit.short}`);
+  toast(t("已下载补丁：{file}", { file: result.fileName || commit.short }));
 }
 
 function downloadTextFile(fileName, text, type = "text/plain;charset=utf-8") {
@@ -730,21 +754,21 @@ function safeDownloadName(value) {
 async function runSyncPullRequestAction(action) {
   const pullRequest = state.data?.sync?.pullRequest || {};
   if (!pullRequest.available || !pullRequest.url) {
-    toast(pullRequest.reason || "当前分支暂时不能生成 PR 链接");
+    toast(t(pullRequest.reason || "当前分支暂时不能生成 PR 链接"));
     return;
   }
   if (action === "copy") {
     await copyText(pullRequest.url);
-    toast("已复制 PR 链接");
+    toast(t("已复制 PR 链接"));
     return;
   }
   const opened = window.open(pullRequest.url, "_blank");
   if (!opened) {
-    toast(`浏览器拦截了新窗口，可以复制地址手动打开：\n${pullRequest.url}`);
+    toast(t("浏览器拦截了新窗口，可以复制地址手动打开：\n{url}", { url: pullRequest.url }));
     return;
   }
   opened.opener = null;
-  toast(pullRequest.title === "创建 Merge Request" ? "已打开 Merge Request 页面" : "已打开 Pull Request 页面");
+  toast(t(pullRequest.platform === "gitlab" ? "已打开 Merge Request 页面" : "已打开 Pull Request 页面"));
 }
 
 function commitRemoteUrl(sha) {
@@ -808,7 +832,7 @@ function openTagModal(commit) {
   els.tagNameInput.value = "";
   els.tagAnnotatedToggle.checked = false;
   els.tagMessageInput.value = "";
-  els.tagStartText.textContent = `基于提交 ${commit.short} 创建 Tag。`;
+  els.tagStartText.textContent = t("基于提交 {sha} 创建 Tag。", { sha: commit.short });
   els.tagModal.classList.add("show");
   els.tagModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -827,13 +851,13 @@ async function createTagFromForm(event) {
   if (!state.data) return;
   const name = els.tagNameInput.value.trim();
   if (!name) {
-    toast("请输入标签名");
+    toast(t("请输入标签名"));
     els.tagNameInput.focus();
     return;
   }
   const target = state.tagTargetSha || state.selectedSha;
   if (!target) {
-    toast("没有选中的提交");
+    toast(t("没有选中的提交"));
     return;
   }
   const repoPath = repoPathSnapshot();
@@ -850,7 +874,7 @@ async function createTagFromForm(event) {
       }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || `已创建 Tag ${name}`);
+    toast(result.output || t("已创建 Tag {name}", { name }));
     const data = await loadStateForRepoPath(repoPath);
     if (!data) return;
     closeTagModal();

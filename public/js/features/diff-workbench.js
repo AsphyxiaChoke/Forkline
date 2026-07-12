@@ -2,7 +2,7 @@
 const DIFF_PREVIEW_LINE_LIMIT = 400;
 
 function renderDiff(diff) {
-  if (!diff?.length) return `<div class="diff"><div class="diff-line"><span class="ln">1</span><code>没有可显示的 Diff</code></div></div>`;
+  if (!diff?.length) return `<div class="diff"><div class="diff-line"><span class="ln">1</span><code>${t("没有可显示的 Diff")}</code></div></div>`;
   const visibleDiff = diff.slice(0, DIFF_PREVIEW_LINE_LIMIT);
   return `
     <div class="diff">
@@ -17,7 +17,7 @@ function renderDiff(diff) {
         .join("")}
       ${
         diff.length > visibleDiff.length
-          ? `<div class="diff-preview-truncated"><strong>仅显示前 ${visibleDiff.length} / ${diff.length} 行</strong><span>完整内容请在“文件”页按文件查看</span></div>`
+          ? `<div class="diff-preview-truncated"><strong>${t("仅显示前 {visible} / {total} 行", { visible: visibleDiff.length, total: diff.length })}</strong><span>${t("完整内容请在“文件”页按文件查看")}</span></div>`
           : ""
       }
     </div>
@@ -34,7 +34,7 @@ function addFileToTree(root, file) {
   const raw = String(file.file || "");
   const normalized = raw.replaceAll("\\", "/");
   const parts = normalized.split("/").filter(Boolean);
-  const leaf = parts.pop() || normalized || "未知文件";
+  const leaf = parts.pop() || normalized || t("未知文件");
   let node = root;
   parts.forEach((part) => {
     if (!node.dirs.has(part)) node.dirs.set(part, { name: part, dirs: new Map(), files: [] });
@@ -72,7 +72,7 @@ function fileLeafRowHtml(file, depth, options = {}) {
   const conflict = Boolean(file.conflict);
   const status = scopedFileStatus(file, selectionScope);
   return `
-    <button class="file-row leaf-row ${selected ? "multi-selected" : ""} ${conflict ? "conflict" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" style="--depth:${depth}" title="${escapeAttr(conflict ? `${file.raw} · 冲突未解决` : file.raw)}">
+    <button class="file-row leaf-row ${selected ? "multi-selected" : ""} ${conflict ? "conflict" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" style="--depth:${depth}" title="${escapeAttr(conflict ? t("{file} · 冲突未解决", { file: file.raw }) : file.raw)}">
       <span class="badge ${status.state}">${status.badge}</span>
       <span class="file-leaf">${escapeHtml(file.leaf)}</span>
       <span class="file-extra ${status.scope ? `scope-${status.scope}` : ""}">${escapeHtml(status.extra)}</span>
@@ -81,7 +81,7 @@ function fileLeafRowHtml(file, depth, options = {}) {
 }
 
 function scopedFileStatus(file, scope = "") {
-  if (file.conflict) return { state: "C", badge: "!", extra: "冲突", scope: "" };
+  if (file.conflict) return { state: "C", badge: "!", extra: t("冲突"), scope: "" };
   const indexStatus = String(file.indexStatus || "");
   const worktreeStatus = String(file.worktreeStatus || "");
   const rawCode = scope === "staged" ? indexStatus : scope === "unstaged" ? (indexStatus === "?" ? "?" : worktreeStatus) : worktreeStatus || indexStatus || file.state || "M";
@@ -90,14 +90,14 @@ function scopedFileStatus(file, scope = "") {
   const copied = code === "C" || file.state === "C";
   const state = rawCode === "A" || rawCode === "?" ? "A" : code === "D" ? "D" : renamed || copied ? "R" : "M";
   const badge = renamed ? "R" : copied ? "C" : state;
-  const changeText = renamed ? "重命名" : copied ? "复制" : "";
+  const changeText = renamed ? t("重命名") : copied ? t("复制") : "";
   if (scope === "staged") {
-    return { state, badge, extra: changeText || (rawCode ? "已暂存" : ""), scope: "staged" };
+    return { state, badge, extra: changeText || (rawCode ? t("已暂存") : ""), scope: "staged" };
   }
   if (scope === "unstaged") {
-    return { state, badge, extra: changeText || (rawCode === "?" ? "未跟踪" : rawCode ? "未暂存" : ""), scope: "unstaged" };
+    return { state, badge, extra: changeText || (rawCode === "?" ? t("未跟踪") : rawCode ? t("未暂存") : ""), scope: "unstaged" };
   }
-  return { state, badge, extra: changeText || file.extra || "", scope: "" };
+  return { state, badge, extra: changeText || t(file.extra || ""), scope: "" };
 }
 
 function bindFileTree(root, options = {}) {
@@ -234,7 +234,7 @@ function syncCommitBySha(sha) {
 async function selectSyncCommit(sha) {
   const commit = syncCommitBySha(sha);
   if (!commit) {
-    toast("这个提交已经不在当前同步列表中，请刷新后再试。");
+    toast(t("这个提交已经不在当前同步列表中，请刷新后再试。"));
     return;
   }
   state.selectedSyncSha = sha;
@@ -284,10 +284,10 @@ function markSyncPreviewFile() {
 function renderWorkDiffEmpty(message) {
   resetDiffLineSelection(false);
   setActiveDiff(null);
-  els.workDiffTitle.textContent = "变更对照";
+  els.workDiffTitle.textContent = t("变更对照");
   els.workDiffPath.textContent = "";
   els.workDiffView.className = "work-diff-view empty";
-  els.workDiffView.textContent = message;
+  els.workDiffView.textContent = t(message);
 }
 
 async function loadWorkingDiff(filePath) {
@@ -300,10 +300,10 @@ async function loadWorkingDiff(filePath) {
   state.workDiffScope = scope;
   const repoPath = repoPathSnapshot();
   const requestId = ++state.diffRequestId;
-  els.workDiffTitle.textContent = "变更对照";
+  els.workDiffTitle.textContent = t("变更对照");
   els.workDiffPath.textContent = filePath;
   els.workDiffView.className = "work-diff-view loading";
-  els.workDiffView.textContent = "正在读取差异...";
+  els.workDiffView.textContent = t("正在读取差异...");
   try {
     const data = await api(`/api/worktree-diff?file=${encodeURIComponent(filePath)}&scope=${encodeURIComponent(scope)}`);
     if (requestId !== state.diffRequestId || !isCurrentRepoPath(repoPath)) return;
@@ -329,12 +329,12 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
   const scopeLabel = workDiffScopeLabel(scope);
   const title = `${shortFileName(filePath)} · ${scopeLabel}`;
   state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
-  setActiveDiff({ source: "worktree", title, path: filePath, diff, scope, emptyText: "没有可显示的差异" });
+  setActiveDiff({ source: "worktree", title, path: filePath, diff, scope, emptyText: t("没有可显示的差异") });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = filePath;
   if (!diff.length) {
     els.workDiffView.className = "work-diff-view empty";
-    els.workDiffView.textContent = "没有可显示的差异";
+    els.workDiffView.textContent = t("没有可显示的差异");
     return;
   }
   els.workDiffView.className = "work-diff-view";
@@ -345,9 +345,9 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
 function renderHistoryDiffInWorkbench(commit, detail, filePath) {
   resetDiffLineSelection(false);
   const diff = diffForFile(detail.diff || [], filePath);
-  const title = `${shortFileName(filePath)} · 历史提交`;
+  const title = t("{file} · 历史提交", { file: shortFileName(filePath) });
   const path = `${commit.short} · ${filePath}`;
-  setActiveDiff({ source: "history", title, path, diff, emptyText: "没有可显示的历史改动" });
+  setActiveDiff({ source: "history", title, path, diff, emptyText: t("没有可显示的历史改动") });
   state.diffRequestId += 1;
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = path;
@@ -410,11 +410,11 @@ async function runWorkDiffHunkAction(action, button) {
   const hunkIndex = Number.parseInt(button?.dataset.hunkIndex || "", 10);
   const scope = button?.dataset.hunkScope || state.activeDiff?.scope || "unstaged";
   if (!file || !Number.isInteger(hunkIndex) || hunkIndex < 0) {
-    toast("请选择要操作的改动块");
+    toast(t("请选择要操作的改动块"));
     return;
   }
   state.selectedFile = file;
-  if (action === "discardWorktreeHunk" && !state.data?.repo?.isSample && !confirm(`确认丢弃这个改动块？\n\n文件：${file}\n此操作无法撤销。`)) return;
+  if (action === "discardWorktreeHunk" && !state.data?.repo?.isSample && !confirm(t("确认丢弃这个改动块？\n\n文件：{file}\n此操作无法撤销。", { file }))) return;
   const buttons = document.querySelectorAll(".work-diff-view [data-hunk-action], .diff-modal-body [data-hunk-action]");
   buttons.forEach((item) => {
     item.disabled = true;
@@ -425,7 +425,7 @@ async function runWorkDiffHunkAction(action, button) {
       body: JSON.stringify({ action, file, scope, hunkIndex, ...currentBranchSnapshotPayload(), ...fileSnapshotPayload(file, scope) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "改动块操作完成");
+    toast(result.output || t("改动块操作完成"));
     await refreshWorktree(true);
     if (!isCurrentRepoPath(repoPath)) return;
     if (state.selectedFile) {
@@ -450,10 +450,10 @@ async function runWorkDiffHunkAction(action, button) {
 
 function openDiffModal() {
   if (!state.activeDiff?.diff?.length) {
-    toast("没有可最大化的对照内容");
+    toast(t("没有可最大化的对照内容"));
     return;
   }
-  els.diffModalTitle.textContent = state.activeDiff.title || "变更对照";
+  els.diffModalTitle.textContent = state.activeDiff.title || t("变更对照");
   els.diffModalPath.textContent = state.activeDiff.path || "";
   els.diffModalBody.innerHTML = renderSideDiff(state.activeDiff.diff, state.activeDiff.emptyText || "没有可显示的差异", diffModalOptions());
   syncDiffLineSelectionRows();
@@ -469,12 +469,12 @@ function closeDiffModal() {
 }
 
 function renderSideDiff(diff, emptyText, options = {}) {
-  if (!diff?.length) return `<div class="diff-empty">${escapeHtml(emptyText)}</div>`;
+  if (!diff?.length) return `<div class="diff-empty">${escapeHtml(t(emptyText))}</div>`;
   const lineAction = options.lineAction && diffHasSelectableLines(diff) ? options.lineAction : null;
   return `
     <div class="side-diff ${lineAction ? "line-selectable" : ""}">
       ${lineAction ? renderDiffLineToolbar(lineAction) : ""}
-      <div class="side-diff-head"><span>旧版本</span><span>新版本</span></div>
+      <div class="side-diff-head"><span>${t("旧版本")}</span><span>${t("新版本")}</span></div>
       ${sideBySideRows(diff, { ...options, lineAction })}
     </div>
   `;
@@ -640,7 +640,7 @@ function diffLineKey(hunkIndex, lineIndex) {
 function renderDiffLineToolbar(action) {
   return `
     <div class="diff-line-toolbar">
-      <span data-selected-line-count>未选择行</span>
+      <span data-selected-line-count>${t("未选择行")}</span>
       <button class="mini-btn" data-line-action="${escapeAttr(action.action)}" type="button" disabled title="${escapeAttr(action.title)}">${escapeHtml(action.label)}</button>
     </div>
   `;
@@ -666,7 +666,12 @@ function readableHunkHeader(text) {
   const oldCount = match[2] || "1";
   const newStart = match[3];
   const newCount = match[4] || "1";
-  return `改动位置：旧版第 ${oldStart} 行，新版第 ${newStart} 行；范围：旧 ${oldCount} 行，新 ${newCount} 行`;
+  return t("改动位置：旧版第 {oldStart} 行，新版第 {newStart} 行；范围：旧 {oldCount} 行，新 {newCount} 行", {
+    oldStart,
+    newStart,
+    oldCount,
+    newCount,
+  });
 }
 
 function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
@@ -678,7 +683,7 @@ function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
   if (normalizedScope === "untracked" && untracked && fileInfo.unstaged) {
     return `
       <span class="hunk-actions">
-        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="untracked" type="button" title="把这个未跟踪文件片段加入暂存区">暂存这段</button>
+        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="untracked" type="button" title="${t("把这个未跟踪文件片段加入暂存区")}">${t("暂存这段")}</button>
       </span>
     `;
   }
@@ -686,15 +691,15 @@ function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
   if (normalizedScope === "unstaged" && fileInfo.unstaged) {
     return `
       <span class="hunk-actions">
-        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">暂存这段</button>
-        <button class="mini-btn danger" data-hunk-action="discardWorktreeHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">丢弃这段</button>
+        <button class="mini-btn" data-hunk-action="stageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">${t("暂存这段")}</button>
+        <button class="mini-btn danger" data-hunk-action="discardWorktreeHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="unstaged" type="button">${t("丢弃这段")}</button>
       </span>
     `;
   }
   if (normalizedScope === "staged" && fileInfo.staged) {
     return `
       <span class="hunk-actions">
-        <button class="mini-btn" data-hunk-action="unstageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="staged" type="button">取消暂存这段</button>
+        <button class="mini-btn" data-hunk-action="unstageHunk" data-hunk-index="${escapeAttr(String(hunkIndex))}" data-hunk-scope="staged" type="button">${t("取消暂存这段")}</button>
       </span>
     `;
   }
@@ -702,9 +707,9 @@ function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
 }
 
 function workDiffScopeLabel(scope) {
-  if (scope === "staged") return "已暂存";
-  if (scope === "untracked") return "未跟踪";
-  return "未暂存";
+  if (scope === "staged") return t("已暂存");
+  if (scope === "untracked") return t("未跟踪");
+  return t("未暂存");
 }
 
 function sideRow(type, oldNo, oldText, oldClass, newNo, newText, newClass, options = {}) {
@@ -729,10 +734,10 @@ function selectedDiffLineAction(filePath, scope) {
   const fileInfo = selectedWorkingFileInfo(filePath, scope);
   if (!fileInfo || fileInfo.conflict) return null;
   if ((scope === "unstaged" || (scope === "untracked" && isUntrackedFile(fileInfo))) && fileInfo.unstaged) {
-    return { action: "stageSelectedLines", label: "暂存所选行", title: "暂存当前 Diff 中选中的行" };
+    return { action: "stageSelectedLines", label: t("暂存所选行"), title: t("暂存当前 Diff 中选中的行") };
   }
   if (scope === "staged" && fileInfo.staged) {
-    return { action: "unstageSelectedLines", label: "取消暂存所选行", title: "把已暂存 Diff 中选中的行退回工作区" };
+    return { action: "unstageSelectedLines", label: t("取消暂存所选行"), title: t("把已暂存 Diff 中选中的行退回工作区") };
   }
   return null;
 }
@@ -790,7 +795,7 @@ function updateDiffLineSelectionToolbar(root = els.workDiffView) {
   const button = root.querySelector("[data-line-action]");
   if (!countNode || !button) return;
   const selectedRows = root.querySelectorAll(".diff-line-selectable.selected").length;
-  countNode.textContent = selectedRows ? `已选 ${selectedRows} 行` : "未选择行";
+  countNode.textContent = selectedRows ? t("已选 {count} 行", { count: selectedRows }) : t("未选择行");
   button.disabled = selectedRows === 0;
 }
 
@@ -808,16 +813,16 @@ async function runWorkDiffLineAction(button) {
   const action = button?.dataset?.lineAction || "";
   const lines = selectedDiffLinePayload();
   if (!file || !lines.length) {
-    toast("请选择要操作的行");
+    toast(t("请选择要操作的行"));
     return;
   }
   state.selectedFile = file;
   if (action === "stageSelectedLines" && scope !== "unstaged" && scope !== "untracked") {
-    toast("只能暂存工作区中未暂存的行");
+    toast(t("只能暂存工作区中未暂存的行"));
     return;
   }
   if (action === "unstageSelectedLines" && scope !== "staged") {
-    toast("只能在已暂存 Diff 中取消暂存所选行");
+    toast(t("只能在已暂存 Diff 中取消暂存所选行"));
     return;
   }
   if (action !== "stageSelectedLines" && action !== "unstageSelectedLines") return;
@@ -831,7 +836,7 @@ async function runWorkDiffLineAction(button) {
       body: JSON.stringify({ action, file, scope, lines, ...currentBranchSnapshotPayload(), ...fileSnapshotPayload(file, scope) }),
     });
     if (!isCurrentRepoPath(repoPath)) return;
-    toast(result.output || "所选行操作完成");
+    toast(result.output || t("所选行操作完成"));
     resetDiffLineSelection(false);
     await refreshWorktree(true);
     if (!isCurrentRepoPath(repoPath)) return;
@@ -867,7 +872,7 @@ function trimDiffPrefix(text) {
 }
 
 function shortFileName(filePath) {
-  return String(filePath || "").replaceAll("\\", "/").split("/").filter(Boolean).pop() || "变更对照";
+  return String(filePath || "").replaceAll("\\", "/").split("/").filter(Boolean).pop() || t("变更对照");
 }
 
 function remoteCheckoutBranch(remoteRef) {
@@ -929,10 +934,10 @@ async function refreshWorktree(silent = false) {
       state.data.repo.operation = nextOperation;
       renderWorkingFiles();
       renderStage();
-      if (!silent) toast("未提交修改已刷新");
+      if (!silent) toast(t("未提交修改已刷新"));
     } else if (!silent) {
       state.data.worktreeSnapshot = data.worktreeSnapshot || state.data.worktreeSnapshot || "";
-      toast("未提交修改已是最新");
+      toast(t("未提交修改已是最新"));
     } else {
       state.data.worktreeSnapshot = data.worktreeSnapshot || state.data.worktreeSnapshot || "";
     }
