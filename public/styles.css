@@ -278,9 +278,9 @@ button {
 
 .path-open {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(122px, 154px) max-content;
-  gap: 6px;
-  padding: 3px;
+  grid-template-columns: minmax(170px, 1fr) minmax(136px, 172px) max-content;
+  gap: 10px;
+  padding: 3px 5px 3px 8px;
   background: color-mix(in srgb, var(--field) 88%, var(--panel-2));
 }
 
@@ -344,8 +344,10 @@ button {
 .path-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 7px;
   min-width: max-content;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-soft);
 }
 
 .path-actions .btn {
@@ -370,6 +372,7 @@ button {
 
 .path-actions .primary {
   min-width: 50px;
+  margin-left: 2px;
 }
 
 .search {
