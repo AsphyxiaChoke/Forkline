@@ -987,14 +987,17 @@ body.resizing .workspace-resizer::before {
 
 .branch-meta {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   min-width: 0;
-  gap: 4px;
-  overflow: hidden;
+  gap: 3px;
+  overflow: visible;
 }
 
 .branch-badge {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   max-width: 100%;
   min-width: 0;
   height: 15px;
@@ -1012,6 +1015,7 @@ body.resizing .workspace-resizer::before {
 }
 
 .branch-badge.upstream {
+  flex: 1 1 88px;
   color: var(--blue);
 }
 

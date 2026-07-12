@@ -230,8 +230,7 @@ function branchButton(branch, index, active, options = {}) {
 function branchTrackingHtml(options = {}) {
   if (!options.local) return "";
   const badges = [];
-  if (options.current) badges.push(`<span class="branch-badge current">当前</span>`);
-  if (options.upstream) badges.push(`<span class="branch-badge upstream">${escapeHtml(options.upstream)}</span>`);
+  if (options.upstream) badges.push(`<span class="branch-badge upstream" title="${escapeAttr(options.upstream)}">${escapeHtml(options.upstream)}</span>`);
   else if (options.current) badges.push(`<span class="branch-badge muted">未设置 upstream</span>`);
   if (options.upstreamGone) badges.push(`<span class="branch-badge danger">上游丢失</span>`);
   if (options.ahead) badges.push(`<span class="branch-badge ahead">↑${Number(options.ahead)}</span>`);

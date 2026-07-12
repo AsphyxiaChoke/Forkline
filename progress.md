@@ -4877,3 +4877,21 @@
 - `docs/CONTINUE.md`：同步卡顿根因、真实前后 DOM 指标和当前行为。
 - `progress.md`：追加分段诊断、浏览器指标、完整回归和回滚说明。
 - Rollback: 本轮尚未单独提交；回滚时删除 `DIFF_PREVIEW_LINE_LIMIT` 和截断提示逻辑，恢复 `renderDiff` 对完整数组直接 `.map()`，删除 `.diff-preview-truncated` 样式、`tests/diff-preview.test.js` 及本轮对应文档段落。该回滚会重新引入大提交详情生成十万级 DOM 节点的问题；若后续形成独立提交，优先执行 `git revert <该提交 SHA>`。
+## 2026-07-04 - Task: Improve local branch status badges in narrow sidebar
+
+### What was done
+- Adjusted the local branch list badges so long upstream labels can truncate cleanly and short status badges wrap to the next line instead of being squeezed together.
+- Removed the duplicate `当前` badge under the current branch name because the highlighted row and right-side current button already show that state.
+- Added the full upstream value as a hover title on the upstream badge.
+
+### Testing
+- Ran `node --check public\js\features\branches.js`.
+- Ran `node --check server.js`.
+- Ran `git diff --check`.
+- Refreshed `http://127.0.0.1:5177/` in the in-app browser and confirmed local branch badges wrap cleanly: long upstream badges occupy the available width, and ahead/behind or warning badges move to the next line without overlapping.
+
+### Notes
+- `public/js/features/branches.js`: removed the redundant current-branch badge and added upstream badge title text.
+- `public/styles.css`: allowed local branch metadata badges to wrap and made upstream badges flex into the remaining width.
+- `progress.md`: appended this implementation and verification record.
+- Rollback: revert this task's changes in `public/js/features/branches.js`, `public/styles.css`, and `progress.md`, or reset to the commit before this task once it is committed.
