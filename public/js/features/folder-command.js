@@ -87,7 +87,6 @@ function openCommandPalette() {
 function otherModalOpen() {
   return [
     els.checkoutModal,
-    els.stashRestoreModal,
     els.cloneModal,
     els.initModal,
     els.patchModal,

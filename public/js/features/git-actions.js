@@ -55,7 +55,7 @@ async function checkoutBranch(branch, button) {
     els.searchInput.value = "";
     renderAll();
     await renderSelectedCommitForRepoPath(repoPath);
-    await maybeRestoreCheckoutStash(state.data.repo.branch, { autoRestore: true });
+    await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -101,7 +101,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
     els.searchInput.value = "";
     renderAll();
     await renderSelectedCommitForRepoPath(repoPath);
-    await maybeRestoreCheckoutStash(state.data.repo.branch, { autoRestore: true });
+    await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -221,7 +221,7 @@ function forgetCheckoutStash(stash) {
   localStorage.setItem("forkline-checkout-stashes", JSON.stringify(records));
 }
 
-async function maybeRestoreCheckoutStash(branch, { autoRestore = false } = {}) {
+async function maybeRestoreCheckoutStash(branch) {
   if (!branch || state.data?.repo?.isSample) return;
   const repoPath = repoPathSnapshot();
   if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
@@ -235,13 +235,7 @@ async function maybeRestoreCheckoutStash(branch, { autoRestore = false } = {}) {
     if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
     stash = found.stash;
   }
-  if (!stash?.message || state.ignoredCheckoutStashes.has(stash.message)) return;
-  const restore = autoRestore || await chooseStashRestore(stash);
-  if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
-  if (!restore) {
-    state.ignoredCheckoutStashes.add(stash.message);
-    return;
-  }
+  if (!stash?.message) return;
   try {
     const result = await api("/api/action", {
       method: "POST",
@@ -260,7 +254,6 @@ async function maybeRestoreCheckoutStash(branch, { autoRestore = false } = {}) {
     if (!isCurrentRepoPath(repoPath)) return;
     if (isMissingCheckoutStashError(error)) {
       forgetCheckoutStash(stash);
-      state.ignoredCheckoutStashes.add(stash.message);
     }
     toast(error.message);
   }
@@ -279,33 +272,6 @@ function isMissingCheckoutStashError(error) {
     t("没有找到可恢复的 Forkline 储藏"),
     t("这条切换储藏已经不存在或已经变化"),
   ].some((text) => message.includes(text));
-}
-
-function chooseStashRestore(stash) {
-  els.stashRestoreText.textContent = t("{stash} 可以恢复到当前分支。", { stash: t(stash.label || stash.message) });
-  els.stashRestoreModal.classList.add("show");
-  els.stashRestoreModal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("modal-open");
-  return new Promise((resolve) => {
-    const cleanup = (restore) => {
-      els.stashRestoreModal.classList.remove("show");
-      els.stashRestoreModal.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("modal-open");
-      els.stashRestoreModal.removeEventListener("click", onClick);
-      document.removeEventListener("keydown", onKeydown);
-      resolve(restore);
-    };
-    const onClick = (event) => {
-      const button = event.target.closest("[data-stash-restore]");
-      if (!button) return;
-      cleanup(button.dataset.stashRestore === "restore");
-    };
-    const onKeydown = (event) => {
-      if (event.key === "Escape") cleanup(false);
-    };
-    els.stashRestoreModal.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKeydown);
-  });
 }
 
 async function runAction(action) {

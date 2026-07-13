@@ -5202,3 +5202,33 @@
 - `docs/ARCHITECTURE.md`：记录自动模式与确认模式的调用边界。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述六个文件。
+
+## 2026-07-13 - Task: 彻底移除签出储藏恢复确认框
+
+### What was done
+- 修正上一轮仍为应用启动、仓库打开和刷新入口保留确认框的问题，所有匹配当前上下文的 Forkline 签出储藏现在统一直接自动恢复。
+- 删除“发现可恢复的储藏更改”弹窗 HTML、交互函数、页面状态、DOM 引用、弹窗占用判断、专用样式和中英文文案。
+- 保留仓库路径、实际检出分支和当前查看引用校验；上下文不匹配或异步查询结果过期时仍不执行恢复。
+
+### Testing
+- 修复前将当前分支总览测试改为要求自动恢复，稳定复现查询命中后仍调用一次确认框。
+- 运行 `node --test tests/checkout-stash-ui-state.test.js`，6 项全部通过，覆盖弹窗实现已删除、分支/视图变化拦截、后端查询命中自动恢复和缓存命中自动恢复。
+- 运行 `npm test`，27 项测试全部通过。
+- 对运行中的 `http://127.0.0.1:5287/` 读取实际 HTML 和脚本，确认 `HasChooseRestore=False`、`HasRestoreModal=False`，同时恢复动作仍存在。
+- 对本轮修改的 4 个 JavaScript 文件运行 `node --check`，语法检查全部通过。
+- 运行 `git diff --check`，确认差异没有空白错误；换行符提示为仓库现有 Windows 工作区转换提醒。
+- 搜索弹窗标识、旧忽略状态和 `[DEBUG-`，除测试中的“不应存在”断言外无实现残留。
+
+### Notes
+- `public/js/features/git-actions.js`：统一自动恢复并删除确认分支与弹窗函数。
+- `public/js/core.js`：删除弹窗 DOM 引用和旧忽略状态。
+- `public/js/features/folder-command.js`：移除不存在弹窗的占用判断。
+- `public/index.html`：删除恢复确认框结构。
+- `public/styles.css`：删除恢复确认框专用布局。
+- `public/js/i18n-catalog.js`：删除恢复确认框专用英文翻译。
+- `tests/checkout-stash-ui-state.test.js`：改为断言弹窗实现不存在并验证两种自动恢复来源。
+- `README.md`：说明匹配上下文时统一自动恢复。
+- `docs/CONTINUE.md`：记录启动、打开和刷新入口不再提示确认。
+- `docs/ARCHITECTURE.md`：记录统一自动恢复模式及上下文保护。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述十一个文件。
