@@ -5178,3 +5178,27 @@
 - `docs/ARCHITECTURE.md`：记录恢复提醒状态绑定规则及对应测试入口。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述六个文件。
+
+## 2026-07-13 - Task: 签出返回原分支时自动恢复储藏
+
+### What was done
+- Forkline 成功签出本地或远端分支后，如果目标分支存在对应的“储藏并签出”记录，会直接自动恢复，不再显示“是否恢复”确认框。
+- 应用启动、重新打开仓库或刷新时发现遗留恢复记录，仍保留确认提示，避免没有明确签出动作时静默修改工作区。
+- 保留仓库、实际检出分支和当前查看引用校验，其他分支视图及过期异步结果不会触发自动恢复。
+
+### Testing
+- 修复前新增“主动签出后自动恢复”回归测试，稳定复现仍调用确认框且没有发出恢复请求。
+- 修复后运行 `node --test tests/checkout-stash-ui-state.test.js`，5 项全部通过。
+- 运行 `npm test`，26 项测试全部通过。
+- 运行 `node --check public/js/features/git-actions.js`，脚本语法检查通过。
+- 运行 `git diff --check`，确认差异没有空白错误；换行符提示为仓库现有 Windows 工作区转换提醒。
+- 搜索 `[DEBUG-`，确认没有遗留临时调试标记。
+
+### Notes
+- `public/js/features/git-actions.js`：为 Forkline 主动签出后的储藏检查启用自动恢复模式。
+- `tests/checkout-stash-ui-state.test.js`：增加不弹确认框并直接发出恢复请求的回归测试。
+- `README.md`：说明主动签出自动恢复与启动时确认恢复的差异。
+- `docs/CONTINUE.md`：记录签出返回原分支后的自动恢复行为。
+- `docs/ARCHITECTURE.md`：记录自动模式与确认模式的调用边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述六个文件。

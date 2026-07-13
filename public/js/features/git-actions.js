@@ -55,7 +55,7 @@ async function checkoutBranch(branch, button) {
     els.searchInput.value = "";
     renderAll();
     await renderSelectedCommitForRepoPath(repoPath);
-    await maybeRestoreCheckoutStash(state.data.repo.branch);
+    await maybeRestoreCheckoutStash(state.data.repo.branch, { autoRestore: true });
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -101,7 +101,7 @@ async function checkoutRemoteBranch(remoteRef, button) {
     els.searchInput.value = "";
     renderAll();
     await renderSelectedCommitForRepoPath(repoPath);
-    await maybeRestoreCheckoutStash(state.data.repo.branch);
+    await maybeRestoreCheckoutStash(state.data.repo.branch, { autoRestore: true });
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -221,7 +221,7 @@ function forgetCheckoutStash(stash) {
   localStorage.setItem("forkline-checkout-stashes", JSON.stringify(records));
 }
 
-async function maybeRestoreCheckoutStash(branch) {
+async function maybeRestoreCheckoutStash(branch, { autoRestore = false } = {}) {
   if (!branch || state.data?.repo?.isSample) return;
   const repoPath = repoPathSnapshot();
   if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
@@ -236,7 +236,7 @@ async function maybeRestoreCheckoutStash(branch) {
     stash = found.stash;
   }
   if (!stash?.message || state.ignoredCheckoutStashes.has(stash.message)) return;
-  const restore = await chooseStashRestore(stash);
+  const restore = autoRestore || await chooseStashRestore(stash);
   if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
   if (!restore) {
     state.ignoredCheckoutStashes.add(stash.message);
