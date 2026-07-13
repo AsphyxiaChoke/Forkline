@@ -224,6 +224,7 @@ function forgetCheckoutStash(stash) {
 async function maybeRestoreCheckoutStash(branch) {
   if (!branch || state.data?.repo?.isSample) return;
   const repoPath = repoPathSnapshot();
+  if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
   let stash = checkoutStashRecords().find((item) => item.repoPath === state.data.repo.path && item.branch === branch);
   if (stash && !stash.sha) {
     forgetCheckoutStash(stash);
@@ -231,12 +232,12 @@ async function maybeRestoreCheckoutStash(branch) {
   }
   if (!stash) {
     const found = await api("/api/action", { method: "POST", body: JSON.stringify({ action: "findCheckoutStash", branch }) });
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
     stash = found.stash;
   }
   if (!stash?.message || state.ignoredCheckoutStashes.has(stash.message)) return;
   const restore = await chooseStashRestore(stash);
-  if (!isCurrentRepoPath(repoPath)) return;
+  if (!isCurrentCheckoutStashContext(repoPath, branch)) return;
   if (!restore) {
     state.ignoredCheckoutStashes.add(stash.message);
     return;
@@ -263,6 +264,11 @@ async function maybeRestoreCheckoutStash(branch) {
     }
     toast(error.message);
   }
+}
+
+function isCurrentCheckoutStashContext(repoPath, branch) {
+  if (!isCurrentRepoPath(repoPath) || state.data?.repo?.branch !== branch) return false;
+  return !state.selectedRef || state.selectedRef === branch;
 }
 
 function isMissingCheckoutStashError(error) {
