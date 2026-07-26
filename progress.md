@@ -5254,3 +5254,25 @@
 - `docs/CONTINUE.md`：记录右侧提交文件 Diff 与其他 Diff 视图的布局边界。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述三个文件。
+
+## 2026-07-26 - Task: 隐藏工作区摘要中的零数量
+
+### What was done
+- 将提交框底部的工作区摘要改为按项目动态生成，只显示数量大于 0 的未暂存、已暂存、冲突和文件状态。
+- 使用统一分隔点连接保留项目，隐藏零数量后不会留下多余逗号或分隔符。
+- 同步补充英文计数文案，并保留工作区筛选数量提示。
+
+### Testing
+- 运行 `node --check public/js/features/worktree-changes.js` 和 `node --check public/js/i18n-catalog.js`，语法检查通过。
+- 运行 `node --test tests/worktree-summary.test.js`，2 项定向测试全部通过，覆盖中文零数量隐藏及英文筛选提示。
+- 运行 `npm test`，29 项测试全部通过。
+- 运行 `git diff --check`，确认差异没有空白错误。
+- 在内置浏览器刷新真实 GitTest：中文摘要显示“1 个未暂存 · 1 个删除”，英文摘要显示“1 unstaged · 1 deleted”；恢复中文后显示正常，控制台无错误。
+
+### Notes
+- `public/js/features/worktree-changes.js`：按非零数量动态生成工作区摘要。
+- `public/js/i18n-catalog.js`：将固定整句摘要翻译拆成可组合的英文计数文案。
+- `tests/worktree-summary.test.js`：新增工作区摘要中英文定向测试。
+- `docs/CONTINUE.md`：记录零数量隐藏和筛选提示规则。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述五个文件并删除 `tests/worktree-summary.test.js`。

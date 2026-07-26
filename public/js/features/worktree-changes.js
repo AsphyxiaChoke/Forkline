@@ -62,22 +62,27 @@ function renderStage() {
   const counts = countFiles(files);
   const groups = changeGroups(files);
   const filterText = terms.length ? t(" · 筛选 {visible}/{total}", { visible: visibleFiles.length, total: files.length }) : "";
-  els.draftNote.textContent = t(
-    "{unstaged} 个未暂存，{staged} 个已暂存 · {conflicts} 个冲突，{modified} 个修改，{added} 个新增，{deleted} 个删除，{renamed} 个重命名{filter}",
-    {
-      unstaged: groups.unstaged.length,
-      staged: groups.staged.length,
-      conflicts: counts.C,
-      modified: counts.M,
-      added: counts.A,
-      deleted: counts.D,
-      renamed: counts.R,
-      filter: filterText,
-    }
-  );
+  els.draftNote.textContent = worktreeDraftSummary(groups, counts, filterText);
   const unborn = Boolean(state.data?.sync?.unborn);
   els.stashChanges.disabled = unborn;
   els.stashChanges.title = unborn ? t("当前分支还没有首个提交，不能创建储藏") : t("储藏全部未提交更改");
+}
+
+function worktreeDraftSummary(groups, counts, filterText = "") {
+  const items = [
+    [groups.unstaged.length, "{count} 个未暂存"],
+    [groups.staged.length, "{count} 个已暂存"],
+    [counts.C, "{count} 个冲突"],
+    [counts.M, "{count} 个修改"],
+    [counts.A, "{count} 个新增"],
+    [counts.D, "{count} 个删除"],
+    [counts.R, "{count} 个重命名"],
+  ];
+  const summary = items
+    .filter(([count]) => count > 0)
+    .map(([count, label]) => t(label, { count }))
+    .join(" · ");
+  return `${summary}${filterText}`;
 }
 
 function ensureSelectedFileChangeKey() {
