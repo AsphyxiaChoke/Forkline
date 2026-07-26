@@ -2110,8 +2110,45 @@ body.resizing .workbench-resizer-y::before {
   --diff-gutter-width: 34px;
   --diff-code-padding: 12px;
   min-width: 0;
+  width: max(100%, var(--diff-old-width), var(--diff-new-width));
   border: 0;
   border-radius: 0;
+}
+
+.commit-file-diff > .panel-title.compact {
+  align-items: center;
+  justify-content: flex-start;
+  height: auto;
+  min-height: 32px;
+  padding: 6px 8px;
+  flex-wrap: wrap;
+}
+
+.commit-file-diff > .panel-title.compact .panel-title-text {
+  flex: 1 0 100%;
+  max-width: 100%;
+}
+
+.commit-file-diff > .panel-title.compact .mini-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.commit-file-diff .side-diff-head {
+  display: none;
+}
+
+.commit-file-diff .side-row:not(.meta) {
+  grid-template-columns: 1fr;
+}
+
+.commit-file-diff .side-cell.blank,
+.commit-file-diff .side-row.ctx .side-cell.new {
+  display: none;
+}
+
+.commit-file-diff .side-cell.old {
+  border-right: 0;
 }
 
 .commit-file-diff .side-cell {
