@@ -58,6 +58,8 @@ start.cmd
 
 启动所需的 `iconv-lite`、`safer-buffer` 等运行文件都随仓库提供，不需要执行 `npm install`。如果旧副本启动时提示 `Cannot find module 'safer-buffer'`，请重新拉取或下载最新版本后再运行 `start.cmd`。
 
+需要快速更新项目时，先确认当前位于 `main` 分支，再双击根目录的 `pull-latest.cmd`。脚本会在当前项目目录执行 `git pull --rebase origin main`，成功后显示最新提交；如果存在需要先处理的本地改动、变基冲突、网络或认证问题，脚本会停止并保留错误信息，不会强制覆盖文件。
+
 打开：
 
 ```text

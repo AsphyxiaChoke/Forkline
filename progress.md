@@ -5568,3 +5568,22 @@
 - `docs/CONTINUE.md`：记录便携依赖、无需 npm install 的边界和回归入口。
 - `progress.md`：追加本轮复现、修复、验证和回滚记录。
 - 回滚方式：如本轮单独提交，执行 `git revert <包含本轮 safer-buffer 便携修复的提交哈希>`；尚未提交时，执行 `git restore --staged --worktree -- .gitignore README.md docs/CONTINUE.md progress.md`，删除 `tests/portable-runtime.test.js`，并取消暂存 safer-buffer 四个文件后恢复原忽略状态。
+
+## 2026-07-29 - Task: 添加快速拉取脚本
+
+### What was done
+- 新增 Windows 双击脚本，自动进入项目根目录并从 `origin/main` 以 rebase 方式拉取最新代码。
+- 脚本只允许在 `main` 分支执行，避免其他分支误变基到主干；成功后显示最新提交，失败时保留 Git 错误，不会清理或强制覆盖本地文件。
+- README 和继续开发文档补充脚本用途、执行条件与失败处理说明。
+
+### Testing
+- 在受限网络环境运行脚本，验证 GitHub 连接失败时返回非零状态、显示原始 Git 错误并进入停止提示，没有修改仓库。
+- 在允许联网的环境运行 `cmd /c "(echo.)|call pull-latest.cmd"`，成功从 `origin/main` 拉取并显示 `Already up to date.` 和最新提交 `c0bef70 fix: 补齐 safer-buffer 便携依赖`，退出码为 0。
+- 运行 `git diff --check`，确认本轮改动没有空白错误。
+
+### Notes
+- `pull-latest.cmd`：新增定位项目目录、检查 Git 与当前分支、变基拉取和结果展示逻辑。
+- `README.md`：增加快速更新项目的使用说明。
+- `docs/CONTINUE.md`：记录快速拉取脚本的行为边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：如本轮单独提交，执行 `git revert <包含本轮快速拉取脚本的提交哈希>`；尚未提交时，执行 `git restore -- README.md docs/CONTINUE.md progress.md`，并删除 `pull-latest.cmd`。
