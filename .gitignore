@@ -2,6 +2,10 @@ server.log
 server.err.log
 *.log
 node_modules/
+!vendor/iconv-lite/node_modules/
+vendor/iconv-lite/node_modules/*
+!vendor/iconv-lite/node_modules/safer-buffer/
+!vendor/iconv-lite/node_modules/safer-buffer/**
 .codex/skills/
 .DS_Store
 Thumbs.db

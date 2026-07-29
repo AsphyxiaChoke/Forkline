@@ -5539,3 +5539,32 @@
 - `docs/CONTINUE.md`：记录实现边界、ResizeObserver 刷新和验证状态。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮窗口拖动缩放改动的提交哈希>`；尚未提交时，仅反向还原上述文件中的本轮对应 hunk，保留这些文件里更早的未提交工作。
+
+## 2026-07-29 - Task: 修复其他电脑启动缺少 safer-buffer
+
+### What was done
+- 确认 `iconv-lite 0.6.3` 运行时依赖 `safer-buffer`，本机虽然已有对应文件，但通用 `node_modules/` 忽略规则把它隐藏在 Git 提交之外，导致其他电脑拉取后启动时报 `MODULE_NOT_FOUND`。
+- 为 `vendor/iconv-lite/node_modules/safer-buffer/` 增加精确忽略例外，并将 `safer-buffer 2.1.2` 的运行文件和许可证纳入仓库；保持原版 iconv-lite 源码不变，其他电脑仍无需执行 `npm install`。
+- 新增便携运行回归，检查依赖文件存在且已被 Git 跟踪，并在清空 `NODE_PATH` 后执行真实 GBK 编解码，防止本机隐藏依赖再次掩盖漏包问题。
+- README 增加旧副本报错后的更新指引，继续开发文档同步记录依赖和测试边界。
+
+### Testing
+- 使用 `git archive HEAD` 创建只包含已提交文件的临时副本，运行 `node server.js` 稳定复现与用户截图一致的 `Cannot find module 'safer-buffer'`，调用链为 `vendor/iconv-lite/lib/index.js -> server.js`。
+- 修复前运行 `node --test tests/portable-runtime.test.js`，1 项按预期失败，明确指出 `.gitignore` 没有放行便携依赖；修复并暂存依赖后重跑，1 项通过。
+- 对 `tests/portable-runtime.test.js` 运行 `node --check`，通过。
+- 对包含修复后暂存树的全新归档副本执行 `start.cmd`，服务成功输出 `Forkline Web running at http://127.0.0.1:5299`，访问首页返回 HTTP `200`；随后结束测试进程并确认 `5299` 端口不再监听。
+- 使用仅对测试进程生效的 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 运行完整 `npm test`，50 项全部通过。
+- 运行 `git diff --check` 和 `git diff --cached --check`，无空白错误；仅有仓库现有的 LF / CRLF 工作区转换和用户 Git ignore 权限提示。
+- 已删除本轮创建的两个临时归档及其解压目录，没有在仓库或工作区外留下测试服务。
+
+### Notes
+- `.gitignore`：仅放行 iconv-lite 内的 safer-buffer 运行依赖，其他 node_modules 继续忽略。
+- `vendor/iconv-lite/node_modules/safer-buffer/package.json`：登记随仓库提供的 safer-buffer 2.1.2 包信息。
+- `vendor/iconv-lite/node_modules/safer-buffer/safer.js`：提供 iconv-lite 实际加载的安全 Buffer 兼容实现。
+- `vendor/iconv-lite/node_modules/safer-buffer/dangerous.js`：保留 safer-buffer 原包运行文件。
+- `vendor/iconv-lite/node_modules/safer-buffer/LICENSE`：保留第三方依赖许可证。
+- `tests/portable-runtime.test.js`：增加依赖跟踪状态、独立模块解析和 GBK 编解码回归。
+- `README.md`：说明 safer-buffer 已内置及旧副本的更新方式。
+- `docs/CONTINUE.md`：记录便携依赖、无需 npm install 的边界和回归入口。
+- `progress.md`：追加本轮复现、修复、验证和回滚记录。
+- 回滚方式：如本轮单独提交，执行 `git revert <包含本轮 safer-buffer 便携修复的提交哈希>`；尚未提交时，执行 `git restore --staged --worktree -- .gitignore README.md docs/CONTINUE.md progress.md`，删除 `tests/portable-runtime.test.js`，并取消暂存 safer-buffer 四个文件后恢复原忽略状态。
