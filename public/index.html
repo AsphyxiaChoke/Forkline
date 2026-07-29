@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Forkline Web</title>
+  <link rel="stylesheet" href="./vendor/codemirror/lib/codemirror.css" />
+  <link rel="stylesheet" href="./vendor/codemirror/addon/merge/merge.css" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -51,7 +53,7 @@
       <div class="actions">
         <div class="topbar-action-group topbar-utility-actions">
           <button id="openCommandPalette" class="icon-btn" title="打开命令面板" type="button">命令</button>
-          <button id="themeToggle" class="icon-btn theme-toggle" title="切换浅色/深色" type="button">浅色</button>
+          <button id="themeToggle" class="icon-btn theme-toggle" title="切换配色" type="button">浅色</button>
         </div>
         <div class="topbar-action-group topbar-sync-actions">
           <button class="icon-btn" data-action="fetch" title="抓取" type="button">抓取</button>
@@ -150,6 +152,7 @@
                   <span id="workDiffPath" class="panel-subtitle">未选择文件</span>
                 </div>
                 <div class="panel-actions work-diff-actions">
+                  <button id="editWorktreeFile" class="mini-btn" type="button" title="编辑当前工作区文件" disabled>编辑</button>
                   <button id="maximizeDiff" class="mini-btn diff-max-btn" type="button" disabled>最大化</button>
                 </div>
               </div>
@@ -317,6 +320,7 @@
     <button data-branch-action="delete" type="button">删除分支</button>
   </div>
   <div id="fileContextMenu" class="context-menu" aria-hidden="true">
+    <button data-file-action="edit" type="button">编辑文件</button>
     <button data-file-action="diff" type="button">查看对照</button>
     <button data-file-action="history" type="button"><span class="menu-label">查看文件历史</span><span class="command-hint">git log --follow</span></button>
     <button data-file-action="blame" type="button"><span class="menu-label">逐行追踪</span><span class="command-hint">git blame</span></button>
@@ -498,6 +502,60 @@
       </div>
     </form>
   </div>
+  <div id="fileEditorModal" class="checkout-modal file-editor-modal" aria-hidden="true">
+    <form id="fileEditorForm" class="checkout-dialog file-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="fileEditorTitle">
+      <header class="file-editor-head">
+        <div>
+          <strong id="fileEditorTitle">编辑文件</strong>
+          <span id="fileEditorPath"></span>
+        </div>
+        <div class="file-editor-head-actions">
+          <button id="fileEditorToggleSearch" class="mini-btn" type="button" title="查找或替换文件内容">查找替换</button>
+          <button id="fileEditorClose" class="icon-btn" type="button" title="关闭编辑器">关闭</button>
+        </div>
+      </header>
+      <div id="fileEditorSearch" class="file-editor-search" aria-hidden="true" hidden>
+        <label class="file-editor-search-field">
+          <span>查找</span>
+          <input id="fileEditorSearchInput" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="file-editor-search-field">
+          <span>替换为</span>
+          <input id="fileEditorReplaceInput" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="file-editor-search-option">
+          <input id="fileEditorCaseSensitive" type="checkbox" />
+          <span>区分大小写</span>
+        </label>
+        <div class="file-editor-search-actions">
+          <button id="fileEditorFindPrevious" class="mini-btn" type="button">上一个</button>
+          <button id="fileEditorFindNext" class="mini-btn" type="button">下一个</button>
+          <button id="fileEditorReplaceOne" class="mini-btn" type="button">替换</button>
+          <button id="fileEditorReplaceAll" class="mini-btn" type="button">全部替换</button>
+        </div>
+        <span id="fileEditorMatchStatus" class="file-editor-match-status" role="status">未输入查找内容</span>
+      </div>
+      <div class="file-editor-compare-labels">
+        <span id="fileEditorOldLabel">旧版本 · HEAD</span>
+        <span id="fileEditorNewLabel">新版本 · 工作区</span>
+      </div>
+      <div class="file-editor-body">
+        <div id="fileEditorMerge" class="file-editor-merge" aria-label="新旧文件对照编辑器"></div>
+        <div id="fileEditorFallback" class="file-editor-fallback" hidden>
+          <textarea id="fileEditorOldText" class="file-editor-text" readonly autocomplete="off" spellcheck="false" wrap="off" aria-label="旧版本文件内容"></textarea>
+          <textarea id="fileEditorText" class="file-editor-text" autocomplete="off" autocapitalize="off" spellcheck="false" wrap="off" aria-label="新版本文件内容"></textarea>
+        </div>
+      </div>
+      <footer class="file-editor-footer">
+        <span id="fileEditorStatus" role="status">正在读取文件...</span>
+        <div class="file-editor-actions">
+          <button id="fileEditorCancel" class="mini-btn" type="button">取消</button>
+          <button id="fileEditorSave" class="btn primary" type="submit" disabled>保存</button>
+        </div>
+      </footer>
+      <div id="fileEditorResizeHandle" class="file-editor-resize-handle" title="拖动调整窗口大小" aria-hidden="true"></div>
+    </form>
+  </div>
   <div id="diffModal" class="diff-modal" aria-hidden="true">
     <div class="diff-modal-head">
       <div>
@@ -508,6 +566,33 @@
     </div>
     <div id="diffModalBody" class="diff-modal-body"></div>
   </div>
+  <script src="./vendor/codemirror/diff-match-patch.js"></script>
+  <script src="./vendor/codemirror/lib/codemirror.js"></script>
+  <script src="./vendor/codemirror/addon/search/searchcursor.js"></script>
+  <script src="./vendor/codemirror/addon/edit/closebrackets.js"></script>
+  <script src="./vendor/codemirror/addon/edit/matchbrackets.js"></script>
+  <script src="./vendor/codemirror/addon/selection/active-line.js"></script>
+  <script src="./vendor/codemirror/mode/xml/xml.js"></script>
+  <script src="./vendor/codemirror/mode/javascript/javascript.js"></script>
+  <script src="./vendor/codemirror/mode/jsx/jsx.js"></script>
+  <script src="./vendor/codemirror/mode/css/css.js"></script>
+  <script src="./vendor/codemirror/mode/htmlmixed/htmlmixed.js"></script>
+  <script src="./vendor/codemirror/mode/clike/clike.js"></script>
+  <script src="./vendor/codemirror/mode/markdown/markdown.js"></script>
+  <script src="./vendor/codemirror/mode/python/python.js"></script>
+  <script src="./vendor/codemirror/mode/shell/shell.js"></script>
+  <script src="./vendor/codemirror/mode/sql/sql.js"></script>
+  <script src="./vendor/codemirror/mode/yaml/yaml.js"></script>
+  <script src="./vendor/codemirror/mode/properties/properties.js"></script>
+  <script src="./vendor/codemirror/mode/diff/diff.js"></script>
+  <script src="./vendor/codemirror/mode/powershell/powershell.js"></script>
+  <script src="./vendor/codemirror/mode/dockerfile/dockerfile.js"></script>
+  <script src="./vendor/codemirror/mode/cmake/cmake.js"></script>
+  <script src="./vendor/codemirror/mode/go/go.js"></script>
+  <script src="./vendor/codemirror/mode/rust/rust.js"></script>
+  <script src="./vendor/codemirror/mode/toml/toml.js"></script>
+  <script src="./vendor/codemirror/mode/php/php.js"></script>
+  <script src="./vendor/codemirror/addon/merge/merge.js"></script>
   <script src="./js/core.js"></script>
   <script src="./js/i18n-catalog.js"></script>
   <script src="./js/i18n.js"></script>
@@ -525,6 +610,7 @@
   <script src="./js/panels/sync.js"></script>
   <script src="./js/panels/recovery-settings.js"></script>
   <script src="./js/features/diff-workbench.js"></script>
+  <script src="./js/features/file-editor.js"></script>
   <script src="./js/features/repositories.js"></script>
   <script src="./js/features/git-actions.js"></script>
   <script src="./js/app/layout-utils.js"></script>

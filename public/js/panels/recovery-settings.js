@@ -557,9 +557,8 @@ function renderSettingsTab() {
             <span>主题会保存在当前浏览器。</span>
           </div>
         </div>
-        <div class="settings-choice-row">
-          ${settingsThemeButton("dark", t("深色"), t("适合长时间查看提交图谱"))}
-          ${settingsThemeButton("light", t("浅色"), t("适合明亮环境"))}
+        <div class="settings-choice-row settings-theme-grid">
+          ${themeCatalog.map(settingsThemeButton).join("")}
         </div>
       </section>
 
@@ -628,12 +627,15 @@ function renderSettingsTab() {
   `;
 }
 
-function settingsThemeButton(theme, label, description) {
-  const active = state.theme === theme;
+function settingsThemeButton(theme) {
+  const active = state.theme === theme.id;
   return `
-    <button class="settings-choice ${active ? "active" : ""}" data-settings-theme="${escapeAttr(theme)}" type="button">
-      <strong>${escapeHtml(label)}</strong>
-      <span>${escapeHtml(description)}</span>
+    <button class="settings-choice settings-theme-choice ${active ? "active" : ""}" data-settings-theme="${escapeAttr(theme.id)}" type="button">
+      <span class="settings-theme-preview" aria-hidden="true">
+        ${theme.swatches.map((color) => `<i class="settings-theme-swatch" style="--theme-swatch:${escapeAttr(color)}"></i>`).join("")}
+      </span>
+      <strong>${escapeHtml(t(theme.label))}</strong>
+      <span class="settings-theme-description">${escapeHtml(t(theme.description))}</span>
     </button>
   `;
 }

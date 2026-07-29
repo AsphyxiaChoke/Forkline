@@ -357,6 +357,9 @@ function renderHistoryDiffInWorkbench(commit, detail, filePath) {
 
 function setActiveDiff(payload) {
   state.activeDiff = payload;
+  if (els.editWorktreeFile) {
+    els.editWorktreeFile.disabled = !(payload?.source === "worktree" && payload?.path && !state.data?.repo?.isSample);
+  }
   if (els.maximizeDiff) els.maximizeDiff.disabled = !payload?.diff?.length;
 }
 

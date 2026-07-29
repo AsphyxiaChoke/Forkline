@@ -9,6 +9,7 @@ const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { promisify } = require("node:util");
+const iconv = require("../vendor/iconv-lite");
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(__dirname, "..");
@@ -129,6 +130,119 @@ test("backend locale follows the request without translating Git data", { timeou
   const afterCreate = await request("/api/state", { repoPath: repo, locale: "en" });
   assertStatus(afterCreate, 200);
   assert.equal(afterCreate.body.repo.branch, branch);
+});
+
+test("worktree file editor reads and saves UTF-8 text with stale-content protection", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const notePath = path.join(repo, "note.txt");
+  const binaryPath = path.join(repo, "binary.bin");
+  await initRepository(repo);
+  await fs.writeFile(notePath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("base\r\nlocal\r\n", "utf8")]));
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await fs.appendFile(notePath, "change\r\n", "utf8");
+  await fs.writeFile(binaryPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
+  await openRepo(repo);
+
+  const opened = await request("/api/worktree-file?file=note.txt", { repoPath: repo });
+  assertStatus(opened, 200);
+  assert.equal(opened.body.file, "note.txt");
+  assert.equal(opened.body.content, "base\r\nlocal\r\nchange\r\n");
+  assert.equal(opened.body.bom, true);
+  assert.equal(opened.body.lineEnding, "crlf");
+  assert.equal(opened.body.oldExists, true);
+  assert.equal(opened.body.oldContent, "base\r\nlocal\r\n");
+  assert.equal(opened.body.oldEncoding, "utf-8");
+  assert.match(opened.body.snapshot, /^[a-f0-9]{64}$/);
+
+  const saved = await request("/api/worktree-file", {
+    method: "POST",
+    repoPath: repo,
+    body: {
+      file: "note.txt",
+      content: "base\nlocal\nedited\n",
+      expectedSnapshot: opened.body.snapshot,
+    },
+  });
+  assertStatus(saved, 200);
+  assert.equal(saved.body.output, "文件已保存");
+  assert.equal(saved.body.lineEnding, "crlf");
+  assert.equal(saved.body.bom, true);
+  const savedBuffer = await fs.readFile(notePath);
+  assert.deepEqual(Array.from(savedBuffer.subarray(0, 3)), [0xef, 0xbb, 0xbf]);
+  assert.equal(savedBuffer.subarray(3).toString("utf8"), "base\r\nlocal\r\nedited\r\n");
+
+  await fs.appendFile(notePath, "outside\r\n", "utf8");
+  const stale = await request("/api/worktree-file", {
+    method: "POST",
+    repoPath: repo,
+    body: {
+      file: "note.txt",
+      content: "must not overwrite\n",
+      expectedSnapshot: saved.body.snapshot,
+    },
+  });
+  assertStatus(stale, 400);
+  assert.match(stale.body.error, /其他程序修改|重新打开/);
+  assert.match((await fs.readFile(notePath)).toString("utf8"), /outside\r\n$/);
+
+  const traversal = await request("/api/worktree-file?file=../outside.txt", { repoPath: repo });
+  assertStatus(traversal, 400);
+  assert.match(traversal.body.error, /路径不合法/);
+
+  const binary = await request("/api/worktree-file?file=binary.bin", { repoPath: repo });
+  assertStatus(binary, 400);
+  assert.match(binary.body.error, /二进制/);
+});
+
+test("worktree file editor compares HEAD and preserves GBK or GB18030 encoding", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-gbk-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const gbkPath = path.join(repo, "说明.txt");
+  const gb18030Path = path.join(repo, "扩展字符.txt");
+  await initRepository(repo);
+  await fs.writeFile(gbkPath, iconv.encode("旧版本\r\n", "gbk"));
+  await fs.writeFile(gb18030Path, iconv.encode("旧字符𠀀\n", "gb18030"));
+  await git(repo, ["add", "说明.txt", "扩展字符.txt"]);
+  await git(repo, ["commit", "-m", "add encoded files"]);
+  await fs.writeFile(gbkPath, iconv.encode("旧版本\r\n工作区修改\r\n", "gbk"));
+  await fs.writeFile(gb18030Path, iconv.encode("旧字符𠀀\n工作区𠀁\n", "gb18030"));
+  await openRepo(repo);
+
+  const openedGbk = await request(`/api/worktree-file?file=${encodeURIComponent("说明.txt")}`, { repoPath: repo });
+  assertStatus(openedGbk, 200);
+  assert.equal(openedGbk.body.encoding, "gbk");
+  assert.equal(openedGbk.body.content, "旧版本\r\n工作区修改\r\n");
+  assert.equal(openedGbk.body.oldExists, true);
+  assert.equal(openedGbk.body.oldContent, "旧版本\r\n");
+  assert.equal(openedGbk.body.oldEncoding, "gbk");
+
+  const savedGbk = await request("/api/worktree-file", {
+    method: "POST",
+    repoPath: repo,
+    body: {
+      file: "说明.txt",
+      content: "旧版本\n编辑器保存中文\n",
+      expectedSnapshot: openedGbk.body.snapshot,
+    },
+  });
+  assertStatus(savedGbk, 200);
+  assert.equal(savedGbk.body.encoding, "gbk");
+  assert.equal(savedGbk.body.lineEnding, "crlf");
+  const savedGbkBuffer = await fs.readFile(gbkPath);
+  assert.equal(iconv.decode(savedGbkBuffer, "gbk"), "旧版本\r\n编辑器保存中文\r\n");
+  assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(savedGbkBuffer));
+
+  const openedGb18030 = await request(`/api/worktree-file?file=${encodeURIComponent("扩展字符.txt")}`, { repoPath: repo });
+  assertStatus(openedGb18030, 200);
+  assert.equal(openedGb18030.body.encoding, "gb18030");
+  assert.equal(openedGb18030.body.content, "旧字符𠀀\n工作区𠀁\n");
+  assert.equal(openedGb18030.body.oldContent, "旧字符𠀀\n");
 });
 
 test("ordinary parent stash still creates, applies, and pops", { timeout: 120000 }, async (t) => {

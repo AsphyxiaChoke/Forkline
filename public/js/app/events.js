@@ -90,7 +90,35 @@ els.mainlineModal.addEventListener("click", (event) => {
   if (event.target === els.mainlineModal) closeMainlineModal();
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
+els.editWorktreeFile.addEventListener("click", () => openFileEditor(state.activeDiff?.path || state.selectedFile, state.activeDiff?.previousFile || "").catch((error) => toast(error.message)));
 els.maximizeDiff.addEventListener("click", openDiffModal);
+els.fileEditorForm.addEventListener("submit", (event) => submitFileEditor(event).catch((error) => toast(error.message)));
+els.fileEditorText.addEventListener("input", () => updateFileEditorStatus());
+els.fileEditorToggleSearch.addEventListener("click", toggleFileEditorSearch);
+els.fileEditorSearchInput.addEventListener("input", scheduleFileEditorSearchRefresh);
+els.fileEditorSearchInput.addEventListener("keydown", handleFileEditorSearchKeydown);
+els.fileEditorReplaceInput.addEventListener("keydown", handleFileEditorSearchKeydown);
+els.fileEditorCaseSensitive.addEventListener("change", refreshFileEditorSearchMatches);
+els.fileEditorFindPrevious.addEventListener("click", () => findFileEditorMatch(-1));
+els.fileEditorFindNext.addEventListener("click", () => findFileEditorMatch(1));
+els.fileEditorReplaceOne.addEventListener("click", replaceCurrentFileEditorMatch);
+els.fileEditorReplaceAll.addEventListener("click", replaceAllFileEditorMatches);
+els.fileEditorCancel.addEventListener("click", () => closeFileEditor());
+els.fileEditorClose.addEventListener("click", () => closeFileEditor());
+const fileEditorHead = els.fileEditorForm.querySelector(".file-editor-head");
+fileEditorHead.addEventListener("mousedown", beginFileEditorDrag);
+els.fileEditorResizeHandle.addEventListener("mousedown", beginFileEditorResize);
+window.addEventListener("mousemove", (event) => {
+  moveFileEditorDrag(event);
+  moveFileEditorResize(event);
+});
+window.addEventListener("mouseup", () => {
+  endFileEditorDrag();
+  endFileEditorResize();
+});
+els.fileEditorModal.addEventListener("click", (event) => {
+  if (event.target === els.fileEditorModal) closeFileEditor();
+});
 els.workDiffView.addEventListener("click", (event) => {
   const lineButton = event.target.closest("[data-line-action]");
   if (lineButton) {
@@ -628,6 +656,21 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-open-diff-modal]")) openDiffModal();
 });
 document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && els.fileEditorModal.classList.contains("show")) {
+    event.preventDefault();
+    openFileEditorSearch(false);
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "h" && els.fileEditorModal.classList.contains("show")) {
+    event.preventDefault();
+    openFileEditorSearch(true);
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s" && els.fileEditorModal.classList.contains("show")) {
+    event.preventDefault();
+    submitFileEditor().catch((error) => toast(error.message));
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
     openCommandPalette();
@@ -635,6 +678,14 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape" && els.commandPalette.classList.contains("show")) {
     closeCommandPalette();
+    return;
+  }
+  if (event.key === "Escape" && els.fileEditorModal.classList.contains("show") && !els.fileEditorSearch.hidden) {
+    closeFileEditorSearch();
+    return;
+  }
+  if (event.key === "Escape" && els.fileEditorModal.classList.contains("show")) {
+    closeFileEditor();
     return;
   }
   if (event.key === "Escape" && els.diffModal.classList.contains("show")) closeDiffModal();
@@ -652,7 +703,8 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.remoteContextMenu.classList.contains("show")) hideRemoteContextMenu();
   if (event.key === "Escape" && els.reflogContextMenu.classList.contains("show")) hideReflogContextMenu();
 });
-document.addEventListener("scroll", () => {
+document.addEventListener("scroll", (event) => {
+  if (event.target instanceof Element && event.target.closest(".context-menu")) return;
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();

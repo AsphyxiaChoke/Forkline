@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { execFile, execFileSync } = require("child_process");
+const iconv = require("./vendor/iconv-lite");
 const i18nCatalog = require("./public/js/i18n-catalog.js");
 
 const PORT = Number(process.env.PORT || 5177);
@@ -13,6 +14,7 @@ const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
 const ZERO_OID = "0000000000000000000000000000000000000000";
 const WORKTREE_DIFF_CONTEXT = "8";
 const UNTRACKED_DIFF_HUNK_SIZE = 40;
+const FILE_EDITOR_MAX_BYTES = 1024 * 1024;
 const BRANCH_STALE_DAYS = 30;
 const PROTECTED_BRANCH_NAMES = new Set(["main", "master", "develop", "development", "dev", "trunk"]);
 const GIT_LOG_FIELD_SEPARATOR = "\0";
@@ -1041,6 +1043,209 @@ async function readWorkingDiff(filePath, rawScope = "auto") {
     output = await readWorktreeDiffOutput(file, scope, target, repoPath);
   }
   return { file, previousFile: target?.previousFile || "", scope, requestedScope, diff: parseDiff(output) };
+}
+
+function gitBuffer(repoPath, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const fullArgs = ["-C", repoPath, "-c", "core.quotepath=false", ...args];
+    execFile(
+      GIT_BIN,
+      fullArgs,
+      {
+        windowsHide: true,
+        timeout: options.timeout || 15000,
+        maxBuffer: options.maxBuffer || 1024 * 1024 * 8,
+        encoding: null,
+        env: options.env ? { ...process.env, ...options.env } : process.env,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const output = Buffer.concat([stdout || Buffer.alloc(0), stderr || Buffer.alloc(0)]).toString("utf8").trim();
+          reject(new Error(output || error.message));
+          return;
+        }
+        resolve(stdout || Buffer.alloc(0));
+      }
+    );
+  });
+}
+
+async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPath = currentRepo) {
+  const target = resolveEditableWorktreeFile(filePath, repoPath);
+  const buffer = fs.readFileSync(target.fullPath);
+  const current = editableWorktreeFilePayload(target.file, buffer);
+  const oldFile = previousFilePath ? validateEditableRepoFile(previousFilePath) : target.file;
+  const old = await readHeadEditableWorktreeFile(oldFile, repoPath);
+  return { ...current, oldFile, ...old };
+}
+
+async function readHeadEditableWorktreeFile(file, repoPath) {
+  let buffer;
+  try {
+    buffer = await gitBuffer(repoPath, ["cat-file", "blob", `HEAD:${file}`], { maxBuffer: FILE_EDITOR_MAX_BYTES + 1024 });
+  } catch {
+    return { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "" };
+  }
+  if (buffer.length > FILE_EDITOR_MAX_BYTES) {
+    return {
+      oldExists: true,
+      oldContent: "",
+      oldEncoding: "",
+      oldLineEnding: "",
+      oldUnavailable: "HEAD 中的旧版本超过 1 MiB，无法在编辑器中显示。",
+    };
+  }
+  try {
+    const payload = editableWorktreeFilePayload(file, buffer);
+    return {
+      oldExists: true,
+      oldContent: payload.content,
+      oldEncoding: payload.encoding,
+      oldLineEnding: payload.lineEnding,
+      oldUnavailable: "",
+    };
+  } catch (error) {
+    return {
+      oldExists: true,
+      oldContent: "",
+      oldEncoding: "",
+      oldLineEnding: "",
+      oldUnavailable: `HEAD 中的旧版本无法显示：${error.message}`,
+    };
+  }
+}
+
+function saveEditableWorktreeFile(body, repoPath = currentRepo) {
+  const target = resolveEditableWorktreeFile(body.file, repoPath);
+  const expectedSnapshot = String(body.expectedSnapshot || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(expectedSnapshot)) {
+    throw new Error("编辑器状态已失效，请重新打开文件后再保存。");
+  }
+  if (typeof body.content !== "string") throw new Error("文件内容不合法，请重新打开文件后再试。");
+
+  const currentBuffer = fs.readFileSync(target.fullPath);
+  const current = editableWorktreeFilePayload(target.file, currentBuffer);
+  if (current.snapshot !== expectedSnapshot) {
+    throw new Error("文件已被其他程序修改，本次内容尚未保存。请重新打开文件，确认最新内容后再编辑。");
+  }
+
+  const normalized = normalizeEditableLineEndings(body.content, current.lineEnding);
+  const contentBuffer = encodeEditableContent(normalized, current.encoding);
+  const nextBuffer = current.bom
+    ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), contentBuffer])
+    : contentBuffer;
+  if (nextBuffer.length > FILE_EDITOR_MAX_BYTES) {
+    throw new Error("文件保存后超过 1 MiB，当前编辑器暂不支持这么大的文件。");
+  }
+
+  fs.writeFileSync(target.fullPath, nextBuffer);
+  return {
+    ...editableWorktreeFilePayload(target.file, nextBuffer),
+    output: "文件已保存",
+  };
+}
+
+function resolveEditableWorktreeFile(filePath, repoPath = currentRepo) {
+  const file = validateEditableRepoFile(filePath);
+  const repoRoot = path.resolve(repoPath);
+  const fullPath = path.resolve(repoRoot, file);
+  if (!isPathInside(repoRoot, fullPath)) throw new Error("文件路径不合法");
+
+  let stat;
+  try {
+    stat = fs.lstatSync(fullPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new Error("文件不存在，可能已经被删除或移动。请刷新工作区后再试。");
+    throw error;
+  }
+  if (stat.isSymbolicLink()) throw new Error("符号链接文件暂不支持直接编辑。");
+  if (!stat.isFile()) throw new Error("只能编辑普通文本文件。");
+  if (stat.size > FILE_EDITOR_MAX_BYTES) throw new Error("文件超过 1 MiB，当前编辑器暂不支持打开。");
+
+  const realRepoRoot = fs.realpathSync(repoRoot);
+  const realFilePath = fs.realpathSync(fullPath);
+  if (!isPathInside(realRepoRoot, realFilePath)) throw new Error("文件路径不合法");
+  return { file, fullPath };
+}
+
+function validateEditableRepoFile(filePath) {
+  const file = normalizeRepoFile(filePath);
+  if (file.split("/").some((part) => part.toLowerCase() === ".git")) throw new Error("不能编辑 Git 内部文件。");
+  return file;
+}
+
+function editableWorktreeFilePayload(file, buffer) {
+  const decoded = decodeEditableBuffer(buffer);
+  return {
+    file,
+    content: decoded.content,
+    encoding: decoded.encoding,
+    bom: decoded.bom,
+    lineEnding: editableLineEnding(decoded.content),
+    byteLength: buffer.length,
+    snapshot: crypto.createHash("sha256").update(buffer).digest("hex"),
+  };
+}
+
+function decodeEditableBuffer(buffer) {
+  const hasBom = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
+  const contentBuffer = hasBom ? buffer.subarray(3) : buffer;
+  if (containsBinaryControlByte(contentBuffer)) throw new Error("这是二进制文件，不能使用文本编辑器打开。");
+
+  const utf8Content = decodeUtf8Strict(contentBuffer);
+  if (utf8Content !== null) return { content: utf8Content, encoding: "utf-8", bom: hasBom };
+  if (!hasBom) {
+    const encodings = containsGb18030FourByteSequence(contentBuffer) ? ["gb18030", "gbk"] : ["gbk", "gb18030"];
+    for (const encoding of encodings) {
+      const content = iconv.decode(contentBuffer, encoding);
+      if (iconv.encode(content, encoding).equals(contentBuffer)) return { content, encoding, bom: false };
+    }
+  }
+  throw new Error("文件不是有效的 UTF-8、GBK 或 GB18030 文本，当前编辑器无法打开。");
+}
+
+function containsGb18030FourByteSequence(buffer) {
+  for (let index = 0; index <= buffer.length - 4; index += 1) {
+    if (
+      buffer[index] >= 0x81 &&
+      buffer[index] <= 0xfe &&
+      buffer[index + 1] >= 0x30 &&
+      buffer[index + 1] <= 0x39 &&
+      buffer[index + 2] >= 0x81 &&
+      buffer[index + 2] <= 0xfe &&
+      buffer[index + 3] >= 0x30 &&
+      buffer[index + 3] <= 0x39
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function encodeEditableContent(content, encoding) {
+  if (encoding === "gbk" || encoding === "gb18030") return iconv.encode(content, encoding);
+  return Buffer.from(content, "utf8");
+}
+
+function containsBinaryControlByte(buffer) {
+  for (const byte of buffer) {
+    if (byte === 0 || byte === 0x7f || byte < 0x09 || (byte > 0x0d && byte < 0x20)) return true;
+  }
+  return false;
+}
+
+function editableLineEnding(content) {
+  const first = String(content || "").match(/\r\n|\n|\r/);
+  if (first?.[0] === "\r\n") return "crlf";
+  if (first?.[0] === "\r") return "cr";
+  return "lf";
+}
+
+function normalizeEditableLineEndings(content, lineEnding) {
+  const normalized = String(content || "").replace(/\r\n|\r/g, "\n");
+  if (lineEnding === "crlf") return normalized.replaceAll("\n", "\r\n");
+  if (lineEnding === "cr") return normalized.replaceAll("\n", "\r");
+  return normalized;
 }
 
 async function readStash(ref) {
@@ -7660,6 +7865,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && parsed.pathname === "/api/file-blame") {
       ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readFileBlame(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/worktree-file") {
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再编辑文件。");
+      const repoPath = currentRepo;
+      sendJson(
+        res,
+        200,
+        await readEditableWorktreeFile(
+          parsed.searchParams.get("file") || "",
+          parsed.searchParams.get("previousFile") || "",
+          repoPath
+        )
+      );
+      return;
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/worktree-file") {
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再编辑文件。");
+      const repoPath = currentRepo;
+      const body = await readJson(req);
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo || !sameFsPath(repoPath, currentRepo)) throw new Error("仓库已经切换，请在目标仓库中重新打开文件。");
+      sendJson(res, 200, saveEditableWorktreeFile(body, repoPath));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/compare") {

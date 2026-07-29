@@ -360,14 +360,19 @@ function clearRepoScopedActionState() {
   state.contextTag = null;
   state.contextRemote = null;
   state.contextReflogEntry = null;
+  destroyFileEditorInstance();
+  state.fileEditor = null;
   let closedModal = false;
-  for (const modal of [els.branchModal, els.tagModal, els.mainlineModal]) {
+  for (const modal of [els.branchModal, els.tagModal, els.mainlineModal, els.fileEditorModal]) {
     if (!modal) continue;
     if (modal.classList?.contains?.("show")) closedModal = true;
     modal.classList?.remove?.("show");
     modal.setAttribute?.("aria-hidden", "true");
   }
   if (els.mainlineOptions) els.mainlineOptions.innerHTML = "";
+  resetFileEditorSearchUi();
+  if (els.fileEditorOldText) els.fileEditorOldText.value = "";
+  if (els.fileEditorText) els.fileEditorText.value = "";
   for (const menu of [els.commitContextMenu, els.branchContextMenu, els.fileContextMenu, els.tagContextMenu, els.remoteContextMenu, els.reflogContextMenu]) {
     menu?.classList?.remove?.("show");
     menu?.setAttribute?.("aria-hidden", "true");

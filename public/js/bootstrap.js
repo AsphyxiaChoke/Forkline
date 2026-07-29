@@ -4,6 +4,7 @@ function startForkline() {
   initLocale();
   initTheme();
   initLayoutResizers();
+  initCommandHints();
   initWorktreeAutoRefresh();
   updateAmendMode();
   init();

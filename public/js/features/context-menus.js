@@ -231,7 +231,7 @@ function showFileContextMenu(event, filePath, scope = "") {
   const fileInfo = contextWorkingFileInfo(filePath, scope);
   if (!fileInfo) return;
   const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
-  state.contextFile = { file: filePath, scope: resolvedScope };
+  state.contextFile = { file: filePath, scope: resolvedScope, previousFile: fileInfo.previousFile || "" };
   if (resolvedScope) {
     const key = changeKey(resolvedScope, filePath);
     if (!state.selectedChanges.has(key)) {
@@ -250,6 +250,7 @@ function showFileContextMenu(event, filePath, scope = "") {
   const hasConflict = Boolean(fileInfo?.conflict);
   const canIgnore = isUntrackedFile(fileInfo);
   const canIgnoreDirectory = canIgnore && filePath.replaceAll("\\", "/").includes("/");
+  menu.querySelector('[data-file-action="edit"]').disabled = Boolean(state.data?.repo?.isSample);
   menu.querySelector('[data-file-action="stageFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="discardWorktreeFile"]').disabled = !hasUnstaged;
   menu.querySelector('[data-file-action="unstageFile"]').disabled = !hasStaged;
@@ -356,6 +357,10 @@ async function runFileContextAction(action) {
   const context = state.contextFile;
   hideFileContextMenu();
   if (!context?.file) return;
+  if (action === "edit") {
+    await openFileEditor(context.file, context.previousFile || "");
+    return;
+  }
   if (action === "diff") {
     state.selectedFile = context.file;
     if (context.scope) state.workDiffScope = context.scope === "staged" ? "staged" : "unstaged";

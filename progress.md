@@ -5276,3 +5276,266 @@
 - `docs/CONTINUE.md`：记录零数量隐藏和筛选提示规则。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可还原上述五个文件并删除 `tests/worktree-summary.test.js`。
+
+## 2026-07-28 - Task: 全面修复窄屏排版挤压和中英文指令占位
+
+### What was done
+- 将普通功能按钮中的 Git 指令从可见并排文字改为悬停提示，动态渲染的按钮也会自动补充 `title`；提交、分支等右键菜单继续直接显示指令。
+- 修正首次加载把空布局偏好误解析为 0 的问题，并调整左右侧栏、变更区和中心区的动态最小宽度；提交列表会随中心区宽度依次隐藏作者和 SHA，超长提交标题不再把时间列和其他提交行推向右侧。
+- 修复提交框、设置页、同步区、文件操作区和窄左栏在低分辨率或侧栏极限宽度下的越界、截字和控件挤压；历史提交信息编辑说明允许换行。
+- 为所有右键菜单增加视口高度上限和内部滚动；菜单内部滚动不再触发全局关闭逻辑，底部 reset 操作在短视口中仍可访问。
+
+### Testing
+- 定向测试先稳定复现并覆盖三项实际问题：`800×720` 提交右键菜单高 `782px` 超出 `720px` 视口、设置页 `266px` 右栏中的“重置布局”按钮横向溢出、GitTest 最窄提交行 `scrollWidth 370px > clientWidth 350px`。
+- 运行 `node --test tests/layout-ui.test.js`，7 项全部通过，覆盖指令悬停、动态面板初始化、空布局偏好、窄提交列、右栏换行、左栏约束和右键菜单滚动。
+- 运行 `npm test`，36 项全部通过。
+- 对 `public/js/app/layout-utils.js`、`public/js/app/events.js`、`public/js/bootstrap.js` 和 `tests/layout-ui.test.js` 运行 `node --check`，全部通过。
+- 运行 `git diff --check`，无空白错误；仅有仓库现有的 Windows 换行转换提醒。
+- 内置浏览器验证 `800×720`、`920×768`、`1024×768`、`1280×720`、`1600×900`；双侧栏同时拉到约 `420px / 560px` 后中心区仍无越界，提交各列位置偏差为 0。
+- 逐页验证详情、文件、文件历史、逐行追踪、分支整理、工作树、子模块、同步、比较、储藏、标签、恢复点、操作日志和设置；逐个验证命令、克隆、初始化、目录选择、新建分支和创建 Tag 弹窗，均无横向溢出或控件重叠。
+- 真实打开 `D:\桌面\GitTest`，用 75 字符历史提交标题验证 5 组分辨率，修复后每组提交行越界数均为 0；右键菜单可在 `800×720` 内滚动到底部，页面控制台无错误。
+
+### Notes
+- `public/js/app/layout-utils.js`：增加普通按钮指令悬停装饰和动态 DOM 监听，并修正布局偏好及动态宽度边界。
+- `public/js/app/events.js`：允许右键菜单内部滚动，不再被全局滚动监听关闭。
+- `public/js/bootstrap.js`：在动态面板渲染前初始化指令悬停处理。
+- `public/styles.css`：完成低分辨率、侧栏极限宽度、提交列、提交框、设置页和右键菜单的响应式约束。
+- `tests/layout-ui.test.js`：新增布局和指令提示回归测试。
+- `README.md`：补充低分辨率布局与普通按钮/右键菜单指令展示规则。
+- `docs/CONTINUE.md`：记录本轮布局边界、实现规则和浏览器验证证据。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可执行 `git restore --source=ced1319 -- public/js/app/layout-utils.js public/js/app/events.js public/js/bootstrap.js public/styles.css README.md docs/CONTINUE.md progress.md`，再执行 `Remove-Item -LiteralPath tests/layout-ui.test.js`。
+
+## 2026-07-28 - Task: 居中提交详情操作区
+
+### What was done
+- 将右侧提交详情中的“提交操作”“历史编辑”“历史编辑队列”标题和按钮文字统一居中，并将空队列提示居中。
+- 使用专用类限制改动范围，提交信息、元数据、Diff 等其他详情区域继续保持原排版。
+
+### Testing
+- 运行 `node --test tests/layout-ui.test.js`，8 项全部通过；新增用例确认只有三组指定操作区使用居中专用类，通用详情标题没有被整体改为居中。
+- 在内置浏览器打开真实 `D:\桌面\GitTest` 验证：右栏默认 `340px` 和最小 `220px` 时，三组标题、16 个按钮以及空队列提示均为居中，按钮和详情区域无横向溢出；“提交信息”标题仍保持左对齐。测试后已将右栏恢复为 `340px`。
+- 运行完整测试，37 项全部通过。沙箱默认读取用户 Git ignore 配置会产生权限警告，因此完整测试使用仅对测试进程生效的 `XDG_CONFIG_HOME=C:\tmp` 排除该环境噪声，未修改系统或仓库 Git 配置。
+- 对 `public/js/panels/inspector.js` 和 `tests/layout-ui.test.js` 运行 `node --check`，全部通过。
+- 运行 `git diff --check`，无空白错误；仅有仓库现有的 Windows 换行转换提醒。
+
+### Notes
+- `public/js/panels/inspector.js`：为三组指定操作区增加专用居中类。
+- `public/styles.css`：仅对指定标题、按钮文字和空队列提示应用居中规则。
+- `tests/layout-ui.test.js`：增加操作区居中范围回归测试。
+- `README.md`：补充提交详情操作区的显示规则。
+- `docs/CONTINUE.md`：记录专用样式范围，避免后续误改其他详情标题。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可仅还原本轮对上述六个文件的对应修改。
+
+## 2026-07-28 - Task: 紧凑排列提交详情操作按钮
+
+### What was done
+- 将右侧提交详情的三组操作按钮从满宽单列改为正常宽度下的两列紧凑网格，降低纵向滚动距离。
+- “硬重置”和“丢弃此提交”继续单独占整行，保留危险操作的视觉隔离；右栏不超过 `300px` 时自动恢复单列，长标签允许换行。
+- 按钮顺序、功能、提示和右键菜单均未改变。
+
+### Testing
+- 运行 `node --test tests/layout-ui.test.js`，9 项全部通过；新增用例覆盖两列网格、危险操作整行、长标签换行和 `300px` 以下单列回退。
+- 在内置浏览器打开真实 `D:\桌面\GitTest` 验证：右栏 `340px` 时三组按钮分别占 5、2、2 行，总计由 16 行缩短为 9 行；普通按钮约 `145px` 宽，“硬重置”和“丢弃此提交”约 `296px` 宽并独占整行，所有按钮均无横向或纵向溢出。
+- 将右栏缩至 `220px` 后，三组按钮自动恢复 9、3、4 行单列布局，按钮约 `184px` 宽，详情区和右栏均无横向溢出；同时切换英文界面检查长标签可换行，结束后已恢复中文和原有 `220px` 右栏宽度。
+- 运行完整测试，38 项全部通过；测试进程继续使用临时 `XDG_CONFIG_HOME=C:\tmp` 排除沙箱无法读取用户 Git ignore 配置产生的环境警告，未修改系统或仓库 Git 配置。
+- 对 `tests/layout-ui.test.js` 运行 `node --check`，通过；运行 `git diff --check`，无空白错误，仅有仓库现有的 Windows 换行转换提醒。
+
+### Notes
+- `public/styles.css`：增加提交操作区两列布局、危险操作整行规则和窄右栏单列回退。
+- `tests/layout-ui.test.js`：增加紧凑网格与响应式回退测试。
+- `README.md`：补充提交操作按钮布局规则。
+- `docs/CONTINUE.md`：记录两列、危险操作整行和窄栏回退边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <本轮提交哈希>`；如尚未提交，可仅还原本轮对上述五个文件的对应修改。
+
+## 2026-07-29 - Task: 新增多套皮肤配色
+
+### What was done
+- 在原有深色和浅色基础上新增石墨、森林、樱色和高对比，共 6 套可保存的主题皮肤。
+- 设置页外观区域改为带四主色色块的紧凑主题卡片，正常右栏双列展示，窄右栏自动回退单列。
+- 顶部主题按钮保留原入口并按 6 套主题顺序循环；同步补全浅色原生控件、主题透明强调层和英文名称说明。
+
+### Testing
+- 修复前运行 `node --test tests/themes.test.js`，3 项均失败，分别复现运行时不接受新主题、设置页没有主题目录、CSS 和英文文案缺失。
+- 修复后重跑 `node --test tests/themes.test.js`，3 项全部通过。
+- 对 `public/js/app/layout-utils.js`、`public/js/panels/recovery-settings.js` 和 `public/js/i18n-catalog.js` 运行 `node --check`，全部通过。
+- 完整 `npm test` 首次有 3 项被沙箱 Git ignore 权限警告污染；仅为测试进程设置 `XDG_CONFIG_HOME=C:\tmp` 后重跑，41 项全部通过，未修改系统或仓库 Git 配置。
+- 在本地服务 `http://127.0.0.1:5287/?tab=settings` 打开真实 `D:\桌面\GitTest`：6 套主题卡均显示，森林、樱色、高对比和顶部循环切换生效；最窄右栏下主题卡、右栏和页面均无横向溢出，控制台无错误或警告。
+
+### Notes
+- `public/js/app/layout-utils.js`：新增主题目录、主题校验、显示名称和 6 套循环切换逻辑。
+- `public/js/panels/recovery-settings.js`：设置页从固定两项改为渲染完整主题目录及色块预览。
+- `public/styles.css`：增加 4 套完整色板、主题相关 RGB 透明层、紧凑主题卡和窄栏回退。
+- `public/js/i18n-catalog.js`：补充新主题、说明和快捷切换提示的英文文案。
+- `public/index.html`：将顶部按钮静态提示调整为“切换配色”。
+- `tests/themes.test.js`：新增主题恢复、保存、循环、设置渲染、CSS 完整性和英文文案回归测试。
+- `README.md`：说明 6 套皮肤、设置入口和顶部快捷切换。
+- `docs/CONTINUE.md`：记录主题数量、布局边界、存储键和国际化状态。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git revert <包含本轮主题改动的提交哈希>`；如尚未提交，只反向还原本条 Notes 所列文件中的主题相关修改，避免覆盖这些文件里更早的未提交工作。
+
+## 2026-07-29 - Task: 新增弹窗式工作区文件编辑器
+
+### What was done
+- 在工作区 Diff 顶部和文件右键菜单增加“编辑文件”入口，以独立弹窗编辑当前工作区文本文件。
+- 支持保存、取消、关闭、`Ctrl+S`、未保存关闭确认；保存后保留原文件选择并刷新到最新未暂存 Diff，切换仓库时清理旧编辑状态。
+- 后端限制为仓库内不超过 1 MiB 的 UTF-8 普通文本文件，保留 BOM 和原换行格式；使用内容快照拒绝覆盖已被外部程序修改的文件，并阻止二进制、符号链接、目录、`.git` 内部文件和越界路径。
+
+### Testing
+- 对 `server.js`、`public/js/app/events.js` 和 `public/js/features/file-editor.js` 运行 `node --check`，全部通过。
+- 运行 `node --test tests/git-api.test.js tests/file-editor-ui.test.js`，11 项全部通过；覆盖真实 UTF-8/BOM/CRLF 读取保存、外部修改冲突保护、二进制和路径穿越拒绝，以及前端入口、快捷键和切仓库清理接线。
+- 使用临时 `XDG_CONFIG_HOME=C:\tmp` 运行完整 `npm test`，44 项全部通过，未修改系统或仓库 Git 配置。
+- 内置浏览器在 `http://127.0.0.1:5288/` 打开真实 `D:\桌面\GitTest`：顶部入口和右键入口均可打开 `forkline-editor-demo.txt`，`Ctrl+S` 保存后仍停留在该文件 Diff；弹窗在 `1528×1045` 视口中约为 `1120×760`，无横向或纵向溢出，状态栏正确显示 `UTF-8 · CRLF · 162 B`，控制台无错误。
+- 额外使用 `800×720` 浏览器视口覆写检查低分辨率状态，弹窗头部、编辑区、状态栏、取消和保存按钮仍完整可见，容器没有横向或纵向溢出；检查后恢复默认浏览器尺寸。
+- 运行 `git diff --check`，无空白错误；仅有仓库现有的 Windows 换行转换提醒。
+
+### Notes
+- `server.js`：新增工作区文本文件读取、保存、格式保留、路径边界和内容冲突保护 API。
+- `public/index.html`：增加工作区编辑入口、文件右键菜单项和编辑器弹窗结构，并加载编辑器脚本。
+- `public/styles.css`：增加弹窗编辑器的桌面与窄屏布局样式。
+- `public/js/core.js`：登记编辑器状态和弹窗控件引用。
+- `public/js/app/events.js`：接入编辑器按钮、表单、关闭动作、`Escape` 和 `Ctrl+S`。
+- `public/js/features/context-menus.js`：接入文件右键“编辑文件”动作。
+- `public/js/features/diff-workbench.js`：根据当前 Diff 文件状态启用或禁用编辑入口。
+- `public/js/features/repositories.js`：切换仓库时清理旧编辑弹窗和状态。
+- `public/js/features/file-editor.js`：实现文件读取、修改状态、保存、关闭确认和保存后刷新流程。
+- `public/js/i18n-catalog.js`：补充编辑器及后端限制的中英文提示。
+- `tests/git-api.test.js`：增加工作区文件读写、格式保留、冲突和安全边界测试。
+- `tests/file-editor-ui.test.js`：增加编辑器入口、弹窗、快捷键和仓库清理接线测试。
+- `README.md`：说明弹窗编辑入口、保存行为和文件限制。
+- `docs/CONTINUE.md`：记录实现边界、验证状态和 GitTest 演示文件。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git restore -p -- server.js public/index.html public/styles.css public/js/core.js public/js/app/events.js public/js/features/context-menus.js public/js/features/diff-workbench.js public/js/features/repositories.js public/js/i18n-catalog.js tests/git-api.test.js README.md docs/CONTINUE.md progress.md`，只选择本轮文件编辑器相关 hunk；再执行 `Remove-Item -LiteralPath public/js/features/file-editor.js,tests/file-editor-ui.test.js`。如本轮以后已提交，则执行 `git revert <包含本轮文件编辑器改动的提交哈希>`。
+
+## 2026-07-29 - Task: 升级文件编辑器为新旧对照、代码高亮、查找替换和 GBK 编辑
+
+### What was done
+- 将工作区文件编辑器升级为 `HEAD` 旧版本与工作区新版本双栏：左栏只读、右栏编辑，未跟踪文件左栏为空，重命名文件按 `previousFile` 读取旧路径。
+- 随仓库引入 CodeMirror MergeView、diff-match-patch 和 iconv-lite，提供行号、差异连接、常见代码语法高亮、查找上一处/下一处、区分大小写、单处替换、全部替换以及 `Ctrl+F`、`Ctrl+H`、`Ctrl+S`。
+- 后端新增 UTF-8、UTF-8 BOM、GBK、GB18030 自动识别和原编码保存，继续保持原换行格式、SHA-256 外部修改保护及文本文件安全边界。
+- 浏览器实测修复两处布局问题：查找栏隐藏时正文网格行被底栏占用，以及 CodeMirror 首次测量后行号覆盖代码开头；双栏正文现在稳定占满弹窗并在第二帧完成行号重新对齐。
+- 在 `D:\桌面\GitTest` 留下可直接查看的演示内容：已跟踪的 `测试.txt` 保留 `HEAD` / 工作区差异，`forkline-editor-demo.c` 和 `forkline-editor-gbk.c` 作为未跟踪 UTF-8 / GBK C 文件；没有残留暂存。
+
+### Testing
+- 对 `server.js`、编辑器相关前端脚本和两份编辑器测试运行 `node --check`，全部通过。
+- 运行 `node --test tests/git-api.test.js tests/file-editor-ui.test.js`，14 项全部通过；覆盖真实 UTF-8、GBK、GB18030、`HEAD` 对照、重命名旧路径、编码与换行字节保真、外部修改冲突和安全边界。
+- 使用临时 `XDG_CONFIG_HOME=C:\tmp` 运行完整 `npm test`，25 项全部通过。
+- 内置浏览器在 `1910×1075` 视口验证 `测试.txt`：左栏显示 `HEAD · UTF-8 · LF`，右栏显示 `工作区 · UTF-8 · 纯文本`；查找 `Forkline` 得到 3 处匹配，下一处显示 `第 1 个，共 3 个`，全部替换并保存后弹窗关闭、原文件选择和最新 Diff 均保留。
+- 内置浏览器验证 `forkline-editor-demo.c`：双栏各有独立行号，右栏识别为 C，DOM 中实际生成 3 个关键字 token、1 个预处理 token 和 2 个数字 token；正文高度为约 `713.8px`，行号与代码无覆盖。
+- 切换到 GBK 演示文件前浏览器控制被用户侧策略中止，没有改用其他端口或浏览器绕过；GBK / GB18030 保存由上述真实集成测试验证，保存后的字节不能按 UTF-8 解码且可按原编码完整回读。
+- `git diff --check` 无空白错误；仅报告仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `server.js`：增加原始 Git blob 读取、`HEAD` 旧版本对照及 UTF-8 / GBK / GB18030 保真读写。
+- `vendor/iconv-lite/`：随仓库提供文本编码转换及其最小运行依赖。
+- `public/vendor/codemirror/`：随仓库提供 MergeView、搜索、编辑辅助和常见语言模式资源。
+- `public/index.html`：加入本地 CodeMirror 资源、双栏编辑器和查找替换控件。
+- `public/styles.css`：加入双栏、行号、差异、高亮、搜索和窄屏布局，并固定弹窗网格行与编辑器高度。
+- `public/js/core.js`：登记文件编辑器新增控件引用。
+- `public/js/app/events.js`：接入查找替换控件及 `Ctrl+F`、`Ctrl+H`、`Ctrl+S`。
+- `public/js/features/file-editor.js`：实现 MergeView、模式识别、查找替换、旧路径标签和双帧刷新对齐。
+- `public/js/features/context-menus.js`：文件右键编辑时传递重命名前路径。
+- `public/js/features/repositories.js`：切换仓库时销毁 CodeMirror 实例和搜索状态。
+- `public/js/i18n-catalog.js`：补充双栏、查找替换、GBK / GB18030 和旧版本异常的中英文文案。
+- `tests/git-api.test.js`：增加 `HEAD` 对照、真实 GBK / GB18030 和字节保真测试。
+- `tests/file-editor-ui.test.js`：覆盖本地 vendor 资源、MergeView、行号、高亮、查找替换、快捷键、布局和国际化接线。
+- `README.md`：更新文件编辑器能力、编码范围和免安装依赖说明。
+- `docs/CONTINUE.md`：记录双栏编辑器实现、快捷键、资源和后端边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：执行 `git restore -p -- server.js public/index.html public/styles.css public/js/core.js public/js/app/events.js public/js/features/context-menus.js public/js/features/repositories.js public/js/i18n-catalog.js tests/git-api.test.js tests/file-editor-ui.test.js README.md docs/CONTINUE.md progress.md`，只选择本轮编辑器升级相关 hunk；再删除新文件/目录 `public/js/features/file-editor.js`、`public/vendor/codemirror/` 和 `vendor/iconv-lite/`。如本轮以后已提交，则执行 `git revert <包含本轮文件编辑器升级的提交哈希>`。
+
+## 2026-07-29 - Task: 文件对照增加按块还原并强化差异显示
+
+### What was done
+- 启用双栏编辑器中间区域的逐块还原按钮，每个差异块都可把左侧 `HEAD` 旧内容回写到右侧工作区编辑缓冲；操作不会自动保存或暂存，差异会即时重算并可继续撤销、编辑。
+- 将旧版本差异块和词级删除强化为红色，将新版本差异块和词级新增强化为绿色，同时把差异色延伸到行号区并加深块边界，避免两侧变化看起来相同。
+- 为还原按钮和同步滚动补充中文提示；窄屏下将中间操作区固定为 `40px`，避免低分辨率时按钮被裁切。
+
+### Testing
+- 对 `public/js/features/file-editor.js` 和 `public/js/i18n-catalog.js` 运行 `node --check`，全部通过。
+- 运行 `node --test tests/file-editor-ui.test.js`，4 项全部通过；覆盖逐块还原开关、中文提示、旧红新绿样式、词级差异和窄屏中间栏宽度。
+- 首次完整 `npm test` 有 3 项被沙箱无法读取用户 Git ignore 配置产生的警告文本污染；仅为测试进程设置临时 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后重跑，47 项全部通过，未修改系统或仓库 Git 配置。
+- 浏览器控制仍处于此前用户侧中止状态，没有改用其他浏览器或端口绕过；本轮未新增页面目测记录。
+- 运行 `git diff --check`，无空白错误；仅有仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/js/features/file-editor.js`：启用 MergeView 逐块还原、行号区差异类和中文内置提示。
+- `public/styles.css`：增加中间还原按钮、旧红新绿块级 / 词级差异和窄屏操作区样式。
+- `public/js/i18n-catalog.js`：补充逐块还原与同步滚动的英文文案。
+- `tests/file-editor-ui.test.js`：增加逐块还原、差异强调及低分辨率布局回归断言。
+- `README.md`：说明逐块还原的保存 / 暂存边界和旧红新绿显示规则。
+- `docs/CONTINUE.md`：记录逐块回写行为、视觉规则和窄屏边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮逐块还原改动的提交哈希>`；尚未提交时，仅反向还原上述文件中的本轮对应 hunk，保留这些文件里更早的未提交工作。
+
+## 2026-07-29 - Task: 扩大双栏文件编辑器并减少中间栏占用
+
+### What was done
+- 修复桌面文件编辑器被固定限制在 `1440×860`、大屏剩余空间无法用于左右代码栏的问题；弹窗现在贴近视口并在超宽屏最高使用 `1920×1200`。
+- 将桌面中间还原操作区从随窗口放大的 `6%` 改为固定 `48px`，窄屏继续使用 `40px`；左右栏平分其余空间，并继续各自提供横向滚动查看超长代码行。
+- 保留不自动换行、同步滚动、逐块还原、差异高亮、查找替换、保存和编码处理等现有行为。
+
+### Testing
+- 修复前新增布局回归并运行 `node --test tests/file-editor-ui.test.js`，稳定复现弹窗缺少近全屏尺寸和桌面中间栏没有固定 `48px` 的失败。
+- 修复后重跑 `node --test tests/file-editor-ui.test.js`，5 项全部通过；覆盖接近全视口的弹窗、`1920×1200` 上限、桌面 `48px` / 窄屏 `40px` 中间栏和双栏完整高度。
+- 使用仅对测试进程生效的 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 运行完整 `npm test`，48 项全部通过，未修改系统或仓库 Git 配置。
+- 运行 `git diff --check`，无空白错误；仅有仓库现有的 LF / CRLF 工作区转换提示。
+- 浏览器控制仍处于此前用户侧中止状态，没有切换其他浏览器绕过；本轮以可重复的布局回归验证尺寸修复。
+
+### Notes
+- `public/styles.css`：扩大桌面编辑器弹窗，并固定桌面 / 窄屏中间栏宽度及左右栏分配。
+- `tests/file-editor-ui.test.js`：增加弹窗视口利用率和中间栏宽度回归测试。
+- `README.md`：说明弹窗尺寸、中间栏和横向滚动规则。
+- `docs/CONTINUE.md`：记录桌面 / 窄屏布局边界及不自动换行约束。
+- `progress.md`：追加本轮复现、修复、验证和回滚记录。
+- 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮双栏尺寸修复的提交哈希>`；尚未提交时，仅反向还原上述文件中的本轮对应 hunk，保留这些文件里更早的未提交工作。
+
+## 2026-07-29 - Task: 修复双栏编辑器内容不显示
+
+### What was done
+- 修复上一轮宽度调整使用 CSS `calc()` 除法后，当前浏览器将左右栏和标题栏尺寸声明判为无效、导致编辑内容无法正常显示的问题。
+- 桌面双栏宽度改为兼容写法 `calc(50% - 24px)`，窄屏改为 `calc(50% - 20px)`；继续保留桌面 `48px`、窄屏 `40px` 的中间操作区和接近全屏的弹窗尺寸。
+
+### Testing
+- 修复前新增兼容性回归并运行 `node --test tests/file-editor-ui.test.js`，稳定复现标准 `calc(50% - 24px)` 缺失以及除法公式仍存在的失败。
+- 修复后重跑 `node --test tests/file-editor-ui.test.js`，5 项全部通过；测试会拒绝再次出现 `calc((100% - 48px) / 2)` 或 `calc((100% - 40px) / 2)`。
+- 使用仅对测试进程生效的 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 运行完整 `npm test`，48 项全部通过，未修改系统或仓库 Git 配置。
+- 运行 `git diff --check`，无空白错误；仅有仓库现有的 LF / CRLF 工作区转换提示。
+- 浏览器控制仍无法接管当前内置浏览器标签，没有切换其他浏览器绕过；本地服务继续使用 `Cache-Control: no-store`，页面刷新后会读取修复后的样式。
+
+### Notes
+- `public/styles.css`：将桌面和窄屏双栏的 CSS 除法公式替换为兼容的百分比减固定宽度公式。
+- `tests/file-editor-ui.test.js`：增加兼容公式存在且除法公式不存在的回归保护。
+- `progress.md`：追加本轮根因、修复、验证和回滚记录。
+- 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮 CSS 兼容修复的提交哈希>`；尚未提交时，仅反向还原上述文件中的本轮对应 hunk，保留这些文件里更早的未提交工作。
+
+## 2026-07-29 - Task: 支持文件编辑窗口缩放和拖动
+
+### What was done
+- 桌面端文件编辑弹窗支持拖动标题栏空白区域移动窗口，并通过右下角手柄自由调节宽高；标题栏按钮、输入框等交互控件不会误触窗口拖动。
+- 拖动和缩放均限制在当前浏览器视口内，并设置 `640×360` 的桌面最小尺寸；浏览器视口变化后会重新收拢窗口，避免标题栏或操作区移出屏幕。
+- 使用 `ResizeObserver` 在窗口尺寸变化后刷新 CodeMirror 双栏、行号和差异连线；窄屏继续保持近全屏布局，并禁用自由拖动与缩放。
+- 补充右下角缩放手柄的英文提示、回归断言和使用文档。
+
+### Testing
+- 对 `public/js/features/file-editor.js`、`public/js/app/events.js` 和 `public/js/i18n-catalog.js` 运行 `node --check`，全部通过。
+- 运行 `node --test tests/file-editor-ui.test.js`，6 项全部通过；覆盖自定义缩放手柄、标题栏拖动、全局鼠标事件、视口限制、窄屏回退、ResizeObserver 刷新和英文提示。
+- 使用仅对测试进程生效的 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 运行完整 `npm test`，49 项全部通过；首次用错误的 shell 环境写法未传入该变量，3 项测试被用户目录 Git ignore 权限警告污染，改用 PowerShell 进程环境后重跑通过，未修改系统或仓库 Git 配置。
+- 运行 `git diff --check`，本轮已跟踪业务代码无空白错误，仅有仓库现有的 LF / CRLF 工作区转换提示；全部文件暂存后，`git diff --cached --check` 仅报告原版 CodeMirror / iconv-lite vendor 源码自带的行尾空格和文件末空行，为保持第三方源码原样未做批量格式化。
+- 在 `1910×1075` 真实浏览器视口验证：初始窗口约为 `1886×1051`；缩放后约为 `1501×821`；再拖动到 `left=262, top=112` 后，右边界约为 `1763`、下边界约为 `933`，整个窗口始终位于视口内。
+- 最终刷新 `http://127.0.0.1:5287/` 并打开 `D:\桌面\GitTest` 的 `测试.txt`：双栏内容、行号、逐块还原按钮均显示，标题栏计算光标为 `move`，右下角手柄显示且光标为 `nwse-resize`，初始窗口四边均保留约 `12px` 视口边距。
+
+### Notes
+- `public/index.html`：增加文件编辑器右下角缩放手柄。
+- `public/js/core.js`：登记缩放手柄控件引用。
+- `public/js/features/file-editor.js`：实现窗口准备、视口限制、标题栏拖动、自定义缩放和 CodeMirror 尺寸刷新。
+- `public/js/app/events.js`：接入标题栏、缩放手柄及全局鼠标移动和释放事件。
+- `public/styles.css`：增加可移动桌面窗口、缩放手柄、拖动 / 缩放状态和窄屏禁用规则。
+- `public/js/i18n-catalog.js`：补充缩放手柄英文提示。
+- `tests/file-editor-ui.test.js`：增加拖动、缩放、视口边界和国际化回归断言。
+- `README.md`：说明桌面拖动缩放、视口限制和窄屏行为。
+- `docs/CONTINUE.md`：记录实现边界、ResizeObserver 刷新和验证状态。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮窗口拖动缩放改动的提交哈希>`；尚未提交时，仅反向还原上述文件中的本轮对应 hunk，保留这些文件里更早的未提交工作。

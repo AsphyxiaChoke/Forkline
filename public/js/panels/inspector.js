@@ -134,8 +134,8 @@ function renderDetailsTab(commit, detail) {
         <button class="mini-btn" type="submit" ${isMergeCommit ? "disabled" : ""}>保存信息</button>
       </div>
     </form>
-    <div class="detail-section-title">提交操作</div>
-    <div class="commit-tools">
+    <div class="detail-section-title commit-action-section-title">提交操作</div>
+    <div class="commit-tools commit-action-tools">
       <button class="mini-btn" data-commit-tool="branch" data-sha="${escapeAttr(commit.sha)}" type="button" title="git branch：从此提交创建本地分支"><span>新建分支</span><span class="command-hint">git branch</span></button>
       <button class="mini-btn" data-commit-tool="openRemote" data-sha="${escapeAttr(commit.sha)}" type="button" ${remoteUrl ? "" : "disabled"} title="${escapeAttr(remoteUrl ? t("打开远端提交：{url}", { url: remoteUrl }) : t("当前仓库没有可识别的网页远端 URL"))}"><span>远端查看</span><span class="command-hint">web</span></button>
       <button class="mini-btn" data-commit-tool="copyPatch" data-sha="${escapeAttr(commit.sha)}" type="button" title="git format-patch -1：复制此提交补丁"><span>复制补丁</span><span class="command-hint">format-patch</span></button>
@@ -146,15 +146,15 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn" data-commit-tool="resetMixed" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --mixed：移动当前分支，改动保留在工作区"><span>混合重置</span><span class="command-hint">git reset --mixed</span></button>
       <button class="mini-btn danger" data-commit-tool="resetHard" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --hard：移动当前分支，并丢弃工作区改动"><span>硬重置</span><span class="command-hint">git reset --hard</span></button>
     </div>
-    <div class="detail-section-title">历史编辑</div>
-    <div class="commit-tools">
+    <div class="detail-section-title commit-action-section-title">历史编辑</div>
+    <div class="commit-tools commit-action-tools">
       <button class="mini-btn" data-commit-tool="squash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩")}"><span>压缩进父提交</span><span class="command-hint">git rebase -i squash</span></button>
       <button class="mini-btn" data-commit-tool="fixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补")}"><span>修补进父提交</span><span class="command-hint">git rebase -i fixup</span></button>
       <button class="mini-btn danger" data-commit-tool="drop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交")}"><span>丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
     </div>
     ${renderHistoryRewritePlan(commit)}
-    <div class="detail-section-title">历史编辑队列</div>
-    <div class="commit-tools">
+    <div class="detail-section-title commit-action-section-title">历史编辑队列</div>
+    <div class="commit-tools commit-action-tools">
       <button class="mini-btn" data-commit-tool="queueSquash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(canFold ? "加入历史编辑队列，执行时压缩进前一条提交" : "此提交不能加入压缩队列")}"><span>加入队列：压缩</span><span class="command-hint">queue squash</span></button>
       <button class="mini-btn" data-commit-tool="queueFixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(canFold ? "加入历史编辑队列，执行时修补进前一条提交" : "此提交不能加入修补队列")}"><span>加入队列：修补</span><span class="command-hint">queue fixup</span></button>
       <button class="mini-btn" data-commit-tool="queueReword" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(canDrop ? "加入历史编辑队列，执行时修改提交信息" : "此提交不能加入改信息队列")}"><span>加入队列：改信息</span><span class="command-hint">queue reword</span></button>
