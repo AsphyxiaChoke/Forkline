@@ -78,9 +78,7 @@ function resetLayoutPreferences() {
   [
     ["forkline-sidebar-w", "--sidebar-w"],
     ["forkline-inspector-w", "--inspector-w"],
-    ["forkline-changes-w", "--changes-w"],
     ["forkline-stage-h", "--stage-h"],
-    ["forkline-commit-form-h", "--commit-form-h"],
   ].forEach(([store, variable]) => {
     try {
       localStorage.removeItem(store);
@@ -97,9 +95,7 @@ function initLayoutResizers() {
   const configs = {
     sidebar: { varName: "--sidebar-w", store: "forkline-sidebar-w", min: 160, max: () => layoutMax("sidebar"), axis: "x", sign: 1 },
     inspector: { varName: "--inspector-w", store: "forkline-inspector-w", min: 220, max: () => layoutMax("inspector"), axis: "x", sign: -1 },
-    changes: { varName: "--changes-w", store: "forkline-changes-w", min: 180, max: () => layoutMax("changes"), axis: "x", sign: 1 },
     stage: { varName: "--stage-h", store: "forkline-stage-h", min: 220, max: () => layoutMax("stage"), axis: "y", sign: -1 },
-    commitForm: { varName: "--commit-form-h", store: "forkline-commit-form-h", min: 90, max: () => layoutMax("commitForm"), axis: "y", sign: -1 },
   };
   Object.values(configs).forEach((config) => {
     const storedValue = localStorage.getItem(config.store);
@@ -121,11 +117,6 @@ function initLayoutResizers() {
         const point = config.axis === "x" ? moveEvent.clientX : moveEvent.clientY;
         const next = clamp(startSize + (point - startPoint) * config.sign, config.min, configMax(config));
         root.style.setProperty(config.varName, `${next}px`);
-        if (config.varName === "--stage-h") {
-          const commitConfig = configs.commitForm;
-          const currentCommit = numericCssVar(commitConfig.varName);
-          root.style.setProperty(commitConfig.varName, `${clamp(currentCommit, commitConfig.min, configMax(commitConfig))}px`);
-        }
       };
       const onUp = () => {
         const current = numericCssVar(config.varName);
@@ -159,15 +150,7 @@ function layoutMax(kind) {
   const mainMin = width <= 840 ? 360 : width <= 960 ? 420 : width <= 1120 ? 480 : 560;
   if (kind === "sidebar") return Math.max(160, Math.min(420, width - inspector - resizers - mainMin));
   if (kind === "inspector") return Math.max(220, Math.min(560, width - sidebar - resizers - mainMin));
-  if (kind === "changes") {
-    const mainWidth = width - sidebar - inspector - resizers;
-    return Math.max(180, Math.min(620, mainWidth - 220));
-  }
   if (kind === "stage") return Math.max(240, Math.min(500, height - 260));
-  if (kind === "commitForm") {
-    const stageHeight = numericCssVar("--stage-h") || 300;
-    return Math.max(110, Math.min(320, stageHeight - 90));
-  }
   return 520;
 }
 

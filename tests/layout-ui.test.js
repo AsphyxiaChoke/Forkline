@@ -11,6 +11,9 @@ const layoutSource = fs.readFileSync(path.join(root, "public", "js", "app", "lay
 const bootstrapSource = fs.readFileSync(path.join(root, "public", "js", "bootstrap.js"), "utf8");
 const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const inspectorSource = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
+const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-changes.js"), "utf8");
+const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
+const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 test("ordinary command hints become hover titles without duplicate text", () => {
@@ -35,9 +38,7 @@ test("missing layout preferences keep the CSS defaults", () => {
   const values = new Map([
     ["--sidebar-w", "240px"],
     ["--inspector-w", "340px"],
-    ["--changes-w", "370px"],
     ["--stage-h", "300px"],
-    ["--commit-form-h", "116px"],
   ]);
   const context = vm.createContext({
     document: {
@@ -53,7 +54,25 @@ test("missing layout preferences keep the CSS defaults", () => {
   context.initLayoutResizers();
   assert.equal(values.get("--sidebar-w"), "240px");
   assert.equal(values.get("--inspector-w"), "340px");
-  assert.equal(values.get("--changes-w"), "370px");
+  assert.equal(values.get("--stage-h"), "300px");
+});
+
+test("worktree, index, and commit editor share one parallel bottom row", () => {
+  const stageStart = indexHtml.indexOf('<section class="stage">');
+  const stageEnd = indexHtml.indexOf("</section>", stageStart);
+  const stageMarkup = indexHtml.slice(stageStart, stageEnd);
+  const worktreeIndex = stageMarkup.indexOf('id="changeList"');
+  const stagedIndex = stageMarkup.indexOf('id="stagedChangeList"');
+  const commitIndex = stageMarkup.indexOf('id="commitForm"');
+
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+  assert.ok(worktreeIndex >= 0 && stagedIndex > worktreeIndex && commitIndex > stagedIndex);
+  assert.doesNotMatch(stageMarkup, /class="work-diff"/);
+  assert.match(styles, /\.stage\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*700px\)[\s\S]*?\.stage\s*\{[^}]*grid-template-columns:\s*220px\s+220px\s+minmax\(240px,\s*1fr\);/s);
+  assert.match(worktreeSource, /els\.changeList\.innerHTML\s*=\s*`[\s\S]*?renderChangeSection\("unstaged"/s);
+  assert.match(worktreeSource, /els\.stagedChangeList\.innerHTML\s*=\s*`[\s\S]*?renderChangeSection\("staged"/s);
+  assert.match(contextMenuSource, /action\s*===\s*"diff"[\s\S]*?await loadWorkingDiff\(context\.file\);[\s\S]*?openDiffModal\(\);/s);
 });
 
 test("narrow layout preserves commit messages and contains the commit form", () => {

@@ -618,7 +618,7 @@ function renderSettingsTab() {
         <div class="settings-card-head">
           <div>
             <strong>布局</strong>
-            <span>恢复侧栏、右栏、工作区和提交框宽高到默认值。</span>
+            <span>恢复侧栏、右栏和底部区域高度到默认值。</span>
           </div>
           <button class="mini-btn" data-settings-action="resetLayout" type="button">重置布局</button>
         </div>

@@ -133,6 +133,7 @@ const els = {
   branchStrip: $("#branchStrip"),
   commitGraph: $("#commitGraph"),
   changeList: $("#changeList"),
+  stagedChangeList: $("#stagedChangeList"),
   stageAll: $("#stageAll"),
   stashChanges: $("#stashChanges"),
   discardAll: $("#discardAll"),

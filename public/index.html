@@ -126,7 +126,7 @@
 
         <section class="stage">
           <div class="stage-resizer-y" data-resizer="stage" title="拖拽调整变更面板高度"></div>
-          <div class="changes">
+          <div class="changes worktree-changes">
             <div class="panel-title">
               <span>工作区</span>
               <div class="panel-actions">
@@ -143,36 +143,35 @@
             </label>
             <div id="changeList" class="change-list"></div>
           </div>
-          <div class="stage-split-resizer" data-resizer="changes" title="拖拽调整变更文件宽度"></div>
-          <div class="stage-workbench">
-            <section class="work-diff">
-              <div class="panel-title">
-                <div class="panel-title-text">
-                  <span id="workDiffTitle">变更对照</span>
-                  <span id="workDiffPath" class="panel-subtitle">未选择文件</span>
-                </div>
-                <div class="panel-actions work-diff-actions">
-                  <button id="editWorktreeFile" class="mini-btn" type="button" title="编辑当前工作区文件" disabled>编辑</button>
-                  <button id="maximizeDiff" class="mini-btn diff-max-btn" type="button" disabled>最大化</button>
-                </div>
+          <div class="changes staged-changes">
+            <div class="panel-title">
+              <span>暂存区</span>
+            </div>
+            <div id="stagedChangeList" class="change-list"></div>
+          </div>
+          <form id="commitForm" class="commit-form">
+            <div class="panel-title commit-form-title">
+              <span>提交编辑</span>
+            </div>
+            <input id="commitSummary" autocomplete="off" placeholder="提交摘要" />
+            <textarea id="commitBody" placeholder="提交说明"></textarea>
+            <div class="commit-bottom">
+              <span id="draftNote">示例模式</span>
+              <div class="commit-actions">
+                <label class="amend-toggle" title="勾选后使用上一次提交信息并追加到上一次提交">
+                  <input id="amendToggle" type="checkbox" />
+                  <span>追加</span>
+                </label>
+                <button id="commitSubmit" class="btn primary" type="submit">创建提交</button>
               </div>
-              <div id="workDiffView" class="work-diff-view empty">未选择文件</div>
-            </section>
-            <div class="workbench-resizer-y" data-resizer="commitForm" title="拖拽调整提交框高度"></div>
-            <form id="commitForm" class="commit-form">
-              <input id="commitSummary" autocomplete="off" placeholder="提交摘要" />
-              <textarea id="commitBody" placeholder="提交说明"></textarea>
-              <div class="commit-bottom">
-                <span id="draftNote">示例模式</span>
-                <div class="commit-actions">
-                  <label class="amend-toggle" title="勾选后使用上一次提交信息并追加到上一次提交">
-                    <input id="amendToggle" type="checkbox" />
-                    <span>追加</span>
-                  </label>
-                  <button id="commitSubmit" class="btn primary" type="submit">创建提交</button>
-                </div>
-              </div>
-            </form>
+            </div>
+          </form>
+          <div hidden aria-hidden="true">
+            <span id="workDiffTitle"></span>
+            <span id="workDiffPath"></span>
+            <button id="editWorktreeFile" type="button" disabled></button>
+            <button id="maximizeDiff" type="button" disabled></button>
+            <div id="workDiffView"></div>
           </div>
         </section>
       </main>

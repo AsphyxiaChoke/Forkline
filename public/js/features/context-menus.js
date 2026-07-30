@@ -364,7 +364,8 @@ async function runFileContextAction(action) {
   if (action === "diff") {
     state.selectedFile = context.file;
     if (context.scope) state.workDiffScope = context.scope === "staged" ? "staged" : "unstaged";
-    loadWorkingDiff(context.file);
+    await loadWorkingDiff(context.file);
+    if (state.activeDiff?.source === "worktree" && state.activeDiff.path === context.file) openDiffModal();
     return;
   }
   if (action === "history") {

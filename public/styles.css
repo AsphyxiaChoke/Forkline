@@ -48,9 +48,7 @@
   --toast-bg: rgba(16, 21, 30, 0.98);
   --sidebar-w: 240px;
   --inspector-w: 340px;
-  --changes-w: 370px;
   --stage-h: 300px;
-  --commit-form-h: 116px;
   --graph-w: 176px;
   --history-cols: var(--graph-w) minmax(0, 1fr) minmax(104px, 150px) minmax(76px, 96px) minmax(70px, 96px);
   --row-h: 62px;
@@ -1658,7 +1656,7 @@ body.resizing .workspace-resizer::before {
 .stage {
   display: grid;
   position: relative;
-  grid-template-columns: var(--changes-w) 7px minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1694,7 +1692,7 @@ body.resizing .stage-resizer-y::before {
 
 .changes {
   display: grid;
-  grid-template-rows: auto 40px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1702,24 +1700,8 @@ body.resizing .stage-resizer-y::before {
   background: color-mix(in srgb, var(--surface) 92%, var(--field));
 }
 
-.stage-split-resizer {
-  position: relative;
-  cursor: col-resize;
-}
-
-.stage-split-resizer::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 3px;
-  width: 1px;
-  background: var(--line);
-}
-
-.stage-split-resizer:hover::before,
-body.resizing .stage-split-resizer::before {
-  background: var(--teal);
+.worktree-changes {
+  grid-template-rows: auto 40px minmax(0, 1fr);
 }
 
 .panel-title {
@@ -2174,78 +2156,6 @@ button.file-row {
   font-size: 12px;
 }
 
-.stage-workbench {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) 7px var(--commit-form-h);
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.work-diff {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-width: 0;
-  min-height: 0;
-  background: color-mix(in srgb, var(--bg) 92%, var(--surface));
-}
-
-.work-diff > .panel-title {
-  min-height: 38px;
-  height: auto;
-  align-items: flex-start;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  row-gap: 5px;
-  flex-wrap: wrap;
-}
-
-.work-diff > .panel-title .panel-title-text {
-  flex: 1 1 180px;
-}
-
-.work-diff > .panel-title .panel-title-text > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.work-diff-actions {
-  flex: 0 1 auto;
-  align-items: center;
-  max-width: 100%;
-}
-
-.work-diff-actions .mini-btn {
-  height: 26px;
-  min-width: 44px;
-  padding: 0 7px;
-}
-
-.workbench-resizer-y {
-  position: relative;
-  min-height: 7px;
-  cursor: row-resize;
-  background: color-mix(in srgb, var(--surface) 88%, var(--field));
-  z-index: 3;
-}
-
-.workbench-resizer-y::before {
-  content: "";
-  position: absolute;
-  top: 3px;
-  right: 0;
-  left: 0;
-  height: 1px;
-  background: var(--line);
-}
-
-.workbench-resizer-y:hover::before,
-body.resizing .workbench-resizer-y::before {
-  background: var(--teal);
-}
-
 .work-diff-view {
   min-width: 0;
   min-height: 0;
@@ -2541,9 +2451,10 @@ body.resizing .workbench-resizer-y::before {
 .commit-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 36px minmax(0, 1fr) 40px;
+  grid-template-rows: auto 36px minmax(0, 1fr) 40px;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: color-mix(in srgb, var(--field) 90%, var(--surface));
 }
 
@@ -7198,6 +7109,14 @@ body.file-editor-window-resizing * {
   .commit-row > .author {
     display: none;
   }
+
+  .stage {
+    grid-template-columns: 220px 220px minmax(240px, 1fr);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-color: var(--scroll) transparent;
+    scrollbar-width: thin;
+  }
 }
 
 @container main-workspace (max-width: 500px) {
@@ -7209,10 +7128,6 @@ body.file-editor-window-resizing * {
   .history-head > :nth-child(5),
   .commit-row > .sha {
     display: none;
-  }
-
-  .stage {
-    grid-template-columns: minmax(160px, min(var(--changes-w), 44%)) 7px minmax(0, 1fr);
   }
 
   .commit-bottom {

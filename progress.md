@@ -5776,3 +5776,31 @@
 - `docs/CONTINUE.md`：记录 `/api/commit-file`、第一父提交规则、编码限制和只读边界。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：尚未提交时执行 `git restore -p -- server.js public/index.html public/js/core.js public/js/features/diff-workbench.js public/js/features/file-editor.js public/js/i18n-catalog.js public/js/panels/inspector.js public/styles.css tests/file-editor-ui.test.js tests/git-api.test.js README.md docs/CONTINUE.md progress.md`，仅选择本任务的历史提交文件对照相关片段；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 工作区、暂存区和提交编辑三栏平行排布
+
+### What was done
+- 将底部工作台改为“工作区 / 暂存区 / 提交编辑”三栏平行结构，工作区和暂存区分别使用独立文件列表及滚动区域，提交表单增加明确标题。
+- 移除常驻“变更对照”区域、文件列表宽度拖动条和提交框高度拖动条，保留底部工作台整体上下拖动；中心区较窄时只在工作台内部横向滚动，不再撑宽提交图或页面主体。
+- 保留现有 Diff 状态和最大化对照能力；工作区或暂存区文件右键“查看对照”会在数据加载完成后直接打开最大化 Diff。
+
+### Testing
+- 设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行完整 `npm.cmd test`：59 项全部通过；首次因执行器未正确传入该隔离变量而出现 3 项本机 Git ignore 权限警告，修正环境赋值后定向 `tests/git-api.test.js` 13 项及完整测试均通过。
+- `node --check` 验证 `public/js/core.js`、`public/js/app/layout-utils.js`、`public/js/features/context-menus.js`、`public/js/features/worktree-changes.js`、`public/js/i18n-catalog.js`、`public/js/panels/recovery-settings.js`，全部通过。
+- 浏览器使用 `D:\桌面\GitTest` 验证：宽屏下三列各约 `439px`，可见常驻 `.work-diff` 面板数量为 0，页面无整体横向溢出且控制台无错误；中心区缩至约 `361px` 时，三列内部总宽约 `680px`，仅底部工作台出现横向滚动，页面主体不溢出。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有 LF / CRLF 工作区转换提示。临时端口 `5290` 无监听，本轮临时 Node PID `19960` 已不存在。
+
+### Notes
+- `public/index.html`：重排底部三栏结构，并保留隐藏兼容节点承接现有 Diff 状态和弹窗逻辑。
+- `public/styles.css`：实现等宽三列及窄中心区内部横向滚动，删除常驻 Diff 和两个内部拖动器样式。
+- `public/js/core.js`：登记独立暂存区文件列表节点。
+- `public/js/app/layout-utils.js`：移除文件列表宽度和提交框高度的布局变量、持久化及拖动逻辑。
+- `public/js/features/worktree-changes.js`：把未暂存和已暂存文件分别渲染、绑定到两个独立列表。
+- `public/js/features/context-menus.js`：文件右键“查看对照”加载完成后直接打开最大化 Diff。
+- `public/js/i18n-catalog.js`：补充“提交编辑”翻译并更新布局重置说明。
+- `public/js/panels/recovery-settings.js`：更新设置页布局重置说明。
+- `tests/layout-ui.test.js`：增加三栏顺序、常驻 Diff 移除、窄区内部滚动和右键最大化入口回归。
+- `README.md`：更新三栏布局、Diff 打开方式和可拖动边界。
+- `docs/CONTINUE.md`：记录三栏结构、窄区滚动、常驻 Diff 移除及最大化对照边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md public/index.html public/styles.css public/js/core.js public/js/app/layout-utils.js public/js/features/context-menus.js public/js/features/worktree-changes.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js tests/layout-ui.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

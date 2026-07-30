@@ -9,6 +9,7 @@ function renderWorkingFiles() {
 
 function renderStage() {
   els.changeList.innerHTML = "";
+  els.stagedChangeList.innerHTML = "";
   const files = state.data.workingFiles;
   const terms = worktreeFilterTerms();
   const visibleFiles = filterWorkingFiles(files, terms);
@@ -18,7 +19,8 @@ function renderStage() {
   if (!files.length) {
     state.selectedFile = "";
     state.selectedChanges.clear();
-    els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">${t("没有未提交的更改")}</span><span></span></div>`;
+    els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">${t("工作区没有未暂存的更改")}</span><span></span></div>`;
+    els.stagedChangeList.innerHTML = `<div class="file-row"><span></span><span class="file-name">${t("没有已暂存的更改")}</span><span></span></div>`;
     if (state.activeDiff?.source !== "history") renderWorkDiffEmpty("没有未提交的更改");
   } else {
     const groups = changeGroups(visibleFiles);
@@ -28,6 +30,7 @@ function renderStage() {
       state.selectedFile = "";
       state.selectedChanges.clear();
       els.changeList.innerHTML = `${operationBanner}<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? t("没有匹配的更改") : t("没有未提交的更改")}</span><span></span></div>`;
+      els.stagedChangeList.innerHTML = `<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? t("没有匹配的更改") : t("没有已暂存的更改")}</span><span></span></div>`;
       if (state.activeDiff?.source !== "history") renderWorkDiffEmpty(terms.length ? "没有匹配的更改" : "没有未提交的更改");
     } else {
       const previousFile = state.selectedFile;
@@ -42,16 +45,19 @@ function renderStage() {
       ensureSelectedFileChangeKey();
       els.changeList.innerHTML = `
         ${operationBanner}
-        ${renderChangeSection("unstaged", "工作区", groups.unstaged, [
+        ${renderChangeSection("unstaged", "未暂存", groups.unstaged, [
           { action: "stageFile", label: "暂存", bulkLabel: "暂存所选" },
           { action: "discardWorktreeFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
         ])}
+      `;
+      els.stagedChangeList.innerHTML = `
         ${renderChangeSection("staged", "已暂存", groups.staged, [
           { action: "unstageFile", label: "取消暂存", bulkLabel: "取消所选" },
           { action: "discardStagedFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
         ])}
       `;
       bindFileTree(els.changeList, { selectable: true });
+      bindFileTree(els.stagedChangeList, { selectable: true });
       markSelectedFile();
       if (state.activeDiff?.source !== "history") {
         if (state.selectedFile) loadWorkingDiff(state.selectedFile);
