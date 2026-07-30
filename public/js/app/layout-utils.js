@@ -93,17 +93,10 @@ function resetLayoutPreferences() {
 function initLayoutResizers() {
   const root = document.documentElement;
   const configs = {
-    sidebar: { varName: "--sidebar-w", store: "forkline-sidebar-w", min: 160, max: () => layoutMax("sidebar"), axis: "x", sign: 1 },
-    inspector: { varName: "--inspector-w", store: "forkline-inspector-w", min: 220, max: () => layoutMax("inspector"), axis: "x", sign: -1 },
-    stage: { varName: "--stage-h", store: "forkline-stage-h", min: 220, max: () => layoutMax("stage"), axis: "y", sign: -1 },
+    sidebar: { varName: "--sidebar-w", store: "forkline-sidebar-w", preferred: 240, min: 160, max: () => layoutMax("sidebar"), axis: "x", sign: 1 },
+    inspector: { varName: "--inspector-w", store: "forkline-inspector-w", preferred: 340, min: 220, max: () => layoutMax("inspector"), axis: "x", sign: -1 },
+    stage: { varName: "--stage-h", store: "forkline-stage-h", preferred: 300, min: 220, max: () => layoutMax("stage"), axis: "y", sign: -1 },
   };
-  Object.values(configs).forEach((config) => {
-    const storedValue = localStorage.getItem(config.store);
-    const stored = Number(storedValue);
-    if (storedValue !== null && Number.isFinite(stored)) {
-      root.style.setProperty(config.varName, `${clamp(stored, config.min, configMax(config))}px`);
-    }
-  });
   document.querySelectorAll("[data-resizer]").forEach((handle) => {
     const config = configs[handle.dataset.resizer];
     if (!config) return;
@@ -135,10 +128,15 @@ function initLayoutResizers() {
 
 function clampLayoutVars(configs) {
   Object.values(configs).forEach((config) => {
-    const current = numericCssVar(config.varName);
-    const next = clamp(current, config.min, configMax(config));
+    const next = clamp(preferredLayoutSize(config), config.min, configMax(config));
     document.documentElement.style.setProperty(config.varName, `${next}px`);
   });
+}
+
+function preferredLayoutSize(config) {
+  const storedValue = localStorage.getItem(config.store);
+  const stored = Number(storedValue);
+  return storedValue !== null && Number.isFinite(stored) ? stored : config.preferred;
 }
 
 function layoutMax(kind) {

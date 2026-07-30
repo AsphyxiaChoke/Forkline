@@ -57,6 +57,103 @@ test("missing layout preferences keep the CSS defaults", () => {
   assert.equal(values.get("--stage-h"), "300px");
 });
 
+test("temporarily constrained side panels recover their preferred widths", () => {
+  const values = new Map([
+    ["--sidebar-w", "240px"],
+    ["--inspector-w", "340px"],
+    ["--stage-h", "300px"],
+  ]);
+  const stored = new Map([
+    ["forkline-sidebar-w", "280"],
+    ["forkline-inspector-w", "380"],
+  ]);
+  const listeners = new Map();
+  const windowMock = {
+    addEventListener: (name, listener) => listeners.set(name, listener),
+    innerHeight: 900,
+    innerWidth: 1600,
+  };
+  const context = vm.createContext({
+    document: {
+      body: { classList: { add: () => {}, remove: () => {} } },
+      documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
+      querySelectorAll: () => [],
+    },
+    getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
+    localStorage: {
+      getItem: (name) => stored.get(name) ?? null,
+      setItem: (name, value) => stored.set(name, String(value)),
+    },
+    window: windowMock,
+  });
+  vm.runInContext(layoutSource, context);
+  context.initLayoutResizers();
+  assert.equal(values.get("--sidebar-w"), "280px");
+  assert.equal(values.get("--inspector-w"), "380px");
+
+  windowMock.innerWidth = 800;
+  listeners.get("resize")();
+  assert.equal(values.get("--sidebar-w"), "160px");
+  assert.equal(values.get("--inspector-w"), "266px");
+
+  windowMock.innerWidth = 1600;
+  listeners.get("resize")();
+  assert.equal(values.get("--sidebar-w"), "280px");
+  assert.equal(values.get("--inspector-w"), "380px");
+});
+
+test("bottom panel resizer updates and saves the stage height", () => {
+  const values = new Map([
+    ["--sidebar-w", "240px"],
+    ["--inspector-w", "340px"],
+    ["--stage-h", "300px"],
+  ]);
+  const stored = new Map();
+  const handleListeners = new Map();
+  const documentListeners = new Map();
+  const bodyClasses = new Set();
+  const handle = {
+    dataset: { resizer: "stage" },
+    addEventListener: (name, listener) => handleListeners.set(name, listener),
+    setPointerCapture: () => {},
+  };
+  const context = vm.createContext({
+    document: {
+      body: {
+        classList: {
+          add: (name) => bodyClasses.add(name),
+          remove: (name) => bodyClasses.delete(name),
+        },
+      },
+      documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
+      querySelectorAll: () => [handle],
+      addEventListener: (name, listener) => documentListeners.set(name, listener),
+      removeEventListener: (name) => documentListeners.delete(name),
+    },
+    getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
+    localStorage: {
+      getItem: (name) => stored.get(name) ?? null,
+      setItem: (name, value) => stored.set(name, String(value)),
+    },
+    window: { addEventListener: () => {}, innerHeight: 900, innerWidth: 1600 },
+  });
+  vm.runInContext(layoutSource, context);
+  context.initLayoutResizers();
+
+  handleListeners.get("pointerdown")({ clientY: 500, pointerId: 1, preventDefault: () => {} });
+  documentListeners.get("pointermove")({ clientY: 420 });
+  assert.equal(values.get("--stage-h"), "380px");
+  assert.equal(bodyClasses.has("resizing"), true);
+
+  documentListeners.get("pointerup")();
+  assert.equal(stored.get("forkline-stage-h"), "380");
+  assert.equal(bodyClasses.has("resizing"), false);
+});
+
+test("transition-width topbar uses compact repository path columns", () => {
+  assert.match(styles, /@media\s*\(max-width:\s*1040px\)[\s\S]*?\.path-open\s*\{[^}]*grid-template-columns:\s*minmax\(96px,\s*1fr\)\s+minmax\(96px,\s*116px\)\s+max-content;/s);
+});
+
 test("worktree, index, and commit editor share one parallel bottom row", () => {
   const stageStart = indexHtml.indexOf('<section class="stage">');
   const stageEnd = indexHtml.indexOf("</section>", stageStart);

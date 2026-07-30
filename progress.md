@@ -5804,3 +5804,27 @@
 - `docs/CONTINUE.md`：记录三栏结构、窄区滚动、常驻 Diff 移除及最大化对照边界。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md public/index.html public/styles.css public/js/core.js public/js/app/layout-utils.js public/js/features/context-menus.js public/js/features/worktree-changes.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js tests/layout-ui.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 中等宽度顶栏与侧栏尺寸恢复优化
+
+### What was done
+- 修复窗口缩窄时把临时受限侧栏宽度当成用户偏好继续使用的问题；左右栏和底部工作台现在始终根据已保存偏好计算当前可用尺寸，窗口重新放大后会恢复原宽度。
+- 为 `921px` 到 `1040px` 的中等宽度增加紧凑仓库路径栏，缩短路径输入和最近仓库列，保证“选择 / 克隆 / 初始化 / 打开”完整显示。
+- 补充侧栏缩窄后恢复、底部工作台拉伸保存和中等宽度路径栏的布局回归测试，并同步更新使用说明与继续开发记录。
+
+### Testing
+- 修改前运行 `node --test tests/layout-ui.test.js`：新增的侧栏恢复和中等宽度路径栏 2 项回归稳定失败；修改后该文件 13 项全部通过。
+- `node --check public/js/app/layout-utils.js` 通过。
+- 设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行完整 `npm.cmd test`：62 项全部通过，退出码为 0。
+- 浏览器使用 `D:\桌面\GitTest` 验证：CSS 视口宽度 `955px` 时页面、顶栏、仓库栏和路径栏横向溢出均为 0，“打开”按钮右边界约 `939.49px`；宽屏到窄屏再回宽屏时，左右栏从约 `296.99px / 402.99px` 临时压缩为 `159.99px / 266.00px`，随后精确恢复原宽度。
+- 底部工作台事件回归确认高度可从 `300px` 拉伸到 `380px` 并保存；`git diff --check` 无空白错误，仅显示仓库现有 LF / CRLF 转换提示。
+- 浏览器响应式覆盖结束后已恢复默认视口；临时服务 `5290` 和 `5291` 均已关闭，端口无监听。
+
+### Notes
+- `public/js/app/layout-utils.js`：从保存的布局偏好计算受限尺寸，避免窗口缩放覆盖用户宽度。
+- `public/styles.css`：增加中等宽度仓库路径栏的紧凑列配置。
+- `tests/layout-ui.test.js`：增加侧栏尺寸恢复、底部工作台拉伸和路径栏断点回归。
+- `README.md`：说明侧栏自动恢复和中等宽度路径栏行为。
+- `docs/CONTINUE.md`：记录布局修复边界及当前响应式规则。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md public/js/app/layout-utils.js public/styles.css tests/layout-ui.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

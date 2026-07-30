@@ -7055,6 +7055,12 @@ body.file-editor-window-resizing * {
   }
 }
 
+@media (max-width: 1040px) {
+  .path-open {
+    grid-template-columns: minmax(96px, 1fr) minmax(96px, 116px) max-content;
+  }
+}
+
 @container branch-sidebar (max-width: 210px) {
   .repo-card {
     gap: 8px;
