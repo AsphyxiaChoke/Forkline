@@ -1,9 +1,9 @@
 // Commit graph layout and SVG rendering.
-function renderGraphSvg(commits, height, selectedRef) {
-  return selectedRef ? renderBranchGraphSvg(commits, height, selectedRef) : renderOverviewGraphSvg(commits, height);
+function renderGraphSvg(commits, height, selectedRef, width = graphRenderWidth(commits, selectedRef)) {
+  return selectedRef ? renderBranchGraphSvg(commits, height, selectedRef, width) : renderOverviewGraphSvg(commits, height, width);
 }
 
-function renderOverviewGraphSvg(commits, height) {
+function renderOverviewGraphSvg(commits, height, width) {
   const bySha = new Map(commits.map((commit, index) => [commit.sha, { commit, index }]));
   const byShort = new Map(commits.map((commit, index) => [commit.short, { commit, index }]));
   const guides = overviewLaneGuides(commits, height);
@@ -19,7 +19,7 @@ function renderOverviewGraphSvg(commits, height) {
     const isMerge = parents.length > 1;
     nodes += graphNode(x1, y1, color, { primary: isPrimaryNode, merge: isMerge });
     const label = tipLabel(commit.refs);
-    if (label) labels += graphLabel(x1, y1, label, color, false);
+    if (label) labels += graphLabel(x1, y1, label, color, width);
     if (!parents.length && index < commits.length - 1) {
       const next = commits[index + 1];
       paths += overviewCurve(x1, y1, laneX[next.lane] || laneX[0], (index + 1) * rowH + rowH / 2, color, { primary: isPrimaryNode && next.lane === 0 });
@@ -36,7 +36,7 @@ function renderOverviewGraphSvg(commits, height) {
     });
   });
   return `
-    <svg class="graph-lines overview" height="${height}" viewBox="0 0 ${graphWidth} ${height}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines overview" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${guides}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -45,7 +45,7 @@ function renderOverviewGraphSvg(commits, height) {
   `;
 }
 
-function renderBranchGraphSvg(commits, height, selectedRef) {
+function renderBranchGraphSvg(commits, height, selectedRef, width) {
   const color = refColor(selectedRef);
   const x = laneX[0];
   let paths = "";
@@ -64,10 +64,10 @@ function renderBranchGraphSvg(commits, height, selectedRef) {
       paths += branchMergeHint(x, y, mergeX, color);
     }
     nodes += graphNode(x, y, color, { focused: true, merge: isMerge });
-    if (index === 0) labels += graphLabel(x, y, selectedRef, color, true);
+    if (index === 0) labels += graphLabel(x, y, selectedRef, color, width);
   });
   return `
-    <svg class="graph-lines focus" height="${height}" viewBox="0 0 ${graphWidth} ${height}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines focus" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${branchLaneGuide(x, height, color)}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -255,11 +255,10 @@ function graphNode(x, y, color, options = {}) {
   `;
 }
 
-function graphLabel(x, y, label, color, selected) {
-  const maxChars = selected ? 8 : 7;
-  const text = escapeHtml(label.length > maxChars ? `${label.slice(0, maxChars)}...` : label);
-  const width = Math.min(76, Math.max(42, [...text].length * 9 + 16));
-  const labelX = Math.min(x + 12, graphWidth - 6 - width);
+function graphLabel(x, y, label, color, renderWidth) {
+  const text = escapeHtml(label);
+  const width = graphLabelWidth(label);
+  const labelX = Math.min(x + 12, renderWidth - 6 - width);
   const labelY = Math.max(7, y - 25);
   return `
     <g class="graph-label">
@@ -267,6 +266,22 @@ function graphLabel(x, y, label, color, selected) {
       <text x="${labelX + 8}" y="${labelY + 14}" fill="var(--graph-label-text)" font-size="10" font-weight="800" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">${text}</text>
     </g>
   `;
+}
+
+function graphRenderWidth(commits, selectedRef) {
+  return Math.ceil(commits.reduce((width, commit, index) => {
+    const label = selectedRef ? (index === 0 ? selectedRef : "") : tipLabel(commit.refs);
+    if (!label) return width;
+    const x = laneX[commit.lane] || laneX[0];
+    return Math.max(width, x + 18 + graphLabelWidth(label));
+  }, graphWidth));
+}
+
+function graphLabelWidth(label) {
+  const textWidth = [...String(label || "")].reduce((width, character) => {
+    return width + (character.codePointAt(0) > 0xff ? 10 : 6.4);
+  }, 0);
+  return Math.max(42, Math.ceil(textWidth + 16));
 }
 
 function tipLabel(refs) {

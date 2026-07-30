@@ -144,12 +144,22 @@ function layoutMax(kind) {
   const height = window.innerHeight || 760;
   const sidebar = numericCssVar("--sidebar-w") || 240;
   const inspector = numericCssVar("--inspector-w") || 340;
+  if (portraitWorkspaceActive()) {
+    const portraitMainMin = width <= 840 ? 420 : width <= 1120 ? 560 : 680;
+    if (kind === "sidebar") return Math.max(160, Math.min(420, width - 7 - portraitMainMin));
+    if (kind === "inspector") return Math.max(220, Math.min(560, width - 28));
+  }
   const resizers = 14;
   const mainMin = width <= 840 ? 360 : width <= 960 ? 420 : width <= 1120 ? 480 : 560;
   if (kind === "sidebar") return Math.max(160, Math.min(420, width - inspector - resizers - mainMin));
   if (kind === "inspector") return Math.max(220, Math.min(560, width - sidebar - resizers - mainMin));
   if (kind === "stage") return Math.max(240, Math.min(500, height - 260));
   return 520;
+}
+
+function portraitWorkspaceActive() {
+  return typeof window.matchMedia === "function"
+    && window.matchMedia("(orientation: portrait) and (max-width: 1600px)").matches;
 }
 
 function configMax(config) {

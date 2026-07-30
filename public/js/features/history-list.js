@@ -24,7 +24,9 @@ function renderCommits(options = {}) {
   els.graphModeLabel.textContent = isBranchScope ? state.selectedRef : t("全部分支");
   els.graphModeLabel.title = isBranchScope ? t("当前只显示 {branch}", { branch: state.selectedRef }) : t("当前显示所有分支");
   const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
-  els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef);
+  const renderedGraphWidth = graphRenderWidth(graphCommits, state.selectedRef);
+  els.commitGraph.closest(".history")?.style.setProperty("--graph-w", `${renderedGraphWidth}px`);
+  els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef, renderedGraphWidth);
 
   if (!state.filtered.length) {
     const emptyTitle = terms.length ? t("没有匹配的提交") : t("还没有提交");

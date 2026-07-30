@@ -13,6 +13,7 @@ const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "eve
 const inspectorSource = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-changes.js"), "utf8");
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
+const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
@@ -178,6 +179,61 @@ test("narrow layout preserves commit messages and contains the commit form", () 
   assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*500px\)[\s\S]*?grid-template-columns:\s*var\(--graph-w\)\s+minmax\(96px,\s*1fr\)\s+minmax\(66px,\s*72px\);/);
   assert.match(styles, /\.commit-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.mini-btn\s*>\s*\.command-hint\s*\{[^}]*display:\s*none;/s);
+});
+
+test("portrait layout docks the inspector below the graph without disabling the sidebar resizer", () => {
+  assert.match(styles, /@media\s*\(orientation:\s*portrait\)\s*and\s*\(max-width:\s*1600px\)/);
+  assert.match(styles, /@media\s*\(orientation:\s*portrait\)[\s\S]*?\.workspace\s*\{[^}]*grid-template-columns:\s*var\(--sidebar-w\)\s+7px\s+minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*minmax\(500px,\s*70%\)\s+minmax\(280px,\s*30%\);/s);
+  assert.match(styles, /@media\s*\(orientation:\s*portrait\)[\s\S]*?\.workspace-resizer\[data-resizer="sidebar"\]\s*\{[^}]*display:\s*block;[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;/s);
+  assert.match(styles, /@media\s*\(orientation:\s*portrait\)[\s\S]*?\.workspace-resizer\[data-resizer="inspector"\]\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /@media\s*\(orientation:\s*portrait\)[\s\S]*?\.inspector\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*grid-row:\s*2;[^}]*border-top:\s*1px\s+solid\s+var\(--line-strong\);/s);
+});
+
+test("portrait width calculation leaves room for the graph instead of the docked inspector", () => {
+  const values = new Map([
+    ["--sidebar-w", "240px"],
+    ["--inspector-w", "340px"],
+    ["--stage-h", "300px"],
+  ]);
+  const context = vm.createContext({
+    document: {
+      body: { classList: { add: () => {}, remove: () => {} } },
+      documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
+      querySelectorAll: () => [],
+    },
+    getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
+    localStorage: { getItem: () => null },
+    window: {
+      addEventListener: () => {},
+      innerHeight: 1279,
+      innerWidth: 716,
+      matchMedia: () => ({ matches: true }),
+    },
+  });
+  vm.runInContext(layoutSource, context);
+  context.initLayoutResizers();
+  assert.equal(values.get("--sidebar-w"), "240px");
+  assert.equal(values.get("--inspector-w"), "340px");
+});
+
+test("graph labels keep the complete branch name and expand the graph column", () => {
+  const context = vm.createContext({
+    graphWidth: 176,
+    laneX: [28, 54, 80, 106, 132, 154, 166],
+    state: { data: { branches: ["feature/complete-portrait-layout"], remotes: [], repo: { remoteNames: [] } } },
+    escapeHtml: (value) => String(value),
+    laneColor: () => "#23c7b7",
+  });
+  vm.runInContext(graphSource, context);
+
+  const branch = "feature/complete-portrait-layout";
+  const commits = [{ lane: 2, refs: branch }];
+  const width = context.graphRenderWidth(commits, "");
+  const markup = context.graphLabel(80, 31, branch, "#23c7b7", width);
+
+  assert.ok(width > 176);
+  assert.match(markup, new RegExp(branch.replaceAll("/", "\\/")));
+  assert.doesNotMatch(markup, /\.\.\./);
 });
 
 test("minimum inspector width wraps controls instead of clipping labels", () => {

@@ -5852,3 +5852,29 @@
 - `docs/CONTINUE.md`：记录常用工作流回归矩阵和本轮布局验证结果。
 - `progress.md`：追加本轮测试、验证和回滚记录。
 - 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md tests/git-api.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 竖屏布局与图谱完整分支名
+
+### What was done
+- 为纵向屏幕增加专用工作区布局：左侧分支栏与提交图谱保留在上方并排，右侧提交详情停靠到下方整行；左侧栏拖动仍可用，原右侧横向拖动条在竖屏模式隐藏。
+- 调整竖屏侧栏宽度上限计算，不再为已下沉的详情栏预留横向空间，避免图谱和提交信息在窄竖屏内继续相互挤压。
+- 移除图谱分支标签的固定字符省略，按完整分支名和泳道位置动态计算图谱列及 SVG 宽度，并同步扩展图谱表头标签可用宽度。
+
+### Testing
+- `node --check` 验证 `public/js/app/layout-utils.js`、`public/js/features/graph.js`、`public/js/features/history-list.js`，全部通过。
+- `node --test tests/layout-ui.test.js`：16 项全部通过，新增竖屏停靠、竖屏宽度计算和完整分支标签 3 项回归。
+- 设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行完整 `npm.cmd test`：73 项全部通过，退出码为 0。
+- 浏览器在约 `1075×1910` 和 `900×1600` CSS 竖屏视口验证：页面横向溢出均为 0，左侧栏与图谱位于上方，详情栏整行位于下方，底部三栏只保留自身设计内横向滚动。
+- 浏览器只读打开 `D:\桌面\GitTest` 的全部分支视图：`main`、`local_debug`、`tag: forkline-v0.1.0`、`123`、`git-svn` 标签均完整显示并位于动态扩展后的 `191px` SVG 内；测试仓库仍保持原有 1 个修改文件和 3 个未跟踪演示文件，没有新增暂存、提交或分支变化。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/js/app/layout-utils.js`：增加竖屏媒体状态判断及侧栏可用宽度计算。
+- `public/js/features/graph.js`：完整输出分支标签，并按标签宽度动态计算图谱尺寸。
+- `public/js/features/history-list.js`：把本轮计算出的图谱宽度同步到历史列表 CSS 变量和 SVG 渲染。
+- `public/styles.css`：增加竖屏上下分区布局，并让图谱表头跟随动态列宽。
+- `tests/layout-ui.test.js`：增加竖屏布局和完整分支标签回归。
+- `README.md`：补充竖屏停靠和完整分支名使用说明。
+- `docs/CONTINUE.md`：记录当前竖屏规则、实测尺寸和图谱标签边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md public/js/app/layout-utils.js public/js/features/graph.js public/js/features/history-list.js public/styles.css tests/layout-ui.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

@@ -1460,7 +1460,7 @@ body.resizing .workspace-resizer::before {
 
 .graph-head em {
   overflow: hidden;
-  max-width: 76px;
+  max-width: calc(var(--graph-w) - 64px);
   padding: 2px 6px;
   border: 1px solid rgba(var(--teal-rgb), 0.48);
   background: rgba(var(--teal-rgb), 0.08);
@@ -7244,5 +7244,44 @@ body.file-editor-window-resizing * {
     grid-row: 4;
     border-left: 0;
     border-top: 1px solid var(--line-soft);
+  }
+}
+
+@media (orientation: portrait) and (max-width: 1600px) {
+  .workspace {
+    grid-template-columns: var(--sidebar-w) 7px minmax(0, 1fr);
+    grid-template-rows: minmax(500px, 70%) minmax(280px, 30%);
+  }
+
+  .sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  .workspace-resizer[data-resizer="sidebar"] {
+    display: block;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .main {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .workspace-resizer[data-resizer="inspector"] {
+    display: none;
+  }
+
+  .inspector {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-top: 1px solid var(--line-strong);
+    border-left: 0;
+  }
+
+  .inspector .detail-body {
+    padding-inline: max(14px, calc((100% - 760px) / 2));
   }
 }
