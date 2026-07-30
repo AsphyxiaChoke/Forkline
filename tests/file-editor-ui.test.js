@@ -12,6 +12,7 @@ const core = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8")
 const events = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const contextMenus = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const diffWorkbench = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
+const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 const editor = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -30,6 +31,21 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(diffWorkbench, /openFileEditor\(filePath, previousFile/);
   assert.match(diffWorkbench, /switchOpenFileEditor\(filePath, previousFile/);
   assert.match(editor, /文件还有未保存的修改，确认切换到/);
+});
+
+test("commit file double-click opens the shared comparison window in read-only mode", () => {
+  assert.match(inspector, /bindFileTree\(els\.detailBody, \{ mode: "commit", commitSha: commit\.sha \}\)/);
+  assert.match(diffWorkbench, /options\.mode === "commit"[\s\S]*row\.addEventListener\("dblclick"/);
+  assert.match(diffWorkbench, /openCommitFileViewer\(filePath, previousFile, options\.commitSha\)/);
+  assert.match(editor, /async function openCommitFileViewer/);
+  assert.match(editor, /"\/api\/commit-file"/);
+  assert.match(editor, /readOnly: source === "commit"/);
+  assert.match(editor, /readOnly: editor\.readOnly/);
+  assert.match(editor, /if \(state\.fileEditor\?\.readOnly\) return false;/);
+  assert.match(editor, /if \(!editor \|\| editor\.readOnly/);
+  assert.match(editor, /els\.fileEditorSave\.hidden = readOnly/);
+  assert.match(html, /file-editor-search-field file-editor-replace-field[\s\S]*id="fileEditorReplaceInput"/);
+  assert.match(styles, /\.file-editor-dialog\.is-readonly[\s\S]*#fileEditorReplaceAll/);
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {

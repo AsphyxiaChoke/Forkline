@@ -204,6 +204,95 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   assert.match(binary.body.error, /二进制/);
 });
 
+test("commit file viewer returns complete parent and commit versions for changed paths", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-commit-file-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const changedPath = path.join(repo, "changed.txt");
+  const addedPath = path.join(repo, "added.txt");
+  const deletedPath = path.join(repo, "deleted.txt");
+  const renamedOldPath = path.join(repo, "rename-old.txt");
+  const renamedNewPath = path.join(repo, "rename-new.txt");
+  const gbkPath = path.join(repo, "说明.txt");
+  const binaryPath = path.join(repo, "binary.bin");
+  await initRepository(repo);
+  await fs.writeFile(changedPath, "before\nkeep\n", "utf8");
+  await fs.writeFile(deletedPath, "deleted from next commit\n", "utf8");
+  await fs.writeFile(renamedOldPath, "one\ntwo\nthree\nfour\nfive\nsix\n", "utf8");
+  await fs.writeFile(gbkPath, iconv.encode("旧版本\r\n", "gbk"));
+  await fs.writeFile(binaryPath, Buffer.from([0x00, 0x01, 0xff]));
+  await git(repo, ["add", "."]);
+  await git(repo, ["commit", "-m", "base files"]);
+  const baseSha = await git(repo, ["rev-parse", "HEAD"]);
+
+  await fs.writeFile(changedPath, "after\nkeep\nadded line\n", "utf8");
+  await fs.writeFile(addedPath, "created in commit\n", "utf8");
+  await fs.rm(deletedPath);
+  await fs.rename(renamedOldPath, renamedNewPath);
+  await fs.writeFile(renamedNewPath, "one\ntwo\nthree changed\nfour\nfive\nsix\n", "utf8");
+  await fs.writeFile(gbkPath, iconv.encode("新版本\r\n提交内容\r\n", "gbk"));
+  await git(repo, ["add", "-A"]);
+  await git(repo, ["commit", "-m", "change files"]);
+  const commitSha = await git(repo, ["rev-parse", "HEAD"]);
+  await openRepo(repo);
+
+  const detail = await request(`/api/commit?sha=${commitSha}`, { repoPath: repo });
+  assertStatus(detail, 200);
+  const renamedFile = detail.body.files.find((file) => file.file === "rename-new.txt");
+  assert.equal(renamedFile?.previousFile, "rename-old.txt");
+
+  const changed = await request(`/api/commit-file?sha=${commitSha}&file=changed.txt`, { repoPath: repo });
+  assertStatus(changed, 200);
+  assert.equal(changed.body.commit, commitSha);
+  assert.equal(changed.body.parent, baseSha);
+  assert.equal(changed.body.exists, true);
+  assert.equal(changed.body.content, "after\nkeep\nadded line\n");
+  assert.equal(changed.body.oldExists, true);
+  assert.equal(changed.body.oldContent, "before\nkeep\n");
+
+  const added = await request(`/api/commit-file?sha=${commitSha}&file=added.txt`, { repoPath: repo });
+  assertStatus(added, 200);
+  assert.equal(added.body.exists, true);
+  assert.equal(added.body.oldExists, false);
+  assert.equal(added.body.oldContent, "");
+
+  const deleted = await request(`/api/commit-file?sha=${commitSha}&file=deleted.txt`, { repoPath: repo });
+  assertStatus(deleted, 200);
+  assert.equal(deleted.body.exists, false);
+  assert.equal(deleted.body.content, "");
+  assert.equal(deleted.body.oldExists, true);
+  assert.equal(deleted.body.oldContent, "deleted from next commit\n");
+
+  const renamed = await request(`/api/commit-file?sha=${commitSha}&file=rename-new.txt&previousFile=rename-old.txt`, { repoPath: repo });
+  assertStatus(renamed, 200);
+  assert.equal(renamed.body.file, "rename-new.txt");
+  assert.equal(renamed.body.oldFile, "rename-old.txt");
+  assert.equal(renamed.body.content, "one\ntwo\nthree changed\nfour\nfive\nsix\n");
+  assert.equal(renamed.body.oldContent, "one\ntwo\nthree\nfour\nfive\nsix\n");
+
+  const gbk = await request(`/api/commit-file?sha=${commitSha}&file=${encodeURIComponent("说明.txt")}`, { repoPath: repo });
+  assertStatus(gbk, 200);
+  assert.equal(gbk.body.encoding, "gbk");
+  assert.equal(gbk.body.oldEncoding, "gbk");
+  assert.equal(gbk.body.content, "新版本\r\n提交内容\r\n");
+  assert.equal(gbk.body.oldContent, "旧版本\r\n");
+
+  const rootVersion = await request(`/api/commit-file?sha=${baseSha}&file=changed.txt`, { repoPath: repo });
+  assertStatus(rootVersion, 200);
+  assert.equal(rootVersion.body.parent, "");
+  assert.equal(rootVersion.body.exists, true);
+  assert.equal(rootVersion.body.oldExists, false);
+
+  const traversal = await request(`/api/commit-file?sha=${commitSha}&file=${encodeURIComponent("../outside.txt")}`, { repoPath: repo });
+  assertStatus(traversal, 400);
+  assert.match(traversal.body.error, /路径不合法/);
+
+  const binary = await request(`/api/commit-file?sha=${baseSha}&file=binary.bin`, { repoPath: repo });
+  assertStatus(binary, 400);
+  assert.match(binary.body.error, /二进制/);
+});
+
 test("file editor stages only the selected visual chunk when nearby changes share the normal diff context", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-chunk-"));
   t.after(() => removeFixture(root));

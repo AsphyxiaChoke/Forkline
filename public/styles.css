@@ -6014,6 +6014,21 @@ body.file-editor-window-resizing * {
   padding: 0 8px;
 }
 
+.file-editor-dialog.is-readonly .file-editor-search {
+  grid-template-columns: minmax(180px, 1fr) auto auto minmax(92px, auto);
+}
+
+.file-editor-dialog.is-readonly .file-editor-search-actions {
+  grid-template-columns: repeat(2, auto);
+}
+
+.file-editor-dialog.is-readonly .file-editor-replace-field,
+.file-editor-dialog.is-readonly #fileEditorReplaceOne,
+.file-editor-dialog.is-readonly #fileEditorReplaceAll,
+.file-editor-dialog.is-readonly #fileEditorSave {
+  display: none;
+}
+
 .file-editor-match-status {
   overflow: hidden;
   min-width: 0;
@@ -6399,6 +6414,14 @@ body.file-editor-window-resizing * {
   .file-editor-search-actions {
     grid-column: 1 / -1;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .file-editor-dialog.is-readonly .file-editor-search {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .file-editor-dialog.is-readonly .file-editor-search-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .file-editor-match-status {

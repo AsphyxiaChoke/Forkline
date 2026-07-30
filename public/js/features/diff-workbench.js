@@ -116,6 +116,12 @@ function bindFileTree(root, options = {}) {
   if (options.mode === "commit") {
     root.querySelectorAll("[data-select-file]").forEach((row) => {
       row.addEventListener("click", () => selectCommitFile(row.dataset.file || ""));
+      row.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        const filePath = row.dataset.file || "";
+        const previousFile = row.dataset.previousFile || "";
+        openCommitFileViewer(filePath, previousFile, options.commitSha).catch((error) => toast(error.message));
+      });
     });
     markCommitFile();
   }

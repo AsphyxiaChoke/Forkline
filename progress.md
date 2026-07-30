@@ -5745,3 +5745,34 @@
 - `docs/CONTINUE.md`：记录详情预览移除边界及保留的文件页能力。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：尚未提交时执行 `git restore -p -- public/js/panels/inspector.js public/js/features/diff-workbench.js public/styles.css public/js/i18n-catalog.js tests/diff-preview.test.js README.md docs/CONTINUE.md progress.md`，仅选择本任务的“提交详情聚合 Diff 预览”相关片段；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-30 - Task: 历史提交文件双击打开完整只读对照
+
+### What was done
+- 右侧提交“文件”页的变更文件支持双击打开现有可拖动、可缩放的编辑器浮窗；左栏显示第一父提交中的完整文件，右栏显示当前提交中的完整文件，并在完整代码上下文中标出改动。
+- 新增、删除、修改、重命名、根提交和 merge 提交均按第一父提交语义读取；重命名会分别使用旧路径和新路径，一侧不存在时仍完整显示另一侧内容。
+- 增加历史只读模式：保留行号、语法高亮、红绿差异、同步滚动和查找，隐藏保存、替换、暂存按钮及编辑器 Git 右键操作；随后打开工作区文件时会恢复可编辑、保存和查找替换状态。
+- 新增历史文件读取接口，并沿用工作区编辑器的普通文本、1 MiB、合法仓库路径、UTF-8、UTF-8 BOM、GBK 和 GB18030 边界。
+
+### Testing
+- 对 `server.js`、6 个相关前端脚本和 2 个测试文件运行 `node --check`，共 8 个文件全部通过。
+- 仅为测试进程设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行 `npm.cmd test`：58 项全部通过，退出码为 0。
+- 浏览器使用 `D:\桌面\GitTest` 验证删除文件、新增文件和连续双击切换历史文件：两侧完整内容及不存在提示正确，查找能定位匹配项，右栏 CodeMirror 为只读，保存、替换、暂存按钮均隐藏，控制台无错误。
+- 浏览器自动化拖动和缩放本轮未获得有效尺寸变化，因此未记录为新的真实交互结论；原有拖动缩放回归仍通过，且相关实现没有改动。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。临时验证服务已关闭，测试端口 `5290` 无监听。
+
+### Notes
+- `server.js`：新增提交及第一父提交完整文件读取、编码识别和 `/api/commit-file` 路由。
+- `public/index.html`：调整编辑器查找与替换区域的只读模式挂接结构。
+- `public/js/core.js`：登记历史文件对照所需的编辑器状态。
+- `public/js/features/diff-workbench.js`：接入提交文件双击并把目标提交、当前路径和重命名前路径传给编辑器。
+- `public/js/features/file-editor.js`：实现历史文件加载、完整双栏只读对照、模式切换和工作区可编辑状态恢复。
+- `public/js/i18n-catalog.js`：补充历史提交文件对照的中英文标题、状态和错误提示。
+- `public/js/panels/inspector.js`：为提交文件行保留双击读取所需的提交和路径数据。
+- `public/styles.css`：增加历史只读模式的控件隐藏和状态样式。
+- `tests/file-editor-ui.test.js`：增加提交文件双击、只读边界和重新打开工作区文件恢复能力的回归。
+- `tests/git-api.test.js`：增加新增、删除、修改、重命名、根提交和第一父提交完整文件读取回归。
+- `README.md`：说明历史提交文件双击后的完整只读代码对照能力。
+- `docs/CONTINUE.md`：记录 `/api/commit-file`、第一父提交规则、编码限制和只读边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -p -- server.js public/index.html public/js/core.js public/js/features/diff-workbench.js public/js/features/file-editor.js public/js/i18n-catalog.js public/js/panels/inspector.js public/styles.css tests/file-editor-ui.test.js tests/git-api.test.js README.md docs/CONTINUE.md progress.md`，仅选择本任务的历史提交文件对照相关片段；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

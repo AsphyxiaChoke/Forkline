@@ -1071,6 +1071,65 @@ function gitBuffer(repoPath, args, options = {}) {
   });
 }
 
+async function readEditableCommitFile(sha, filePath, previousFilePath = "", repoPath = currentRepo) {
+  const file = validateEditableRepoFile(filePath);
+  const oldFile = previousFilePath ? validateEditableRepoFile(previousFilePath) : file;
+  const commit = await resolveCommit(sha, repoPath);
+  const parents = await commitParents(commit, repoPath);
+  const parent = parents[0] || "";
+  const [current, old] = await Promise.all([
+    readEditableCommitBlob(commit, file, "此提交", repoPath),
+    parent ? readEditableCommitBlob(parent, oldFile, "父提交", repoPath) : emptyEditableCommitBlob(),
+  ]);
+  return {
+    file,
+    oldFile,
+    previousFile: oldFile === file ? "" : oldFile,
+    commit,
+    parent,
+    exists: current.exists,
+    content: current.content,
+    encoding: current.encoding,
+    bom: current.bom,
+    lineEnding: current.lineEnding,
+    byteLength: current.byteLength,
+    oldExists: old.exists,
+    oldContent: old.content,
+    oldEncoding: old.encoding,
+    oldBom: old.bom,
+    oldLineEnding: old.lineEnding,
+    oldByteLength: old.byteLength,
+  };
+}
+
+async function readEditableCommitBlob(ref, file, label, repoPath) {
+  const object = `${ref}:${file}`;
+  const type = (await git(repoPath, ["cat-file", "-t", object], { timeout: 60000 }).catch(() => "")).trim();
+  if (!type) return emptyEditableCommitBlob();
+  if (type !== "blob") throw new Error(`${label}中的 ${file} 不是普通文件，无法显示。`);
+  const size = Number((await git(repoPath, ["cat-file", "-s", object], { timeout: 60000 })).trim());
+  if (!Number.isFinite(size)) throw new Error(`${label}中的 ${file} 无法读取。`);
+  if (size > FILE_EDITOR_MAX_BYTES) throw new Error(`${label}中的文件超过 1 MiB，当前对照窗口暂不支持打开。`);
+  const buffer = await gitBuffer(repoPath, ["show", object], { maxBuffer: FILE_EDITOR_MAX_BYTES + 1024 });
+  try {
+    const payload = editableWorktreeFilePayload(file, buffer);
+    return {
+      exists: true,
+      content: payload.content,
+      encoding: payload.encoding,
+      bom: payload.bom,
+      lineEnding: payload.lineEnding,
+      byteLength: payload.byteLength,
+    };
+  } catch (error) {
+    throw new Error(`${label}版本无法显示：${error.message}`);
+  }
+}
+
+function emptyEditableCommitBlob() {
+  return { exists: false, content: "", encoding: "", bom: false, lineEnding: "", byteLength: 0 };
+}
+
 async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPath = currentRepo) {
   const target = resolveEditableWorktreeFile(filePath, repoPath);
   const buffer = fs.readFileSync(target.fullPath);
@@ -7901,6 +7960,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && parsed.pathname === "/api/file-blame") {
       ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readFileBlame(parsed.searchParams.get("file") || "", parsed.searchParams.get("ref") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/commit-file") {
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再查看历史文件。");
+      const repoPath = currentRepo;
+      sendJson(
+        res,
+        200,
+        await readEditableCommitFile(
+          parsed.searchParams.get("sha") || "",
+          parsed.searchParams.get("file") || "",
+          parsed.searchParams.get("previousFile") || "",
+          repoPath
+        )
+      );
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree-file") {

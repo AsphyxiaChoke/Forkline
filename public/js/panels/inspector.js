@@ -402,7 +402,7 @@ function renderFilesTab(commit, detail) {
       </div>
     </div>
   `;
-  bindFileTree(els.detailBody, { mode: "commit" });
+  bindFileTree(els.detailBody, { mode: "commit", commitSha: commit.sha });
   markCommitFile();
 }
 

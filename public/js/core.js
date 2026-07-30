@@ -226,6 +226,7 @@ const els = {
   mainlineCancel: $("#mainlineCancel"),
   fileEditorModal: $("#fileEditorModal"),
   fileEditorForm: $("#fileEditorForm"),
+  fileEditorTitle: $("#fileEditorTitle"),
   fileEditorPath: $("#fileEditorPath"),
   fileEditorToggleSearch: $("#fileEditorToggleSearch"),
   fileEditorSearch: $("#fileEditorSearch"),

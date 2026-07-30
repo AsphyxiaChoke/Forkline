@@ -7,11 +7,22 @@ const FILE_EDITOR_WINDOW_MIN_HEIGHT = 360;
 let fileEditorDragState = null;
 let fileEditorResizeState = null;
 
+async function openCommitFileViewer(filePath, previousFilePath = "", commitSha = "") {
+  const commit = String(commitSha || "").trim();
+  if (!commit) {
+    toast(t("提交信息已失效，请刷新后再试。"));
+    return false;
+  }
+  return openFileEditor(filePath, previousFilePath, { source: "commit", commit });
+}
+
 async function openFileEditor(filePath, previousFilePath = "", options = {}) {
+  const source = options.source === "commit" ? "commit" : "worktree";
+  const commit = source === "commit" ? String(options.commit || "").trim() : "";
   const file = String(filePath || "");
   const previousFile = String(previousFilePath || "");
   if (!file) {
-    toast(t("请选择要编辑的文件"));
+    toast(t(source === "commit" ? "请选择要查看的提交文件" : "请选择要编辑的文件"));
     return false;
   }
   if (!state.data || state.data.repo?.isSample) {
@@ -20,7 +31,14 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   }
   const current = state.fileEditor;
   const showing = els.fileEditorModal.classList.contains("show");
-  if (showing && current?.file === file && !options.reload) {
+  if (
+    showing &&
+    current?.file === file &&
+    current?.previousFile === previousFile &&
+    current?.source === source &&
+    current?.commit === commit &&
+    !options.reload
+  ) {
     fileEditorFocus();
     return true;
   }
@@ -36,6 +54,10 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   resetFileEditorSearchUi();
   const repoPath = repoPathSnapshot();
   const editor = {
+    source,
+    commit,
+    parent: "",
+    readOnly: source === "commit",
     file,
     previousFile,
     repoPath,
@@ -51,6 +73,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     diff: [],
     canStage: false,
     conflict: false,
+    exists: true,
     branchSnapshot: null,
     fileSnapshot: null,
     contextSelection: null,
@@ -64,9 +87,9 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     searchTimer: null,
   };
   state.fileEditor = editor;
-  els.fileEditorPath.textContent = file;
-  els.fileEditorOldLabel.textContent = t("暂存区 · 正在读取");
-  els.fileEditorNewLabel.textContent = t("工作区");
+  updateFileEditorModeUi(editor);
+  els.fileEditorOldLabel.textContent = t(editor.readOnly ? "父提交 · 正在读取" : "暂存区 · 正在读取");
+  els.fileEditorNewLabel.textContent = t(editor.readOnly ? "此提交 · 正在读取" : "工作区");
   els.fileEditorMerge.hidden = false;
   els.fileEditorMerge.textContent = t("正在读取文件...");
   els.fileEditorFallback.hidden = true;
@@ -80,10 +103,15 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   try {
     const params = new URLSearchParams({ file });
     if (previousFile) params.set("previousFile", previousFile);
-    const data = await api(`/api/worktree-file?${params.toString()}`);
+    if (editor.readOnly) params.set("sha", commit);
+    const endpoint = editor.readOnly ? "/api/commit-file" : "/api/worktree-file";
+    const data = await api(`${endpoint}?${params.toString()}`);
     if (!isCurrentRepoPath(repoPath) || state.fileEditor !== editor) return;
 
     editor.snapshot = data.snapshot || "";
+    editor.commit = data.commit || commit;
+    editor.parent = data.parent || "";
+    editor.exists = data.exists !== false;
     editor.originalContent = normalizeFileEditorContent(data.content || "");
     editor.oldContent = normalizeFileEditorContent(data.oldContent || "");
     editor.oldFile = data.oldFile || previousFile || file;
@@ -100,8 +128,8 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.diff = Array.isArray(data.diff) ? data.diff : [];
     editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
     editor.conflict = Boolean(data.conflict);
-    editor.branchSnapshot = currentBranchSnapshotPayload();
-    editor.fileSnapshot = fileSnapshotPayload(editor.file, editor.diffScope);
+    editor.branchSnapshot = editor.readOnly ? null : currentBranchSnapshotPayload();
+    editor.fileSnapshot = editor.readOnly ? null : fileSnapshotPayload(editor.file, editor.diffScope);
     editor.mode = fileEditorMode(file);
     editor.loading = false;
     createFileEditorInstance(editor);
@@ -123,10 +151,27 @@ async function switchOpenFileEditor(filePath, previousFilePath = "") {
   return openFileEditor(filePath, previousFilePath);
 }
 
+function updateFileEditorModeUi(editor) {
+  const readOnly = Boolean(editor.readOnly);
+  els.fileEditorForm.classList.toggle("is-readonly", readOnly);
+  els.fileEditorTitle.textContent = t(readOnly ? "历史文件对照" : "编辑文件");
+  els.fileEditorPath.textContent = readOnly && editor.previousFile && editor.previousFile !== editor.file
+    ? `${editor.previousFile} -> ${editor.file}`
+    : editor.file;
+  els.fileEditorToggleSearch.textContent = t(readOnly ? "查找" : "查找替换");
+  els.fileEditorToggleSearch.title = t(readOnly ? "查找文件内容" : "查找或替换文件内容");
+  els.fileEditorSave.hidden = readOnly;
+  els.fileEditorCancel.textContent = t(readOnly ? "关闭" : "取消");
+  els.fileEditorMerge.setAttribute("aria-label", t(readOnly ? "父提交与此提交对照编辑器" : "暂存区与工作区对照编辑器"));
+  els.fileEditorOldText.setAttribute("aria-label", t(readOnly ? "父提交版本文件内容" : "暂存区文件内容"));
+  els.fileEditorText.setAttribute("aria-label", t(readOnly ? "此提交版本文件内容" : "工作区文件内容"));
+  els.fileEditorText.readOnly = readOnly;
+}
+
 async function submitFileEditor(event) {
   event?.preventDefault?.();
   const editor = state.fileEditor;
-  if (!editor || editor.loading || editor.saving || editor.operating || !fileEditorDirty()) return;
+  if (!editor || editor.readOnly || editor.loading || editor.saving || editor.operating || !fileEditorDirty()) return;
   if (!isCurrentRepoPath(editor.repoPath)) {
     closeFileEditor(true);
     toast(t("仓库已经切换，请在目标仓库中重新打开文件"));
@@ -194,6 +239,7 @@ function createFileEditorInstance(editor) {
     els.fileEditorOldText.value = editor.oldContent;
     els.fileEditorText.value = editor.originalContent;
     els.fileEditorText.disabled = false;
+    els.fileEditorText.readOnly = editor.readOnly;
     return;
   }
 
@@ -207,16 +253,21 @@ function createFileEditorInstance(editor) {
     indentUnit: 2,
     tabSize: 4,
     indentWithTabs: false,
+    readOnly: editor.readOnly,
     styleActiveLine: true,
     matchBrackets: true,
-    autoCloseBrackets: true,
+    autoCloseBrackets: !editor.readOnly,
     extraKeys: {
-      "Ctrl-S": () => submitFileEditor().catch((error) => toast(error.message)),
-      "Cmd-S": () => submitFileEditor().catch((error) => toast(error.message)),
+      "Ctrl-S": () => {
+        if (!editor.readOnly) submitFileEditor().catch((error) => toast(error.message));
+      },
+      "Cmd-S": () => {
+        if (!editor.readOnly) submitFileEditor().catch((error) => toast(error.message));
+      },
       "Ctrl-F": () => openFileEditorSearch(false),
       "Cmd-F": () => openFileEditorSearch(false),
-      "Ctrl-H": () => openFileEditorSearch(true),
-      "Cmd-Alt-F": () => openFileEditorSearch(true),
+      "Ctrl-H": () => openFileEditorSearch(!editor.readOnly),
+      "Cmd-Alt-F": () => openFileEditorSearch(!editor.readOnly),
     },
   };
   if (editor.conflict) {
@@ -336,7 +387,7 @@ async function runFileEditorContextAction(action) {
 
 async function runFileEditorGitAction(payload, operationMessage, fallbackOutput) {
   const editor = state.fileEditor;
-  if (!editor || editor.loading || editor.saving || editor.operating) return false;
+  if (!editor || editor.readOnly || editor.loading || editor.saving || editor.operating) return false;
   if (fileEditorDirty()) {
     toast(t("请先保存编辑器中的修改，再操作暂存区。"));
     return false;
@@ -387,7 +438,7 @@ async function runFileEditorGitAction(payload, operationMessage, fallbackOutput)
 
 function showFileEditorContextMenu(event) {
   const editor = state.fileEditor;
-  if (!editor || editor.loading || !els.fileEditorModal.classList.contains("show")) return;
+  if (!editor || editor.readOnly || editor.loading || !els.fileEditorModal.classList.contains("show")) return;
   if (!event.target.closest(".CodeMirror-merge-editor, #fileEditorText")) return;
   const selection = fileEditorSelectionDetails(editor);
   if (!selection.selectedLines.length || (!selection.lines.length && !selection.hunkIndices.length)) return;
@@ -721,6 +772,9 @@ function destroyFileEditorInstance() {
     editor.resizeFrame = 0;
   }
   els.fileEditorForm.classList.remove("is-operating");
+  els.fileEditorForm.classList.remove("is-readonly");
+  els.fileEditorText.readOnly = false;
+  els.fileEditorSave.hidden = false;
   hideFileEditorContextMenu();
 }
 
@@ -729,6 +783,7 @@ function fileEditorValue() {
 }
 
 function fileEditorDirty() {
+  if (state.fileEditor?.readOnly) return false;
   return Boolean(state.fileEditor && !state.fileEditor.loading && fileEditorValue() !== state.fileEditor.originalContent);
 }
 
@@ -740,9 +795,17 @@ function fileEditorFocus() {
 function updateFileEditorStatus(message = "") {
   const editor = state.fileEditor;
   if (!editor) return;
-  const metadata = editor.loading
-    ? ""
-    : `${String(editor.encoding || "utf-8").toUpperCase()} · ${fileEditorLineEndingLabel(editor.lineEnding)} · ${formatFileEditorBytes(editor.byteLength)} · ${t(editor.mode?.label || "纯文本")}`;
+  const metadataParts = [];
+  if (!editor.loading) {
+    if (editor.readOnly) metadataParts.push(t("只读"));
+    if (editor.exists !== false) {
+      metadataParts.push(String(editor.encoding || "utf-8").toUpperCase());
+      metadataParts.push(fileEditorLineEndingLabel(editor.lineEnding));
+      metadataParts.push(formatFileEditorBytes(editor.byteLength));
+    }
+    metadataParts.push(t(editor.mode?.label || "纯文本"));
+  }
+  const metadata = metadataParts.join(" · ");
   if (message) {
     els.fileEditorStatus.textContent = message;
   } else if (editor.loading) {
@@ -756,11 +819,17 @@ function updateFileEditorStatus(message = "") {
   } else {
     els.fileEditorStatus.textContent = metadata;
   }
-  els.fileEditorSave.disabled = Boolean(editor.loading || editor.saving || editor.operating || !fileEditorDirty());
+  els.fileEditorSave.disabled = Boolean(editor.readOnly || editor.loading || editor.saving || editor.operating || !fileEditorDirty());
 }
 
 function updateFileEditorCompareLabels(editor) {
   const labels = els.fileEditorOldLabel.parentElement;
+  if (editor.readOnly) {
+    labels?.classList.remove("is-single-pane");
+    els.fileEditorOldLabel.hidden = false;
+    updateCommitFileCompareLabels(editor);
+    return;
+  }
   labels?.classList.toggle("is-single-pane", editor.conflict);
   els.fileEditorOldLabel.hidden = editor.conflict;
   if (editor.conflict) {
@@ -779,6 +848,28 @@ function updateFileEditorCompareLabels(editor) {
   els.fileEditorNewLabel.textContent = `${t("工作区")} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
 }
 
+function updateCommitFileCompareLabels(editor) {
+  const oldDetails = [];
+  if (!editor.parent) {
+    oldDetails.push(t("根提交没有父提交"));
+  } else {
+    oldDetails.push(editor.parent.slice(0, 7));
+    if (!editor.oldExists) oldDetails.push(t("父提交中不存在"));
+    else {
+      if (editor.oldEncoding) oldDetails.push(String(editor.oldEncoding).toUpperCase());
+      if (editor.oldLineEnding) oldDetails.push(fileEditorLineEndingLabel(editor.oldLineEnding));
+    }
+  }
+  const newDetails = [String(editor.commit || "").slice(0, 7)];
+  if (!editor.exists) newDetails.push(t("此提交中不存在"));
+  else {
+    newDetails.push(String(editor.encoding || "utf-8").toUpperCase());
+    if (editor.lineEnding) newDetails.push(fileEditorLineEndingLabel(editor.lineEnding));
+  }
+  els.fileEditorOldLabel.textContent = `${t("父提交")} · ${oldDetails.filter(Boolean).join(" · ")}`;
+  els.fileEditorNewLabel.textContent = `${t("此提交")} · ${newDetails.filter(Boolean).join(" · ")}`;
+}
+
 function fileEditorOldUnavailableLabel(message) {
   const value = String(message || "");
   const prefix = "暂存区版本无法显示：";
@@ -789,27 +880,31 @@ function fileEditorOldUnavailableLabel(message) {
 }
 
 function setFileEditorControlsDisabled(disabled) {
-  const codeMirror = state.fileEditor?.codeMirror;
-  if (codeMirror) codeMirror.setOption("readOnly", disabled ? "nocursor" : false);
+  const editor = state.fileEditor;
+  const readOnly = Boolean(editor?.readOnly);
+  const codeMirror = editor?.codeMirror;
+  if (codeMirror) codeMirror.setOption("readOnly", disabled ? "nocursor" : readOnly);
   els.fileEditorText.disabled = disabled;
+  els.fileEditorText.readOnly = readOnly;
   els.fileEditorCancel.disabled = disabled;
   els.fileEditorClose.disabled = disabled;
   els.fileEditorToggleSearch.disabled = disabled;
   [
     els.fileEditorSearchInput,
-    els.fileEditorReplaceInput,
     els.fileEditorCaseSensitive,
     els.fileEditorFindPrevious,
     els.fileEditorFindNext,
-    els.fileEditorReplaceOne,
-    els.fileEditorReplaceAll,
   ].forEach((control) => {
     control.disabled = disabled;
+  });
+  [els.fileEditorReplaceInput, els.fileEditorReplaceOne, els.fileEditorReplaceAll].forEach((control) => {
+    control.disabled = disabled || readOnly;
   });
 }
 
 function openFileEditorSearch(focusReplace = false) {
   if (!state.fileEditor || state.fileEditor.loading) return;
+  if (state.fileEditor.readOnly) focusReplace = false;
   els.fileEditorSearch.hidden = false;
   els.fileEditorSearch.setAttribute("aria-hidden", "false");
   els.fileEditorToggleSearch.classList.add("active");
@@ -948,7 +1043,7 @@ function findFallbackFileEditorMatch(direction = 1) {
 
 function replaceCurrentFileEditorMatch() {
   const editor = state.fileEditor;
-  if (!editor || editor.saving) return;
+  if (!editor || editor.readOnly || editor.saving) return;
   const query = els.fileEditorSearchInput.value;
   if (!query) {
     openFileEditorSearch(false);
@@ -980,7 +1075,7 @@ function replaceCurrentFileEditorMatch() {
 function replaceAllFileEditorMatches() {
   const editor = state.fileEditor;
   const query = els.fileEditorSearchInput.value;
-  if (!editor || editor.saving || !query) {
+  if (!editor || editor.readOnly || editor.saving || !query) {
     if (!query) openFileEditorSearch(false);
     return;
   }
