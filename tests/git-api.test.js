@@ -622,6 +622,674 @@ test("optimized state reads preserve worktree and sync semantics", { timeout: 12
   assert.deepEqual(unbornReflog.body.reflogEntries, []);
 });
 
+test("common worktree flow stages, unstages, commits, amends, and discards", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-common-worktree-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const notePath = path.join(repo, "note.txt");
+  const draftPath = path.join(repo, "draft.txt");
+  await initRepository(repo);
+  await fs.writeFile(notePath, "base\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+
+  await fs.appendFile(notePath, "first change\n", "utf8");
+  await fs.writeFile(draftPath, "draft\n", "utf8");
+  let state = await openRepo(repo);
+  let note = state.workingFiles.find((item) => item.file === "note.txt");
+  assert.ok(note?.snapshot);
+
+  const stagedFile = await action(repo, state, {
+    action: "stageFile",
+    file: "note.txt",
+    expectedFileSnapshot: note.snapshot,
+  });
+  assertStatus(stagedFile, 200);
+  assert.match(await git(repo, ["diff", "--cached", "--", "note.txt"]), /first change/);
+
+  state = await readState(repo);
+  note = state.workingFiles.find((item) => item.file === "note.txt");
+  assert.equal(note?.staged, true);
+  assert.equal(note?.unstaged, false);
+  const unstagedFile = await action(repo, state, {
+    action: "unstageFile",
+    file: "note.txt",
+    expectedFileSnapshot: note.snapshot,
+  });
+  assertStatus(unstagedFile, 200);
+  assert.equal(await git(repo, ["diff", "--cached", "--", "note.txt"]), "");
+  assert.match(await git(repo, ["diff", "--", "note.txt"]), /first change/);
+
+  state = await readState(repo);
+  const stagedAll = await action(repo, state, { action: "stageAll" });
+  assertStatus(stagedAll, 200);
+  assert.match(await git(repo, ["diff", "--cached", "--name-only"]), /draft\.txt[\s\S]*note\.txt|note\.txt[\s\S]*draft\.txt/);
+
+  state = await readState(repo);
+  const committed = await action(repo, state, {
+    action: "commit",
+    summary: "common commit",
+    body: "common body",
+  });
+  assertStatus(committed, 200);
+  assert.equal(await git(repo, ["log", "-1", "--format=%s"]), "common commit");
+  assert.equal(await git(repo, ["log", "-1", "--format=%b"]), "common body");
+  assert.equal(await git(repo, ["status", "--short"]), "");
+
+  const commitCount = Number(await git(repo, ["rev-list", "--count", "HEAD"]));
+  await fs.appendFile(notePath, "amended change\n", "utf8");
+  state = await readState(repo);
+  const stagedAmend = await action(repo, state, { action: "stageAll" });
+  assertStatus(stagedAmend, 200);
+  state = await readState(repo);
+  const amended = await action(repo, state, {
+    action: "amendCommit",
+    summary: "common amended",
+    body: "amended body",
+  });
+  assertStatus(amended, 200);
+  assert.equal(Number(await git(repo, ["rev-list", "--count", "HEAD"])), commitCount);
+  assert.equal(await git(repo, ["log", "-1", "--format=%s"]), "common amended");
+  assert.match(await git(repo, ["for-each-ref", "--format=%(refname)", "refs/forkline/recovery"]), /refs\/forkline\/recovery/);
+
+  const committedContent = await fs.readFile(notePath, "utf8");
+  await fs.appendFile(notePath, "discard file\n", "utf8");
+  state = await readState(repo);
+  note = state.workingFiles.find((item) => item.file === "note.txt");
+  const discardedFile = await action(repo, state, {
+    action: "discardWorktreeFile",
+    file: "note.txt",
+    expectedFileSnapshot: note.snapshot,
+  });
+  assertStatus(discardedFile, 200);
+  assert.equal(await fs.readFile(notePath, "utf8"), committedContent);
+
+  await fs.appendFile(notePath, "discard all\n", "utf8");
+  const scratchPath = path.join(repo, "scratch.tmp");
+  await fs.writeFile(scratchPath, "remove me\n", "utf8");
+  state = await readState(repo);
+  const discardedAll = await action(repo, state, { action: "discardAll" });
+  assertStatus(discardedAll, 200);
+  assert.equal(await git(repo, ["status", "--short"]), "");
+  await assert.rejects(fs.stat(scratchPath), { code: "ENOENT" });
+});
+
+test("repository setup and patch flow clones, initializes, and applies patches", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-repository-setup-"));
+  t.after(() => removeFixture(root));
+
+  const source = path.join(root, "source");
+  const cloned = path.join(root, "cloned");
+  const initialized = path.join(root, "initialized");
+  await initRepository(source);
+  await fs.writeFile(path.join(source, "base.txt"), "base\n", "utf8");
+  await git(source, ["add", "base.txt"]);
+  await git(source, ["commit", "-m", "base"]);
+  let state = await openRepo(source);
+
+  const clonedResult = await action(source, state, {
+    action: "cloneRepository",
+    url: source,
+    targetPath: cloned,
+    openAfter: false,
+  });
+  assertStatus(clonedResult, 200);
+  assert.equal(await fs.readFile(path.join(cloned, "base.txt"), "utf8"), "base\n");
+  assert.equal(await git(cloned, ["log", "-1", "--format=%s"]), "base");
+
+  await fs.mkdir(initialized, { recursive: true });
+  await fs.writeFile(path.join(initialized, "existing.txt"), "keep\n", "utf8");
+  const initializedResult = await action(source, state, {
+    action: "initRepository",
+    targetPath: initialized,
+    openAfter: false,
+  });
+  assertStatus(initializedResult, 200);
+  assert.equal(await git(initialized, ["rev-parse", "--is-inside-work-tree"]), "true");
+  assert.equal(await fs.readFile(path.join(initialized, "existing.txt"), "utf8"), "keep\n");
+
+  await fs.writeFile(path.join(source, "patch.txt"), "patch content\n", "utf8");
+  await git(source, ["add", "patch.txt"]);
+  await git(source, ["commit", "-m", "patch commit"]);
+  const patch = await git(source, ["format-patch", "-1", "--stdout"]);
+
+  state = await openRepo(cloned);
+  const applied = await action(cloned, state, {
+    action: "applyPatch",
+    patch,
+    stage: false,
+  });
+  assertStatus(applied, 200);
+  assert.equal(await fs.readFile(path.join(cloned, "patch.txt"), "utf8"), "patch content\n");
+  assert.match(await git(cloned, ["status", "--short"]), /\?\? patch\.txt/);
+
+  state = await readState(cloned);
+  const discarded = await action(cloned, state, { action: "discardAll" });
+  assertStatus(discarded, 200);
+  state = await readState(cloned);
+  const appliedStaged = await action(cloned, state, {
+    action: "applyPatch",
+    patch,
+    stage: true,
+  });
+  assertStatus(appliedStaged, 200);
+  assert.match(await git(cloned, ["diff", "--cached", "--", "patch.txt"]), /\+patch content/);
+  assert.equal(await git(cloned, ["diff", "--", "patch.txt"]), "");
+});
+
+test("common history flow covers branches, merge, cherry-pick, revert, tags, and reset modes", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-common-history-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  const baseSha = await git(repo, ["rev-parse", "HEAD"]);
+
+  let state = await openRepo(repo);
+  const createdFeature = await action(repo, state, {
+    action: "createBranch",
+    branch: "feature-work",
+    checkout: true,
+  });
+  assertStatus(createdFeature, 200);
+  assert.equal(await git(repo, ["branch", "--show-current"]), "feature-work");
+
+  await fs.writeFile(path.join(repo, "feature.txt"), "feature\n", "utf8");
+  await git(repo, ["add", "feature.txt"]);
+  await git(repo, ["commit", "-m", "feature commit"]);
+  const featureSha = await git(repo, ["rev-parse", "HEAD"]);
+
+  state = await readState(repo);
+  const checkedOutMain = await action(repo, state, {
+    action: "checkoutBranch",
+    branch: "main",
+    mode: "keep",
+    expectedTargetSha: baseSha,
+  });
+  assertStatus(checkedOutMain, 200);
+  assert.equal(await git(repo, ["branch", "--show-current"]), "main");
+
+  state = await readState(repo);
+  const merged = await action(repo, state, {
+    action: "mergeRef",
+    ref: "feature-work",
+    expectedTargetSha: featureSha,
+  });
+  assertStatus(merged, 200);
+  const mergeSha = await git(repo, ["rev-parse", "HEAD"]);
+  assert.equal((await git(repo, ["rev-list", "--parents", "-n", "1", "HEAD"])).split(/\s+/).length, 3);
+  assert.equal(await fs.readFile(path.join(repo, "feature.txt"), "utf8"), "feature\n");
+
+  state = await readState(repo);
+  const renamed = await action(repo, state, {
+    action: "renameBranch",
+    branch: "feature-work",
+    newBranch: "feature-done",
+    sha: featureSha,
+  });
+  assertStatus(renamed, 200);
+  assert.equal(await git(repo, ["show-ref", "--verify", "--hash", "refs/heads/feature-done"]), featureSha);
+
+  state = await readState(repo);
+  const deleted = await action(repo, state, {
+    action: "deleteBranch",
+    branch: "feature-done",
+    sha: featureSha,
+  });
+  assertStatus(deleted, 200);
+  assert.equal(await git(repo, ["branch", "--list", "feature-done"]), "");
+
+  state = await readState(repo);
+  const createdPickSource = await action(repo, state, {
+    action: "createBranch",
+    branch: "pick-source",
+    checkout: true,
+  });
+  assertStatus(createdPickSource, 200);
+  await fs.writeFile(path.join(repo, "picked.txt"), "picked\n", "utf8");
+  await git(repo, ["add", "picked.txt"]);
+  await git(repo, ["commit", "-m", "pick source"]);
+  const pickSourceSha = await git(repo, ["rev-parse", "HEAD"]);
+
+  state = await readState(repo);
+  const returnedMain = await action(repo, state, {
+    action: "checkoutBranch",
+    branch: "main",
+    mode: "keep",
+    expectedTargetSha: mergeSha,
+  });
+  assertStatus(returnedMain, 200);
+
+  state = await readState(repo);
+  const picked = await action(repo, state, {
+    action: "cherryPickCommit",
+    sha: pickSourceSha,
+  });
+  assertStatus(picked, 200);
+  const pickedSha = await git(repo, ["rev-parse", "HEAD"]);
+  assert.equal(await fs.readFile(path.join(repo, "picked.txt"), "utf8"), "picked\n");
+
+  state = await readState(repo);
+  const reverted = await action(repo, state, {
+    action: "revertCommit",
+    sha: pickedSha,
+  });
+  assertStatus(reverted, 200);
+  await assert.rejects(fs.stat(path.join(repo, "picked.txt")), { code: "ENOENT" });
+
+  state = await readState(repo);
+  const tagged = await action(repo, state, {
+    action: "createTag",
+    name: "qa-local",
+    target: state.repo.headSha,
+    annotated: true,
+    message: "QA local tag",
+  });
+  assertStatus(tagged, 200);
+  const tagObject = await git(repo, ["rev-parse", "refs/tags/qa-local"]);
+  assert.equal(await git(repo, ["cat-file", "-t", "refs/tags/qa-local"]), "tag");
+  const removedTag = await action(repo, state, {
+    action: "deleteTag",
+    name: "qa-local",
+    sha: tagObject,
+  });
+  assertStatus(removedTag, 200);
+  assert.equal(await git(repo, ["tag", "--list", "qa-local"]), "");
+
+  await fs.writeFile(path.join(repo, "reset.txt"), "one\n", "utf8");
+  await git(repo, ["add", "reset.txt"]);
+  await git(repo, ["commit", "-m", "reset one"]);
+  const resetBase = await git(repo, ["rev-parse", "HEAD"]);
+  await fs.writeFile(path.join(repo, "reset.txt"), "one\ntwo\n", "utf8");
+  await git(repo, ["add", "reset.txt"]);
+  await git(repo, ["commit", "-m", "reset two"]);
+  const resetLatest = await git(repo, ["rev-parse", "HEAD"]);
+
+  state = await readState(repo);
+  const softReset = await action(repo, state, {
+    action: "resetToCommit",
+    sha: resetBase,
+    mode: "soft",
+  });
+  assertStatus(softReset, 200);
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), resetBase);
+  assert.match(await git(repo, ["diff", "--cached", "--", "reset.txt"]), /\+two/);
+
+  await git(repo, ["reset", "--hard", resetLatest]);
+  state = await readState(repo);
+  const mixedReset = await action(repo, state, {
+    action: "resetToCommit",
+    sha: resetBase,
+    mode: "mixed",
+  });
+  assertStatus(mixedReset, 200);
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), resetBase);
+  assert.equal(await git(repo, ["diff", "--cached", "--", "reset.txt"]), "");
+  assert.match(await git(repo, ["diff", "--", "reset.txt"]), /\+two/);
+
+  await git(repo, ["reset", "--hard", resetLatest]);
+  state = await readState(repo);
+  const hardReset = await action(repo, state, {
+    action: "resetToCommit",
+    sha: resetBase,
+    mode: "hard",
+  });
+  assertStatus(hardReset, 200);
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), resetBase);
+  assert.equal(await fs.readFile(path.join(repo, "reset.txt"), "utf8"), "one\n");
+  assert.equal(await git(repo, ["status", "--short"]), "");
+});
+
+test("history editing rewords, fixups, squashes, and drops linear commits", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-history-editing-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await fs.writeFile(path.join(repo, "first.txt"), "first\n", "utf8");
+  await git(repo, ["add", "first.txt"]);
+  await git(repo, ["commit", "-m", "first old"]);
+  const firstSha = await git(repo, ["rev-parse", "HEAD"]);
+  await fs.writeFile(path.join(repo, "second.txt"), "second\n", "utf8");
+  await git(repo, ["add", "second.txt"]);
+  await git(repo, ["commit", "-m", "second"]);
+
+  let state = await openRepo(repo);
+  const reworded = await action(repo, state, {
+    action: "rewordCommit",
+    sha: firstSha,
+    summary: "first rewritten",
+    body: "rewritten body",
+  });
+  assertStatus(reworded, 200);
+  let subjects = (await git(repo, ["log", "--format=%s"])).split(/\r?\n/);
+  assert.deepEqual(subjects, ["second", "first rewritten", "base"]);
+  assert.equal(await fs.readFile(path.join(repo, "first.txt"), "utf8"), "first\n");
+  assert.equal(await fs.readFile(path.join(repo, "second.txt"), "utf8"), "second\n");
+
+  state = await readState(repo);
+  const fixupTarget = state.repo.headSha;
+  const fixedUp = await action(repo, state, {
+    action: "rewriteHistoryCommit",
+    sha: fixupTarget,
+    mode: "fixup",
+  });
+  assertStatus(fixedUp, 200);
+  assert.equal(Number(await git(repo, ["rev-list", "--count", "HEAD"])), 2);
+  assert.equal(await fs.readFile(path.join(repo, "second.txt"), "utf8"), "second\n");
+
+  await fs.writeFile(path.join(repo, "squash.txt"), "squash\n", "utf8");
+  await git(repo, ["add", "squash.txt"]);
+  await git(repo, ["commit", "-m", "squash me"]);
+  state = await readState(repo);
+  const squashed = await action(repo, state, {
+    action: "rewriteHistoryCommit",
+    sha: state.repo.headSha,
+    mode: "squash",
+  });
+  assertStatus(squashed, 200);
+  assert.equal(Number(await git(repo, ["rev-list", "--count", "HEAD"])), 2);
+  assert.equal(await fs.readFile(path.join(repo, "squash.txt"), "utf8"), "squash\n");
+
+  await fs.writeFile(path.join(repo, "drop.txt"), "drop\n", "utf8");
+  await git(repo, ["add", "drop.txt"]);
+  await git(repo, ["commit", "-m", "drop me"]);
+  state = await readState(repo);
+  const dropped = await action(repo, state, {
+    action: "rewriteHistoryCommit",
+    sha: state.repo.headSha,
+    mode: "drop",
+  });
+  assertStatus(dropped, 200);
+  assert.equal(Number(await git(repo, ["rev-list", "--count", "HEAD"])), 2);
+  await assert.rejects(fs.stat(path.join(repo, "drop.txt")), { code: "ENOENT" });
+  assert.match(await git(repo, ["for-each-ref", "--format=%(refname)", "refs/forkline/recovery"]), /refs\/forkline\/recovery/);
+  assert.equal(await git(repo, ["status", "--short"]), "");
+});
+
+test("merge conflicts can be aborted or resolved and continued", { timeout: 120000 }, async (t) => {
+  const fixture = await createConflictFixture("merge-conflict", "feature-conflict");
+  t.after(() => removeFixture(fixture.root));
+
+  let state = await openRepo(fixture.repo);
+  let conflicted = await action(fixture.repo, state, {
+    action: "mergeRef",
+    ref: fixture.sourceBranch,
+    expectedTargetSha: fixture.sourceSha,
+  });
+  assertStatus(conflicted, 400);
+  assert.match(conflicted.body.error, /冲突|conflict/i);
+  state = await readState(fixture.repo);
+  assert.equal(state.repo.operation?.type, "merge");
+  assert.equal(state.workingFiles.find((item) => item.file === "conflict.txt")?.conflict, true);
+
+  const aborted = await action(fixture.repo, state, {
+    action: "abortMerge",
+    ...operationSnapshot(state),
+  });
+  assertStatus(aborted, 200);
+  assert.equal(await fs.readFile(fixture.filePath, "utf8"), "main\n");
+  assert.equal(await git(fixture.repo, ["status", "--short"]), "");
+
+  state = await readState(fixture.repo);
+  conflicted = await action(fixture.repo, state, {
+    action: "mergeRef",
+    ref: fixture.sourceBranch,
+    expectedTargetSha: fixture.sourceSha,
+  });
+  assertStatus(conflicted, 400);
+  state = await readState(fixture.repo);
+  const conflictFile = state.workingFiles.find((item) => item.file === "conflict.txt");
+  const resolved = await action(fixture.repo, state, {
+    action: "resolveConflictFile",
+    file: "conflict.txt",
+    side: "theirs",
+    expectedFileSnapshot: conflictFile.snapshot,
+    ...operationSnapshot(state),
+  });
+  assertStatus(resolved, 200);
+  assert.equal(await fs.readFile(fixture.filePath, "utf8"), "source\n");
+
+  state = await readState(fixture.repo);
+  assert.equal(state.repo.operation?.type, "merge");
+  assert.equal(state.workingFiles.some((item) => item.conflict), false);
+  const continued = await action(fixture.repo, state, {
+    action: "continueMerge",
+    ...operationSnapshot(state),
+  });
+  assertStatus(continued, 200);
+  assert.equal((await git(fixture.repo, ["rev-list", "--parents", "-n", "1", "HEAD"])).split(/\s+/).length, 3);
+  assert.equal(await git(fixture.repo, ["status", "--short"]), "");
+});
+
+test("cherry-pick conflicts can be aborted or resolved and continued", { timeout: 120000 }, async (t) => {
+  const fixture = await createConflictFixture("cherry-conflict", "pick-conflict");
+  t.after(() => removeFixture(fixture.root));
+
+  let state = await openRepo(fixture.repo);
+  let conflicted = await action(fixture.repo, state, {
+    action: "cherryPickCommit",
+    sha: fixture.sourceSha,
+  });
+  assertStatus(conflicted, 400);
+  assert.match(conflicted.body.error, /冲突|conflict/i);
+  state = await readState(fixture.repo);
+  assert.equal(state.repo.operation?.type, "cherryPick");
+
+  const aborted = await action(fixture.repo, state, {
+    action: "abortCherryPick",
+    ...operationSnapshot(state),
+  });
+  assertStatus(aborted, 200);
+  assert.equal(await fs.readFile(fixture.filePath, "utf8"), "main\n");
+  assert.equal(await git(fixture.repo, ["status", "--short"]), "");
+
+  state = await readState(fixture.repo);
+  conflicted = await action(fixture.repo, state, {
+    action: "cherryPickCommit",
+    sha: fixture.sourceSha,
+  });
+  assertStatus(conflicted, 400);
+  state = await readState(fixture.repo);
+  const conflictFile = state.workingFiles.find((item) => item.file === "conflict.txt");
+  const resolved = await action(fixture.repo, state, {
+    action: "resolveConflictFile",
+    file: "conflict.txt",
+    side: "theirs",
+    expectedFileSnapshot: conflictFile.snapshot,
+    ...operationSnapshot(state),
+  });
+  assertStatus(resolved, 200);
+  assert.equal(await fs.readFile(fixture.filePath, "utf8"), "source\n");
+
+  state = await readState(fixture.repo);
+  const continued = await action(fixture.repo, state, {
+    action: "continueCherryPick",
+    ...operationSnapshot(state),
+  });
+  assertStatus(continued, 200);
+  assert.equal(await git(fixture.repo, ["log", "-1", "--format=%s"]), "source conflict");
+  assert.equal(await git(fixture.repo, ["status", "--short"]), "");
+});
+
+test("revert conflicts can be aborted or manually resolved and continued", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-revert-conflict-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const filePath = path.join(repo, "conflict.txt");
+  await initRepository(repo);
+  await fs.writeFile(filePath, "base\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await fs.writeFile(filePath, "target\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "target change"]);
+  const targetSha = await git(repo, ["rev-parse", "HEAD"]);
+  await fs.writeFile(filePath, "current\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "current change"]);
+
+  let state = await openRepo(repo);
+  let conflicted = await action(repo, state, {
+    action: "revertCommit",
+    sha: targetSha,
+  });
+  assertStatus(conflicted, 400);
+  assert.match(conflicted.body.error, /冲突|conflict/i);
+  state = await readState(repo);
+  assert.equal(state.repo.operation?.type, "revert");
+
+  const aborted = await action(repo, state, {
+    action: "abortRevert",
+    ...operationSnapshot(state),
+  });
+  assertStatus(aborted, 200);
+  assert.equal(await fs.readFile(filePath, "utf8"), "current\n");
+  assert.equal(await git(repo, ["status", "--short"]), "");
+
+  state = await readState(repo);
+  conflicted = await action(repo, state, {
+    action: "revertCommit",
+    sha: targetSha,
+  });
+  assertStatus(conflicted, 400);
+  await fs.writeFile(filePath, "base\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  state = await readState(repo);
+  const continued = await action(repo, state, {
+    action: "continueRevert",
+    ...operationSnapshot(state),
+  });
+  assertStatus(continued, 200);
+  assert.equal(await fs.readFile(filePath, "utf8"), "base\n");
+  assert.match(await git(repo, ["log", "-1", "--format=%s"]), /Revert/);
+  assert.equal(await git(repo, ["status", "--short"]), "");
+});
+
+test("common sync flow covers rebase pull, push, fetch, fast-forward pull, and remote tags", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-common-sync-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const remote = path.join(root, "origin.git");
+  const peer = path.join(root, "peer");
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await git("", ["init", "--bare", "--initial-branch=main", remote]);
+  await git(repo, ["remote", "add", "origin", remote]);
+  await git(repo, ["push", "-u", "origin", "main"]);
+  await git("", ["clone", remote, peer]);
+  await git(peer, ["config", "user.name", "Forkline Peer"]);
+  await git(peer, ["config", "user.email", "peer@example.invalid"]);
+  await git(peer, ["config", "core.autocrlf", "false"]);
+
+  await fs.writeFile(path.join(repo, "local.txt"), "local\n", "utf8");
+  await git(repo, ["add", "local.txt"]);
+  await git(repo, ["commit", "-m", "local ahead"]);
+  const localBeforeRebase = await git(repo, ["rev-parse", "HEAD"]);
+
+  await fs.writeFile(path.join(peer, "remote.txt"), "remote one\n", "utf8");
+  await git(peer, ["add", "remote.txt"]);
+  await git(peer, ["commit", "-m", "remote one"]);
+  await git(peer, ["push", "origin", "main"]);
+
+  let state = await openRepo(repo);
+  let upstream = upstreamSnapshot(state);
+  const rebased = await action(repo, state, {
+    action: "pullRebase",
+    ...upstream,
+  });
+  assertStatus(rebased, 200);
+  assert.equal(await fs.readFile(path.join(repo, "local.txt"), "utf8"), "local\n");
+  assert.equal(await fs.readFile(path.join(repo, "remote.txt"), "utf8"), "remote one\n");
+  assert.notEqual(await git(repo, ["rev-parse", "HEAD"]), localBeforeRebase);
+
+  state = await readState(repo);
+  upstream = upstreamSnapshot(state);
+  const pushed = await action(repo, state, {
+    action: "push",
+    ...upstream,
+  });
+  assertStatus(pushed, 200);
+  assert.equal(await git(remote, ["rev-parse", "refs/heads/main"]), await git(repo, ["rev-parse", "HEAD"]));
+
+  await git(peer, ["pull", "--ff-only"]);
+  await fs.writeFile(path.join(peer, "remote-two.txt"), "remote two\n", "utf8");
+  await git(peer, ["add", "remote-two.txt"]);
+  await git(peer, ["commit", "-m", "remote two"]);
+  await git(peer, ["push", "origin", "main"]);
+
+  state = await readState(repo);
+  const fetched = await action(repo, state, {
+    action: "fetch",
+    expectedRemotes: state.sync.remotes.map((item) => ({
+      name: item.name,
+      fetchUrl: item.fetchUrl,
+      pushUrl: item.pushUrl,
+      pushUrls: item.pushUrls,
+    })),
+  });
+  assertStatus(fetched, 200);
+  state = await readState(repo);
+  assert.equal(state.sync.behind, 1);
+  upstream = upstreamSnapshot(state);
+  const pulled = await action(repo, state, {
+    action: "pull",
+    ...upstream,
+  });
+  assertStatus(pulled, 200);
+  assert.equal(await fs.readFile(path.join(repo, "remote-two.txt"), "utf8"), "remote two\n");
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), await git(remote, ["rev-parse", "refs/heads/main"]));
+
+  state = await readState(repo);
+  const createdTag = await action(repo, state, {
+    action: "createTag",
+    name: "qa-sync",
+    target: state.repo.headSha,
+    annotated: false,
+  });
+  assertStatus(createdTag, 200);
+  const tagObject = await git(repo, ["rev-parse", "refs/tags/qa-sync"]);
+  const remoteConfig = remoteSnapshot(state, "origin");
+  const pushedTag = await action(repo, state, {
+    action: "pushTag",
+    name: "qa-sync",
+    remote: "origin",
+    sha: tagObject,
+    ...remoteConfig,
+  });
+  assertStatus(pushedTag, 200);
+  assert.equal(await git(remote, ["rev-parse", "refs/tags/qa-sync"]), tagObject);
+
+  const deletedRemoteTag = await action(repo, state, {
+    action: "deleteRemoteTag",
+    name: "qa-sync",
+    remote: "origin",
+    sha: tagObject,
+    ...remoteConfig,
+  });
+  assertStatus(deletedRemoteTag, 200);
+  assert.equal(await git(remote, ["tag", "--list", "qa-sync"]), "");
+
+  const deletedLocalTag = await action(repo, state, {
+    action: "deleteTag",
+    name: "qa-sync",
+    sha: tagObject,
+  });
+  assertStatus(deletedLocalTag, 200);
+  assert.equal(await git(repo, ["tag", "--list", "qa-sync"]), "");
+});
+
 async function createStateSnapshotFixture(label) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `forkline-${label}-`));
   const repo = path.join(root, "repo");
@@ -651,6 +1319,28 @@ async function createRemoteFixture(label) {
   await git(repo, ["commit", "-m", "base"]);
   await git(repo, ["remote", "add", "origin", "https://github.com/example/forkline-auth.git"]);
   return { root, repo };
+}
+
+async function createConflictFixture(label, sourceBranch) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), `forkline-${label}-`));
+  const repo = path.join(root, "repo");
+  const filePath = path.join(repo, "conflict.txt");
+  await initRepository(repo);
+  await fs.writeFile(filePath, "base\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+
+  await git(repo, ["switch", "-c", sourceBranch]);
+  await fs.writeFile(filePath, "source\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "source conflict"]);
+  const sourceSha = await git(repo, ["rev-parse", "HEAD"]);
+
+  await git(repo, ["switch", "main"]);
+  await fs.writeFile(filePath, "main\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "main conflict"]);
+  return { root, repo, filePath, sourceBranch, sourceSha };
 }
 
 async function createSubmoduleFixture(label) {
@@ -741,6 +1431,39 @@ async function action(repoPath, state, payload) {
       ...payload,
     },
   });
+}
+
+function upstreamSnapshot(state) {
+  const upstream = String(state.sync.upstream || "");
+  const remoteName = String(state.sync.remote || upstream.split("/")[0] || "");
+  const remote = state.sync.remotes.find((item) => item.name === remoteName);
+  assert.ok(remote, `missing remote snapshot for ${remoteName || upstream}`);
+  return {
+    expectedUpstream: upstream,
+    expectedUpstreamRemote: remoteName,
+    expectedUpstreamFetchUrl: remote.fetchUrl,
+    expectedUpstreamPushUrl: remote.pushUrl,
+    expectedUpstreamPushUrls: remote.pushUrls,
+  };
+}
+
+function remoteSnapshot(state, name) {
+  const remote = state.sync.remotes.find((item) => item.name === name);
+  assert.ok(remote, `missing remote snapshot for ${name}`);
+  return {
+    expectedFetchUrl: remote.fetchUrl,
+    expectedPushUrl: remote.pushUrl,
+    expectedPushUrls: remote.pushUrls,
+  };
+}
+
+function operationSnapshot(state) {
+  const operation = state.repo.operation;
+  assert.ok(operation?.type && operation?.snapshot, "missing repository operation snapshot");
+  return {
+    expectedOperationType: operation.type,
+    expectedOperationSnapshot: operation.snapshot,
+  };
 }
 
 async function request(pathname, options = {}) {
