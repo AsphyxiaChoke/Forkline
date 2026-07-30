@@ -72,7 +72,7 @@ function fileLeafRowHtml(file, depth, options = {}) {
   const conflict = Boolean(file.conflict);
   const status = scopedFileStatus(file, selectionScope);
   return `
-    <button class="file-row leaf-row ${selected ? "multi-selected" : ""} ${conflict ? "conflict" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" style="--depth:${depth}" title="${escapeAttr(conflict ? t("{file} · 冲突未解决", { file: file.raw }) : file.raw)}">
+    <button class="file-row leaf-row ${selected ? "multi-selected" : ""} ${conflict ? "conflict" : ""}" type="button" data-select-file data-scope="${escapeAttr(selectionScope)}" data-file="${escapeAttr(file.raw)}" data-previous-file="${escapeAttr(file.previousFile || "")}" style="--depth:${depth}" title="${escapeAttr(conflict ? t("{file} · 冲突未解决", { file: file.raw }) : file.raw)}">
       <span class="badge ${status.state}">${status.badge}</span>
       <span class="file-leaf">${escapeHtml(file.leaf)}</span>
       <span class="file-extra ${status.scope ? `scope-${status.scope}` : ""}">${escapeHtml(status.extra)}</span>
@@ -106,14 +106,28 @@ function bindFileTree(root, options = {}) {
   });
   if (options.mode === "worktree" || options.selectable) {
     root.querySelectorAll("[data-select-file]").forEach((row) => {
-      row.addEventListener("click", (event) => {
+      row.addEventListener("click", async (event) => {
         const filePath = row.dataset.file || "";
+        const previousFile = row.dataset.previousFile || "";
         const scope = row.dataset.scope || "";
+        try {
+          if (!await switchOpenFileEditor(filePath, previousFile)) return;
+        } catch (error) {
+          toast(error.message);
+          return;
+        }
         if (scope) {
           selectChangeFile(filePath, scope, event);
         } else {
           selectWorkingFile(filePath);
         }
+      });
+      row.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        if (els.fileEditorModal.classList.contains("show")) return;
+        const filePath = row.dataset.file || "";
+        const previousFile = row.dataset.previousFile || "";
+        openFileEditor(filePath, previousFile).catch((error) => toast(error.message));
       });
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();

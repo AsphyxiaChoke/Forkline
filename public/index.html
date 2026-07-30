@@ -334,6 +334,10 @@
     <button data-file-action="discardWorktreeFile" type="button">丢弃工作区改动</button>
     <button data-file-action="discardStagedFile" type="button">丢弃已暂存改动</button>
   </div>
+  <div id="fileEditorContextMenu" class="context-menu" aria-hidden="true">
+    <button data-file-editor-action="stageSelectedLines" type="button">暂存所选行</button>
+    <button data-file-editor-action="discardSelectedHunk" class="danger" type="button">还原所选改动块</button>
+  </div>
   <div id="tagContextMenu" class="context-menu" aria-hidden="true">
     <button data-tag-action="view" type="button">查看此 Tag 提交</button>
     <button data-tag-action="copy" type="button">复制 Tag 名称</button>
@@ -503,7 +507,7 @@
     </form>
   </div>
   <div id="fileEditorModal" class="checkout-modal file-editor-modal" aria-hidden="true">
-    <form id="fileEditorForm" class="checkout-dialog file-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="fileEditorTitle">
+    <form id="fileEditorForm" class="checkout-dialog file-editor-dialog" role="dialog" aria-modal="false" aria-labelledby="fileEditorTitle">
       <header class="file-editor-head">
         <div>
           <strong id="fileEditorTitle">编辑文件</strong>
@@ -536,14 +540,14 @@
         <span id="fileEditorMatchStatus" class="file-editor-match-status" role="status">未输入查找内容</span>
       </div>
       <div class="file-editor-compare-labels">
-        <span id="fileEditorOldLabel">旧版本 · HEAD</span>
-        <span id="fileEditorNewLabel">新版本 · 工作区</span>
+        <span id="fileEditorOldLabel">暂存区</span>
+        <span id="fileEditorNewLabel">工作区</span>
       </div>
       <div class="file-editor-body">
-        <div id="fileEditorMerge" class="file-editor-merge" aria-label="新旧文件对照编辑器"></div>
+        <div id="fileEditorMerge" class="file-editor-merge" aria-label="暂存区与工作区对照编辑器"></div>
         <div id="fileEditorFallback" class="file-editor-fallback" hidden>
-          <textarea id="fileEditorOldText" class="file-editor-text" readonly autocomplete="off" spellcheck="false" wrap="off" aria-label="旧版本文件内容"></textarea>
-          <textarea id="fileEditorText" class="file-editor-text" autocomplete="off" autocapitalize="off" spellcheck="false" wrap="off" aria-label="新版本文件内容"></textarea>
+          <textarea id="fileEditorOldText" class="file-editor-text" readonly autocomplete="off" spellcheck="false" wrap="off" aria-label="暂存区文件内容"></textarea>
+          <textarea id="fileEditorText" class="file-editor-text" autocomplete="off" autocapitalize="off" spellcheck="false" wrap="off" aria-label="工作区文件内容"></textarea>
         </div>
       </div>
       <footer class="file-editor-footer">
@@ -572,6 +576,7 @@
   <script src="./vendor/codemirror/addon/edit/closebrackets.js"></script>
   <script src="./vendor/codemirror/addon/edit/matchbrackets.js"></script>
   <script src="./vendor/codemirror/addon/selection/active-line.js"></script>
+  <script src="./vendor/codemirror/addon/mode/simple.js"></script>
   <script src="./vendor/codemirror/mode/xml/xml.js"></script>
   <script src="./vendor/codemirror/mode/javascript/javascript.js"></script>
   <script src="./vendor/codemirror/mode/jsx/jsx.js"></script>

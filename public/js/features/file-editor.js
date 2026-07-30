@@ -7,16 +7,29 @@ const FILE_EDITOR_WINDOW_MIN_HEIGHT = 360;
 let fileEditorDragState = null;
 let fileEditorResizeState = null;
 
-async function openFileEditor(filePath, previousFilePath = "") {
+async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   const file = String(filePath || "");
   const previousFile = String(previousFilePath || "");
   if (!file) {
     toast(t("请选择要编辑的文件"));
-    return;
+    return false;
   }
   if (!state.data || state.data.repo?.isSample) {
     toast(t("请先打开真实 Git 仓库"));
-    return;
+    return false;
+  }
+  const current = state.fileEditor;
+  const showing = els.fileEditorModal.classList.contains("show");
+  if (showing && current?.file === file && !options.reload) {
+    fileEditorFocus();
+    return true;
+  }
+  if (!options.force && (current?.saving || current?.operating)) {
+    toast(t("编辑器正在处理文件，请稍候。"));
+    return false;
+  }
+  if (!options.force && showing && fileEditorDirty() && !confirm(t("文件还有未保存的修改，确认切换到 {file}？", { file }))) {
+    return false;
   }
 
   destroyFileEditorInstance();
@@ -31,9 +44,18 @@ async function openFileEditor(filePath, previousFilePath = "") {
     oldContent: "",
     loading: true,
     saving: false,
+    operating: false,
+    operationMessage: "",
+    diffScope: "",
+    diff: [],
+    canStage: false,
+    branchSnapshot: null,
+    fileSnapshot: null,
+    contextSelection: null,
     codeMirror: null,
     mergeView: null,
     resizeObserver: null,
+    buttonObserver: null,
     resizeFrame: 0,
     searchMarks: [],
     searchMatches: [],
@@ -41,8 +63,8 @@ async function openFileEditor(filePath, previousFilePath = "") {
   };
   state.fileEditor = editor;
   els.fileEditorPath.textContent = file;
-  els.fileEditorOldLabel.textContent = t("旧版本 · 正在读取");
-  els.fileEditorNewLabel.textContent = t("新版本 · 工作区");
+  els.fileEditorOldLabel.textContent = t("暂存区 · 正在读取");
+  els.fileEditorNewLabel.textContent = t("工作区");
   els.fileEditorMerge.hidden = false;
   els.fileEditorMerge.textContent = t("正在读取文件...");
   els.fileEditorFallback.hidden = true;
@@ -51,7 +73,6 @@ async function openFileEditor(filePath, previousFilePath = "") {
   els.fileEditorModal.classList.add("show");
   els.fileEditorModal.setAttribute("aria-hidden", "false");
   prepareFileEditorWindow();
-  document.body.classList.add("modal-open");
   updateFileEditorStatus();
 
   try {
@@ -64,6 +85,7 @@ async function openFileEditor(filePath, previousFilePath = "") {
     editor.originalContent = normalizeFileEditorContent(data.content || "");
     editor.oldContent = normalizeFileEditorContent(data.oldContent || "");
     editor.oldFile = data.oldFile || previousFile || file;
+    editor.previousFile = data.previousFile || previousFile;
     editor.oldExists = Boolean(data.oldExists);
     editor.oldUnavailable = data.oldUnavailable || "";
     editor.encoding = data.encoding || "utf-8";
@@ -71,23 +93,36 @@ async function openFileEditor(filePath, previousFilePath = "") {
     editor.lineEnding = data.lineEnding || "lf";
     editor.oldLineEnding = data.oldLineEnding || "";
     editor.byteLength = Number(data.byteLength || 0);
+    editor.diffScope = data.diffScope || "";
+    editor.diff = Array.isArray(data.diff) ? data.diff : [];
+    editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
+    editor.branchSnapshot = currentBranchSnapshotPayload();
+    editor.fileSnapshot = fileSnapshotPayload(editor.file, editor.diffScope);
     editor.mode = fileEditorMode(file);
     editor.loading = false;
     createFileEditorInstance(editor);
+    setFileEditorControlsDisabled(false);
     updateFileEditorCompareLabels(editor);
     updateFileEditorStatus();
     fileEditorFocus();
+    return true;
   } catch (error) {
     if (!isCurrentRepoPath(repoPath) || state.fileEditor !== editor) return;
     closeFileEditor(true);
     toast(error.message);
+    return false;
   }
+}
+
+async function switchOpenFileEditor(filePath, previousFilePath = "") {
+  if (!els.fileEditorModal.classList.contains("show")) return true;
+  return openFileEditor(filePath, previousFilePath);
 }
 
 async function submitFileEditor(event) {
   event?.preventDefault?.();
   const editor = state.fileEditor;
-  if (!editor || editor.loading || editor.saving || !fileEditorDirty()) return;
+  if (!editor || editor.loading || editor.saving || editor.operating || !fileEditorDirty()) return;
   if (!isCurrentRepoPath(editor.repoPath)) {
     closeFileEditor(true);
     toast(t("仓库已经切换，请在目标仓库中重新打开文件"));
@@ -97,8 +132,9 @@ async function submitFileEditor(event) {
   editor.saving = true;
   setFileEditorControlsDisabled(true);
   updateFileEditorStatus();
+  let result;
   try {
-    const result = await api("/api/worktree-file", {
+    result = await api("/api/worktree-file", {
       method: "POST",
       body: JSON.stringify({
         file: editor.file,
@@ -107,26 +143,31 @@ async function submitFileEditor(event) {
       }),
     });
     if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return;
-    const file = editor.file;
-    state.selectedFile = file;
-    state.workDiffScope = "unstaged";
-    state.selectedChanges.delete(changeKey("staged", file));
-    state.selectedChanges.add(changeKey("unstaged", file));
-    closeFileEditor(true);
-    toast(result.output || t("文件已保存"));
-    await refreshWorktree(true);
   } catch (error) {
     if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return;
     editor.saving = false;
     setFileEditorControlsDisabled(false);
     updateFileEditorStatus(error.message);
     toast(error.message);
+    return;
   }
+  const file = editor.file;
+  const previousFile = editor.previousFile;
+  editor.saving = false;
+  setFileEditorControlsDisabled(false);
+  state.selectedFile = file;
+  state.workDiffScope = "unstaged";
+  state.selectedChanges.delete(changeKey("staged", file));
+  state.selectedChanges.add(changeKey("unstaged", file));
+  toast(result.output || t("文件已保存"));
+  await refreshWorktree(true);
+  if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return;
+  await openFileEditor(file, previousFile, { force: true, reload: true });
 }
 
 function closeFileEditor(force = false) {
   if (!els.fileEditorModal.classList.contains("show")) return true;
-  if (state.fileEditor?.saving && !force) return false;
+  if ((state.fileEditor?.saving || state.fileEditor?.operating) && !force) return false;
   if (!force && fileEditorDirty() && !confirm(t("文件还有未保存的修改，确认关闭编辑器？"))) return false;
   destroyFileEditorInstance();
   state.fileEditor = null;
@@ -135,7 +176,7 @@ function closeFileEditor(force = false) {
   els.fileEditorOldText.value = "";
   els.fileEditorText.value = "";
   setFileEditorControlsDisabled(false);
-  document.body.classList.remove("modal-open");
+  hideFileEditorContextMenu();
   return true;
 }
 
@@ -169,9 +210,12 @@ function createFileEditorInstance(editor) {
     connect: "align",
     collapseIdentical: false,
     chunkClassLocation: ["background", "gutter"],
-    revertButtons: true,
+    revertButtons: editor.canStage,
+    revertChunk: (_mergeView, _from, _origStart, _origEnd, _to, editStart, editEnd) => {
+      stageFileEditorChunk(editStart.line, editEnd.line).catch((error) => toast(error.message));
+    },
     phrases: {
-      "Revert chunk": t("用旧版本还原此变更块"),
+      "Revert chunk": t("暂存此改动块"),
       "Toggle locked scrolling": t("切换同步滚动"),
     },
     extraKeys: {
@@ -189,6 +233,7 @@ function createFileEditorInstance(editor) {
     scheduleFileEditorSearchRefresh();
   };
   editor.codeMirror.on("change", editor.changeHandler);
+  observeFileEditorStageButtons(editor);
   observeFileEditorResize(editor);
   requestAnimationFrame(() => {
     if (state.fileEditor !== editor) return;
@@ -199,9 +244,317 @@ function createFileEditorInstance(editor) {
   });
 }
 
+function observeFileEditorStageButtons(editor) {
+  refreshFileEditorStageButtons(editor);
+  if (typeof MutationObserver !== "function") return;
+  editor.buttonObserver = new MutationObserver(() => refreshFileEditorStageButtons(editor));
+  editor.buttonObserver.observe(els.fileEditorMerge, { childList: true, subtree: true });
+}
+
+function refreshFileEditorStageButtons(editor) {
+  if (state.fileEditor !== editor) return;
+  els.fileEditorMerge.querySelectorAll(".CodeMirror-merge-copy").forEach((button) => {
+    if (button.textContent !== t("暂存")) button.textContent = t("暂存");
+    button.title = t("暂存此改动块");
+    button.setAttribute("aria-label", button.title);
+  });
+}
+
+async function stageFileEditorChunk(fromLine, toLine) {
+  const editor = state.fileEditor;
+  if (!editor?.canStage) {
+    toast(t("这个位置已经没有可暂存的改动块，请刷新后再试。"));
+    return;
+  }
+  if (fileEditorDirty()) {
+    toast(t("请先保存编辑器中的修改，再操作暂存区。"));
+    return;
+  }
+  const hunkIndex = fileEditorHunkForEditRange(editor, fromLine, toLine);
+  if (!Number.isInteger(hunkIndex)) {
+    toast(t("这个位置已经没有可暂存的改动块，请刷新后再试。"));
+    return;
+  }
+  await runFileEditorGitAction(
+    { action: "stageHunk", hunkIndex },
+    "正在暂存改动块...",
+    "改动块操作完成"
+  );
+}
+
+async function stageFileEditorSelectedLines(selection = state.fileEditor?.contextSelection) {
+  if (!selection?.lines?.length) {
+    toast(t("所选内容没有可暂存的新增或删除行。"));
+    return;
+  }
+  await runFileEditorGitAction(
+    { action: "stageSelectedLines", lines: selection.lines },
+    "正在暂存所选行...",
+    "所选行操作完成"
+  );
+}
+
+async function discardFileEditorSelectedHunk(selection = state.fileEditor?.contextSelection) {
+  const editor = state.fileEditor;
+  if (!editor || selection?.hunkIndices?.length !== 1) {
+    toast(t("所选内容必须位于同一个改动块内，请缩小选择范围。"));
+    return;
+  }
+  if (editor.diffScope !== "unstaged") {
+    toast(t("未跟踪文件不能按块还原，请直接编辑或删除该文件。"));
+    return;
+  }
+  if (!confirm(t("确认还原所选改动块？\n\n文件：{file}\n此操作无法撤销。", { file: editor.file }))) return;
+  await runFileEditorGitAction(
+    { action: "discardWorktreeHunk", hunkIndex: selection.hunkIndices[0] },
+    "正在还原改动块...",
+    "工作区改动块已丢弃"
+  );
+}
+
+async function runFileEditorContextAction(action) {
+  const selection = state.fileEditor?.contextSelection;
+  hideFileEditorContextMenu();
+  if (action === "stageSelectedLines") {
+    await stageFileEditorSelectedLines(selection);
+    return;
+  }
+  if (action === "discardSelectedHunk") await discardFileEditorSelectedHunk(selection);
+}
+
+async function runFileEditorGitAction(payload, operationMessage, fallbackOutput) {
+  const editor = state.fileEditor;
+  if (!editor || editor.loading || editor.saving || editor.operating) return false;
+  if (fileEditorDirty()) {
+    toast(t("请先保存编辑器中的修改，再操作暂存区。"));
+    return false;
+  }
+  if (!isCurrentRepoPath(editor.repoPath)) {
+    closeFileEditor(true);
+    toast(t("仓库已经切换，请在目标仓库中重新打开文件"));
+    return false;
+  }
+
+  const file = editor.file;
+  const previousFile = editor.previousFile;
+  editor.operating = true;
+  editor.operationMessage = t(operationMessage);
+  els.fileEditorForm.classList.add("is-operating");
+  setFileEditorControlsDisabled(true);
+  updateFileEditorStatus();
+  try {
+    const result = await api("/api/action", {
+      method: "POST",
+      body: JSON.stringify({
+        ...payload,
+        file,
+        scope: editor.diffScope,
+        ...(editor.branchSnapshot || currentBranchSnapshotPayload()),
+        ...(editor.fileSnapshot || fileSnapshotPayload(editor.file, editor.diffScope)),
+      }),
+    });
+    if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return false;
+    toast(result.output || t(fallbackOutput));
+    await refreshWorktree(true);
+    if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return false;
+    await openFileEditor(file, previousFile, { force: true, reload: true });
+    return true;
+  } catch (error) {
+    if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return false;
+    editor.operating = false;
+    editor.operationMessage = "";
+    els.fileEditorForm.classList.remove("is-operating");
+    setFileEditorControlsDisabled(false);
+    updateFileEditorStatus(error.message);
+    toast(error.message);
+    await refreshWorktree(true);
+    if (state.fileEditor === editor) await openFileEditor(file, previousFile, { force: true, reload: true });
+    return false;
+  }
+}
+
+function showFileEditorContextMenu(event) {
+  const editor = state.fileEditor;
+  if (!editor || editor.loading || !els.fileEditorModal.classList.contains("show")) return;
+  if (!event.target.closest(".CodeMirror-merge-editor, #fileEditorText")) return;
+  const selection = fileEditorSelectionDetails(editor);
+  if (!selection.selectedLines.length || (!selection.lines.length && !selection.hunkIndices.length)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  hideCommitContextMenu();
+  hideBranchContextMenu();
+  hideFileContextMenu();
+  hideTagContextMenu();
+  hideRemoteContextMenu();
+  hideReflogContextMenu();
+  editor.contextSelection = selection;
+  const dirty = fileEditorDirty();
+  const stageButton = els.fileEditorContextMenu.querySelector('[data-file-editor-action="stageSelectedLines"]');
+  const discardButton = els.fileEditorContextMenu.querySelector('[data-file-editor-action="discardSelectedHunk"]');
+  stageButton.disabled = dirty || !editor.canStage || !selection.lines.length;
+  stageButton.title = dirty ? t("请先保存编辑器中的修改，再操作暂存区。") : t("暂存编辑器中选中的新增或修改行");
+  discardButton.disabled = dirty || editor.diffScope !== "unstaged" || selection.hunkIndices.length !== 1;
+  discardButton.title = dirty
+    ? t("请先保存编辑器中的修改，再操作暂存区。")
+    : selection.hunkIndices.length === 1
+      ? t("还原选区所在的整个未暂存改动块")
+      : t("所选内容必须位于同一个改动块内，请缩小选择范围。");
+  els.fileEditorContextMenu.classList.add("show");
+  els.fileEditorContextMenu.setAttribute("aria-hidden", "false");
+  positionContextMenu(els.fileEditorContextMenu, event, 96);
+}
+
+function hideFileEditorContextMenu() {
+  if (!els.fileEditorContextMenu) return;
+  els.fileEditorContextMenu.classList.remove("show");
+  els.fileEditorContextMenu.setAttribute("aria-hidden", "true");
+  if (state.fileEditor) state.fileEditor.contextSelection = null;
+}
+
+function fileEditorSelectionDetails(editor) {
+  const selectedLines = fileEditorSelectedLineNumbers(editor);
+  const lineMap = fileEditorDiffLineSelectionMap(editor.diff);
+  const payload = new Map();
+  const hunkIndices = new Set();
+  selectedLines.forEach((lineNumber) => {
+    const entry = lineMap.get(lineNumber);
+    if (!entry) return;
+    entry.lines.forEach((line) => payload.set(`${line.hunkIndex}:${line.lineIndex}`, line));
+    entry.hunkIndices.forEach((hunkIndex) => hunkIndices.add(hunkIndex));
+  });
+  return { selectedLines, lines: [...payload.values()], hunkIndices: [...hunkIndices] };
+}
+
+function fileEditorSelectedLineNumbers(editor) {
+  const selected = new Set();
+  if (editor.codeMirror) {
+    editor.codeMirror.listSelections().forEach((range) => {
+      if (range.anchor.line === range.head.line && range.anchor.ch === range.head.ch) return;
+      const [from, to] = compareFileEditorPos(range.anchor, range.head) <= 0 ? [range.anchor, range.head] : [range.head, range.anchor];
+      let lastLine = to.line;
+      if (to.ch === 0 && to.line > from.line) lastLine -= 1;
+      for (let line = from.line; line <= lastLine; line += 1) selected.add(line);
+    });
+    return [...selected];
+  }
+  const start = els.fileEditorText.selectionStart;
+  const end = els.fileEditorText.selectionEnd;
+  if (start === end) return [];
+  const value = els.fileEditorText.value;
+  const startLine = value.slice(0, start).split("\n").length - 1;
+  let endLine = value.slice(0, end).split("\n").length - 1;
+  if (end > start && value[end - 1] === "\n") endLine -= 1;
+  for (let line = startLine; line <= endLine; line += 1) selected.add(line);
+  return [...selected];
+}
+
+function compareFileEditorPos(left, right) {
+  if (left.line !== right.line) return left.line - right.line;
+  return left.ch - right.ch;
+}
+
+function fileEditorDiffHunks(diff) {
+  return (diff || []).flatMap((line) => {
+    if (line?.type !== "meta") return [];
+    const match = String(line.text || "").match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+    if (!match || !Number.isInteger(line.hunkIndex)) return [];
+    return [{
+      hunkIndex: line.hunkIndex,
+      oldStart: Number(match[1]),
+      oldCount: match[2] === undefined ? 1 : Number(match[2]),
+      newStart: Number(match[3]),
+      newCount: match[4] === undefined ? 1 : Number(match[4]),
+    }];
+  });
+}
+
+function fileEditorHunkForEditRange(editor, fromLine, toLine) {
+  const from = Math.max(0, Number(fromLine) || 0);
+  const to = Math.max(from + 1, Number(toLine) || from + 1);
+  let best = null;
+  fileEditorDiffHunks(editor.diff).forEach((hunk) => {
+    const start = Math.max(0, hunk.newStart - 1);
+    const end = start + Math.max(1, hunk.newCount);
+    const overlap = Math.max(0, Math.min(to, end) - Math.max(from, start));
+    if (!overlap) return;
+    const score = overlap * 1000;
+    if (!best || score > best.score) best = { hunkIndex: hunk.hunkIndex, score };
+  });
+  return best?.hunkIndex;
+}
+
+function fileEditorDiffLineSelectionMap(diff) {
+  const lineMap = new Map();
+  let hunkIndex = null;
+  let newLine = 0;
+  let hunkLineIndex = -1;
+  let block = null;
+
+  const flushBlock = () => {
+    if (!block?.adds.length) {
+      block = null;
+      return;
+    }
+    block.adds.forEach((add, index) => {
+      const keys = [add.line];
+      if (block.dels.length) {
+        if (block.adds.length === 1) keys.push(...block.dels);
+        else if (index < block.dels.length) keys.push(block.dels[index]);
+        if (index === block.adds.length - 1 && block.dels.length > block.adds.length) {
+          keys.push(...block.dels.slice(block.adds.length));
+        }
+      }
+      const entry = lineMap.get(add.newLine) || { lines: [], hunkIndices: new Set() };
+      keys.forEach((line) => {
+        if (!entry.lines.some((item) => item.hunkIndex === line.hunkIndex && item.lineIndex === line.lineIndex)) entry.lines.push(line);
+        entry.hunkIndices.add(line.hunkIndex);
+      });
+      lineMap.set(add.newLine, entry);
+    });
+    block = null;
+  };
+
+  (diff || []).forEach((line) => {
+    const text = String(line?.text || "");
+    if (line?.type === "meta") {
+      if (text.startsWith("\\ No newline at end of file")) return;
+      flushBlock();
+      const match = text.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (match) {
+        hunkIndex = Number.isInteger(line.hunkIndex) ? line.hunkIndex : null;
+        newLine = Number(match[2]) - 1;
+        hunkLineIndex = -1;
+      } else if (text.startsWith("diff --git ")) {
+        hunkIndex = null;
+      }
+      return;
+    }
+    if (!Number.isInteger(hunkIndex)) return;
+    hunkLineIndex += 1;
+    const payload = { hunkIndex, lineIndex: hunkLineIndex };
+    if (line.type === "del") {
+      block ||= { dels: [], adds: [] };
+      block.dels.push(payload);
+      return;
+    }
+    if (line.type === "add") {
+      block ||= { dels: [], adds: [] };
+      newLine += 1;
+      block.adds.push({ line: payload, newLine: newLine - 1 });
+      return;
+    }
+    flushBlock();
+    newLine += 1;
+  });
+  flushBlock();
+  return lineMap;
+}
+
 function refreshFileEditorCodeMirror(editor) {
   editor.codeMirror?.refresh();
   editor.mergeView?.leftOriginal()?.refresh();
+  refreshFileEditorStageButtons(editor);
 }
 
 function fileEditorWindowCanFloat() {
@@ -245,6 +598,7 @@ function clampFileEditorWindow() {
 function beginFileEditorDrag(event) {
   if (event.button !== 0 || !fileEditorWindowCanFloat()) return;
   if (event.target.closest("button, input, textarea, select, a, label")) return;
+  hideFileEditorContextMenu();
   prepareFileEditorWindow();
   const rect = els.fileEditorForm.getBoundingClientRect();
   fileEditorDragState = {
@@ -279,6 +633,7 @@ function endFileEditorDrag() {
 
 function beginFileEditorResize(event) {
   if (event.button !== 0 || !fileEditorWindowCanFloat()) return;
+  hideFileEditorContextMenu();
   prepareFileEditorWindow();
   const rect = els.fileEditorForm.getBoundingClientRect();
   fileEditorResizeState = {
@@ -336,6 +691,7 @@ function destroyFileEditorInstance() {
   endFileEditorResize();
   if (editor?.resizeFrame) cancelAnimationFrame(editor.resizeFrame);
   editor?.resizeObserver?.disconnect();
+  editor?.buttonObserver?.disconnect();
   if (editor?.searchTimer) clearTimeout(editor.searchTimer);
   clearFileEditorSearchMarks();
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
@@ -344,8 +700,11 @@ function destroyFileEditorInstance() {
     editor.codeMirror = null;
     editor.mergeView = null;
     editor.resizeObserver = null;
+    editor.buttonObserver = null;
     editor.resizeFrame = 0;
   }
+  els.fileEditorForm.classList.remove("is-operating");
+  hideFileEditorContextMenu();
 }
 
 function fileEditorValue() {
@@ -373,33 +732,33 @@ function updateFileEditorStatus(message = "") {
     els.fileEditorStatus.textContent = t("正在读取文件...");
   } else if (editor.saving) {
     els.fileEditorStatus.textContent = t("正在保存...");
+  } else if (editor.operating) {
+    els.fileEditorStatus.textContent = editor.operationMessage || t("正在更新暂存区...");
   } else if (fileEditorDirty()) {
     els.fileEditorStatus.textContent = `${t("有未保存的修改")} · ${metadata}`;
   } else {
     els.fileEditorStatus.textContent = metadata;
   }
-  els.fileEditorSave.disabled = Boolean(editor.loading || editor.saving || !fileEditorDirty());
+  els.fileEditorSave.disabled = Boolean(editor.loading || editor.saving || editor.operating || !fileEditorDirty());
 }
 
 function updateFileEditorCompareLabels(editor) {
   const oldDetails = [];
   if (editor.oldUnavailable) oldDetails.push(fileEditorOldUnavailableLabel(editor.oldUnavailable));
-  else if (!editor.oldExists) oldDetails.push(t("HEAD 中不存在"));
+  else if (!editor.oldExists) oldDetails.push(t("暂存区中不存在"));
   else {
-    oldDetails.push("HEAD");
-    if (editor.oldFile && editor.oldFile !== editor.file) oldDetails.push(editor.oldFile);
     if (editor.oldEncoding) oldDetails.push(String(editor.oldEncoding).toUpperCase());
     if (editor.oldLineEnding) oldDetails.push(fileEditorLineEndingLabel(editor.oldLineEnding));
   }
-  els.fileEditorOldLabel.textContent = `${t("旧版本")} · ${oldDetails.join(" · ")}`;
-  els.fileEditorNewLabel.textContent = `${t("新版本")} · ${t("工作区")} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
+  els.fileEditorOldLabel.textContent = `${t("暂存区")}${oldDetails.length ? ` · ${oldDetails.join(" · ")}` : ""}`;
+  els.fileEditorNewLabel.textContent = `${t("工作区")} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
 }
 
 function fileEditorOldUnavailableLabel(message) {
   const value = String(message || "");
-  const prefix = "HEAD 中的旧版本无法显示：";
+  const prefix = "暂存区版本无法显示：";
   if (value.startsWith(prefix)) {
-    return t("HEAD 中的旧版本无法显示：{reason}", { reason: t(value.slice(prefix.length)) });
+    return t("暂存区版本无法显示：{reason}", { reason: t(value.slice(prefix.length)) });
   }
   return t(value);
 }

@@ -156,6 +156,7 @@ const els = {
   commitContextMenu: $("#commitContextMenu"),
   branchContextMenu: $("#branchContextMenu"),
   fileContextMenu: $("#fileContextMenu"),
+  fileEditorContextMenu: $("#fileEditorContextMenu"),
   tagContextMenu: $("#tagContextMenu"),
   remoteContextMenu: $("#remoteContextMenu"),
   reflogContextMenu: $("#reflogContextMenu"),

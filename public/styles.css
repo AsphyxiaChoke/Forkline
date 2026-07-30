@@ -5845,7 +5845,9 @@ body.resizing .workbench-resizer-y::before {
 
 .file-editor-modal {
   overflow: hidden;
-  padding: 12px;
+  padding: 0;
+  pointer-events: none;
+  background: transparent;
   z-index: 68;
 }
 
@@ -5855,12 +5857,13 @@ body.resizing .workbench-resizer-y::before {
   left: 50%;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-  width: min(1920px, calc(100vw - 24px));
-  height: min(1200px, calc(100vh - 24px));
+  width: min(1180px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 64px));
   min-width: 640px;
   min-height: 360px;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
+  pointer-events: auto;
   transform: translate(-50%, -50%);
   border-radius: 8px;
   resize: none;
@@ -6157,7 +6160,7 @@ body.file-editor-window-resizing * {
   display: grid;
   place-items: center;
   left: 50% !important;
-  width: 30px;
+  width: 40px;
   height: 26px;
   margin-top: 3px;
   transform: translateX(-50%);
@@ -6166,10 +6169,15 @@ body.file-editor-window-resizing * {
   background: color-mix(in srgb, var(--panel-2) 82%, var(--teal));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
   color: var(--text);
-  font-size: 19px;
+  font-size: 11px;
   font-weight: 900;
   line-height: 1;
   pointer-events: auto;
+}
+
+.file-editor-dialog.is-operating .CodeMirror-merge-copy {
+  pointer-events: none;
+  opacity: 0.55;
 }
 
 .file-editor-merge .CodeMirror-merge-copy:hover,
@@ -6336,6 +6344,8 @@ body.file-editor-window-resizing * {
 @media (max-width: 720px) {
   .file-editor-modal {
     padding: 10px;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.48);
   }
 
   .file-editor-dialog {

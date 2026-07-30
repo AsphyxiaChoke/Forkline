@@ -1074,15 +1074,38 @@ async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPat
   const target = resolveEditableWorktreeFile(filePath, repoPath);
   const buffer = fs.readFileSync(target.fullPath);
   const current = editableWorktreeFilePayload(target.file, buffer);
-  const oldFile = previousFilePath ? validateEditableRepoFile(previousFilePath) : target.file;
-  const old = await readHeadEditableWorktreeFile(oldFile, repoPath);
-  return { ...current, oldFile, ...old };
+  const status = await readStatusFileForDiff(target.file, "any", repoPath);
+  const old = status?.conflict
+    ? { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "冲突文件的暂存区没有单一版本，请先解决冲突。" }
+    : await readIndexEditableWorktreeFile(target.file, repoPath);
+  let diffScope = "";
+  let diffOutput = "";
+  if (status?.unstaged && !status.conflict) {
+    if (status.indexStatus === "?") {
+      diffScope = "untracked";
+      diffOutput = readNewFileDiff(target.file, repoPath);
+    } else {
+      diffScope = "unstaged";
+      diffOutput = await readWorktreeDiffOutput(target.file, diffScope, status, repoPath);
+    }
+  }
+  const diff = parseDiff(diffOutput);
+  return {
+    ...current,
+    oldFile: target.file,
+    oldSource: "index",
+    previousFile: previousFilePath ? validateEditableRepoFile(previousFilePath) : status?.previousFile || "",
+    diffScope,
+    diff,
+    canStage: Boolean(diffScope && diff.length),
+    ...old,
+  };
 }
 
-async function readHeadEditableWorktreeFile(file, repoPath) {
+async function readIndexEditableWorktreeFile(file, repoPath) {
   let buffer;
   try {
-    buffer = await gitBuffer(repoPath, ["cat-file", "blob", `HEAD:${file}`], { maxBuffer: FILE_EDITOR_MAX_BYTES + 1024 });
+    buffer = await gitBuffer(repoPath, ["show", `:${file}`], { maxBuffer: FILE_EDITOR_MAX_BYTES + 1024 });
   } catch {
     return { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "" };
   }
@@ -1092,7 +1115,7 @@ async function readHeadEditableWorktreeFile(file, repoPath) {
       oldContent: "",
       oldEncoding: "",
       oldLineEnding: "",
-      oldUnavailable: "HEAD 中的旧版本超过 1 MiB，无法在编辑器中显示。",
+      oldUnavailable: "暂存区版本超过 1 MiB，无法在编辑器中显示。",
     };
   }
   try {
@@ -1110,7 +1133,7 @@ async function readHeadEditableWorktreeFile(file, repoPath) {
       oldContent: "",
       oldEncoding: "",
       oldLineEnding: "",
-      oldUnavailable: `HEAD 中的旧版本无法显示：${error.message}`,
+      oldUnavailable: `暂存区版本无法显示：${error.message}`,
     };
   }
 }

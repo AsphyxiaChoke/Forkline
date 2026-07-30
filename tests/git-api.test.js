@@ -143,6 +143,8 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   await fs.writeFile(notePath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("base\r\nlocal\r\n", "utf8")]));
   await git(repo, ["add", "note.txt"]);
   await git(repo, ["commit", "-m", "base"]);
+  await fs.appendFile(notePath, "staged\r\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
   await fs.appendFile(notePath, "change\r\n", "utf8");
   await fs.writeFile(binaryPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
   await openRepo(repo);
@@ -150,12 +152,15 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   const opened = await request("/api/worktree-file?file=note.txt", { repoPath: repo });
   assertStatus(opened, 200);
   assert.equal(opened.body.file, "note.txt");
-  assert.equal(opened.body.content, "base\r\nlocal\r\nchange\r\n");
+  assert.equal(opened.body.content, "base\r\nlocal\r\nstaged\r\nchange\r\n");
   assert.equal(opened.body.bom, true);
   assert.equal(opened.body.lineEnding, "crlf");
   assert.equal(opened.body.oldExists, true);
-  assert.equal(opened.body.oldContent, "base\r\nlocal\r\n");
+  assert.equal(opened.body.oldContent, "base\r\nlocal\r\nstaged\r\n");
   assert.equal(opened.body.oldEncoding, "utf-8");
+  assert.equal(opened.body.oldSource, "index");
+  assert.equal(opened.body.diffScope, "unstaged");
+  assert.ok(opened.body.diff.some((line) => line.type === "add" && line.text === "+change"));
   assert.match(opened.body.snapshot, /^[a-f0-9]{64}$/);
 
   const saved = await request("/api/worktree-file", {
@@ -198,7 +203,7 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   assert.match(binary.body.error, /二进制/);
 });
 
-test("worktree file editor compares HEAD and preserves GBK or GB18030 encoding", { timeout: 120000 }, async (t) => {
+test("worktree file editor compares the index and preserves GBK or GB18030 encoding", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-gbk-"));
   t.after(() => removeFixture(root));
 

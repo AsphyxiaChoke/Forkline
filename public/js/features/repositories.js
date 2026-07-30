@@ -373,7 +373,7 @@ function clearRepoScopedActionState() {
   resetFileEditorSearchUi();
   if (els.fileEditorOldText) els.fileEditorOldText.value = "";
   if (els.fileEditorText) els.fileEditorText.value = "";
-  for (const menu of [els.commitContextMenu, els.branchContextMenu, els.fileContextMenu, els.tagContextMenu, els.remoteContextMenu, els.reflogContextMenu]) {
+  for (const menu of [els.commitContextMenu, els.branchContextMenu, els.fileContextMenu, els.fileEditorContextMenu, els.tagContextMenu, els.remoteContextMenu, els.reflogContextMenu]) {
     menu?.classList?.remove?.("show");
     menu?.setAttribute?.("aria-hidden", "true");
   }

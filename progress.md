@@ -5587,3 +5587,40 @@
 - `docs/CONTINUE.md`：记录快速拉取脚本的行为边界。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：如本轮单独提交，执行 `git revert <包含本轮快速拉取脚本的提交哈希>`；尚未提交时，执行 `git restore -- README.md docs/CONTINUE.md progress.md`，并删除 `pull-latest.cmd`。
+
+## 2026-07-30 - Task: 工作区双击打开常驻编辑浮窗并接入暂存与右键还原
+
+### What was done
+- 工作区文件支持双击直接打开编辑器；桌面浮窗不再阻挡后方页面，拖到合适位置后单击其他工作区文件会在原浮窗内切换，有未保存内容时先中文确认。
+- 双栏对照改为左侧暂存区、右侧工作区；中间操作由旧版还原改为按真实 Git hunk 暂存，右侧选区右键菜单提供“暂存所选行”和“还原所选改动块”。
+- 暂存、还原和保存都会保留浮窗并重新加载最新对照；修复 Git 操作完成后关闭、查找、取消等控件仍保持禁用的问题，并禁止未保存内容直接执行暂存或还原。
+- 收紧中间按钮的 hunk 匹配，只允许命中实际重叠改动块，避免在两块改动之间误暂存邻近 hunk。
+- 补入 CodeMirror 5.65.16 官方 simple mode addon，并在 Dockerfile、Rust 模式之前加载，修复这两类语法高亮启动时报 `defineSimpleMode is not a function` 的问题。
+- README 和继续开发文档同步更新为当前的双击、常驻浮窗、暂存区对照、按块/按行暂存及右键还原行为。
+
+### Testing
+- 对 `server.js`、本轮改动的 6 个前端功能脚本、国际化目录和新增 CodeMirror addon 运行 `node --check`，共 8 个文件全部通过。
+- 运行 `node --test tests/file-editor-ui.test.js`，9 项全部通过；覆盖双击打开、常驻切换、浮窗穿透、拖动缩放、中间暂存、右键菜单、Git hunk/行映射、操作后控件恢复、保存后保持打开和 simple mode 加载顺序。
+- 使用仅对测试进程生效的 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 运行完整 `npm test`，53 项全部通过，退出码为 0；包含真实 UTF-8、GBK/GB18030 文件编辑 API、普通 stash、隐藏脏子模块保护和状态读取语义回归。
+- 在 `1910×1075` 真实浏览器视口打开 `http://127.0.0.1:5290/` 和 `D:\桌面\GitTest`：双击文件成功打开暂存区/工作区双栏；浮窗遮罩 `pointer-events: none`、窗口本体为 `auto`；拖动后从 `left=365, top=157` 移到 `left=425, top=197`，单击其他工作区文件后仍保持原位置并切换文件。
+- 在 GitTest 实测中间按钮可把未跟踪文件改动块暂存，保存后浮窗继续打开且控件恢复可用；选中新增行右键可显示“暂存所选行 / 还原所选改动块”，确认还原后未暂存 hunk 被移除。测试结束后取消本轮暂存，GitTest 恢复为测试前的 `测试.txt` 修改和 3 个未跟踪演示文件状态。
+- 最终新开页面验证 CodeMirror 生成 2 个编辑器面板和 23 个高亮 token，控制台 error 日志为空；修复前可稳定看到的 Dockerfile/Rust 两条 `defineSimpleMode` 错误不再出现。
+- 运行 `git diff --check`，无空白错误，仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `server.js`：工作区文件接口改为读取暂存区基准，并返回未暂存 Diff、作用域、暂存能力和文件快照。
+- `public/index.html`：增加编辑器右键菜单，更新暂存区/工作区标签，并加载 CodeMirror simple mode addon。
+- `public/js/core.js`：登记编辑器右键菜单控件引用。
+- `public/js/app/events.js`：接入编辑器右键菜单、拖动缩放和常驻浮窗事件，并取消点击透明遮罩关闭窗口。
+- `public/js/features/diff-workbench.js`：工作区文件双击打开编辑器，浮窗开启时单击文件切换当前编辑目标。
+- `public/js/features/file-editor.js`：实现暂存区对照、中间按块暂存、选区按行暂存、右键整块还原、未保存保护、操作后重载、控件恢复和严格 hunk 命中。
+- `public/js/features/repositories.js`：切换仓库时清理编辑器右键菜单状态。
+- `public/js/i18n-catalog.js`：补充本轮编辑器操作、状态和错误提示的英文翻译。
+- `public/styles.css`：把编辑器调整为后方页面可操作的桌面浮窗，并更新中间暂存按钮和操作中状态样式。
+- `public/vendor/codemirror/addon/mode/simple.js`：新增 CodeMirror 5.65.16 官方 simple mode addon，供 Dockerfile 和 Rust 模式使用。
+- `tests/file-editor-ui.test.js`：增加双击、常驻、暂存/还原、映射、控件恢复和 simple mode 加载顺序回归。
+- `tests/git-api.test.js`：验证文件编辑接口以暂存区为左栏基准，并保持 UTF-8、GBK/GB18030 编码行为。
+- `README.md`：更新工作区文件编辑器的正式使用说明。
+- `docs/CONTINUE.md`：记录当前实现边界、API 语义和后续开发基线。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮常驻编辑浮窗改动的提交哈希>`；尚未提交时，对本轮 Notes 中除新增 vendor 文件外的文件执行 `git restore -- <文件列表>`，再删除 `public/vendor/codemirror/addon/mode/simple.js`，即可回到本轮开始前状态。

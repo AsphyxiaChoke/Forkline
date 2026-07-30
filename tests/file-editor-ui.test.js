@@ -4,18 +4,20 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const core = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8");
 const events = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const contextMenus = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
+const diffWorkbench = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 const editor = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const catalog = require(path.join(root, "public", "js", "i18n-catalog.js"));
 
-test("file editor is available from the worktree toolbar and file context menu", () => {
+test("file editor opens from worktree double-click and follows file selection while open", () => {
   assert.match(html, /id="editWorktreeFile"/);
   assert.match(html, /data-file-action="edit"/);
   assert.match(html, /id="fileEditorModal"/);
@@ -24,10 +26,19 @@ test("file editor is available from the worktree toolbar and file context menu",
   assert.match(contextMenus, /action === "edit"/);
   assert.match(contextMenus, /previousFile: fileInfo\.previousFile/);
   assert.match(contextMenus, /openFileEditor\(context\.file, context\.previousFile/);
+  assert.match(diffWorkbench, /row\.addEventListener\("dblclick"/);
+  assert.match(diffWorkbench, /openFileEditor\(filePath, previousFile/);
+  assert.match(diffWorkbench, /switchOpenFileEditor\(filePath, previousFile/);
+  assert.match(editor, /文件还有未保存的修改，确认切换到/);
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {
+  const simpleModeIndex = html.indexOf("./vendor/codemirror/addon/mode/simple.js");
+  assert.ok(simpleModeIndex > html.indexOf("./vendor/codemirror/lib/codemirror.js"));
+  assert.ok(simpleModeIndex < html.indexOf("./vendor/codemirror/mode/dockerfile/dockerfile.js"));
+  assert.ok(simpleModeIndex < html.indexOf("./vendor/codemirror/mode/rust/rust.js"));
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "lib", "codemirror.js")), true);
+  assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "addon", "mode", "simple.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "addon", "merge", "merge.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "diff-match-patch.js")), true);
   assert.match(html, /\.\/vendor\/codemirror\/lib\/codemirror\.css/);
@@ -42,8 +53,9 @@ test("file editor loads local CodeMirror MergeView with line numbers and syntax 
   assert.match(editor, /origLeft: editor\.oldContent/);
   assert.match(editor, /lineNumbers: true/);
   assert.match(editor, /chunkClassLocation: \["background", "gutter"\]/);
-  assert.match(editor, /revertButtons: true/);
-  assert.match(editor, /"Revert chunk": t\("用旧版本还原此变更块"\)/);
+  assert.match(editor, /revertButtons: editor\.canStage/);
+  assert.match(editor, /revertChunk:.*stageFileEditorChunk/s);
+  assert.match(editor, /"Revert chunk": t\("暂存此改动块"\)/);
   assert.match(editor, /requestAnimationFrame\(\(\) => \{[\s\S]*requestAnimationFrame\(\(\) => \{/);
   assert.match(editor, /refreshFileEditorCodeMirror/);
   assert.match(editor, /fileEditorMode\(file\)/);
@@ -83,14 +95,14 @@ test("file editor provides find, replace, shortcuts, and repository cleanup", ()
   assert.match(styles, /@media \(max-width: 720px\)/);
 });
 
-test("file editor uses the available viewport for side-by-side files", () => {
-  assert.match(styles, /\.file-editor-modal\s*\{[^}]*padding:\s*12px/s);
+test("file editor is a non-blocking floating window with a practical default size", () => {
+  assert.match(styles, /\.file-editor-modal\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(styles, /\.file-editor-dialog\s*\{[^}]*pointer-events:\s*auto/s);
   assert.match(
     styles,
-    /\.file-editor-dialog\s*\{[^}]*width:\s*min\(1920px, calc\(100vw - 24px\)\)[^}]*height:\s*min\(1200px, calc\(100vh - 24px\)\)/s
+    /\.file-editor-dialog\s*\{[^}]*width:\s*min\(1180px, calc\(100vw - 48px\)\)[^}]*height:\s*min\(760px, calc\(100vh - 64px\)\)/s
   );
-  assert.doesNotMatch(styles, /\.file-editor-dialog\s*\{[^}]*width:\s*min\(1440px/s);
-  assert.doesNotMatch(styles, /\.file-editor-dialog\s*\{[^}]*height:\s*min\(860px/s);
+  assert.doesNotMatch(editor, /document\.body\.classList\.add\("modal-open"\)/);
   assert.match(
     styles,
     /\.file-editor-merge \.CodeMirror-merge-2pane \.CodeMirror-merge-gap\s*\{[^}]*width:\s*48px/s
@@ -120,11 +132,61 @@ test("file editor window can be resized and dragged without escaping the viewpor
   assert.match(editor, /refreshFileEditorCodeMirror/);
 });
 
+test("file editor stages from the center and restores selected changes from a context menu", () => {
+  assert.match(html, /id="fileEditorContextMenu"/);
+  assert.match(html, /data-file-editor-action="stageSelectedLines"/);
+  assert.match(html, /data-file-editor-action="discardSelectedHunk"/);
+  assert.match(core, /fileEditorContextMenu:\s*\$\("#fileEditorContextMenu"\)/);
+  assert.match(events, /showFileEditorContextMenu/);
+  assert.match(events, /runFileEditorContextAction/);
+  assert.match(editor, /stageFileEditorChunk/);
+  assert.match(editor, /stageFileEditorSelectedLines/);
+  assert.match(editor, /discardFileEditorSelectedHunk/);
+  assert.match(editor, /createFileEditorInstance\(editor\);\s*setFileEditorControlsDisabled\(false\);/);
+  assert.match(editor, /currentBranchSnapshotPayload\(\)/);
+  assert.match(editor, /fileSnapshotPayload\(editor\.file, editor\.diffScope\)/);
+  assert.match(editor, /button\.textContent = t\("暂存"\)/);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-copy\s*\{[^}]*font-size:\s*11px/s);
+});
+
+test("file editor maps working-tree selections to the matching Git hunk and line keys", () => {
+  const sandbox = {};
+  vm.runInNewContext(editor, sandbox);
+  const diff = [
+    { type: "meta", text: "@@ -1,3 +1,3 @@", hunkIndex: 0 },
+    { type: "ctx", text: " first", hunkIndex: 0 },
+    { type: "del", text: "-old", hunkIndex: 0 },
+    { type: "add", text: "+new", hunkIndex: 0 },
+    { type: "ctx", text: " third", hunkIndex: 0 },
+    { type: "meta", text: "@@ -20,2 +20,3 @@", hunkIndex: 1 },
+    { type: "ctx", text: " twenty", hunkIndex: 1 },
+    { type: "add", text: "+inserted", hunkIndex: 1 },
+    { type: "ctx", text: " twenty-one", hunkIndex: 1 },
+  ];
+  const lineMap = sandbox.fileEditorDiffLineSelectionMap(diff);
+  assert.deepEqual(
+    Array.from(lineMap.get(1).lines, (line) => `${line.hunkIndex}:${line.lineIndex}`).sort(),
+    ["0:1", "0:2"]
+  );
+  assert.deepEqual(Array.from(lineMap.get(20).lines, (line) => `${line.hunkIndex}:${line.lineIndex}`), ["1:1"]);
+  assert.equal(sandbox.fileEditorHunkForEditRange({ diff }, 1, 2), 0);
+  assert.equal(sandbox.fileEditorHunkForEditRange({ diff }, 20, 21), 1);
+  assert.equal(sandbox.fileEditorHunkForEditRange({ diff }, 10, 11), undefined);
+});
+
+test("saving keeps the floating editor open and reloads its comparison", () => {
+  const submitEditor = editor.match(/async function submitFileEditor[\s\S]*?\n}\n\nfunction closeFileEditor/)?.[0] || "";
+  assert.match(editor, /await refreshWorktree\(true\)/);
+  assert.match(editor, /await openFileEditor\(file, previousFile, \{ force: true, reload: true \}\)/);
+  assert.doesNotMatch(submitEditor, /state\.selectedChanges\.add[\s\S]{0,240}closeFileEditor\(true\)/);
+});
+
 test("file editor exposes Chinese encoding and comparison messages in English mode", () => {
   assert.equal(catalog.translate("en", "查找替换"), "Find and replace");
   assert.equal(catalog.translate("en", "拖动调整窗口大小"), "Drag to resize the window");
-  assert.equal(catalog.translate("en", "HEAD 中不存在"), "Not present in HEAD");
-  assert.equal(catalog.translate("en", "用旧版本还原此变更块"), "Restore this change block from the old version");
+  assert.equal(catalog.translate("en", "暂存区中不存在"), "Not present in the index");
+  assert.equal(catalog.translate("en", "暂存此改动块"), "Stage this change block");
+  assert.equal(catalog.translate("en", "还原所选改动块"), "Restore the selected change block");
   assert.equal(catalog.translate("en", "切换同步滚动"), "Toggle synchronized scrolling");
   assert.equal(catalog.translate("en", "找到 {count} 个匹配", { count: 3 }), "Found 3 matches");
   assert.equal(catalog.translate("en", "已替换 {count} 处", { count: 2 }), "Replaced 2 matches");

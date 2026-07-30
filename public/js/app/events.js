@@ -94,6 +94,8 @@ els.editWorktreeFile.addEventListener("click", () => openFileEditor(state.active
 els.maximizeDiff.addEventListener("click", openDiffModal);
 els.fileEditorForm.addEventListener("submit", (event) => submitFileEditor(event).catch((error) => toast(error.message)));
 els.fileEditorText.addEventListener("input", () => updateFileEditorStatus());
+els.fileEditorMerge.addEventListener("contextmenu", showFileEditorContextMenu);
+els.fileEditorText.addEventListener("contextmenu", showFileEditorContextMenu);
 els.fileEditorToggleSearch.addEventListener("click", toggleFileEditorSearch);
 els.fileEditorSearchInput.addEventListener("input", scheduleFileEditorSearchRefresh);
 els.fileEditorSearchInput.addEventListener("keydown", handleFileEditorSearchKeydown);
@@ -115,9 +117,6 @@ window.addEventListener("mousemove", (event) => {
 window.addEventListener("mouseup", () => {
   endFileEditorDrag();
   endFileEditorResize();
-});
-els.fileEditorModal.addEventListener("click", (event) => {
-  if (event.target === els.fileEditorModal) closeFileEditor();
 });
 els.workDiffView.addEventListener("click", (event) => {
   const lineButton = event.target.closest("[data-line-action]");
@@ -569,6 +568,14 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  const fileEditorMenuAction = event.target.closest("[data-file-editor-action]");
+  if (fileEditorMenuAction) {
+    event.stopPropagation();
+    if (!fileEditorMenuAction.disabled) {
+      runFileEditorContextAction(fileEditorMenuAction.dataset.fileEditorAction).catch((error) => toast(error.message));
+    }
+    return;
+  }
   const fileMenuAction = event.target.closest("[data-file-action]");
   if (fileMenuAction) {
     event.stopPropagation();
@@ -606,6 +613,7 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
   if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
   if (!event.target.closest("#fileContextMenu")) hideFileContextMenu();
+  if (!event.target.closest("#fileEditorContextMenu")) hideFileEditorContextMenu();
   if (!event.target.closest("#tagContextMenu")) hideTagContextMenu();
   if (!event.target.closest("#remoteContextMenu")) hideRemoteContextMenu();
   if (!event.target.closest("#reflogContextMenu")) hideReflogContextMenu();
@@ -676,6 +684,10 @@ document.addEventListener("keydown", (event) => {
     openCommandPalette();
     return;
   }
+  if (event.key === "Escape" && els.fileEditorContextMenu.classList.contains("show")) {
+    hideFileEditorContextMenu();
+    return;
+  }
   if (event.key === "Escape" && els.commandPalette.classList.contains("show")) {
     closeCommandPalette();
     return;
@@ -708,6 +720,7 @@ document.addEventListener("scroll", (event) => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
+  hideFileEditorContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
   hideReflogContextMenu();
@@ -716,6 +729,7 @@ window.addEventListener("resize", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
+  hideFileEditorContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
   hideReflogContextMenu();
