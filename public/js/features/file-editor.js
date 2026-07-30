@@ -47,6 +47,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     operating: false,
     operationMessage: "",
     diffScope: "",
+    diffContext: null,
     diff: [],
     canStage: false,
     conflict: false,
@@ -95,6 +96,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.oldLineEnding = data.oldLineEnding || "";
     editor.byteLength = Number(data.byteLength || 0);
     editor.diffScope = data.diffScope || "";
+    editor.diffContext = Number.isInteger(data.diffContext) ? data.diffContext : null;
     editor.diff = Array.isArray(data.diff) ? data.diff : [];
     editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
     editor.conflict = Boolean(data.conflict);
@@ -228,8 +230,8 @@ function createFileEditorInstance(editor) {
       collapseIdentical: false,
       chunkClassLocation: ["background", "gutter"],
       revertButtons: editor.canStage,
-      revertChunk: (_mergeView, _from, _origStart, _origEnd, _to, editStart, editEnd) => {
-        stageFileEditorChunk(editStart.line, editEnd.line).catch((error) => toast(error.message));
+      revertChunk: (_mergeView, _from, origStart, origEnd, _to, editStart, editEnd) => {
+        stageFileEditorChunk(origStart.line, origEnd.line, editStart.line, editEnd.line).catch((error) => toast(error.message));
       },
       phrases: {
         "Revert chunk": t("暂存此改动块"),
@@ -270,7 +272,7 @@ function refreshFileEditorStageButtons(editor) {
   });
 }
 
-async function stageFileEditorChunk(fromLine, toLine) {
+async function stageFileEditorChunk(origFromLine, origToLine, editFromLine, editToLine) {
   const editor = state.fileEditor;
   if (!editor?.canStage) {
     toast(t("这个位置已经没有可暂存的改动块，请刷新后再试。"));
@@ -280,13 +282,13 @@ async function stageFileEditorChunk(fromLine, toLine) {
     toast(t("请先保存编辑器中的修改，再操作暂存区。"));
     return;
   }
-  const hunkIndex = fileEditorHunkForEditRange(editor, fromLine, toLine);
+  const hunkIndex = fileEditorHunkForChunk(editor, origFromLine, origToLine, editFromLine, editToLine);
   if (!Number.isInteger(hunkIndex)) {
     toast(t("这个位置已经没有可暂存的改动块，请刷新后再试。"));
     return;
   }
   await runFileEditorGitAction(
-    { action: "stageHunk", hunkIndex },
+    { action: "stageHunk", hunkIndex, diffContext: editor.diffContext },
     "正在暂存改动块...",
     "改动块操作完成"
   );
@@ -479,16 +481,19 @@ function fileEditorDiffHunks(diff) {
   });
 }
 
-function fileEditorHunkForEditRange(editor, fromLine, toLine) {
-  const from = Math.max(0, Number(fromLine) || 0);
-  const to = Math.max(from + 1, Number(toLine) || from + 1);
+function fileEditorHunkForChunk(editor, origFromLine, origToLine, editFromLine, editToLine) {
+  const origFrom = Math.max(0, Number(origFromLine) || 0);
+  const origTo = Math.max(origFrom, Number(origToLine) || origFrom);
+  const editFrom = Math.max(0, Number(editFromLine) || 0);
+  const editTo = Math.max(editFrom, Number(editToLine) || editFrom);
   let best = null;
   fileEditorDiffHunks(editor.diff).forEach((hunk) => {
-    const start = Math.max(0, hunk.newStart - 1);
-    const end = start + Math.max(1, hunk.newCount);
-    const overlap = Math.max(0, Math.min(to, end) - Math.max(from, start));
-    if (!overlap) return;
-    const score = overlap * 1000;
+    const oldStart = Math.max(0, hunk.oldStart - 1);
+    const newStart = Math.max(0, hunk.newStart - 1);
+    const oldOverlap = Math.max(0, Math.min(origTo, oldStart + hunk.oldCount) - Math.max(origFrom, oldStart));
+    const newOverlap = Math.max(0, Math.min(editTo, newStart + hunk.newCount) - Math.max(editFrom, newStart));
+    const score = oldOverlap + newOverlap;
+    if (!score) return;
     if (!best || score > best.score) best = { hunkIndex: hunk.hunkIndex, score };
   });
   return best?.hunkIndex;

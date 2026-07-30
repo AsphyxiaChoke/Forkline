@@ -13,6 +13,7 @@ const GIT_BIN = findGitExecutable();
 const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
 const ZERO_OID = "0000000000000000000000000000000000000000";
 const WORKTREE_DIFF_CONTEXT = "8";
+const FILE_EDITOR_DIFF_CONTEXT = 0;
 const UNTRACKED_DIFF_HUNK_SIZE = 40;
 const FILE_EDITOR_MAX_BYTES = 1024 * 1024;
 const BRANCH_STALE_DAYS = 30;
@@ -1080,13 +1081,14 @@ async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPat
     : await readIndexEditableWorktreeFile(target.file, repoPath);
   let diffScope = "";
   let diffOutput = "";
+  const diffContext = FILE_EDITOR_DIFF_CONTEXT;
   if (status?.unstaged && !status.conflict) {
     if (status.indexStatus === "?") {
       diffScope = "untracked";
       diffOutput = readNewFileDiff(target.file, repoPath);
     } else {
       diffScope = "unstaged";
-      diffOutput = await readWorktreeDiffOutput(target.file, diffScope, status, repoPath);
+      diffOutput = await readWorktreeDiffOutput(target.file, diffScope, status, repoPath, diffContext);
     }
   }
   const diff = parseDiff(diffOutput);
@@ -1097,6 +1099,7 @@ async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPat
     conflict: Boolean(status?.conflict),
     previousFile: previousFilePath ? validateEditableRepoFile(previousFilePath) : status?.previousFile || "",
     diffScope,
+    diffContext,
     diff,
     canStage: Boolean(diffScope && diff.length),
     ...old,
@@ -3012,12 +3015,14 @@ async function applyWorktreeHunk(body, kind) {
   if ((kind === "stage" || kind === "discard") && !target.unstaged) throw new Error("这个文件没有未暂存改动块。");
   if (kind === "unstage" && !target.staged) throw new Error("这个文件没有已暂存改动块。");
 
-  const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, scope);
+  const diffOutput = isUntracked ? readNewFileDiff(file) : await readWorktreeDiffOutput(file, scope, target, currentRepo, body.diffContext);
+  const diffContext = normalizeWorktreeDiffContext(body.diffContext);
   const movedFileUnstage = kind === "unstage" && isMovedFileDiffOutput(diffOutput);
   const patch = movedFileUnstage ? extractMovedFileUnstageHunkPatch(diffOutput, hunkIndex) : extractSingleHunkPatch(diffOutput, hunkIndex);
   const patchFile = writeTempFile("forkline-hunk-", patch, ".patch");
   try {
     const args = ["apply", "--whitespace=nowarn"];
+    if (!isUntracked && diffContext === FILE_EDITOR_DIFF_CONTEXT) args.push("--unidiff-zero");
     if (kind === "stage") args.push("--cached");
     if (kind === "unstage") {
       args.push("--cached");
@@ -3093,13 +3098,14 @@ async function unstageSelectedLines(body) {
   return `已取消暂存所选 ${selectedLines.length} 行`;
 }
 
-async function readWorktreeDiffOutput(file, scope, fileInfo = null, repoPath = currentRepo) {
+async function readWorktreeDiffOutput(file, scope, fileInfo = null, repoPath = currentRepo, context = WORKTREE_DIFF_CONTEXT) {
   const diffScope = normalizeDiffScope(scope);
+  const diffContext = normalizeWorktreeDiffContext(context);
   const target = fileInfo || await readStatusFileForDiff(file, diffScope === "staged" ? "staged" : "unstaged", repoPath);
   const pathspecs = worktreeDiffPathspecs(file, target);
   const args = diffScope === "staged"
-    ? ["diff", "--cached", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", ...pathspecs]
-    : ["diff", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${WORKTREE_DIFF_CONTEXT}`, "--", ...pathspecs];
+    ? ["diff", "--cached", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${diffContext}`, "--", ...pathspecs]
+    : ["diff", "--find-renames", "--find-copies", "--no-ext-diff", `--unified=${diffContext}`, "--", ...pathspecs];
   return git(repoPath, args, { maxBuffer: 1024 * 1024 * 8, stdoutOnly: true }).catch(() => "");
 }
 
@@ -4255,6 +4261,12 @@ function normalizeWorktreeDiffRequestScope(value) {
   const scope = String(value || "auto").trim().toLowerCase();
   if (scope === "auto" || scope === "unstaged" || scope === "staged") return scope;
   throw new Error("Diff 视图不合法，请刷新后再试。");
+}
+
+function normalizeWorktreeDiffContext(value) {
+  return value === FILE_EDITOR_DIFF_CONTEXT || value === String(FILE_EDITOR_DIFF_CONTEXT)
+    ? FILE_EDITOR_DIFF_CONTEXT
+    : WORKTREE_DIFF_CONTEXT;
 }
 
 function normalizeHunkIndex(value) {

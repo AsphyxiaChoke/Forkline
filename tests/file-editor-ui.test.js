@@ -64,6 +64,7 @@ test("file editor loads local CodeMirror MergeView with line numbers and syntax 
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-copy\s*\{/);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-left \.CodeMirror-merge-l-chunk/);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-editor \.CodeMirror-merge-l-chunk/);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-spacer\s*\{[^}]*width:\s*100%[^}]*repeating-linear-gradient/s);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-deleted/);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-inserted/);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-2pane \.CodeMirror-merge-gap\s*\{[^}]*width:\s*40px/s);
@@ -147,6 +148,7 @@ test("file editor stages from the center and restores selected changes from a co
   assert.match(events, /showFileEditorContextMenu/);
   assert.match(events, /runFileEditorContextAction/);
   assert.match(editor, /stageFileEditorChunk/);
+  assert.match(editor, /action: "stageHunk", hunkIndex, diffContext: editor\.diffContext/);
   assert.match(editor, /stageFileEditorSelectedLines/);
   assert.match(editor, /discardFileEditorSelectedHunk/);
   assert.match(editor, /createFileEditorInstance\(editor\);\s*setFileEditorControlsDisabled\(false\);/);
@@ -176,9 +178,23 @@ test("file editor maps working-tree selections to the matching Git hunk and line
     ["0:1", "0:2"]
   );
   assert.deepEqual(Array.from(lineMap.get(20).lines, (line) => `${line.hunkIndex}:${line.lineIndex}`), ["1:1"]);
-  assert.equal(sandbox.fileEditorHunkForEditRange({ diff }, 1, 2), 0);
-  assert.equal(sandbox.fileEditorHunkForEditRange({ diff }, 20, 21), 1);
-  assert.equal(sandbox.fileEditorHunkForEditRange({ diff }, 10, 11), undefined);
+  assert.equal(sandbox.fileEditorHunkForChunk({ diff }, 1, 2, 1, 2), 0);
+  assert.equal(sandbox.fileEditorHunkForChunk({ diff }, 20, 21, 20, 21), 1);
+  assert.equal(sandbox.fileEditorHunkForChunk({ diff }, 10, 11, 10, 11), undefined);
+
+  const editorDiff = [
+    { type: "meta", text: "@@ -5 +5 @@", hunkIndex: 0 },
+    { type: "del", text: "-old five", hunkIndex: 0 },
+    { type: "add", text: "+new five", hunkIndex: 0 },
+    { type: "meta", text: "@@ -10 +10 @@", hunkIndex: 1 },
+    { type: "del", text: "-old ten", hunkIndex: 1 },
+    { type: "add", text: "+new ten", hunkIndex: 1 },
+    { type: "meta", text: "@@ -15 +14,0 @@", hunkIndex: 2 },
+    { type: "del", text: "-deleted fifteen", hunkIndex: 2 },
+  ];
+  assert.equal(sandbox.fileEditorHunkForChunk({ diff: editorDiff }, 4, 5, 4, 5), 0);
+  assert.equal(sandbox.fileEditorHunkForChunk({ diff: editorDiff }, 9, 10, 9, 10), 1);
+  assert.equal(sandbox.fileEditorHunkForChunk({ diff: editorDiff }, 14, 15, 14, 14), 2);
 });
 
 test("saving keeps the floating editor open and reloads its comparison", () => {

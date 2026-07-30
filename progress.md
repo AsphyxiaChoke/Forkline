@@ -5651,3 +5651,97 @@
 - `docs/CONTINUE.md`：记录实现边界、性能对照和验证结果。
 - `progress.md`：追加本轮修复、验证和回滚记录。
 - 回滚方式：尚未提交时执行 `git restore -- server.js public/js/features/file-editor.js public/styles.css tests/file-editor-ui.test.js tests/git-api.test.js README.md docs/CONTINUE.md progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-30 - Task: 修复编辑器点击单个改动块却暂存全部改动
+
+### What was done
+- 复现并确认编辑器视觉块与 Git hunk 上下文不一致：同一文件第 5、10 行的两个独立按钮，在普通 8 行上下文 Diff 中会落入同一个 hunk，导致点击任意按钮都暂存两处修改。
+- 工作区文件编辑接口改为给编辑器返回零上下文 Diff 和 `diffContext = 0`；底部工作区 Diff 继续使用原有 8 行上下文，不改变现有阅读和块操作行为。
+- MergeView 暂存回调同时使用旧版和新版行范围定位 hunk，覆盖替换、新增和纯删除块；前端把编辑器上下文传回后端，后端用相同上下文重新生成补丁，并为零上下文补丁使用 `git apply --unidiff-zero`。
+- 操作后仍保留浮窗并重载最新对照；点击第一个块后，已经暂存的块进入左栏，未暂存的第二个块继续留在右栏。
+
+### Testing
+- 修复前新增回归 `file editor stages only the selected visual chunk when nearby changes share the normal diff context` 稳定失败：`/api/worktree-file` 没有 `diffContext`，两个视觉块只返回一个 Git hunk。
+- 修复后定向 API 回归通过，确认缓存区只含第 5 行、工作区只含第 10 行；`node --test tests/file-editor-ui.test.js` 10 项通过，覆盖左右范围映射和纯删除块定位。
+- `node --check server.js`、`node --check public/js/features/file-editor.js` 均通过。
+- 首次完整后端测试被本机 `C:\Users\Administrator\.config\git\ignore` 权限警告污染状态输出；按仓库既有方式仅为测试进程设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行 `npm.cmd test`，56 项全部通过，未修改系统 Git 配置。
+- 浏览器在 `http://127.0.0.1:5290/` 打开隔离仓库：修复前两个按钮点击第一个后两处修改全部暂存；修复后点击第一个，按钮数从 2 变为 1，编辑器保持打开，`git diff --cached` 只含第 5 行，`git diff` 只含第 10 行。
+- 修复后的服务以 PID `17616` 在 `http://127.0.0.1:5290/` 运行，健康请求返回 HTTP 200；浏览器已切回 `D:\桌面\GitTest`，隔离测试仓库已删除。
+
+### Notes
+- `server.js`：增加编辑器零上下文 Diff、上下文校验和 `--unidiff-zero` 块应用。
+- `public/js/features/file-editor.js`：保存编辑器 Diff 上下文，并用左右范围定位及暂存当前视觉块。
+- `tests/git-api.test.js`：增加相邻视觉块只暂存所点块的真实 Git API 回归。
+- `tests/file-editor-ui.test.js`：增加编辑器上下文传递、相邻 hunk 和纯删除块范围映射回归。
+- `README.md`：说明编辑器按视觉块独立暂存。
+- `docs/CONTINUE.md`：记录实现方式、行为边界和真实浏览器验证。
+- `progress.md`：追加本轮复现、修复、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- server.js public/js/features/file-editor.js tests/file-editor-ui.test.js tests/git-api.test.js README.md docs/CONTINUE.md progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-30 - Task: 显示暂存区缺失行的斜纹对齐占位
+
+### What was done
+- 确认 MergeView 已为单侧新增或删除内容生成等高的 `.CodeMirror-merge-spacer`，但节点背景透明，导致暂存区缺少对应行时看起来像没有任何提示。
+- 为现有占位节点增加全宽、上下边界和主题自适应的灰色斜纹；工作区新增行在暂存区左栏显示占位，工作区删除行则在右栏对称显示。
+- 保留 CodeMirror 原有的行号、滚动同步、块高度计算、差异颜色和中间暂存按钮，不增加新的 DOM 或暂存分支逻辑。
+
+### Testing
+- `node --test tests/file-editor-ui.test.js`：10 项全部通过，新增占位节点必须使用全宽重复斜纹渐变的回归断言。
+- 使用 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 运行完整 `npm.cmd test`：56 项全部通过。
+- 浏览器在 `http://127.0.0.1:5290/` 打开 `D:\桌面\GitTest` 的未跟踪文件 `forkline-editor-demo.c`：左侧暂存区生成 1 个约 `535×201px` 的占位节点，与右侧 10 行新增代码等高；深色石墨主题显示深灰斜纹，浅色主题显示白底灰斜纹，上下边界清晰且中间暂存按钮位置不变。
+- 测试后已恢复用户原来的石墨主题；服务以 PID `27428` 在 `http://127.0.0.1:5290/` 运行，健康请求返回 HTTP 200，并保持打开该文件供直接查看。
+
+### Notes
+- `public/styles.css`：为 MergeView 对齐占位增加主题自适应斜纹样式。
+- `tests/file-editor-ui.test.js`：增加占位样式结构回归。
+- `README.md`：说明单侧新增/删除时的斜纹占位行为。
+- `docs/CONTINUE.md`：记录实现边界和深浅主题验证。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- public/styles.css tests/file-editor-ui.test.js README.md docs/CONTINUE.md progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-30 - Task: 修正顶部皮肤切换名称与实际配色错位
+
+### What was done
+- 确认顶部主题按钮原本显示下一套皮肤名称，而页面实际仍使用当前皮肤，导致按钮名称与配色整体错一位。
+- 按钮正文改为显示当前皮肤，悬停提示继续同时说明当前皮肤和点击后将切换到的下一套皮肤；默认深色页面的初始按钮文字同步改为“深色”。
+- 保留深色、浅色、石墨、森林、樱色和高对比的既有皮肤 ID、配色定义及循环顺序，设置页行为不变。
+
+### Testing
+- `node --test tests/themes.test.js`：3 项全部通过，覆盖查询参数初始化、浏览器存储恢复、六套皮肤循环及当前名称显示。
+- 仅为测试进程设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行 `npm.cmd test`：56 项全部通过；首次未正确传入该变量的运行被本机 Git ignore 权限警告污染，不属于功能回归。
+- 测试期间服务以 PID `1532` 在 `http://127.0.0.1:5290/` 运行，首页请求返回 HTTP 200；浏览器验证完成后已按要求关闭，端口不再监听。
+- 浏览器在 `D:\桌面\GitTest` 设置页验证：石墨状态为 `data-theme=graphite`、按钮“石墨”、提示下一套“森林”；点击后为 `data-theme=forest`、按钮“森林”、提示下一套“樱色”，最后已恢复石墨皮肤。
+
+### Notes
+- `public/js/app/layout-utils.js`：主题应用后显示当前皮肤名称，继续在悬停提示中预告下一套。
+- `public/index.html`：默认深色皮肤的静态按钮文字改为“深色”。
+- `tests/themes.test.js`：回归断言改为校验按钮显示当前皮肤名称。
+- `README.md`：说明顶部主题按钮正文与悬停提示的语义。
+- `docs/CONTINUE.md`：记录错位根因、修复边界及保持循环顺序不变。
+- `progress.md`：追加本轮修复、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -p -- public/index.html public/js/app/layout-utils.js tests/themes.test.js README.md docs/CONTINUE.md progress.md`，仅选择本任务的“当前皮肤名称”相关片段；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-30 - Task: 移除提交详情中的聚合 Diff 预览
+
+### What was done
+- 删除点击提交后右侧“详情”页底部的“DIFF 预览”，详情内容现在到历史编辑队列结束，不再重复渲染整条提交的聚合 Diff。
+- 保留“文件”页的变更文件树、单文件历史 Diff、文件历史、逐行追踪和最大化对照入口，历史改动查看流程不变。
+- 清理只服务于该聚合预览的 400 行截断渲染函数、截断提示样式和中英文翻译项。
+
+### Testing
+- 修改前新增回归会稳定失败，因为详情模板仍包含 `renderDiff(detail.diff)` 和“DIFF 预览”；修改后 `node --test tests/diff-preview.test.js` 的 3 项全部通过。
+- `node --check public/js/panels/inspector.js`、`node --check public/js/features/diff-workbench.js`、`node --check public/js/i18n-catalog.js` 均通过。
+- 仅为测试进程设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行 `npm.cmd test`：56 项全部通过。
+- 临时服务以 PID `36684` 在 `http://127.0.0.1:5290/` 返回 HTTP 200；浏览器打开 `D:\桌面\GitTest` 并点击提交 `cdd252a` 后，右侧详情存在提交操作和历史编辑队列，不再出现“DIFF 预览”。
+- 同一提交切到“文件”页后，变更文件、文件历史和最大化入口仍可见；验证结束后已关闭临时服务，`5290` 不再保留监听。
+
+### Notes
+- `public/js/panels/inspector.js`：移除提交详情中的聚合 Diff 标题和渲染调用。
+- `public/js/features/diff-workbench.js`：删除不再使用的聚合 Diff 预览渲染函数及行数限制。
+- `public/styles.css`：删除聚合预览截断提示的专用样式。
+- `public/js/i18n-catalog.js`：删除不再使用的聚合预览翻译项。
+- `tests/diff-preview.test.js`：改为验证详情不显示聚合预览，并保留文件页 Diff 与最大化工具。
+- `README.md`：更新提交详情和历史 Diff 的当前使用方式。
+- `docs/CONTINUE.md`：记录详情预览移除边界及保留的文件页能力。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -p -- public/js/panels/inspector.js public/js/features/diff-workbench.js public/styles.css public/js/i18n-catalog.js tests/diff-preview.test.js README.md docs/CONTINUE.md progress.md`，仅选择本任务的“提交详情聚合 Diff 预览”相关片段；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

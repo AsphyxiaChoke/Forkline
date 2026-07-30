@@ -204,6 +204,50 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   assert.match(binary.body.error, /二进制/);
 });
 
+test("file editor stages only the selected visual chunk when nearby changes share the normal diff context", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-chunk-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const filePath = path.join(repo, "nearby.txt");
+  const baseLines = Array.from({ length: 20 }, (_, index) => `line ${String(index + 1).padStart(2, "0")} baseline`);
+  await initRepository(repo);
+  await fs.writeFile(filePath, `${baseLines.join("\n")}\n`, "utf8");
+  await git(repo, ["add", "nearby.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+
+  const changedLines = [...baseLines];
+  changedLines[4] = "line 05 first change";
+  changedLines[9] = "line 10 second change";
+  await fs.writeFile(filePath, `${changedLines.join("\n")}\n`, "utf8");
+  const state = await openRepo(repo);
+
+  const opened = await request("/api/worktree-file?file=nearby.txt", { repoPath: repo });
+  assertStatus(opened, 200);
+  assert.equal(opened.body.diffContext, 0);
+  const hunks = opened.body.diff.filter((line) => line.type === "meta" && String(line.text || "").startsWith("@@ "));
+  assert.equal(hunks.length, 2);
+
+  const file = state.workingFiles.find((item) => item.file === "nearby.txt");
+  assert.ok(file?.snapshot);
+  const staged = await action(repo, state, {
+    action: "stageHunk",
+    file: "nearby.txt",
+    scope: opened.body.diffScope,
+    hunkIndex: hunks[0].hunkIndex,
+    diffContext: opened.body.diffContext,
+    expectedFileSnapshot: file.snapshot,
+  });
+  assertStatus(staged, 200);
+
+  const cachedDiff = await git(repo, ["diff", "--cached", "--", "nearby.txt"]);
+  const worktreeDiff = await git(repo, ["diff", "--", "nearby.txt"]);
+  assert.match(cachedDiff, /line 05 first change/);
+  assert.doesNotMatch(cachedDiff, /line 10 second change/);
+  assert.doesNotMatch(worktreeDiff, /line 05 first change/);
+  assert.match(worktreeDiff, /line 10 second change/);
+});
+
 test("worktree file editor compares the index and preserves GBK or GB18030 encoding", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-gbk-"));
   t.after(() => removeFixture(root));

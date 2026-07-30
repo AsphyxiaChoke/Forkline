@@ -32,7 +32,7 @@ function applyTheme(theme, persist = true) {
   state.theme = selected;
   document.documentElement.dataset.theme = selected;
   if (persist) localStorage.setItem("forkline-theme", selected);
-  els.themeToggle.textContent = t(next.label);
+  els.themeToggle.textContent = t(current.label);
   els.themeToggle.title = t("当前配色：{current}；点击切换到：{next}", { current: t(current.label), next: t(next.label) });
 }
 

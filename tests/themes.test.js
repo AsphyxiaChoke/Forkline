@@ -27,7 +27,7 @@ test("theme runtime accepts, restores, persists, and cycles through every palett
 
   assert.equal(state.theme, "forest");
   assert.equal(document.documentElement.dataset.theme, "forest");
-  assert.equal(themeToggle.textContent, "樱色");
+  assert.equal(themeToggle.textContent, "森林");
   assert.equal(storage.has("forkline-theme"), false, "query initialization should not rewrite browser storage");
 
   for (const theme of themeIds) {
@@ -38,7 +38,7 @@ test("theme runtime accepts, restores, persists, and cycles through every palett
   vm.runInContext("toggleTheme()", context);
   assert.equal(state.theme, "rose");
   assert.equal(storage.get("forkline-theme"), "rose");
-  assert.equal(themeToggle.textContent, "高对比");
+  assert.equal(themeToggle.textContent, "樱色");
   assert.match(themeToggle.title, /当前配色：樱色/);
   assert.equal(inspectorRenders, 1, "top theme cycling should refresh the active settings card");
 });

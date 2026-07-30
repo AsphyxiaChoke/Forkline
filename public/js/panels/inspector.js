@@ -161,8 +161,6 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn danger" data-commit-tool="queueDrop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(canDrop ? "加入历史编辑队列，执行时丢弃此提交" : "此提交不能加入丢弃队列")}"><span>加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
     </div>
     ${renderHistoryRewriteQueue()}
-    <div class="detail-section-title">DIFF 预览</div>
-    ${renderDiff(detail.diff)}
   `;
 }
 

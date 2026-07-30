@@ -1,29 +1,4 @@
 // Diff rendering, file trees, workbench diff, and active diff modal.
-const DIFF_PREVIEW_LINE_LIMIT = 400;
-
-function renderDiff(diff) {
-  if (!diff?.length) return `<div class="diff"><div class="diff-line"><span class="ln">1</span><code>${t("没有可显示的 Diff")}</code></div></div>`;
-  const visibleDiff = diff.slice(0, DIFF_PREVIEW_LINE_LIMIT);
-  return `
-    <div class="diff">
-      ${visibleDiff
-        .map(
-          (line, index) => `
-          <div class="diff-line ${line.type}">
-            <span class="ln">${index + 1}</span>
-            <code>${escapeHtml(line.text)}</code>
-          </div>`
-        )
-        .join("")}
-      ${
-        diff.length > visibleDiff.length
-          ? `<div class="diff-preview-truncated"><strong>${t("仅显示前 {visible} / {total} 行", { visible: visibleDiff.length, total: diff.length })}</strong><span>${t("完整内容请在“文件”页按文件查看")}</span></div>`
-          : ""
-      }
-    </div>
-  `;
-}
-
 function fileTreeHtml(files, options = {}) {
   const root = { dirs: new Map(), files: [] };
   files.forEach((file) => addFileToTree(root, file));
