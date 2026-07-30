@@ -73,6 +73,13 @@ test("file editor loads local CodeMirror MergeView with line numbers and syntax 
   assert.match(styles, /\.cm-s-default \.cm-keyword/);
 });
 
+test("conflict file editor uses one CodeMirror pane instead of an empty MergeView comparison", () => {
+  assert.match(editor, /editor\.conflict = Boolean\(data\.conflict\)/);
+  assert.match(editor, /if \(editor\.conflict\) \{\s*editor\.codeMirror = CodeMirror\(els\.fileEditorMerge, codeMirrorOptions\);/s);
+  assert.match(editor, /else \{\s*editor\.mergeView = CodeMirror\.MergeView/s);
+  assert.match(styles, /\.file-editor-compare-labels\.is-single-pane\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+});
+
 test("file editor provides find, replace, shortcuts, and repository cleanup", () => {
   assert.match(core, /fileEditor:\s*null/);
   assert.match(core, /fileEditorModal:\s*\$\("#fileEditorModal"\)/);

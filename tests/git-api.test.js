@@ -159,6 +159,7 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   assert.equal(opened.body.oldContent, "base\r\nlocal\r\nstaged\r\n");
   assert.equal(opened.body.oldEncoding, "utf-8");
   assert.equal(opened.body.oldSource, "index");
+  assert.equal(opened.body.conflict, false);
   assert.equal(opened.body.diffScope, "unstaged");
   assert.ok(opened.body.diff.some((line) => line.type === "add" && line.text === "+change"));
   assert.match(opened.body.snapshot, /^[a-f0-9]{64}$/);
@@ -248,6 +249,36 @@ test("worktree file editor compares the index and preserves GBK or GB18030 encod
   assert.equal(openedGb18030.body.encoding, "gb18030");
   assert.equal(openedGb18030.body.content, "旧字符𠀀\n工作区𠀁\n");
   assert.equal(openedGb18030.body.oldContent, "旧字符𠀀\n");
+});
+
+test("worktree file editor marks conflicts without inventing an index comparison", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-conflict-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const conflictPath = path.join(repo, "conflict.txt");
+  await initRepository(repo);
+  await fs.writeFile(conflictPath, "base\n", "utf8");
+  await git(repo, ["add", "conflict.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await git(repo, ["checkout", "-b", "conflict-side"]);
+  await fs.writeFile(conflictPath, "side\n", "utf8");
+  await git(repo, ["commit", "-am", "side"]);
+  await git(repo, ["checkout", "main"]);
+  await fs.writeFile(conflictPath, "main\n", "utf8");
+  await git(repo, ["commit", "-am", "main"]);
+  await assert.rejects(git(repo, ["merge", "conflict-side", "--no-edit"]), /CONFLICT|failed/i);
+  await openRepo(repo);
+
+  const opened = await request("/api/worktree-file?file=conflict.txt", { repoPath: repo });
+  assertStatus(opened, 200);
+  assert.equal(opened.body.conflict, true);
+  assert.equal(opened.body.oldExists, false);
+  assert.equal(opened.body.oldContent, "");
+  assert.match(opened.body.oldUnavailable, /没有单一版本/);
+  assert.equal(opened.body.diffScope, "");
+  assert.equal(opened.body.canStage, false);
+  assert.match(opened.body.content, /<<<<<<< HEAD/);
 });
 
 test("ordinary parent stash still creates, applies, and pops", { timeout: 120000 }, async (t) => {

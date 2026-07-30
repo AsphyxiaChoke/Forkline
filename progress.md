@@ -5624,3 +5624,30 @@
 - `docs/CONTINUE.md`：记录当前实现边界、API 语义和后续开发基线。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：如本轮之后单独提交，执行 `git revert <包含本轮常驻编辑浮窗改动的提交哈希>`；尚未提交时，对本轮 Notes 中除新增 vendor 文件外的文件执行 `git restore -- <文件列表>`，再删除 `public/vendor/codemirror/addon/mode/simple.js`，即可回到本轮开始前状态。
+
+## 2026-07-30 - Task: 修复大型冲突文件编辑器滚动卡死
+
+### What was done
+- 后端为工作区文件编辑接口增加明确的冲突标记，不再让前端从中文提示或空内容猜测文件状态。
+- 普通文件继续使用暂存区 / 工作区 MergeView；冲突文件改为单栏 CodeMirror，只编辑工作区冲突内容，移除无意义的空左栏、同步滚动、差异连接和暂存按钮监听。
+- 冲突单栏继续保留行号、语法高亮、查找替换、编码/换行信息、保存、浮窗拖动和缩放，并把“暂存区没有单一版本”的中文说明放到单栏标题中。
+- 增加真实 merge 冲突 API 回归和前端结构回归，README 与继续开发文档同步说明普通文件双栏、冲突文件单栏的行为边界。
+
+### Testing
+- `node --check server.js`、`node --check public/js/features/file-editor.js` 均通过；`git diff --check` 无空白错误，仅有仓库现有 LF / CRLF 转换提示。
+- `node --test tests/file-editor-ui.test.js`：10 项全部通过，新增冲突文件必须使用单栏 CodeMirror 的回归。
+- `node --test --test-name-pattern 'worktree file editor' tests/git-api.test.js`：3 项全部通过，新增真实 merge 冲突接口验证 `conflict = true`、无虚假暂存区对照且仍可读取冲突标记。
+- 完整 `npm test`：55 项全部通过，退出码 0；普通文件双栏、按块/按行暂存、UTF-8、GBK/GB18030、stash、子模块保护和其他前端状态回归均未受影响。
+- 浏览器在 `http://127.0.0.1:5290/` 打开独立临时仓库 `C:\tmp\forkline-conflict-repro-20260730` 的约 1 MiB、20,000 行冲突文件：修复前生成 2 个高度约 402,950 px 的编辑器面板，40 次滚动总耗时约 1,172 ms、单次最慢约 59 ms；修复后生成 1 个 CodeMirror、0 个 MergeView，从第 1 行滚到约第 1,697 行后仍可立即读取状态，40 次滚动总耗时约 924 ms、单次最慢约 29 ms。
+- 截图确认单栏排版、中文冲突说明、行号、长文件滚动条、保存按钮和右下角缩放手柄正常；服务已以 PID `34072` 在 `http://127.0.0.1:5290/` 重启，健康请求返回 HTTP 200。
+
+### Notes
+- `server.js`：工作区文件响应增加 `conflict` 字段。
+- `public/js/features/file-editor.js`：冲突文件切换为单栏 CodeMirror，并保持普通文件 MergeView 行为。
+- `public/styles.css`：冲突单栏使用全宽标题布局。
+- `tests/file-editor-ui.test.js`：增加冲突文件单栏结构回归。
+- `tests/git-api.test.js`：增加真实 merge 冲突文件接口回归。
+- `README.md`：补充普通文件双栏、冲突文件单栏的正式说明。
+- `docs/CONTINUE.md`：记录实现边界、性能对照和验证结果。
+- `progress.md`：追加本轮修复、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- server.js public/js/features/file-editor.js public/styles.css tests/file-editor-ui.test.js tests/git-api.test.js README.md docs/CONTINUE.md progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

@@ -6071,6 +6071,14 @@ body.file-editor-window-resizing * {
   grid-column: 3;
 }
 
+.file-editor-compare-labels.is-single-pane {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.file-editor-compare-labels.is-single-pane #fileEditorNewLabel {
+  grid-column: 1;
+}
+
 .file-editor-body {
   grid-row: 4;
   min-width: 0;

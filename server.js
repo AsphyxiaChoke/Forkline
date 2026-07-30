@@ -1094,6 +1094,7 @@ async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPat
     ...current,
     oldFile: target.file,
     oldSource: "index",
+    conflict: Boolean(status?.conflict),
     previousFile: previousFilePath ? validateEditableRepoFile(previousFilePath) : status?.previousFile || "",
     diffScope,
     diff,

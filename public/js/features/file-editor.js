@@ -49,6 +49,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     diffScope: "",
     diff: [],
     canStage: false,
+    conflict: false,
     branchSnapshot: null,
     fileSnapshot: null,
     contextSelection: null,
@@ -96,6 +97,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.diffScope = data.diffScope || "";
     editor.diff = Array.isArray(data.diff) ? data.diff : [];
     editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
+    editor.conflict = Boolean(data.conflict);
     editor.branchSnapshot = currentBranchSnapshotPayload();
     editor.fileSnapshot = fileSnapshotPayload(editor.file, editor.diffScope);
     editor.mode = fileEditorMode(file);
@@ -182,8 +184,9 @@ function closeFileEditor(force = false) {
 
 function createFileEditorInstance(editor) {
   els.fileEditorMerge.replaceChildren();
-  const canUseMergeView = typeof CodeMirror === "function" && typeof CodeMirror.MergeView === "function";
-  if (!canUseMergeView) {
+  const canUseCodeMirror = typeof CodeMirror === "function";
+  const canUseMergeView = canUseCodeMirror && typeof CodeMirror.MergeView === "function";
+  if (!canUseCodeMirror || (!editor.conflict && !canUseMergeView)) {
     els.fileEditorMerge.hidden = true;
     els.fileEditorFallback.hidden = false;
     els.fileEditorOldText.value = editor.oldContent;
@@ -194,9 +197,8 @@ function createFileEditorInstance(editor) {
 
   els.fileEditorMerge.hidden = false;
   els.fileEditorFallback.hidden = true;
-  editor.mergeView = CodeMirror.MergeView(els.fileEditorMerge, {
+  const codeMirrorOptions = {
     value: editor.originalContent,
-    origLeft: editor.oldContent,
     mode: editor.mode.mode,
     lineNumbers: true,
     lineWrapping: false,
@@ -206,18 +208,6 @@ function createFileEditorInstance(editor) {
     styleActiveLine: true,
     matchBrackets: true,
     autoCloseBrackets: true,
-    highlightDifferences: true,
-    connect: "align",
-    collapseIdentical: false,
-    chunkClassLocation: ["background", "gutter"],
-    revertButtons: editor.canStage,
-    revertChunk: (_mergeView, _from, _origStart, _origEnd, _to, editStart, editEnd) => {
-      stageFileEditorChunk(editStart.line, editEnd.line).catch((error) => toast(error.message));
-    },
-    phrases: {
-      "Revert chunk": t("暂存此改动块"),
-      "Toggle locked scrolling": t("切换同步滚动"),
-    },
     extraKeys: {
       "Ctrl-S": () => submitFileEditor().catch((error) => toast(error.message)),
       "Cmd-S": () => submitFileEditor().catch((error) => toast(error.message)),
@@ -226,14 +216,34 @@ function createFileEditorInstance(editor) {
       "Ctrl-H": () => openFileEditorSearch(true),
       "Cmd-Alt-F": () => openFileEditorSearch(true),
     },
-  });
-  editor.codeMirror = editor.mergeView.editor();
+  };
+  if (editor.conflict) {
+    editor.codeMirror = CodeMirror(els.fileEditorMerge, codeMirrorOptions);
+  } else {
+    editor.mergeView = CodeMirror.MergeView(els.fileEditorMerge, {
+      ...codeMirrorOptions,
+      origLeft: editor.oldContent,
+      highlightDifferences: true,
+      connect: "align",
+      collapseIdentical: false,
+      chunkClassLocation: ["background", "gutter"],
+      revertButtons: editor.canStage,
+      revertChunk: (_mergeView, _from, _origStart, _origEnd, _to, editStart, editEnd) => {
+        stageFileEditorChunk(editStart.line, editEnd.line).catch((error) => toast(error.message));
+      },
+      phrases: {
+        "Revert chunk": t("暂存此改动块"),
+        "Toggle locked scrolling": t("切换同步滚动"),
+      },
+    });
+    editor.codeMirror = editor.mergeView.editor();
+    observeFileEditorStageButtons(editor);
+  }
   editor.changeHandler = () => {
     updateFileEditorStatus();
     scheduleFileEditorSearchRefresh();
   };
   editor.codeMirror.on("change", editor.changeHandler);
-  observeFileEditorStageButtons(editor);
   observeFileEditorResize(editor);
   requestAnimationFrame(() => {
     if (state.fileEditor !== editor) return;
@@ -696,6 +706,8 @@ function destroyFileEditorInstance() {
   clearFileEditorSearchMarks();
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
   if (els.fileEditorMerge) els.fileEditorMerge.replaceChildren();
+  els.fileEditorOldLabel.hidden = false;
+  els.fileEditorOldLabel.parentElement?.classList.remove("is-single-pane");
   if (editor) {
     editor.codeMirror = null;
     editor.mergeView = null;
@@ -743,6 +755,14 @@ function updateFileEditorStatus(message = "") {
 }
 
 function updateFileEditorCompareLabels(editor) {
+  const labels = els.fileEditorOldLabel.parentElement;
+  labels?.classList.toggle("is-single-pane", editor.conflict);
+  els.fileEditorOldLabel.hidden = editor.conflict;
+  if (editor.conflict) {
+    const conflictNote = fileEditorOldUnavailableLabel(editor.oldUnavailable);
+    els.fileEditorNewLabel.textContent = `${t("工作区")} · ${conflictNote} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
+    return;
+  }
   const oldDetails = [];
   if (editor.oldUnavailable) oldDetails.push(fileEditorOldUnavailableLabel(editor.oldUnavailable));
   else if (!editor.oldExists) oldDetails.push(t("暂存区中不存在"));
