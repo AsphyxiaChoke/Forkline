@@ -1459,8 +1459,9 @@ body.resizing .workspace-resizer::before {
 }
 
 .graph-head em {
-  overflow: hidden;
-  max-width: calc(var(--graph-w) - 64px);
+  flex: 0 0 auto;
+  overflow: visible;
+  max-width: none;
   padding: 2px 6px;
   border: 1px solid rgba(var(--teal-rgb), 0.48);
   background: rgba(var(--teal-rgb), 0.08);
@@ -1469,7 +1470,7 @@ body.resizing .workspace-resizer::before {
   font-style: normal;
   font-size: 11px;
   line-height: 1.2;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -1826,7 +1827,7 @@ body.resizing .stage-resizer-y::before {
 
 .conflict-choice-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -1847,17 +1848,26 @@ body.resizing .stage-resizer-y::before {
 }
 
 .conflict-choice-actions {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(78px, auto));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+  width: 100%;
+  justify-self: stretch;
 }
 
 .conflict-choice-actions .mini-btn {
-  display: inline-flex;
-  justify-content: center;
+  display: grid;
+  width: 100%;
+  place-items: center;
+  text-align: center;
   height: 28px;
   min-width: 0;
   padding: 0 8px;
+}
+
+.conflict-choice-actions .mini-btn > span:not(.command-hint) {
+  width: 100%;
+  text-align: center;
 }
 
 .operation-actions {
@@ -2216,6 +2226,27 @@ button.file-row {
   height: 24px;
   padding: 0 8px;
   font-size: 11px;
+}
+
+.side-diff-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--surface) 88%, var(--field));
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.side-diff-more .mini-btn {
+  min-height: 28px;
+  height: 28px;
+  white-space: nowrap;
 }
 
 .commit-file-view {
@@ -3403,6 +3434,10 @@ button.file-row {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--field);
+}
+
+.reword-form .edit-field textarea {
+  min-height: 132px;
 }
 
 .commit-tools {
@@ -6093,8 +6128,8 @@ body.file-editor-window-resizing * {
   left: 50% !important;
   width: 40px;
   height: 26px;
-  margin-top: 3px;
-  transform: translateX(-50%);
+  margin-top: 0;
+  transform: translate(-50%, -50%);
   border: 1px solid color-mix(in srgb, var(--teal) 72%, var(--line-strong));
   border-radius: 6px;
   background: color-mix(in srgb, var(--panel-2) 82%, var(--teal));

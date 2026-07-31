@@ -48,6 +48,138 @@ test("commit file double-click opens the shared comparison window in read-only m
   assert.match(styles, /\.file-editor-dialog\.is-readonly[\s\S]*#fileEditorReplaceAll/);
 });
 
+test("commit file single-click keeps the long file list mounted for a following double-click", () => {
+  const calls = [];
+  const sandbox = {
+    state: { selectedCommitFile: "src/first.js" },
+    renderSelectedCommitFileDiff: () => calls.push("diff"),
+    renderInspector: () => calls.push("inspector"),
+  };
+  vm.runInNewContext(diffWorkbench, sandbox);
+
+  sandbox.selectCommitFile("src/deep/target.js");
+
+  assert.equal(sandbox.state.selectedCommitFile, "src/deep/target.js");
+  assert.deepEqual(calls, ["diff"]);
+});
+
+test("history diff keeps maximize data without rendering the removed workbench", () => {
+  let sideDiffRenders = 0;
+  let cleared = 0;
+  const sandbox = {
+    state: { data: {}, diffRequestId: 0, selectedDiffLines: new Set(), lastDiffLineKey: "" },
+    els: {
+      editWorktreeFile: null,
+      maximizeDiff: { disabled: true },
+      workDiffTitle: { textContent: "" },
+      workDiffPath: { textContent: "" },
+      workDiffView: {
+        className: "",
+        replaceChildren: () => {
+          cleared += 1;
+        },
+        set innerHTML(_value) {
+          sideDiffRenders += 1;
+        },
+      },
+    },
+    diffForFile: (diff) => diff,
+    shortFileName: (file) => file,
+    t: (value) => value,
+  };
+  vm.runInNewContext(diffWorkbench, sandbox);
+  sandbox.renderSideDiff = () => {
+    sideDiffRenders += 1;
+    return "large diff";
+  };
+
+  sandbox.renderHistoryDiffInWorkbench(
+    { short: "abc1234" },
+    {
+      diff: [
+        { type: "meta", text: "diff --git a/build/large.hex b/build/large.hex" },
+        { type: "add", text: "+line" },
+      ],
+    },
+    "build/large.hex"
+  );
+
+  assert.equal(sideDiffRenders, 0);
+  assert.equal(cleared, 1);
+  assert.equal(sandbox.state.activeDiff.source, "history");
+  assert.equal(sandbox.state.activeDiff.diff.length, 2);
+  assert.equal(sandbox.els.maximizeDiff.disabled, false);
+});
+
+test("large side diffs render an initial batch and expand without losing the full source", () => {
+  const sandbox = {
+    state: {
+      selectedDiffLines: new Set(),
+      historyDiffPreview: { key: "commit:file", limit: 1000 },
+      diffModalRenderLimit: 1000,
+    },
+    els: {},
+    escapeHtml: (value) => String(value),
+    escapeAttr: (value) => String(value),
+    t: (value, replacements = {}) => Object.entries(replacements).reduce(
+      (text, [key, replacement]) => text.replaceAll(`{${key}}`, String(replacement)),
+      value
+    ),
+    renderSelectedCommitFileDiff: () => {},
+    renderDiffModalBody: () => {},
+  };
+  vm.runInNewContext(diffWorkbench, sandbox);
+  const diff = Array.from({ length: 2500 }, (_, index) => ({ type: "ctx", text: ` line-${index}` }));
+
+  const html = sandbox.renderSideDiff(diff, "empty", { maxLines: 1000, loadMoreTarget: "history" });
+
+  assert.equal((html.match(/class="side-row ctx/g) || []).length, 1000);
+  assert.match(html, /line-999/);
+  assert.doesNotMatch(html, /line-1000/);
+  assert.match(html, /data-side-diff-more="history"/);
+  assert.match(html, /data-next-limit="2000"/);
+
+  let historyRenders = 0;
+  let modalRenders = 0;
+  sandbox.renderSelectedCommitFileDiff = () => {
+    historyRenders += 1;
+  };
+  sandbox.renderDiffModalBody = () => {
+    modalRenders += 1;
+  };
+  sandbox.expandSideDiff({ dataset: { sideDiffMore: "history", nextLimit: "2000" } });
+  sandbox.expandSideDiff({ dataset: { sideDiffMore: "modal", nextLimit: "2000" } });
+
+  assert.equal(sandbox.state.historyDiffPreview.limit, 2000);
+  assert.equal(sandbox.state.diffModalRenderLimit, 2000);
+  assert.equal(historyRenders, 1);
+  assert.equal(modalRenders, 1);
+});
+
+test("large diff controls are delegated and closing the modal releases rendered rows", () => {
+  assert.match(events, /data-side-diff-more[\s\S]{0,220}expandSideDiff/);
+  assert.match(diffWorkbench, /function closeDiffModal\(\)[\s\S]{0,260}els\.diffModalBody\.replaceChildren\(\)/);
+});
+
+test("historical comparison suspends the heavy commit preview and restores it on close", () => {
+  assert.match(
+    inspector,
+    /const previewSuspended = Boolean\(state\.fileEditor\?\.source === "commit" && els\.fileEditorModal\.classList\.contains\("show"\)\)/
+  );
+  assert.match(inspector, /previewSuspended[\s\S]*历史文件对照已打开[\s\S]*renderSideDiff\(selectedDiff/);
+  assert.match(editor, /els\.fileEditorModal\.classList\.add\("show"\);\s*els\.fileEditorModal\.setAttribute\("aria-hidden", "false"\);[\s\S]{0,180}if \(editor\.readOnly\) renderSelectedCommitFileDiff\(\);/);
+  assert.match(editor, /const restoreCommitPreview = state\.fileEditor\?\.source === "commit";/);
+  assert.match(editor, /els\.fileEditorModal\.setAttribute\("aria-hidden", "true"\);[\s\S]{0,260}if \(restoreCommitPreview\) renderSelectedCommitFileDiff\(\);/);
+});
+
+test("read-only historical comparison does not observe stage buttons", () => {
+  assert.match(editor, /if \(editor\.canStage\) observeFileEditorStageButtons\(editor\);/);
+});
+
+test("read-only historical comparison avoids MergeView alignment loops", () => {
+  assert.match(editor, /connect: editor\.readOnly \? null : "align"/);
+});
+
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {
   const simpleModeIndex = html.indexOf("./vendor/codemirror/addon/mode/simple.js");
   assert.ok(simpleModeIndex > html.indexOf("./vendor/codemirror/lib/codemirror.js"));
@@ -174,6 +306,28 @@ test("file editor stages from the center and restores selected changes from a co
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-copy\s*\{[^}]*font-size:\s*11px/s);
 });
 
+test("file editor centers each stage button on the full visual chunk", () => {
+  const sandbox = {};
+  vm.runInNewContext(editor, sandbox);
+  const codeMirror = (lineHeights) => ({
+    getScrollerElement: () => ({ getBoundingClientRect: () => ({ top: 100 }) }),
+    getScrollInfo: () => ({ top: 20 }),
+    heightAtLine: (line) => lineHeights[line],
+  });
+  const mergeView = {
+    wrap: { getBoundingClientRect: () => ({ top: 80 }) },
+    leftOriginal: () => codeMirror({ 2: 40, 6: 160 }),
+    editor: () => codeMirror({ 3: 60, 9: 240 }),
+  };
+
+  assert.equal(
+    sandbox.fileEditorStageButtonCenter(mergeView, { origFrom: 2, origTo: 6, editFrom: 3, editTo: 9 }),
+    140
+  );
+  assert.match(editor, /button\.style\.top\s*=\s*`\$\{center\}px`/);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-copy\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)/s);
+});
+
 test("file editor maps working-tree selections to the matching Git hunk and line keys", () => {
   const sandbox = {};
   vm.runInNewContext(editor, sandbox);
@@ -222,6 +376,8 @@ test("saving keeps the floating editor open and reloads its comparison", () => {
 
 test("file editor exposes Chinese encoding and comparison messages in English mode", () => {
   assert.equal(catalog.translate("en", "查找替换"), "Find and replace");
+  assert.equal(catalog.translate("en", "历史文件对照已打开"), "Commit file comparison is open");
+  assert.equal(catalog.translate("en", "关闭对照窗口后恢复此处预览。"), "Close the comparison window to restore this preview.");
   assert.equal(catalog.translate("en", "拖动调整窗口大小"), "Drag to resize the window");
   assert.equal(catalog.translate("en", "暂存区中不存在"), "Not present in the index");
   assert.equal(catalog.translate("en", "暂存此改动块"), "Stage this change block");

@@ -5878,3 +5878,207 @@
 - `docs/CONTINUE.md`：记录当前竖屏规则、实测尺寸和图谱标签边界。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md public/js/app/layout-utils.js public/js/features/graph.js public/js/features/history-list.js public/styles.css tests/layout-ui.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 图谱表头范围标签完整显示
+
+### What was done
+- 取消图谱表头范围标签的 flex 收缩、最大宽度和省略号规则，使“全部分支”及当前分支名始终按完整内容宽度单行显示。
+- 保留其他表头和文件编辑器原有省略行为，仅修改用户标注的 `graphModeLabel`，避免扩大布局影响范围。
+- 新增图谱表头范围标签不收缩的布局回归，并同步更新使用说明与继续开发记录。
+
+### Testing
+- 修改前运行 `node --test tests/layout-ui.test.js`：新增回归稳定失败，确认旧样式仍为 `flex-shrink: 1`、`max-width` 限制和省略号；修改后 17 项全部通过。
+- 浏览器在用户标注对应的 `476×1043` CSS 竖屏视口验证：“全部分支”宽度约 `57.49px`，`clientWidth` 与 `scrollWidth` 均为 `56px`；切换到 `feature/visual-history` 后宽度约 `134.14px`，`clientWidth` 与 `scrollWidth` 均为 `133px`，两者均无截断。
+- 计算样式验证范围标签为 `flex-shrink: 0`、`max-width: none`、`overflow: visible`、`text-overflow: clip`。
+- 设置 `XDG_CONFIG_HOME=C:\tmp\forkline-test-xdg` 后运行完整 `npm.cmd test`：74 项全部通过，退出码为 0。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/styles.css`：让图谱表头范围标签固定按完整内容宽度显示。
+- `tests/layout-ui.test.js`：增加范围标签不收缩、不省略的回归。
+- `README.md`：说明图谱表头中的全部分支或当前分支名不会缩写。
+- `docs/CONTINUE.md`：记录范围标签完整显示的样式边界和验证结果。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：尚未提交时执行 `git restore -- README.md docs/CONTINUE.md public/styles.css tests/layout-ui.test.js progress.md`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 文件编辑器暂存按钮按改动块居中
+
+### What was done
+- 文件编辑器中间的“暂存”按钮不再贴近改动块顶部，而是读取暂存区和工作区两侧对应改动范围的实际上下边界，以两侧联合范围的垂直中心作为按钮位置。
+- 按钮样式改为以自身中心对齐计算位置，保持原有按块暂存范围、点击行为和左右面板滚动逻辑不变。
+- 新增按钮居中回归，并同步更新使用说明和继续开发记录。
+
+### Testing
+- 修复前使用 `D:\桌面\GitTest\forkline-editor-demo.c` 复现：改动块高度约 `282px`，块中心约 `394.87px`，按钮中心约 `269.72px`，向上偏移约 `125.15px`。
+- 修复后同文件实测：改动块高度约 `221.83px`，块中心约 `364.645515px`，按钮中心约 `364.645501px`，中心偏差约 `0.000014px`。
+- `node --check public/js/features/file-editor.js` 通过；`node --test tests/file-editor-ui.test.js` 12 项全部通过。
+- 设置隔离测试配置后运行完整 `npm.cmd test`：75 项全部通过，退出码为 0。
+- `D:\桌面\GitTest` 测试前后均保持 `测试.txt` 的原有修改和 3 个未跟踪编辑器演示文件，没有新增暂存、提交或分支变化。
+
+### Notes
+- `public/js/features/file-editor.js`：根据左右 CodeMirror 改动范围计算暂存按钮中心位置。
+- `public/styles.css`：让暂存按钮以自身中心对齐计算出的垂直坐标。
+- `tests/file-editor-ui.test.js`：增加左右改动高度不同时的按钮居中回归。
+- `README.md`：说明暂存按钮会正对整个视觉改动块。
+- `docs/CONTINUE.md`：记录按钮定位算法、行为边界和验证结果。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：由于这些文件还包含前一轮未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js public/styles.css tests/file-editor-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 文件编辑器暂存按钮显示恢复
+
+### What was done
+- 确认按钮消失不是居中算法或 CSS 裁剪导致，而是页面加载了最新静态前端、常驻 Node 进程却仍运行旧版 `server.js`；旧 `/api/worktree-file` 响应缺少 `canStage`、`diffScope` 和 `diff`，前端因此不会让 MergeView 创建暂存按钮。
+- 只重启 `5287` 的 Forkline Node 服务，使后端接口与当前前端代码同步；随后使用独立 `5293` 测试服务打开 `D:\桌面\GitTest`，避免其他浏览器页切换服务端当前仓库干扰验证。
+- 没有修改暂存执行逻辑或用户测试仓库内容，并把后端改动后必须重启服务的验证边界写入继续开发说明。
+
+### Testing
+- 重启前只读请求 `5287 /api/worktree-file`，响应仅包含文件内容和暂存区内容，没有 `canStage` / `diffScope`；编辑器 DOM 中 `.CodeMirror-merge-copy` 和按钮容器数量均为 0。
+- 最新服务在隔离端口返回 `canStage = true`、`diffScope = unstaged`；双击 `D:\桌面\GitTest\测试.txt` 后暂存按钮数量为 1，按钮文本为“暂存”，尺寸与可见性均正常。
+- 浏览器截图确认按钮位于暂存区和工作区改动块之间，并保持上一任务实现的整块垂直居中。
+- 测试结束后隔离浏览器页已释放，临时服务 `5293` 已关闭且端口无监听。
+
+### Notes
+- `docs/CONTINUE.md`：记录静态前端与旧 Node 后端错配时暂存按钮不会生成，以及后端改动后的重启要求。
+- `progress.md`：追加本轮诊断、服务恢复、验证和回滚记录。
+- 回滚方式：本轮没有源代码行为改动；若只撤销文档记录，执行 `git restore -p -- docs/CONTINUE.md progress.md` 并仅接受本任务对应补丁块。服务进程不需要回滚，重新运行当前版本 `server.js` 即可。
+
+## 2026-07-31 - Task: 提交正文与冲突按钮布局优化
+
+### What was done
+- 把右侧提交详情中的正文输入框默认最小高度从通用 `76px` 提升为提交信息专用的 `132px`，保留原有纵向拉伸和 `220px` 最大高度。
+- 把每个冲突文件的路径和操作按钮拆成上下两行；“当前 / 对方”按钮改为两列等宽、占满整行，并在各自按钮区域内居中。
+- 新增对应布局回归，并同步更新 README 和继续开发说明。
+
+### Testing
+- 修改前运行 `node --test tests/layout-ui.test.js`：新增的正文高度和冲突按钮布局 2 项稳定失败，其余 17 项通过；修改后该文件 19 项全部通过。
+- 隔离浏览器实测提交正文输入框 `min-height = 132px`，实际高度约 `131.996px`，仍保留 `max-height = 220px`。
+- 浏览器加载后的冲突布局规则为单列文件行、按钮区 `repeat(2, minmax(0, 1fr))`、宽度 `100%`，两个按钮均为宽度 `100%` 且 `justify-content: center`。
+- 设置隔离测试配置后运行完整 `npm.cmd test`：77 项全部通过，退出码为 0。
+- `D:\桌面\GitTest` 仍保持原有 `测试.txt` 修改和 3 个未跟踪编辑器演示文件，没有新增暂存、提交或分支变化。
+
+### Notes
+- `public/styles.css`：加高提交正文编辑区，并重排冲突文件的等宽居中操作按钮。
+- `tests/layout-ui.test.js`：增加正文默认高度和冲突按钮布局回归。
+- `README.md`：说明正文输入框和冲突操作区的新默认布局。
+- `docs/CONTINUE.md`：记录布局尺寸、按钮排列规则和验证边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 冲突按钮文字双轴居中
+
+### What was done
+- 修正上一版只让冲突按钮外框等宽、但没有锁定内部文字双轴对齐的问题：按钮改用网格 `place-items: center`，并明确让可见文字占满按钮内容区后再次居中。
+- 保留“当前 / 对方”两列等宽和文件路径单独一行的布局，不改冲突解决命令、确认流程或仓库状态处理。
+- 加强布局回归，并同步修正 README 和继续开发说明中对“居中”的定义。
+
+### Testing
+- 修改前运行 `node --test tests/layout-ui.test.js`：加强后的冲突按钮居中回归稳定失败；修改后该文件 19 项全部通过。
+- 在 `C:\tmp` 创建一次性合并冲突仓库并通过独立 `5294` 服务实测：两个按钮计算样式均为 `display: grid`、`place-items: center`、`text-align: center`，可见文字同样为 `text-align: center`。
+- 像素测量“当前”文字相对按钮中心横向偏差为 `0px`、纵向约 `-0.0058px`；“对方”横向约 `-0.000008px`、纵向约 `-0.0058px`。
+- 设置隔离测试配置后运行完整 `npm.cmd test`：77 项全部通过，退出码为 0。
+- 临时浏览器页、`5294` 服务和一次性冲突仓库均已关闭或删除，没有读取或修改用户“幸运双明牌”仓库中的冲突文件。
+
+### Notes
+- `public/styles.css`：把冲突选择按钮和内部可见文字改为明确的双轴居中。
+- `tests/layout-ui.test.js`：锁定按钮网格居中和文字全宽居中规则。
+- `README.md`：说明按钮外框和内部文字均双轴居中。
+- `docs/CONTINUE.md`：记录具体布局规则和验证边界。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 提交文件列表单击后保持滚动位置
+
+### What was done
+- 修复右侧提交“文件”页在单击变更文件时重建整个详情页的问题；现在只更新当前文件的 Diff 面板和选中样式，文件树 DOM 不再被替换。
+- 保留大量文件列表的滚动位置和原有双击监听，使用户滚到下方单击目标文件后仍可在原位置继续双击打开历史完整对照。
+- 新增针对局部刷新路径的回归，并同步更新 README 和继续开发说明。
+
+### Testing
+- 修复前运行 `node --test tests/file-editor-ui.test.js`：新增回归稳定失败，实际调用为 `renderInspector`，证明单击会重建完整详情；修复后该文件 13 项全部通过。
+- `node --check public/js/panels/inspector.js` 与 `node --check public/js/features/diff-workbench.js` 均通过。
+- 在一次性 Git 仓库中创建一次提交同时修改 60 个文件，并通过独立 `5295` 服务实测：滚到底部后单击 `files/file-060.txt`，列表 `scrollTop` 在操作前后均为 `1636`，文件树保持同一个 DOM 节点，目标行顶部位置均为 `446px`；随后双击成功打开只读“历史文件对照”。
+- 设置隔离测试配置后运行完整 `npm.cmd test`：78 项全部通过，退出码为 0。
+
+### Notes
+- `public/js/panels/inspector.js`：拆出当前提交文件 Diff 的局部渲染，完整文件树只在进入文件页时创建。
+- `public/js/features/diff-workbench.js`：提交文件单击改为调用局部 Diff 渲染，不再调用完整详情渲染。
+- `tests/file-editor-ui.test.js`：增加单击提交文件不得触发完整详情重建的回归。
+- `README.md`：说明大量提交文件下单击会保持列表滚动位置并支持后续双击。
+- `docs/CONTINUE.md`：记录局部刷新实现边界和文件树 DOM 保留规则。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/js/panels/inspector.js public/js/features/diff-workbench.js tests/file-editor-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 历史大文件完整对照卡顿修复
+
+### What was done
+- 移除历史文件 Diff 在已废弃底部工作台中的隐藏重复渲染，只保留 `activeDiff` 数据供“最大化”使用。
+- 打开历史完整对照时暂停右侧大 Diff，改为轻量提示；浮窗打开期间切换提交文件仍保持暂停，关闭后恢复当前选中文件预览。
+- 只读历史对照不再创建暂存按钮 `MutationObserver`，并补充中英文提示与三条性能边界回归。
+
+### Testing
+- 修改前新增回归 3 项稳定失败，分别确认隐藏工作台仍渲染、历史浮窗没有暂停/恢复右侧预览、只读模式仍启动暂存按钮监听；修改后 `node --test tests/file-editor-ui.test.js` 16 项全部通过。
+- 浏览器在现有 `http://127.0.0.1:5287/` 只读验证“幸运双明牌”，没有修改其未完成合并：`Master_prg.hex` 从右侧 `12,972` 行、全页约 `92,374` 个元素降到打开浮窗后的 0 行、约 `2,157` 个元素，打开约 `1,642 ms`，滚动到约 72% 位置耗时约 `249 ms`；隐藏工作台始终为 0 行。
+- `Master_prg.map` 从右侧 `6,497` 行、全页约 `46,905` 个元素降到 0 行、约 `2,072` 个元素，打开约 `1,761 ms`，双栏滚动到底约 `256 ms`；关闭浮窗后恢复原 `6,497` 行预览。
+- 浮窗打开期间单击 `progress.md` 和 `print.c` 时右侧预览保持 0 行，双击切换并完成加载分别约 `484 ms` 和 `536 ms`。
+- `node --check` 验证本轮 4 个前端脚本通过；完整 `npm.cmd test` 81 项全部通过，退出码为 0。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/js/features/diff-workbench.js`：停止在隐藏底部工作台渲染历史 Diff。
+- `public/js/features/file-editor.js`：历史浮窗打开时暂停右侧预览、关闭时恢复，并门控暂存按钮监听器。
+- `public/js/panels/inspector.js`：浮窗打开期间用轻量状态替代重型历史文件预览。
+- `public/js/i18n-catalog.js`：补充预览暂停提示的英文翻译。
+- `tests/file-editor-ui.test.js`：增加隐藏渲染、暂停/恢复和监听器门控回归。
+- `README.md`：说明历史大文件对照的卸载和恢复行为。
+- `docs/CONTINUE.md`：记录性能修复边界与真实大文件验证数据。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/js/features/diff-workbench.js public/js/features/file-editor.js public/js/i18n-catalog.js public/js/panels/inspector.js tests/file-editor-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 历史大文件 Diff 分批渲染性能优化
+
+### What was done
+- 把历史文件右侧 Diff 和最大化 Diff 从一次性完整渲染改为首批 `1000` 行；“继续加载”按 `2000 / 4000 / 8000...` 翻倍扩展，同时保留完整 `activeDiff` 数据，不截断真实改动。
+- 历史预览按提交和文件记录当前批次，切换文件后重置为首批；加载更多时保留滚动位置，关闭最大化窗口时清空隐藏 Diff DOM。
+- 使用委托点击接入右侧与最大化窗口的加载按钮，补充中英文状态、紧凑样式及分批渲染、加载扩展、关闭释放回归。
+
+### Testing
+- 修改前新增的大 Diff 首批限制、委托加载和关闭释放回归稳定失败；修改后 `node --test tests/file-editor-ui.test.js` 18 项全部通过，本轮修改的前端脚本语法检查全部通过。
+- 浏览器在现有 `http://127.0.0.1:5287/` 只读验证“幸运双明牌”：`Master_prg.map` 首批为 `1000 / 6554` 行、约 `990` 个渲染行、全页约 `8,407` 个元素；`Master_prg.hex` 选择约 `280 ms`，首批为 `1000 / 12995` 行、约 `979` 个渲染行、全页约 `8,426` 个元素。
+- `Master_prg.hex` 右侧继续加载到 `2000`、`4000` 行分别约 `309 ms`、`404 ms`；最大化窗口首批打开约 `315 ms`，加载到 `2000` 行约 `303 ms`，关闭后 Diff 容器的行、元素和子节点均为 0，页面诊断日志为空。
+- 完整 `npm.cmd test` 83 项全部通过，退出码为 0；测试过程没有修改“幸运双明牌”的未完成合并。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/js/core.js`：保存历史预览和最大化 Diff 的当前渲染上限。
+- `public/js/features/diff-workbench.js`：实现大 Diff 首批限制、逐步扩展、滚动保持和关闭释放。
+- `public/js/panels/inspector.js`：让历史文件右侧预览按当前提交和文件批量渲染。
+- `public/js/app/events.js`：委托处理右侧和最大化 Diff 的“继续加载”按钮。
+- `public/js/i18n-catalog.js`：补充分批状态和加载按钮英文翻译。
+- `public/styles.css`：增加分批状态栏和加载按钮布局。
+- `tests/file-editor-ui.test.js`：增加大 Diff 首批、扩展和释放回归。
+- `README.md`：说明大差异的分批显示与关闭释放行为。
+- `docs/CONTINUE.md`：记录实现边界和真实大文件性能数据。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/core.js public/js/features/diff-workbench.js public/js/i18n-catalog.js public/js/panels/inspector.js public/styles.css tests/file-editor-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 历史 main.c 完整对照持续卡死缓解
+
+### What was done
+- 复现到打开 `STM32F743ucosiii_lg/User/APP/main.c` 后页面主线程持续无响应，并确认文件仅约 35 KiB、851 行，服务端读取和 diff-match-patch 差异计算不是瓶颈。
+- 将只读历史提交 MergeView 从强制垂直行对齐改为普通差异连接线，避免 `align` 对齐器持续进行布局计算；工作区编辑器仍保留行对齐和按块暂存按钮。
+- 新增只读历史模式不得启用 `align` 的回归，并同步说明历史对照与工作区编辑器的行为边界。
+
+### Testing
+- 修改前运行 `node --test tests/file-editor-ui.test.js`：新增的只读对照对齐回归稳定失败；修改后该文件 19 项全部通过。
+- 通过真实 `/api/commit-file` 响应确认目标 `main.c` 为 GBK、35 KiB、851 行，父版本 840 行；同一份新旧文本运行仓库内 diff-match-patch 仅约 3.17 ms、36 个差异段，排除文件读取和纯差异计算卡死。
+- `node --check public/js/features/file-editor.js` 通过；完整 `npm.cmd test` 84 项全部通过，退出码为 0。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+- 当前已卡死的浏览器渲染线程无法接受刷新或性能采样；新代码的现场重开复测仍待完成，未将该项记录为已验证解决。
+
+### Notes
+- `public/js/features/file-editor.js`：只读历史对照使用普通连接线，工作区模式继续使用强制行对齐。
+- `tests/file-editor-ui.test.js`：锁定只读和工作区两种 MergeView 连接策略。
+- `README.md`：说明历史只读对照的连接线与性能边界。
+- `docs/CONTINUE.md`：记录 `connect` 策略、保留功能和待现场复测状态。
+- `progress.md`：追加本轮实现、验证缺口和回滚记录。
+- 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js tests/file-editor-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

@@ -97,6 +97,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   els.fileEditorText.value = "";
   els.fileEditorModal.classList.add("show");
   els.fileEditorModal.setAttribute("aria-hidden", "false");
+  if (editor.readOnly) renderSelectedCommitFileDiff();
   prepareFileEditorWindow();
   updateFileEditorStatus();
 
@@ -218,6 +219,7 @@ function closeFileEditor(force = false) {
   if (!els.fileEditorModal.classList.contains("show")) return true;
   if ((state.fileEditor?.saving || state.fileEditor?.operating) && !force) return false;
   if (!force && fileEditorDirty() && !confirm(t("文件还有未保存的修改，确认关闭编辑器？"))) return false;
+  const restoreCommitPreview = state.fileEditor?.source === "commit";
   destroyFileEditorInstance();
   state.fileEditor = null;
   els.fileEditorModal.classList.remove("show");
@@ -226,6 +228,7 @@ function closeFileEditor(force = false) {
   els.fileEditorText.value = "";
   setFileEditorControlsDisabled(false);
   hideFileEditorContextMenu();
+  if (restoreCommitPreview) renderSelectedCommitFileDiff();
   return true;
 }
 
@@ -277,7 +280,7 @@ function createFileEditorInstance(editor) {
       ...codeMirrorOptions,
       origLeft: editor.oldContent,
       highlightDifferences: true,
-      connect: "align",
+      connect: editor.readOnly ? null : "align",
       collapseIdentical: false,
       chunkClassLocation: ["background", "gutter"],
       revertButtons: editor.canStage,
@@ -290,7 +293,7 @@ function createFileEditorInstance(editor) {
       },
     });
     editor.codeMirror = editor.mergeView.editor();
-    observeFileEditorStageButtons(editor);
+    if (editor.canStage) observeFileEditorStageButtons(editor);
   }
   editor.changeHandler = () => {
     updateFileEditorStatus();
@@ -320,7 +323,31 @@ function refreshFileEditorStageButtons(editor) {
     if (button.textContent !== t("暂存")) button.textContent = t("暂存");
     button.title = t("暂存此改动块");
     button.setAttribute("aria-label", button.title);
+    const center = fileEditorStageButtonCenter(editor.mergeView, button.chunk);
+    if (Number.isFinite(center)) button.style.top = `${center}px`;
   });
+}
+
+function fileEditorStageButtonCenter(mergeView, chunk) {
+  const original = mergeView?.leftOriginal?.();
+  const edited = mergeView?.editor?.();
+  const wrap = mergeView?.wrap;
+  if (!original || !edited || !wrap || !chunk) return Number.NaN;
+
+  const wrapTop = wrap.getBoundingClientRect().top;
+  const paneOffset = (codeMirror) => {
+    return wrapTop - codeMirror.getScrollerElement().getBoundingClientRect().top + codeMirror.getScrollInfo().top;
+  };
+  const originalOffset = paneOffset(original);
+  const editedOffset = paneOffset(edited);
+  const bounds = [
+    original.heightAtLine(chunk.origFrom, "local", true) - originalOffset,
+    original.heightAtLine(chunk.origTo, "local", true) - originalOffset,
+    edited.heightAtLine(chunk.editFrom, "local", true) - editedOffset,
+    edited.heightAtLine(chunk.editTo, "local", true) - editedOffset,
+  ];
+  if (!bounds.every(Number.isFinite)) return Number.NaN;
+  return (Math.min(bounds[0], bounds[2]) + Math.max(bounds[1], bounds[3])) / 2;
 }
 
 async function stageFileEditorChunk(origFromLine, origToLine, editFromLine, editToLine) {

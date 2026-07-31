@@ -381,28 +381,43 @@ function renderFilesTab(commit, detail) {
   } else {
     state.selectedCommitFile = "";
   }
-  const selectedDiff = state.selectedCommitFile ? diffForFile(detail.diff || [], state.selectedCommitFile) : [];
-  if (state.selectedCommitFile) renderHistoryDiffInWorkbench(commit, detail, state.selectedCommitFile);
-  else renderWorkDiffEmpty("这个提交没有文件改动");
   els.detailBody.innerHTML = tt`
     <div class="detail-section-title">变更文件</div>
     <div class="commit-file-view">
       <div class="commit-file-tree">${files.length ? fileTreeHtml(files) : `<div class="file-row"><span></span><span class="file-name">${t("没有文件列表")}</span><span></span></div>`}</div>
-      <div class="commit-file-diff">
-        <div class="panel-title compact">
-          <div class="panel-title-text">
-            <span>${escapeHtml(state.selectedCommitFile ? shortFileName(state.selectedCommitFile) : commit.short)}</span>
-            <span class="panel-subtitle">${escapeHtml(state.selectedCommitFile || t("未选择文件"))}</span>
-          </div>
-          <button class="mini-btn" data-file-history-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>文件历史</button>
-          <button class="mini-btn" data-file-blame-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>逐行追踪</button>
-          <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${selectedDiff.length ? "" : "disabled"}>最大化</button>
-        </div>
-        ${renderSideDiff(selectedDiff, "没有可显示的历史改动")}
-      </div>
+      <div class="commit-file-diff"></div>
     </div>
   `;
   bindFileTree(els.detailBody, { mode: "commit", commitSha: commit.sha });
+  renderSelectedCommitFileDiff(commit, detail);
+}
+
+function renderSelectedCommitFileDiff(commit = commitRecordForSha(state.selectedSha), detail = null) {
+  if (!commit) return;
+  const diffPane = els.detailBody.querySelector(".commit-file-diff");
+  if (!diffPane) return;
+  const commitDetail = detail || state.commitDetails.get(commit.sha) || { files: commit.files || [], diff: commit.diff || [] };
+  const selectedDiff = state.selectedCommitFile ? diffForFile(commitDetail.diff || [], state.selectedCommitFile) : [];
+  const previewSuspended = Boolean(state.fileEditor?.source === "commit" && els.fileEditorModal.classList.contains("show"));
+  const previewLimit = historyDiffPreviewLimit(commit.sha, state.selectedCommitFile);
+  if (state.selectedCommitFile) renderHistoryDiffInWorkbench(commit, commitDetail, state.selectedCommitFile);
+  else renderWorkDiffEmpty("这个提交没有文件改动");
+  diffPane.innerHTML = tt`
+    <div class="panel-title compact">
+      <div class="panel-title-text">
+        <span>${escapeHtml(state.selectedCommitFile ? shortFileName(state.selectedCommitFile) : commit.short)}</span>
+        <span class="panel-subtitle">${escapeHtml(state.selectedCommitFile || t("未选择文件"))}</span>
+      </div>
+      <button class="mini-btn" data-file-history-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>文件历史</button>
+      <button class="mini-btn" data-file-blame-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>逐行追踪</button>
+      <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${selectedDiff.length ? "" : "disabled"}>最大化</button>
+    </div>
+    ${
+      previewSuspended
+        ? `<div class="empty-state"><strong>${t("历史文件对照已打开")}</strong><span>${t("关闭对照窗口后恢复此处预览。")}</span></div>`
+        : renderSideDiff(selectedDiff, "没有可显示的历史改动", { maxLines: previewLimit, loadMoreTarget: "history" })
+    }
+  `;
   markCommitFile();
 }
 

@@ -23,6 +23,8 @@ const state = {
   fileHistory: { file: "", ref: "", data: null, loading: false, error: "" },
   fileBlame: { file: "", ref: "", data: null, loading: false, error: "" },
   activeDiff: null,
+  historyDiffPreview: { key: "", limit: 0 },
+  diffModalRenderLimit: 0,
   fileEditor: null,
   openDiffOnInit: false,
   branchStartSha: "",

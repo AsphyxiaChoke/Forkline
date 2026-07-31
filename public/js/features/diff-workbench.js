@@ -1,4 +1,6 @@
 // Diff rendering, file trees, workbench diff, and active diff modal.
+const SIDE_DIFF_INITIAL_RENDER_LINES = 1000;
+
 function fileTreeHtml(files, options = {}) {
   const root = { dirs: new Map(), files: [] };
   files.forEach((file) => addFileToTree(root, file));
@@ -218,7 +220,7 @@ function markSelectedFile() {
 function selectCommitFile(filePath) {
   if (!filePath || filePath === state.selectedCommitFile) return;
   state.selectedCommitFile = filePath;
-  renderInspector();
+  renderSelectedCommitFileDiff();
 }
 
 function syncCommitBySha(sha) {
@@ -346,12 +348,13 @@ function renderHistoryDiffInWorkbench(commit, detail, filePath) {
   state.diffRequestId += 1;
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = path;
-  els.workDiffView.className = "work-diff-view";
-  els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的历史改动");
+  els.workDiffView.className = "work-diff-view empty";
+  els.workDiffView.replaceChildren();
 }
 
 function setActiveDiff(payload) {
   state.activeDiff = payload;
+  state.diffModalRenderLimit = SIDE_DIFF_INITIAL_RENDER_LINES;
   if (els.editWorktreeFile) {
     els.editWorktreeFile.disabled = !(payload?.source === "worktree" && payload?.path && !state.data?.repo?.isSample);
   }
@@ -453,30 +456,87 @@ function openDiffModal() {
   }
   els.diffModalTitle.textContent = state.activeDiff.title || t("变更对照");
   els.diffModalPath.textContent = state.activeDiff.path || "";
-  els.diffModalBody.innerHTML = renderSideDiff(state.activeDiff.diff, state.activeDiff.emptyText || "没有可显示的差异", diffModalOptions());
-  syncDiffLineSelectionRows();
+  if (!state.diffModalRenderLimit) state.diffModalRenderLimit = SIDE_DIFF_INITIAL_RENDER_LINES;
+  renderDiffModalBody();
   els.diffModal.classList.add("show");
   els.diffModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
+}
+
+function renderDiffModalBody() {
+  if (!state.activeDiff?.diff?.length) return;
+  els.diffModalBody.innerHTML = renderSideDiff(state.activeDiff.diff, state.activeDiff.emptyText || "没有可显示的差异", {
+    ...diffModalOptions(),
+    maxLines: state.diffModalRenderLimit || SIDE_DIFF_INITIAL_RENDER_LINES,
+    loadMoreTarget: "modal",
+  });
+  syncDiffLineSelectionRows();
 }
 
 function closeDiffModal() {
   els.diffModal.classList.remove("show");
   els.diffModal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
+  els.diffModalBody.replaceChildren();
 }
 
 function renderSideDiff(diff, emptyText, options = {}) {
   if (!diff?.length) return `<div class="diff-empty">${escapeHtml(t(emptyText))}</div>`;
-  const lineAction = options.lineAction && diffHasSelectableLines(diff) ? options.lineAction : null;
-  const columnWidths = diffColumnCharacterWidths(diff);
+  const visibleCount = sideDiffVisibleCount(diff.length, options.maxLines);
+  const visibleDiff = visibleCount < diff.length ? diff.slice(0, visibleCount) : diff;
+  const lineAction = options.lineAction && diffHasSelectableLines(visibleDiff) ? options.lineAction : null;
+  const columnWidths = diffColumnCharacterWidths(visibleDiff);
   return `
     <div class="side-diff ${lineAction ? "line-selectable" : ""}" style="--diff-old-ch:${columnWidths.old};--diff-new-ch:${columnWidths.new}">
       ${lineAction ? renderDiffLineToolbar(lineAction) : ""}
       <div class="side-diff-head"><span>${t("旧版本")}</span><span>${t("新版本")}</span></div>
-      ${sideBySideRows(diff, { ...options, lineAction })}
+      ${sideBySideRows(visibleDiff, { ...options, lineAction })}
+      ${renderSideDiffLoadMore(diff.length, visibleCount, options.loadMoreTarget)}
     </div>
   `;
+}
+
+function sideDiffVisibleCount(total, requested) {
+  if (!Number.isInteger(requested) || requested <= 0) return total;
+  return Math.min(total, requested);
+}
+
+function renderSideDiffLoadMore(total, shown, target) {
+  if (!target || shown >= total) return "";
+  const nextLimit = Math.min(total, Math.max(SIDE_DIFF_INITIAL_RENDER_LINES, shown * 2));
+  return `
+    <div class="side-diff-more">
+      <span>${escapeHtml(t("大差异已分批显示：{shown} / {total} 行", { shown, total }))}</span>
+      <button class="mini-btn" data-side-diff-more="${escapeAttr(target)}" data-next-limit="${nextLimit}" type="button">${escapeHtml(t("继续加载到 {count} 行", { count: nextLimit }))}</button>
+    </div>
+  `;
+}
+
+function historyDiffPreviewLimit(commitSha, filePath) {
+  const key = JSON.stringify([commitSha || "", filePath || ""]);
+  if (state.historyDiffPreview.key !== key) {
+    state.historyDiffPreview = { key, limit: SIDE_DIFF_INITIAL_RENDER_LINES };
+  }
+  return state.historyDiffPreview.limit || SIDE_DIFF_INITIAL_RENDER_LINES;
+}
+
+function expandSideDiff(button) {
+  const target = button?.dataset?.sideDiffMore || "";
+  const nextLimit = Number.parseInt(button?.dataset?.nextLimit || "", 10);
+  if (!Number.isInteger(nextLimit) || nextLimit <= 0) return;
+  if (target === "history") {
+    const scrollTop = els.detailBody?.scrollTop;
+    state.historyDiffPreview.limit = nextLimit;
+    renderSelectedCommitFileDiff();
+    if (Number.isFinite(scrollTop)) els.detailBody.scrollTop = scrollTop;
+    return;
+  }
+  if (target === "modal") {
+    const scrollTop = els.diffModalBody?.scrollTop;
+    state.diffModalRenderLimit = nextLimit;
+    renderDiffModalBody();
+    if (Number.isFinite(scrollTop)) els.diffModalBody.scrollTop = scrollTop;
+  }
 }
 
 function diffColumnCharacterWidths(diff) {

@@ -236,6 +236,10 @@ test("graph labels keep the complete branch name and expand the graph column", (
   assert.doesNotMatch(markup, /\.\.\./);
 });
 
+test("graph mode badge keeps the complete scope name instead of shrinking", () => {
+  assert.match(styles, /\.graph-head\s+em\s*\{[^}]*flex:\s*0\s+0\s+auto;[^}]*overflow:\s*visible;[^}]*max-width:\s*none;[^}]*text-overflow:\s*clip;/s);
+});
+
 test("minimum inspector width wraps controls instead of clipping labels", () => {
   assert.match(styles, /\.inspector\s*\{[^}]*container-name:\s*inspector-panel;/s);
   assert.match(styles, /@container\s+inspector-panel\s*\(max-width:\s*300px\)/);
@@ -260,6 +264,17 @@ test("commit operation buttons use a compact responsive grid", () => {
   assert.match(styles, /\.commit-action-tools \.mini-btn\s*\{[^}]*white-space:\s*normal;/s);
   assert.match(styles, /\[data-commit-tool="resetHard"\],[\s\S]*?\[data-commit-tool="drop"\]\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/s);
   assert.match(styles, /@container\s+inspector-panel\s*\(max-width:\s*300px\)[\s\S]*?\.commit-action-tools\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+});
+
+test("commit message body editor has a practical default height", () => {
+  assert.match(styles, /\.reword-form \.edit-field textarea\s*\{[^}]*min-height:\s*132px;/s);
+});
+
+test("conflict choice buttons form an equal centered row", () => {
+  assert.match(styles, /\.conflict-choice-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+  assert.match(styles, /\.conflict-choice-actions\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*width:\s*100%;/s);
+  assert.match(styles, /\.conflict-choice-actions \.mini-btn\s*\{[^}]*display:\s*grid;[^}]*width:\s*100%;[^}]*place-items:\s*center;[^}]*text-align:\s*center;/s);
+  assert.match(styles, /\.conflict-choice-actions \.mini-btn\s*>\s*span:not\(\.command-hint\)\s*\{[^}]*width:\s*100%;[^}]*text-align:\s*center;/s);
 });
 
 test("context menus stay accessible within short viewports", () => {

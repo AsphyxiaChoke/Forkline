@@ -142,6 +142,12 @@ els.diffModal.addEventListener("click", (event) => {
   if (event.target === els.diffModal) closeDiffModal();
 });
 els.diffModalBody.addEventListener("click", (event) => {
+  const moreButton = event.target.closest("[data-side-diff-more]");
+  if (moreButton) {
+    event.preventDefault();
+    expandSideDiff(moreButton);
+    return;
+  }
   const lineButton = event.target.closest("[data-line-action]");
   if (lineButton) {
     event.preventDefault();
@@ -228,6 +234,12 @@ els.detailBody.addEventListener("change", (event) => {
   }
 });
 els.detailBody.addEventListener("click", (event) => {
+  const moreButton = event.target.closest("[data-side-diff-more]");
+  if (moreButton) {
+    event.preventDefault();
+    expandSideDiff(moreButton);
+    return;
+  }
   const branchCleanupAction = event.target.closest("[data-branch-cleanup-action]");
   if (branchCleanupAction) {
     event.preventDefault();
