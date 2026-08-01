@@ -6179,3 +6179,23 @@
 - `docs/CONTINUE.md`：记录列联动、响应式限制、存储键和对齐修复。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html public/js/app/layout-utils.js public/js/i18n-catalog.js public/styles.css tests/i18n.test.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-02 - Task: 顶部同步按钮悬浮显示 Git 指令
+
+### What was done
+- 将顶部“抓取 / 拉取 / 推送 / 强推”按钮的悬浮标题改为各自实际对应的 Git 指令，不再重复显示按钮名称。
+- 抓取和拉取提示与服务端真实参数保持一致，分别显示 `git fetch --all --prune` 与 `git pull --ff-only`；推送和强推显示 `git push` 与 `git push --force-with-lease`。
+- 增加顶部同步按钮命令提示回归，并同步中文功能说明与继续开发文档。
+
+### Testing
+- `node --test tests/layout-ui.test.js tests/i18n.test.js` 27 项全部通过，退出码为 0。
+- 浏览器刷新 `http://127.0.0.1:5177/` 后实测，四个按钮的 `title` 依次为 `git fetch --all --prune`、`git pull --ff-only`、`git push`、`git push --force-with-lease`，按钮可见文字与原有操作行为未变化。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/index.html`：把顶部四个同步快捷按钮的悬浮标题改为真实 Git 指令。
+- `tests/layout-ui.test.js`：锁定四个顶部按钮与对应命令的映射。
+- `README.md`：说明顶部同步快捷按钮的悬浮命令。
+- `docs/CONTINUE.md`：记录四个按钮的实际命令提示和双语行为。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

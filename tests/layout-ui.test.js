@@ -31,6 +31,13 @@ test("ordinary command hints become hover titles without duplicate text", () => 
   assert.equal(second.button.getAttribute("title"), "移动当前分支\ngit reset --soft");
 });
 
+test("topbar sync actions expose their Git commands on hover", () => {
+  assert.match(indexHtml, /data-action="fetch" title="git fetch --all --prune"/);
+  assert.match(indexHtml, /data-action="pull" title="git pull --ff-only"/);
+  assert.match(indexHtml, /data-action="push" title="git push"/);
+  assert.match(indexHtml, /data-action="forcePushLease" title="git push --force-with-lease"/);
+});
+
 test("command hint observer starts before the app renders dynamic panels", () => {
   assert.match(bootstrapSource, /initCommandHints\(\);[\s\S]*?init\(\);/);
 });
