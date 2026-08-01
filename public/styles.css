@@ -1450,39 +1450,47 @@ body.resizing .workspace-resizer::before {
 
 .history-column-resizer {
   position: absolute;
-  top: 3px;
+  top: 0;
   right: 0;
-  bottom: 3px;
-  width: 10px;
+  bottom: 0;
+  width: 14px;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   cursor: col-resize;
   touch-action: none;
+  transition: background 0.14s ease;
   z-index: 4;
 }
 
-.history-column-resizer::after {
+.history-column-resizer::before {
   content: "";
   position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: 1px;
-  background: var(--line);
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--quiet) 68%, var(--teal) 32%);
   transition: background 0.14s ease, width 0.14s ease;
 }
 
-.history-column-resizer:hover::after,
-.history-column-resizer:focus-visible::after {
-  width: 2px;
+.history-column-resizer:hover,
+.history-column-resizer:focus-visible,
+.history-column-resizer:active {
+  background: rgba(var(--teal-rgb), 0.08);
+}
+
+.history-column-resizer:hover::before,
+.history-column-resizer:focus-visible::before,
+.history-column-resizer:active::before {
+  width: 3px;
   background: var(--teal);
 }
 
 .history-column-resizer:focus-visible {
   outline: 0;
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px rgba(var(--teal-rgb), 0.42);
 }
 
 .graph-head {

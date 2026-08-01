@@ -6199,3 +6199,44 @@
 - `docs/CONTINUE.md`：记录四个按钮的实际命令提示和双语行为。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-02 - Task: 增强图谱列宽拖拽视觉提示
+
+### What was done
+- 将提交图谱表头的列宽拖拽边界改为默认常显的完整竖线，并在每条边界中部增加青色双竖抓手，避免被误认为普通静态表头。
+- 将命中区域扩展到 `14px`；悬停、键盘聚焦或按住拖动时，命中区域、边界线和抓手会同步高亮，列宽计算、持久化及响应式隐藏逻辑保持不变。
+- 增加分隔线宽度、常显边界、双竖抓手和高亮样式回归，并同步中文功能说明与继续开发文档。
+
+### Testing
+- `node --test tests/layout-ui.test.js tests/i18n.test.js` 27 项全部通过，退出码为 0。
+- 浏览器刷新 `http://127.0.0.1:5177/` 后在 `1520×912` 视口实测：4 个拖拽柄均为 `14px` 命中宽度和 `col-resize` 光标；默认边界线为 `1px`，中部双竖抓手高 `18px`、颜色为主题青色，表头标签未被遮挡或挤压。
+- 内置浏览器的鼠标移动接口未能稳定触发页面 `:hover`，悬停、聚焦和按住状态由定向 CSS 回归验证，未将其记录为浏览器现场验证。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/styles.css`：增强图谱列分隔线、双竖抓手、命中区及交互高亮状态。
+- `tests/layout-ui.test.js`：锁定分隔线宽度、常显边界、抓手和悬停高亮样式。
+- `README.md`：说明图谱列宽拖拽的常显抓手和交互反馈。
+- `docs/CONTINUE.md`：记录拖拽视觉提示、命中宽度及不变的布局行为。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-02 - Task: 修正图谱拖拽柄三线视觉
+
+### What was done
+- 移除“边界线 + 双竖抓手”叠加造成的三条竖线，只保留一条与真实列边界对齐的分隔线。
+- 分隔线默认宽度为 `2px`，悬停、键盘聚焦或按住拖动时加粗为 `3px` 并切换为主题青色；`14px` 拖拽命中区域保持不变。
+- 更新视觉回归与中文文档，明确最终采用单线方案。
+
+### Testing
+- `node --test tests/layout-ui.test.js tests/i18n.test.js` 27 项全部通过，退出码为 0。
+- 浏览器刷新 `http://127.0.0.1:5177/` 并等待仓库状态加载后实测：4 个拖拽柄的分隔线均为 `2px`，额外 `::after` 内容均为 `none`，光标仍为 `col-resize`；页面只显示单条列边界线，表头与提交行保持对齐。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/styles.css`：移除双竖抓手并改为单条常显分隔线及交互加粗状态。
+- `tests/layout-ui.test.js`：锁定单线宽度、无额外抓手和交互加粗样式。
+- `README.md`：将图谱拖拽提示说明修正为单线方案。
+- `docs/CONTINUE.md`：记录单线默认与交互状态的最终规格。
+- `progress.md`：追加三线问题的修正、验证和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

@@ -318,7 +318,10 @@ test("graph mode badge keeps the complete scope name instead of shrinking", () =
 test("history header exposes four draggable column separators", () => {
   assert.equal((indexHtml.match(/data-history-resizer=/g) || []).length, 4);
   assert.match(styles, /--history-cols:\s*var\(--history-graph-col-w,\s*var\(--graph-w\)\)[^;]*var\(--history-author-w,[^;]*var\(--history-time-w,[^;]*var\(--history-sha-w,/s);
-  assert.match(styles, /\.history-column-resizer\s*\{[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/s);
+  assert.match(styles, /\.history-column-resizer\s*\{[^}]*width:\s*14px;[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/s);
+  assert.match(styles, /\.history-column-resizer::before\s*\{[^}]*right:\s*0;[^}]*width:\s*2px;[^}]*background:\s*color-mix\(in srgb,\s*var\(--quiet\)\s*68%,\s*var\(--teal\)\s*32%\);/s);
+  assert.doesNotMatch(styles, /\.history-column-resizer::after\s*\{/);
+  assert.match(styles, /\.history-column-resizer:hover::before,[\s\S]*?width:\s*3px;[\s\S]*?background:\s*var\(--teal\);/s);
   assert.match(styles, /\.commit-row\s*\{[^}]*padding:\s*0;/s);
 });
 
