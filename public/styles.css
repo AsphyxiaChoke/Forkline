@@ -4724,6 +4724,14 @@ button.file-row {
   min-width: 0;
 }
 
+.sync-actions .mini-btn,
+.sync-section-head .mini-btn,
+.upstream-actions .mini-btn,
+.remote-actions .mini-btn {
+  place-items: center;
+  text-align: center;
+}
+
 .sync-section-head {
   display: flex;
   align-items: center;

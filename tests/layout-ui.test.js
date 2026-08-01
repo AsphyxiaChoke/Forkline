@@ -249,6 +249,10 @@ test("minimum inspector width wraps controls instead of clipping labels", () => 
   assert.match(styles, /\.settings-card-head\s*>\s*\.mini-btn\s*\{[^}]*width:\s*100%;/s);
 });
 
+test("sync panel grid buttons center their labels in both axes", () => {
+  assert.match(styles, /\.sync-actions \.mini-btn,\s*\.sync-section-head \.mini-btn,\s*\.upstream-actions \.mini-btn,\s*\.remote-actions \.mini-btn\s*\{[^}]*place-items:\s*center;[^}]*text-align:\s*center;/s);
+});
+
 test("minimum sidebar width contains branch rows and actions", () => {
   assert.match(styles, /\.sidebar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.side-section\s*\{[^}]*min-width:\s*0;/s);

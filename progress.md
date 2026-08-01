@@ -6133,3 +6133,23 @@
 - `docs/CONTINUE.md`：记录固定列宽、最大标签宽度和左右侧定位规则。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/graph.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-02 - Task: 同步面板按钮垂直居中
+
+### What was done
+- 将“同步情况”面板中的同步操作、Pull Request、upstream、添加远端和远端操作按钮统一设置为 Grid 单元格水平及垂直居中。
+- 保留原有按钮高度、宽度、响应式排列和操作逻辑，只修正按钮文字在拉伸网格项内偏上的视觉问题。
+- 增加同步面板按钮对齐回归，并同步继续开发文档。
+
+### Testing
+- `node --test tests/layout-ui.test.js` 20 项全部通过，退出码为 0。
+- 浏览器在 `http://127.0.0.1:5177/` 的 `1256×912` 视口实测：顶部 7 个同步按钮的文字中心偏差由 `-6.5px` 变为 `0px`；upstream、添加远端和远端操作按钮由 `-5.5px` 变为 `0px`，共 14 个按钮的计算样式均为水平及垂直居中。
+- 刷新后的同步面板截图确认按钮尺寸和排列未发生变化，文字不再偏上，未发现相邻内容重叠。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/styles.css`：为同步面板内使用 Grid 的操作按钮增加双轴居中规则。
+- `tests/layout-ui.test.js`：锁定同步操作、upstream 和远端操作按钮的居中样式。
+- `docs/CONTINUE.md`：记录修复范围和浏览器实测偏差数据。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：提交前执行 `git restore -- docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
