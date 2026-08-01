@@ -6153,3 +6153,29 @@
 - `docs/CONTINUE.md`：记录修复范围和浏览器实测偏差数据。
 - `progress.md`：追加本轮实现、验证和回滚记录。
 - 回滚方式：提交前执行 `git restore -- docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-02 - Task: 提交图谱表头列宽拖拽
+
+### What was done
+- 在“图谱 / 提交信息 / 作者 / 时间 / SHA”之间增加 4 条可拖拽分隔线，调整时只联动相邻列并保持表格总宽度不变，表头与提交行同步使用新列宽。
+- 支持左右方向键按 `8px` 微调；列宽保存到浏览器布局偏好，恢复默认布局时一并清除，窗口或侧栏宽度变化后自动限制到可用范围。
+- 窄布局隐藏作者或 SHA 列时自动跳过对应分隔线，并修复提交行原生按钮内边距造成的表头与内容列错位。
+- 增加列拖拽、持久化、窄布局、表头对齐和中英文无障碍文案回归，同步中文功能说明与继续开发文档。
+
+### Testing
+- `node --check public/js/app/layout-utils.js` 通过。
+- `node --test tests/layout-ui.test.js tests/i18n.test.js` 26 项全部通过，退出码为 0。
+- 浏览器在 `http://127.0.0.1:5177/` 实测：默认列宽为 `176 / 370 / 150 / 96 / 96px`，调整图谱边界后为 `184 / 362 / 150 / 96 / 96px`；表头与提交行总宽均为 `888px` 且各列边界一致。其余边界调整与 4 个 `col-resize` 拖拽柄均正常。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/index.html`：为提交图谱表头增加 4 个列宽拖拽柄及双语可捕获的无障碍属性。
+- `public/js/app/layout-utils.js`：实现相邻列联动调整、宽度限制、键盘操作、持久化和默认布局恢复。
+- `public/js/i18n-catalog.js`：增加列宽拖拽提示的英文翻译。
+- `public/styles.css`：接入可调整列变量、拖拽柄状态、窄布局隐藏规则，并修复表头与提交行对齐。
+- `tests/layout-ui.test.js`：增加指针拖动、列宽存储、拖拽柄和列对齐回归。
+- `tests/i18n.test.js`：增加拖拽柄标题与无障碍标签的双语回归。
+- `README.md`：说明提交图谱表头列宽调整与布局持久化能力。
+- `docs/CONTINUE.md`：记录列联动、响应式限制、存储键和对齐修复。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html public/js/app/layout-utils.js public/js/i18n-catalog.js public/styles.css tests/i18n.test.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

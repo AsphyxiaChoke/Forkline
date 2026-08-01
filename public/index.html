@@ -113,11 +113,11 @@
 
         <section class="history">
           <div class="history-head">
-            <span class="graph-head"><b>图谱</b><em id="graphModeLabel">全部分支</em></span>
-            <span>提交信息</span>
-            <span>作者</span>
-            <span>时间</span>
-            <span>SHA</span>
+            <span class="graph-head" data-history-column="graph"><b>图谱</b><em id="graphModeLabel">全部分支</em><button class="history-column-resizer" data-history-resizer="graph" type="button" aria-label="拖拽调整列宽" title="拖拽调整列宽"></button></span>
+            <span data-history-column="message">提交信息<button class="history-column-resizer" data-history-resizer="message" type="button" aria-label="拖拽调整列宽" title="拖拽调整列宽"></button></span>
+            <span data-history-column="author">作者<button class="history-column-resizer" data-history-resizer="author" type="button" aria-label="拖拽调整列宽" title="拖拽调整列宽"></button></span>
+            <span data-history-column="time">时间<button class="history-column-resizer" data-history-resizer="time" type="button" aria-label="拖拽调整列宽" title="拖拽调整列宽"></button></span>
+            <span data-history-column="sha">SHA</span>
           </div>
           <div id="historyScroll" class="history-scroll">
             <div id="commitGraph" class="commit-graph"></div>

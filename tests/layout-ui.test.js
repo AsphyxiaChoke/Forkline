@@ -151,6 +151,72 @@ test("bottom panel resizer updates and saves the stage height", () => {
   assert.equal(bodyClasses.has("resizing"), false);
 });
 
+test("history header resizer updates the graph column and saves all visible widths", () => {
+  const values = new Map([["--graph-w", "176px"]]);
+  const stored = new Map();
+  const handleListeners = new Map();
+  const documentListeners = new Map();
+  const bodyClasses = new Set();
+  const cell = (name, width) => ({
+    dataset: { historyColumn: name },
+    getBoundingClientRect: () => ({ width: name === "graph" ? Number.parseFloat(values.get("--history-graph-col-w")) || width : width }),
+  });
+  const cells = [cell("graph", 176), cell("message", 300), cell("author", 140), cell("time", 90), cell("sha", 82)];
+  const handle = {
+    dataset: { historyResizer: "graph" },
+    addEventListener: (name, listener) => handleListeners.set(name, listener),
+    closest: () => cells[0],
+    setPointerCapture: () => {},
+  };
+  const history = {};
+  const head = { clientWidth: 788 };
+  const documentElement = {
+    style: {
+      setProperty: (name, value) => values.set(name, value),
+      removeProperty: (name) => values.delete(name),
+    },
+  };
+  const context = vm.createContext({
+    document: {
+      body: {
+        classList: {
+          add: (name) => bodyClasses.add(name),
+          remove: (name) => bodyClasses.delete(name),
+        },
+      },
+      documentElement,
+      querySelector: (selector) => selector === ".history" ? history : selector === ".history-head" ? head : null,
+      querySelectorAll: (selector) => selector === "[data-history-resizer]" ? [handle] : selector === ".history-head > [data-history-column]" ? cells : [],
+      addEventListener: (name, listener) => documentListeners.set(name, listener),
+      removeEventListener: (name) => documentListeners.delete(name),
+    },
+    getComputedStyle: (target) => ({
+      display: target === documentElement || target === history ? "block" : "grid",
+      getPropertyValue: (name) => name === "--graph-w" ? "176px" : values.get(name) || "",
+    }),
+    localStorage: {
+      getItem: (name) => stored.get(name) ?? null,
+      setItem: (name, value) => stored.set(name, String(value)),
+    },
+    window: { addEventListener: () => {}, innerWidth: 1600 },
+  });
+  vm.runInContext(layoutSource, context);
+  context.initHistoryColumnResizers();
+
+  handleListeners.get("pointerdown")({ clientX: 200, pointerId: 1, preventDefault: () => {} });
+  documentListeners.get("pointermove")({ clientX: 240 });
+  assert.equal(values.get("--history-graph-col-w"), "216px");
+  assert.equal(bodyClasses.has("resizing"), true);
+
+  documentListeners.get("pointerup")();
+  const saved = JSON.parse(stored.get("forkline-history-columns"));
+  assert.equal(saved.graph, 216);
+  assert.equal(saved.author, 140);
+  assert.equal(saved.time, 90);
+  assert.equal(saved.sha, 82);
+  assert.equal(bodyClasses.has("resizing"), false);
+});
+
 test("transition-width topbar uses compact repository path columns", () => {
   assert.match(styles, /@media\s*\(max-width:\s*1040px\)[\s\S]*?\.path-open\s*\{[^}]*grid-template-columns:\s*minmax\(96px,\s*1fr\)\s+minmax\(96px,\s*116px\)\s+max-content;/s);
 });
@@ -176,7 +242,7 @@ test("worktree, index, and commit editor share one parallel bottom row", () => {
 test("narrow layout preserves commit messages and contains the commit form", () => {
   assert.match(styles, /\.main\s*\{[^}]*container-name:\s*main-workspace;/s);
   assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*700px\)/);
-  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*500px\)[\s\S]*?grid-template-columns:\s*var\(--graph-w\)\s+minmax\(96px,\s*1fr\)\s+minmax\(66px,\s*72px\);/);
+  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*500px\)[\s\S]*?grid-template-columns:\s*var\(--history-graph-col-w,\s*var\(--graph-w\)\)\s+minmax\(96px,\s*1fr\)\s+var\(--history-time-w,\s*minmax\(66px,\s*72px\)\);/);
   assert.match(styles, /\.commit-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.mini-btn\s*>\s*\.command-hint\s*\{[^}]*display:\s*none;/s);
 });
@@ -240,6 +306,13 @@ test("long graph labels stay inside the graph column without squeezing commit me
 
 test("graph mode badge keeps the complete scope name instead of shrinking", () => {
   assert.match(styles, /\.graph-head\s+em\s*\{[^}]*flex:\s*0\s+0\s+auto;[^}]*overflow:\s*visible;[^}]*max-width:\s*none;[^}]*text-overflow:\s*clip;/s);
+});
+
+test("history header exposes four draggable column separators", () => {
+  assert.equal((indexHtml.match(/data-history-resizer=/g) || []).length, 4);
+  assert.match(styles, /--history-cols:\s*var\(--history-graph-col-w,\s*var\(--graph-w\)\)[^;]*var\(--history-author-w,[^;]*var\(--history-time-w,[^;]*var\(--history-sha-w,/s);
+  assert.match(styles, /\.history-column-resizer\s*\{[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/s);
+  assert.match(styles, /\.commit-row\s*\{[^}]*padding:\s*0;/s);
 });
 
 test("minimum inspector width wraps controls instead of clipping labels", () => {

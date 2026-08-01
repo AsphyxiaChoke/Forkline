@@ -51,16 +51,20 @@ test("locale switching persists in browser storage and restores on reload", () =
 test("captured static UI text switches between Chinese and English", () => {
   const textNode = { nodeValue: "设置", parentElement: { tagName: "DIV" } };
   const input = createAttributeNode({ placeholder: "搜索提交、作者、分支或 SHA" });
-  const runtime = createRuntime(new Map(), { textNodes: [textNode], elements: [input] });
+  const resizer = createAttributeNode({ "aria-label": "拖拽调整列宽", title: "拖拽调整列宽" });
+  const runtime = createRuntime(new Map(), { textNodes: [textNode], elements: [input, resizer] });
 
   runtime.context.initLocale();
   runtime.context.applyLocale("en", false);
   assert.equal(textNode.nodeValue, "Settings");
   assert.equal(input.getAttribute("placeholder"), "Search commits, authors, branches, or SHA");
+  assert.equal(resizer.getAttribute("aria-label"), "Drag to resize the column");
+  assert.equal(resizer.getAttribute("title"), "Drag to resize the column");
 
   runtime.context.applyLocale("zh-CN", false);
   assert.equal(textNode.nodeValue, "设置");
   assert.equal(input.getAttribute("placeholder"), "搜索提交、作者、分支或 SHA");
+  assert.equal(resizer.getAttribute("aria-label"), "拖拽调整列宽");
 });
 
 function createRuntime(storage, options = {}) {

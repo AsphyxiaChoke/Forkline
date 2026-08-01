@@ -54,6 +54,7 @@
     "新建": "New",
     "远端分支": "Remote branches",
     "拖拽调整左侧栏": "Drag to resize the left sidebar",
+    "拖拽调整列宽": "Drag to resize the column",
     "图谱": "Graph",
     "全部分支": "All branches",
     "提交信息": "Commit message",

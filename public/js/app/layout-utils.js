@@ -7,6 +7,14 @@ const themeCatalog = [
   { id: "rose", label: "樱色", description: "浅粉灰背景，层次更柔和", swatches: ["#f8f3f6", "#ffffff", "#b3426d", "#3f7db7"] },
   { id: "contrast", label: "高对比", description: "黑白对比更强，状态更醒目", swatches: ["#050607", "#11151a", "#35e6d0", "#ffd45c"] },
 ];
+const historyColumnStorageKey = "forkline-history-columns";
+const historyColumnVariables = {
+  graph: "--history-graph-col-w",
+  author: "--history-author-w",
+  time: "--history-time-w",
+  sha: "--history-sha-w",
+};
+let historyColumnPreferences = {};
 
 function laneColor(index) {
   return ["#23c7b7", "#ff7a67", "#f0b85b", "#5ca9ff", "#9c7cff", "#6bd58c", "#f071b8"][index % 7];
@@ -86,6 +94,12 @@ function resetLayoutPreferences() {
     }
     document.documentElement.style.removeProperty(variable);
   });
+  try {
+    localStorage.removeItem(historyColumnStorageKey);
+  } catch {
+  }
+  historyColumnPreferences = {};
+  Object.values(historyColumnVariables).forEach((variable) => document.documentElement.style.removeProperty(variable));
   toast(t("布局已恢复默认"));
   renderInspector();
 }
@@ -114,6 +128,7 @@ function initLayoutResizers() {
       const onUp = () => {
         const current = numericCssVar(config.varName);
         localStorage.setItem(config.store, String(current));
+        applyHistoryColumnPreferences();
         document.body.classList.remove("resizing");
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
@@ -124,6 +139,179 @@ function initLayoutResizers() {
   });
   window.addEventListener("resize", () => clampLayoutVars(configs));
   clampLayoutVars(configs);
+  initHistoryColumnResizers();
+}
+
+function initHistoryColumnResizers() {
+  const handles = [...document.querySelectorAll("[data-history-resizer]")].filter((handle) => handle.dataset.historyResizer);
+  if (!handles.length) return;
+  historyColumnPreferences = loadHistoryColumnPreferences();
+  applyHistoryColumnPreferences();
+  handles.forEach((handle) => {
+    handle.addEventListener("pointerdown", (event) => beginHistoryColumnResize(event, handle));
+    handle.addEventListener("keydown", (event) => resizeHistoryColumnFromKeyboard(event, handle));
+  });
+  window.addEventListener("resize", applyHistoryColumnPreferences);
+}
+
+function beginHistoryColumnResize(event, handle) {
+  const boundary = historyResizeBoundary(handle);
+  if (!boundary) return;
+  event.preventDefault();
+  freezeVisibleHistoryColumnWidths(boundary.cells);
+  handle.setPointerCapture?.(event.pointerId);
+  const startX = event.clientX;
+  const leftWidth = boundary.left.getBoundingClientRect().width;
+  const rightWidth = boundary.right.getBoundingClientRect().width;
+  document.body.classList.add("resizing");
+  const onMove = (moveEvent) => {
+    resizeHistoryBoundary(boundary.left.dataset.historyColumn, boundary.right.dataset.historyColumn, leftWidth, rightWidth, moveEvent.clientX - startX);
+  };
+  const onUp = () => {
+    saveHistoryColumnPreferences();
+    document.body.classList.remove("resizing");
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+  };
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp, { once: true });
+  document.addEventListener("pointercancel", onUp, { once: true });
+}
+
+function resizeHistoryColumnFromKeyboard(event, handle) {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const boundary = historyResizeBoundary(handle);
+  if (!boundary) return;
+  event.preventDefault();
+  freezeVisibleHistoryColumnWidths(boundary.cells);
+  resizeHistoryBoundary(
+    boundary.left.dataset.historyColumn,
+    boundary.right.dataset.historyColumn,
+    boundary.left.getBoundingClientRect().width,
+    boundary.right.getBoundingClientRect().width,
+    event.key === "ArrowRight" ? 8 : -8
+  );
+  saveHistoryColumnPreferences();
+}
+
+function historyResizeBoundary(handle) {
+  const left = handle.closest?.("[data-history-column]");
+  const cells = visibleHistoryColumnCells();
+  const index = cells.indexOf(left);
+  if (!left || index < 0 || index >= cells.length - 1) return null;
+  return { cells, left, right: cells[index + 1] };
+}
+
+function visibleHistoryColumnCells() {
+  return [...document.querySelectorAll(".history-head > [data-history-column]")]
+    .filter((cell) => getComputedStyle(cell).display !== "none");
+}
+
+function freezeVisibleHistoryColumnWidths(cells = visibleHistoryColumnCells()) {
+  cells.forEach((cell) => {
+    const name = cell.dataset.historyColumn;
+    if (!historyColumnVariables[name]) return;
+    const width = Math.round(cell.getBoundingClientRect().width);
+    historyColumnPreferences[name] = width;
+    setHistoryColumnWidth(name, width);
+  });
+}
+
+function resizeHistoryBoundary(leftName, rightName, leftWidth, rightWidth, delta) {
+  const pairWidth = leftWidth + rightWidth;
+  if (leftName === "graph" && rightName === "message") {
+    const limit = historyColumnLimit("graph");
+    const next = clamp(leftWidth + delta, limit.min, Math.min(limit.max, pairWidth - historyMessageMinimumWidth()));
+    updateHistoryColumnPreference("graph", next);
+    return;
+  }
+  if (leftName === "message" && historyColumnVariables[rightName]) {
+    const limit = historyColumnLimit(rightName);
+    const next = clamp(rightWidth - delta, limit.min, Math.min(limit.max, pairWidth - historyMessageMinimumWidth()));
+    updateHistoryColumnPreference(rightName, next);
+    return;
+  }
+  if (!historyColumnVariables[leftName] || !historyColumnVariables[rightName]) return;
+  const leftLimit = historyColumnLimit(leftName);
+  const rightLimit = historyColumnLimit(rightName);
+  const min = Math.max(leftLimit.min, pairWidth - rightLimit.max);
+  const max = Math.min(leftLimit.max, pairWidth - rightLimit.min);
+  const nextLeft = clamp(leftWidth + delta, min, max);
+  updateHistoryColumnPreference(leftName, nextLeft);
+  updateHistoryColumnPreference(rightName, pairWidth - nextLeft);
+}
+
+function updateHistoryColumnPreference(name, width) {
+  const next = Math.round(width);
+  historyColumnPreferences[name] = next;
+  setHistoryColumnWidth(name, next);
+}
+
+function setHistoryColumnWidth(name, width) {
+  const variable = historyColumnVariables[name];
+  if (variable) document.documentElement.style.setProperty(variable, `${Math.round(width)}px`);
+}
+
+function applyHistoryColumnPreferences() {
+  const entries = Object.entries(historyColumnPreferences).filter(([name, width]) => historyColumnVariables[name] && Number.isFinite(width));
+  if (!entries.length) return;
+  entries.forEach(([name, width]) => {
+    const limit = historyColumnLimit(name);
+    setHistoryColumnWidth(name, clamp(width, limit.min, limit.max));
+  });
+  fitHistoryColumnPreferences();
+}
+
+function fitHistoryColumnPreferences() {
+  const head = document.querySelector(".history-head");
+  const cells = visibleHistoryColumnCells();
+  if (!head || !cells.length) return;
+  const fixed = cells
+    .map((cell) => ({ cell, name: cell.dataset.historyColumn }))
+    .filter((item) => historyColumnVariables[item.name]);
+  let overflow = fixed.reduce((total, item) => total + item.cell.getBoundingClientRect().width, 0) + historyMessageMinimumWidth() - head.clientWidth;
+  ["author", "time", "sha", "graph"].forEach((name) => {
+    if (overflow <= 0) return;
+    const item = fixed.find((entry) => entry.name === name);
+    if (!item) return;
+    const current = item.cell.getBoundingClientRect().width;
+    const minimum = historyColumnLimit(name).min;
+    const reduction = Math.min(overflow, Math.max(0, current - minimum));
+    if (reduction > 0) setHistoryColumnWidth(name, current - reduction);
+    overflow -= reduction;
+  });
+}
+
+function historyColumnLimit(name) {
+  if (name === "graph") return { min: historyGraphMinimumWidth(), max: 420 };
+  if (name === "author") return { min: 72, max: 220 };
+  if (name === "time") return { min: 64, max: 160 };
+  return { min: 64, max: 160 };
+}
+
+function historyGraphMinimumWidth() {
+  const history = document.querySelector(".history");
+  const value = Number.parseFloat(getComputedStyle(history || document.documentElement).getPropertyValue("--graph-w"));
+  return Math.max(120, value || 176);
+}
+
+function historyMessageMinimumWidth() {
+  const width = document.querySelector(".history-head")?.clientWidth || window.innerWidth || 800;
+  return width <= 500 ? 96 : 140;
+}
+
+function loadHistoryColumnPreferences() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(historyColumnStorageKey) || "{}");
+    return Object.fromEntries(Object.entries(parsed).filter(([name, width]) => historyColumnVariables[name] && Number.isFinite(width)));
+  } catch {
+    return {};
+  }
+}
+
+function saveHistoryColumnPreferences() {
+  localStorage.setItem(historyColumnStorageKey, JSON.stringify(historyColumnPreferences));
 }
 
 function clampLayoutVars(configs) {
