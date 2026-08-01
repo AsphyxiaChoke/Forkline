@@ -216,7 +216,7 @@ test("portrait width calculation leaves room for the graph instead of the docked
   assert.equal(values.get("--inspector-w"), "340px");
 });
 
-test("graph labels keep the complete branch name and expand the graph column", () => {
+test("long graph labels stay inside the graph column without squeezing commit messages", () => {
   const context = vm.createContext({
     graphWidth: 176,
     laneX: [28, 54, 80, 106, 132, 154, 166],
@@ -230,10 +230,12 @@ test("graph labels keep the complete branch name and expand the graph column", (
   const commits = [{ lane: 2, refs: branch }];
   const width = context.graphRenderWidth(commits, "");
   const markup = context.graphLabel(80, 31, branch, "#23c7b7", width);
+  const renderedText = markup.match(/<text[^>]*>([^<]*)<\/text>/)?.[1] || "";
 
-  assert.ok(width > 176);
-  assert.match(markup, new RegExp(branch.replaceAll("/", "\\/")));
-  assert.doesNotMatch(markup, /\.\.\./);
+  assert.equal(width, 176);
+  assert.equal(context.graphLabelWidth(branch), 128);
+  assert.ok(renderedText.endsWith("..."));
+  assert.ok(renderedText.length < branch.length);
 });
 
 test("graph mode badge keeps the complete scope name instead of shrinking", () => {

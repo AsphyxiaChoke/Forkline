@@ -6111,3 +6111,25 @@
 - `docs/CONTINUE.md`：记录实现方式、实测数据和兼容语义。
 - `progress.md`：追加本轮实现、验证、临时服务关闭和回滚记录。
 - 回滚方式：执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/features/context-menus.js public/js/features/history-list.js server.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath tests/commit-selection-performance.test.js`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-08-01 - Task: 限制图谱长分支标签宽度
+
+### What was done
+- 提交图谱恢复固定列宽，不再按完整分支名称扩大图谱和占用提交信息空间。
+- 分支标签最大宽度限制为 `128px`，超长名称按字符宽度省略；悬停仍可查看完整分支名，节点右侧空间不足时标签会移到左侧。
+- 增加长标签布局回归，并同步中文功能说明和继续开发文档。
+
+### Testing
+- `node --check public/js/features/graph.js` 通过。
+- `node --test tests/layout-ui.test.js` 19 项全部通过。
+- 完整 `npm.cmd test` 88 项全部通过，退出码为 0，总耗时约 245 秒。
+- 浏览器在 `http://127.0.0.1:5177/` 实测：`backup/local-before-origin-main-20260620` 显示为省略标签，标签宽度为 `128px`、图谱列宽为 `176px`，提交标题完整可见，控制台错误为 0。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/js/features/graph.js`：固定图谱渲染宽度并增加分支标签限宽、省略、悬停全名和左右侧定位。
+- `tests/layout-ui.test.js`：锁定长分支标签不得撑宽图谱或挤压提交信息。
+- `README.md`：说明长分支标签的限宽省略和悬停查看行为。
+- `docs/CONTINUE.md`：记录固定列宽、最大标签宽度和左右侧定位规则。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/graph.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

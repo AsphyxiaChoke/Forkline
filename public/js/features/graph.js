@@ -1,4 +1,7 @@
 // Commit graph layout and SVG rendering.
+const GRAPH_LABEL_MAX_WIDTH = 128;
+const GRAPH_LABEL_MIN_WIDTH = 42;
+const GRAPH_LABEL_PADDING = 16;
 function renderGraphSvg(commits, height, selectedRef, width = graphRenderWidth(commits, selectedRef)) {
   return selectedRef ? renderBranchGraphSvg(commits, height, selectedRef, width) : renderOverviewGraphSvg(commits, height, width);
 }
@@ -256,12 +259,17 @@ function graphNode(x, y, color, options = {}) {
 }
 
 function graphLabel(x, y, label, color, renderWidth) {
-  const text = escapeHtml(label);
-  const width = graphLabelWidth(label);
-  const labelX = Math.min(x + 12, renderWidth - 6 - width);
+  const rightX = x + 12;
+  const rightSpace = renderWidth - 6 - rightX;
+  const placeRight = rightSpace >= 56;
+  const availableWidth = placeRight ? rightSpace : Math.max(GRAPH_LABEL_MIN_WIDTH, x - 18);
+  const width = graphLabelWidth(label, availableWidth);
+  const labelX = placeRight ? rightX : Math.max(6, x - 12 - width);
   const labelY = Math.max(7, y - 25);
+  const text = escapeHtml(graphLabelText(label, width - GRAPH_LABEL_PADDING));
   return `
     <g class="graph-label">
+      <title>${escapeHtml(label)}</title>
       <rect x="${labelX}" y="${labelY}" width="${width}" height="20" rx="7" fill="var(--graph-label-bg)" stroke="${color}" stroke-width="1.2" opacity="0.96" />
       <text x="${labelX + 8}" y="${labelY + 14}" fill="var(--graph-label-text)" font-size="10" font-weight="800" font-family="Microsoft YaHei UI, Segoe UI, sans-serif">${text}</text>
     </g>
@@ -269,19 +277,32 @@ function graphLabel(x, y, label, color, renderWidth) {
 }
 
 function graphRenderWidth(commits, selectedRef) {
-  return Math.ceil(commits.reduce((width, commit, index) => {
-    const label = selectedRef ? (index === 0 ? selectedRef : "") : tipLabel(commit.refs);
-    if (!label) return width;
-    const x = laneX[commit.lane] || laneX[0];
-    return Math.max(width, x + 18 + graphLabelWidth(label));
-  }, graphWidth));
+  return graphWidth;
 }
 
-function graphLabelWidth(label) {
-  const textWidth = [...String(label || "")].reduce((width, character) => {
-    return width + (character.codePointAt(0) > 0xff ? 10 : 6.4);
-  }, 0);
-  return Math.max(42, Math.ceil(textWidth + 16));
+function graphLabelWidth(label, availableWidth = GRAPH_LABEL_MAX_WIDTH) {
+  const limit = Math.max(GRAPH_LABEL_MIN_WIDTH, Math.min(GRAPH_LABEL_MAX_WIDTH, availableWidth));
+  return Math.max(GRAPH_LABEL_MIN_WIDTH, Math.min(limit, Math.ceil(graphLabelTextWidth(label) + GRAPH_LABEL_PADDING)));
+}
+
+function graphLabelText(label, availableWidth) {
+  const source = String(label || "");
+  if (graphLabelTextWidth(source) <= availableWidth) return source;
+  const ellipsis = "...";
+  const ellipsisWidth = graphLabelTextWidth(ellipsis);
+  let text = "";
+  let width = 0;
+  for (const character of source) {
+    const characterWidth = graphLabelTextWidth(character);
+    if (width + characterWidth + ellipsisWidth > availableWidth) break;
+    text += character;
+    width += characterWidth;
+  }
+  return `${text}${ellipsis}`;
+}
+
+function graphLabelTextWidth(value) {
+  return [...String(value || "")].reduce((width, character) => width + (character.codePointAt(0) > 0xff ? 10 : 6.4), 0);
 }
 
 function tipLabel(refs) {
