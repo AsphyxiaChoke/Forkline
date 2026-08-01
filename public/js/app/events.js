@@ -61,6 +61,24 @@ els.worktreeFilterInput.addEventListener("input", () => updateWorktreeFilter(els
 els.clearWorktreeFilter.addEventListener("click", clearWorktreeFilter);
 els.searchInput.addEventListener("input", () => scheduleCommitRender());
 els.clearSearch.addEventListener("click", clearCommitSearch);
+els.commitGraph.addEventListener("click", (event) => {
+  const row = event.target.closest(".commit-row[data-sha]");
+  if (!row) return;
+  selectCommit(row.dataset.sha || "").catch((error) => toast(error.message));
+});
+els.commitGraph.addEventListener("contextmenu", async (event) => {
+  const row = event.target.closest(".commit-row[data-sha]");
+  if (!row) return;
+  const commit = commitRecordForSha(row.dataset.sha || "");
+  if (!commit) return;
+  event.preventDefault();
+  try {
+    await selectCommit(commit.sha);
+    showCommitContextMenu(event, commit);
+  } catch (error) {
+    toast(error.message);
+  }
+});
 els.themeToggle.addEventListener("click", toggleTheme);
 els.newBranch.addEventListener("click", openBranchModal);
 els.branchForm.addEventListener("submit", submitBranchForm);

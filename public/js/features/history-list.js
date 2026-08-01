@@ -60,14 +60,6 @@ function renderCommits(options = {}) {
       <div class="time">${escapeHtml(commit.time)}</div>
       <div class="sha" title="${escapeAttr(commit.sha)}">${highlightSearchText(commit.short, highlightPattern)}</div>
     `;
-    row.addEventListener("click", async () => {
-      await selectCommit(commit.sha);
-    });
-    row.addEventListener("contextmenu", async (event) => {
-      event.preventDefault();
-      await selectCommit(commit.sha);
-      showCommitContextMenu(event, commit);
-    });
     rows.appendChild(row);
   });
   els.commitGraph.appendChild(rows);
@@ -78,6 +70,15 @@ function renderCommitInspector(mode, previousSelectedSha) {
   if (mode === "never") return;
   if (mode === "selection-change" && previousSelectedSha === state.selectedSha) return;
   renderInspector();
+}
+
+function updateCommitSelection(nextSha) {
+  const nextRow = els.commitGraph.querySelector(`.commit-row[data-sha="${nextSha}"]`);
+  if (!nextRow) return false;
+  const selectedRow = els.commitGraph.querySelector(".commit-row.selected");
+  if (selectedRow !== nextRow) selectedRow?.classList.remove("selected");
+  nextRow.classList.add("selected");
+  return true;
 }
 
 function scheduleCommitRender(delay = 90) {

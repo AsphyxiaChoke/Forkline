@@ -538,12 +538,16 @@ async function readFileHistory(filePath, refInput = "") {
   }
   const repoPath = currentRepo;
   const ref = refInput ? normalizeCompareRef(refInput, "文件历史引用") : "HEAD";
-  if (await isCurrentUnbornRef(ref, repoPath)) {
-    throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上查看文件历史。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
-  }
   await ensureLiveRemoteBranchRef(ref, repoPath);
-  await resolveCommitRef(ref, "文件历史引用", repoPath);
-  const historyFile = await resolveRefFileForWorktreePath(file, ref, repoPath);
+  const [, historyFile] = await Promise.all([
+    resolveFileReadRef(
+      ref,
+      "文件历史引用",
+      `当前分支还没有任何提交，不能在 ${ref} 上查看文件历史。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`,
+      repoPath
+    ),
+    resolveRefFileForWorktreePath(file, ref, repoPath),
+  ]);
   const output = await git(
     repoPath,
     [
@@ -596,12 +600,16 @@ async function readFileBlame(filePath, refInput = "") {
   }
   const repoPath = currentRepo;
   const ref = refInput ? normalizeCompareRef(refInput, "逐行追踪引用") : "HEAD";
-  if (await isCurrentUnbornRef(ref, repoPath)) {
-    throw new Error(`当前分支还没有任何提交，不能在 ${ref} 上逐行追踪。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`);
-  }
   await ensureLiveRemoteBranchRef(ref, repoPath);
-  await resolveCommitRef(ref, "逐行追踪引用", repoPath);
-  const blameFile = await resolveBlameFileForRef(file, ref, repoPath);
+  const [, blameFile] = await Promise.all([
+    resolveFileReadRef(
+      ref,
+      "逐行追踪引用",
+      `当前分支还没有任何提交，不能在 ${ref} 上逐行追踪。请先创建首个提交，或选择已有分支、Tag 或提交 SHA。`,
+      repoPath
+    ),
+    resolveBlameFileForRef(file, ref, repoPath),
+  ]);
   const output = await git(repoPath, ["blame", "--line-porcelain", blameFile.ref, "--", blameFile.file], { maxBuffer: 1024 * 1024 * 10 });
   const parsed = parseBlamePorcelain(output, 600);
   return {
@@ -723,6 +731,15 @@ async function isCurrentUnbornRef(ref, repoPath = currentRepo) {
   const currentBranch = (await readBranchDisplayName(repoPath).catch(() => "")).trim();
   if (!currentBranch || currentBranch === "detached HEAD" || await hasHeadCommit(repoPath)) return false;
   return ref === "HEAD" || ref === "@" || ref === currentBranch || ref === `refs/heads/${currentBranch}`;
+}
+
+async function resolveFileReadRef(ref, label, unbornMessage, repoPath = currentRepo) {
+  try {
+    return await resolveCommitRef(ref, label, repoPath);
+  } catch (error) {
+    if (await isCurrentUnbornRef(ref, repoPath)) throw new Error(unbornMessage);
+    throw error;
+  }
 }
 
 async function resolveCommitRef(ref, label, repoPath = currentRepo) {
@@ -1074,9 +1091,8 @@ function gitBuffer(repoPath, args, options = {}) {
 async function readEditableCommitFile(sha, filePath, previousFilePath = "", repoPath = currentRepo) {
   const file = validateEditableRepoFile(filePath);
   const oldFile = previousFilePath ? validateEditableRepoFile(previousFilePath) : file;
-  const commit = await resolveCommit(sha, repoPath);
-  const parents = await commitParents(commit, repoPath);
-  const parent = parents[0] || "";
+  const target = normalizeSha(sha);
+  const [commit, parent = ""] = (await git(repoPath, ["rev-list", "--parents", "-n", "1", `${target}^{commit}`])).trim().split(/\s+/);
   const [current, old] = await Promise.all([
     readEditableCommitBlob(commit, file, "此提交", repoPath),
     parent ? readEditableCommitBlob(parent, oldFile, "父提交", repoPath) : emptyEditableCommitBlob(),
@@ -1104,13 +1120,24 @@ async function readEditableCommitFile(sha, filePath, previousFilePath = "", repo
 
 async function readEditableCommitBlob(ref, file, label, repoPath) {
   const object = `${ref}:${file}`;
-  const type = (await git(repoPath, ["cat-file", "-t", object], { timeout: 60000 }).catch(() => "")).trim();
-  if (!type) return emptyEditableCommitBlob();
-  if (type !== "blob") throw new Error(`${label}中的 ${file} 不是普通文件，无法显示。`);
-  const size = Number((await git(repoPath, ["cat-file", "-s", object], { timeout: 60000 })).trim());
-  if (!Number.isFinite(size)) throw new Error(`${label}中的 ${file} 无法读取。`);
-  if (size > FILE_EDITOR_MAX_BYTES) throw new Error(`${label}中的文件超过 1 MiB，当前对照窗口暂不支持打开。`);
-  const buffer = await gitBuffer(repoPath, ["show", object], { maxBuffer: FILE_EDITOR_MAX_BYTES + 1024 });
+  let buffer;
+  try {
+    buffer = await gitBuffer(repoPath, ["cat-file", "blob", object], {
+      timeout: 60000,
+      maxBuffer: FILE_EDITOR_MAX_BYTES + 1024,
+    });
+  } catch {
+    const type = (await git(repoPath, ["cat-file", "-t", object], { timeout: 60000 }).catch(() => "")).trim();
+    if (!type) return emptyEditableCommitBlob();
+    if (type !== "blob") throw new Error(`${label}中的 ${file} 不是普通文件，无法显示。`);
+    const size = Number((await git(repoPath, ["cat-file", "-s", object], { timeout: 60000 })).trim());
+    if (!Number.isFinite(size)) throw new Error(`${label}中的 ${file} 无法读取。`);
+    if (size > FILE_EDITOR_MAX_BYTES) throw new Error(`${label}中的文件超过 1 MiB，当前对照窗口暂不支持打开。`);
+    throw new Error(`${label}中的 ${file} 无法读取。`);
+  }
+  if (buffer.length > FILE_EDITOR_MAX_BYTES) {
+    throw new Error(`${label}中的文件超过 1 MiB，当前对照窗口暂不支持打开。`);
+  }
   try {
     const payload = editableWorktreeFilePayload(file, buffer);
     return {

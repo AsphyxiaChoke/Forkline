@@ -6082,3 +6082,32 @@
 - `docs/CONTINUE.md`：记录 `connect` 策略、保留功能和待现场复测状态。
 - `progress.md`：追加本轮实现、验证缺口和回滚记录。
 - 回滚方式：这些文件还包含前序未提交改动，执行 `git restore -p -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js tests/file-editor-ui.test.js`，仅接受本任务对应补丁块；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。
+
+## 2026-07-31 - Task: 整体高频浏览性能优化
+
+### What was done
+- 历史完整文件读取把提交解析和第一父提交解析合并为一次 Git 调用，正常的新旧 blob 各只读取一次；缺失、非普通文件、读取失败、二进制和超过 1 MiB 的原有中文语义保持不变。
+- 文件历史与逐行追踪并行准备引用和文件路径，只在引用校验失败时补做无提交分支判断，保留过期远端检查和无提交分支指导。
+- 点选当前图谱中的可见提交只原地更新选中行，不再重建整张图谱；图谱外历史跳转仍保留完整渲染回退。提交点击和右键改为容器事件代理，不再为每个提交行分别绑定监听器。
+- 补充提交选择、事件代理、历史文件 1 MiB 上限、文件历史、逐行追踪和无提交分支提示回归，并同步用户文档与继续开发记录。
+
+### Testing
+- GitTest 同一 `/api/commit-file` 请求预热后平均从 217.1 ms 降到 110.1 ms，P95 从 324.9 ms 降到 114.6 ms。
+- GitTest 同一 `/api/file-history` 请求平均从 253.8 ms 降到 151.8 ms，P95 从 261.1 ms 降到 159.1 ms。
+- 浏览器连续切换 24 次提交时，脚本耗时约从 63.2 ms 降到 22.4 ms，布局耗时约从 75.7 ms 降到 19.7 ms；真实点击只保留一条选中提交，右键菜单正常打开。
+- 编辑器连续开关检查确认关闭后 CodeMirror DOM 清空；Merge 插件约 5 秒的延迟清理完成后，节点从 7203 回落到 3764、监听器从 1073 回落到 507、堆内存回收约 1.7 MiB，没有发现持续泄漏，因此未修改编辑器生命周期代码。
+- 本轮修改脚本的 `node --check` 全部通过；定向回归通过；完整 `npm.cmd test` 为 88/88 通过，退出码为 0。
+- `git diff --check` 退出码为 0，无空白错误；仅显示仓库现有的 LF / CRLF 工作区转换提示。
+- 隔离测试服务 `5296` 已关闭并确认端口释放；用户原有 `5287` 服务仍在运行且未被操作。
+
+### Notes
+- `server.js`：减少历史完整文件读取的 Git 子进程，并并行准备文件历史和逐行追踪引用。
+- `public/js/features/history-list.js`：移除逐行监听器并增加可见提交的原地选中更新。
+- `public/js/features/context-menus.js`：提交选择优先使用原地更新，图谱外提交保持完整渲染回退。
+- `public/js/app/events.js`：集中委托提交点击和右键事件。
+- `tests/git-api.test.js`：增加历史文件大小边界、文件历史、逐行追踪和无提交分支回归。
+- `tests/commit-selection-performance.test.js`：增加提交原地选择、图谱外回退和事件代理回归。
+- `README.md`：说明高频提交浏览和历史读取的性能边界。
+- `docs/CONTINUE.md`：记录实现方式、实测数据和兼容语义。
+- `progress.md`：追加本轮实现、验证、临时服务关闭和回滚记录。
+- 回滚方式：执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/features/context-menus.js public/js/features/history-list.js server.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath tests/commit-selection-performance.test.js`；如本轮之后单独提交，则执行 `git revert <该提交哈希>`。

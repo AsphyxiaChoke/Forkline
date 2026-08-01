@@ -4,7 +4,7 @@ async function selectCommit(sha) {
   if (state.historyPlan?.sha !== sha) state.historyPlan = null;
   setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
   state.selectedSha = sha;
-  renderCommits({ inspector: "never" });
+  if (!updateCommitSelection(sha)) renderCommits({ inspector: "never" });
   await loadCommit(sha);
   renderInspector();
 }

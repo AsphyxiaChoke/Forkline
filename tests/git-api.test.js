@@ -216,12 +216,14 @@ test("commit file viewer returns complete parent and commit versions for changed
   const renamedNewPath = path.join(repo, "rename-new.txt");
   const gbkPath = path.join(repo, "说明.txt");
   const binaryPath = path.join(repo, "binary.bin");
+  const largePath = path.join(repo, "large.txt");
   await initRepository(repo);
   await fs.writeFile(changedPath, "before\nkeep\n", "utf8");
   await fs.writeFile(deletedPath, "deleted from next commit\n", "utf8");
   await fs.writeFile(renamedOldPath, "one\ntwo\nthree\nfour\nfive\nsix\n", "utf8");
   await fs.writeFile(gbkPath, iconv.encode("旧版本\r\n", "gbk"));
   await fs.writeFile(binaryPath, Buffer.from([0x00, 0x01, 0xff]));
+  await fs.writeFile(largePath, Buffer.alloc(1024 * 1024 + 1, 0x61));
   await git(repo, ["add", "."]);
   await git(repo, ["commit", "-m", "base files"]);
   const baseSha = await git(repo, ["rev-parse", "HEAD"]);
@@ -291,6 +293,41 @@ test("commit file viewer returns complete parent and commit versions for changed
   const binary = await request(`/api/commit-file?sha=${baseSha}&file=binary.bin`, { repoPath: repo });
   assertStatus(binary, 400);
   assert.match(binary.body.error, /二进制/);
+
+  const large = await request(`/api/commit-file?sha=${baseSha}&file=large.txt`, { repoPath: repo });
+  assertStatus(large, 400);
+  assert.match(large.body.error, /超过 1 MiB/);
+});
+
+test("file history and blame keep valid refs fast while preserving unborn branch guidance", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-read-ref-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const filePath = path.join(repo, "note.txt");
+  await initRepository(repo);
+  await fs.writeFile(filePath, "line one\nline two\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "add note"]);
+  await openRepo(repo);
+
+  const history = await request("/api/file-history?file=note.txt&ref=main", { repoPath: repo });
+  assertStatus(history, 200);
+  assert.equal(history.body.commits[0]?.message, "add note");
+
+  const blame = await request("/api/file-blame?file=note.txt&ref=main", { repoPath: repo });
+  assertStatus(blame, 200);
+  assert.equal(blame.body.lines.length, 2);
+
+  await git(repo, ["switch", "--orphan", "empty"]);
+
+  const unbornHistory = await request("/api/file-history?file=note.txt&ref=empty", { repoPath: repo });
+  assertStatus(unbornHistory, 400);
+  assert.match(unbornHistory.body.error, /还没有任何提交.*查看文件历史/);
+
+  const unbornBlame = await request("/api/file-blame?file=note.txt&ref=empty", { repoPath: repo });
+  assertStatus(unbornBlame, 400);
+  assert.match(unbornBlame.body.error, /还没有任何提交.*逐行追踪/);
 });
 
 test("file editor stages only the selected visual chunk when nearby changes share the normal diff context", { timeout: 120000 }, async (t) => {
