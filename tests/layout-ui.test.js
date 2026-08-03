@@ -8,6 +8,7 @@ const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const layoutSource = fs.readFileSync(path.join(root, "public", "js", "app", "layout-utils.js"), "utf8");
+const initSource = fs.readFileSync(path.join(root, "public", "js", "app", "init.js"), "utf8");
 const bootstrapSource = fs.readFileSync(path.join(root, "public", "js", "bootstrap.js"), "utf8");
 const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const inspectorSource = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
@@ -36,6 +37,49 @@ test("topbar sync actions expose their Git commands on hover", () => {
   assert.match(indexHtml, /data-action="pull" title="git pull --ff-only"/);
   assert.match(indexHtml, /data-action="push" title="git push"/);
   assert.match(indexHtml, /data-action="forcePushLease" title="git push --force-with-lease"/);
+});
+
+test("app update indicator stays hidden until a newer release is returned", async () => {
+  const attributes = new Map();
+  const indicator = {
+    hidden: false,
+    href: "#",
+    title: "",
+    removeAttribute(name) {
+      attributes.delete(name);
+      if (name === "href") this.href = "";
+    },
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    },
+  };
+  let response = { available: false, url: "" };
+  const context = vm.createContext({
+    els: { appUpdateIndicator: indicator },
+    api: async () => response,
+    t: (message, values = {}) => message.replace("{version}", values.version || ""),
+  });
+  vm.runInContext(initSource, context);
+
+  await context.checkForAppUpdate();
+  assert.equal(indicator.hidden, true);
+  assert.equal(indicator.href, "");
+
+  response = {
+    available: true,
+    latestVersion: "0.2.0",
+    url: "https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.2.0",
+  };
+  await context.checkForAppUpdate();
+  assert.equal(indicator.hidden, false);
+  assert.equal(indicator.href, response.url);
+  assert.match(indicator.title, /0\.2\.0/);
+  assert.match(attributes.get("aria-label"), /0\.2\.0/);
+});
+
+test("app update indicator is absent from layout when no update exists", () => {
+  assert.match(indexHtml, /id="appUpdateIndicator"[\s\S]*?hidden/);
+  assert.match(styles, /\.app-update-indicator\[hidden\]\s*{\s*display:\s*none;/);
 });
 
 test("command hint observer starts before the app renders dynamic panels", () => {

@@ -7,6 +7,8 @@
 
   const english = Object.freeze({
     "中文 Git 可视化工作台": "Git visual workspace",
+    "Forkline 更新": "Forkline update",
+    "发现 Forkline 新版本 {version}，点击查看": "Forkline {version} is available; click to view",
     "示例仓库": "Sample repository",
     "未连接真实仓库": "No repository connected",
     "输入本机 Git 仓库路径，例如 D:\\project\\demo": "Enter a local Git repository path, for example D:\\project\\demo",

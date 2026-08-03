@@ -1,5 +1,6 @@
 // App initialization and top-level rendering.
 async function init() {
+  checkForAppUpdate();
   try {
     renderRecentRepos();
     const params = new URLSearchParams(window.location.search);
@@ -20,6 +21,24 @@ async function init() {
     await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     toast(error.message);
+  }
+}
+
+async function checkForAppUpdate() {
+  const indicator = els.appUpdateIndicator;
+  if (!indicator) return;
+  indicator.hidden = true;
+  indicator.removeAttribute("href");
+  try {
+    const update = await api("/api/app-update");
+    if (!update?.available || !update.url) return;
+    const label = t("发现 Forkline 新版本 {version}，点击查看", { version: update.latestVersion });
+    indicator.href = update.url;
+    indicator.title = label;
+    indicator.setAttribute("aria-label", label);
+    indicator.hidden = false;
+  } catch {
+    indicator.hidden = true;
   }
 }
 

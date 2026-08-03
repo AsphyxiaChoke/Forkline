@@ -451,6 +451,53 @@ button {
   white-space: nowrap;
 }
 
+.brand-copy {
+  flex: 0 1 auto;
+}
+
+.app-update-indicator {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border: 1px solid rgba(var(--blue-rgb), 0.34);
+  border-radius: 50%;
+  background: rgba(var(--blue-rgb), 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 6px 16px rgba(var(--blue-rgb), 0.12);
+  color: var(--blue);
+  text-decoration: none;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.app-update-indicator[hidden] {
+  display: none;
+}
+
+.app-update-indicator:hover {
+  border-color: rgba(var(--blue-rgb), 0.62);
+  background: rgba(var(--blue-rgb), 0.24);
+  transform: translateY(-1px);
+}
+
+.app-update-indicator:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--blue-rgb), 0.22), 0 6px 16px rgba(var(--blue-rgb), 0.16);
+}
+
+.app-update-arrow {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .repo-bar {
   display: grid;
   grid-template-columns: 210px minmax(520px, 1.2fr) minmax(220px, 320px);

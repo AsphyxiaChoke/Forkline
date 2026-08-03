@@ -6,6 +6,8 @@ const crypto = require("crypto");
 const { execFile, execFileSync } = require("child_process");
 const iconv = require("./vendor/iconv-lite");
 const i18nCatalog = require("./public/js/i18n-catalog.js");
+const packageInfo = require("./package.json");
+const { createAppUpdateChecker } = require("./app-update");
 
 const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -23,6 +25,10 @@ const BASIC_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%P";
 const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
 const AUTH_DIAGNOSTICS_CACHE_TTL_MS = 60 * 1000;
 const AUTH_DIAGNOSTICS_CACHE_LIMIT = 12;
+const readAppUpdate = createAppUpdateChecker({
+  currentVersion: process.env.FORKLINE_APP_VERSION || packageInfo.version,
+  releaseApiUrl: process.env.FORKLINE_RELEASE_API_URL,
+});
 
 let currentRepo = null;
 let nextOperationId = 1;
@@ -7931,6 +7937,10 @@ const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url, `http://localhost:${PORT}`);
   res.forklineLocale = requestLocale(req);
   try {
+    if (req.method === "GET" && parsed.pathname === "/api/app-update") {
+      sendJson(res, 200, await readAppUpdate());
+      return;
+    }
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readState(parsed.searchParams.get("ref") || ""));

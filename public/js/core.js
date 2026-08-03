@@ -107,6 +107,7 @@ const inspectorTabs = {
   more: ["worktrees", "submodules", "stashes", "recovery", "logs", "settings"],
 };
 const els = {
+  appUpdateIndicator: $("#appUpdateIndicator"),
   repoName: $("#repoName"),
   repoPath: $("#repoPath"),
   sideRepoName: $("#sideRepoName"),

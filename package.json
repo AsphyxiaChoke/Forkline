@@ -1,5 +1,6 @@
 {
   "name": "forkline",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "test": "node --test --test-concurrency=1 tests/*.test.js"

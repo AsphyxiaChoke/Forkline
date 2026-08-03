@@ -6240,3 +6240,51 @@
 - `docs/CONTINUE.md`：记录单线默认与交互状态的最终规格。
 - `progress.md`：追加三线问题的修正、验证和回滚记录。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/styles.css tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-03 - Task: 增加左上角版本更新提示
+
+### What was done
+- 在 Forkline 品牌标题后加入与参考图一致的圆形上箭头更新入口，并保证图标紧跟标题而不是被极窄布局推到可视区域外。
+- 服务端使用 `package.json` 当前版本检查 GitHub 最新正式 Release；只有远端版本更高时才返回可见更新，结果缓存 10 分钟，当前已是最新版、网络失败或 Release 数据无效时均静默隐藏。
+- 更新入口只打开对应 GitHub Release，不会自动拉取、安装或覆盖本地开发工作区；中英文提示和发布版本维护说明已同步。
+
+### Testing
+- `node --check app-update.js`、`node --check server.js`、`node --check public/js/app/init.js` 均通过。
+- `node --test --test-concurrency=1` 分组运行除大型 `git-api.test.js` 外的 13 个测试文件，75 项全部通过，退出码为 0；其中覆盖版本号比较、缓存、同版本隐藏、网络失败隐藏、较新版本显示、布局和中英文目录。
+- 真实接口 `http://127.0.0.1:5299/api/app-update` 返回当前版本 `0.1.0`、最新版本 `0.1.0`、`available=false`；浏览器确认更新元素存在但不可见，且保留 `hidden`。
+- 使用 `FORKLINE_APP_VERSION=0.0.0` 在临时端口 `5300` 模拟旧版本：更新入口显示为约 `34×34px` 圆形上箭头，链接指向 `v0.1.0` Release；桌面和竖屏布局均未与品牌文字重叠，页面控制台无错误。
+- 临时测试服务 `5299` 和 `5300` 均已关闭；`git diff --check` 退出码为 0，仅有仓库现有的 LF / CRLF 转换提示。
+- 大型 `tests/git-api.test.js` 单独复跑被自动权限审核服务拒绝，未获得本轮新结果；本任务未修改任何仓库 Git 操作路径，服务启动、`/api/state` 页面加载和新增只读接口已完成现场验证。
+
+### Notes
+- `app-update.js`：新增正式 Release 查询、语义版本比较、失败静默处理和 10 分钟缓存。
+- `package.json`：声明当前 Forkline 版本 `0.1.0`，作为更新比较基准。
+- `server.js`：接入 `/api/app-update` 只读接口和可用于验证的当前版本 / Release API 环境覆盖。
+- `public/index.html`：在左上角品牌标题后加入默认隐藏的更新链接。
+- `public/styles.css`：增加主题自适应圆形更新图标，并保证桌面和竖屏均紧跟标题显示。
+- `public/js/core.js`：登记更新提示 DOM 引用。
+- `public/js/app/init.js`：启动时异步检查更新，仅在返回较新正式版本时解除隐藏。
+- `public/js/i18n-catalog.js`：增加更新入口的英文提示。
+- `tests/app-update.test.js`：覆盖版本解析、比较、缓存、同版本和网络失败语义。
+- `tests/layout-ui.test.js`：覆盖更新入口默认隐藏及较新版本显隐行为。
+- `README.md`：说明更新提示来源、显隐规则和不会自动修改代码的边界。
+- `docs/CONTINUE.md`：记录实现方式及发布新版本时同步维护 `package.json` 版本号的要求。
+- `progress.md`：追加本轮实现、验证、缺口和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md package.json progress.md public/index.html public/js/app/init.js public/js/core.js public/js/i18n-catalog.js public/styles.css server.js tests/layout-ui.test.js; Remove-Item -LiteralPath app-update.js,tests/app-update.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-03 - Task: 发布 Forkline v0.2.0
+
+### What was done
+- 将 Forkline 当前版本从 `0.1.0` 提升到 `0.2.0`，确保左上角更新提示以本次正式版本作为比较基准。
+- 将更新提示、双语界面、竖屏布局、完整代码对照与 GBK 编辑、按块/按行暂存、提交浏览性能优化等现有成果作为 `v0.2.0` 正式版本发布。
+- 推送 `main` 和 `v0.2.0` 标签，并在 GitHub 创建 `Forkline v0.2.0` Release：`https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.2.0`。
+
+### Testing
+- `node --check app-update.js`、`node --check server.js`、`node --check public/js/app/init.js` 均通过。
+- `npm.cmd test` 完整运行仓库测试，97 项全部通过，退出码为 0；其中覆盖更新检测、布局、中英文目录和 Git 集成流程。
+- `git diff --check` 通过；发布后使用 `gh release view v0.2.0` 核对 Release、标签、目标提交和公开地址。
+
+### Notes
+- `package.json`：将用于更新比较的当前应用版本提升到 `0.2.0`。
+- `progress.md`：追加 `v0.2.0` 发布内容、验证和回滚记录。
+- 回滚方式：发布前执行 `git restore -- package.json progress.md`；发布后执行 `gh release delete v0.2.0 --yes --cleanup-tag` 删除 Release 与远端标签，再执行 `git revert <本任务提交哈希>` 回退 `main`。
