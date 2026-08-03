@@ -58,6 +58,9 @@ test("app update checker hides equal versions and network failures", async () =>
     requestJson: async () => {
       throw new Error("offline");
     },
+    requestLatestRelease: async () => {
+      throw new Error("offline");
+    },
   });
   assert.deepEqual(await offline(), {
     available: false,
@@ -68,4 +71,30 @@ test("app update checker hides equal versions and network failures", async () =>
     publishedAt: "",
     url: "",
   });
+});
+
+test("app update checker falls back to the releases/latest redirect when the API is rate limited", async () => {
+  let fallbackRequests = 0;
+  const checker = createAppUpdateChecker({
+    currentVersion: "0.2.0",
+    requestJson: async () => {
+      throw new Error("API rate limit exceeded");
+    },
+    requestLatestRelease: async (url) => {
+      fallbackRequests += 1;
+      assert.match(url, /releases\/latest$/);
+      return {
+        tag_name: "v0.2.1",
+        name: "v0.2.1",
+        html_url: "https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.2.1",
+        published_at: "",
+      };
+    },
+  });
+
+  const update = await checker();
+  assert.equal(fallbackRequests, 1);
+  assert.equal(update.available, true);
+  assert.equal(update.latestVersion, "0.2.1");
+  assert.equal(update.tagName, "v0.2.1");
 });

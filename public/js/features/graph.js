@@ -1,5 +1,5 @@
 // Commit graph layout and SVG rendering.
-const GRAPH_LABEL_MAX_WIDTH = 360;
+const GRAPH_LABEL_FALLBACK_WIDTH = 360;
 const GRAPH_LABEL_MIN_WIDTH = 42;
 const GRAPH_LABEL_PADDING = 16;
 function renderGraphSvg(commits, height, selectedRef, width = graphRenderWidth(commits, selectedRef)) {
@@ -284,8 +284,8 @@ function graphRenderWidth(commits, selectedRef) {
   return Math.max(graphWidth, Number.isFinite(resizedWidth) ? Math.round(resizedWidth) : graphWidth);
 }
 
-function graphLabelWidth(label, availableWidth = GRAPH_LABEL_MAX_WIDTH) {
-  const limit = Math.max(GRAPH_LABEL_MIN_WIDTH, Math.min(GRAPH_LABEL_MAX_WIDTH, availableWidth));
+function graphLabelWidth(label, availableWidth = GRAPH_LABEL_FALLBACK_WIDTH) {
+  const limit = Math.max(GRAPH_LABEL_MIN_WIDTH, availableWidth);
   return Math.max(GRAPH_LABEL_MIN_WIDTH, Math.min(limit, Math.ceil(graphLabelTextWidth(label) + GRAPH_LABEL_PADDING)));
 }
 
@@ -306,7 +306,12 @@ function graphLabelText(label, availableWidth) {
 }
 
 function graphLabelTextWidth(value) {
-  return [...String(value || "")].reduce((width, character) => width + (character.codePointAt(0) > 0xff ? 10 : 6.4), 0);
+  return [...String(value || "")].reduce((width, character) => {
+    if (character.codePointAt(0) > 0xff) return width + 10;
+    if (/[MW@#%&]/.test(character)) return width + 8;
+    if (/[A-Z0-9]/.test(character)) return width + 6.2;
+    return width + 5.5;
+  }, 0);
 }
 
 function tipLabel(refs) {
@@ -325,22 +330,30 @@ function refColor(ref) {
   return laneColor(1);
 }
 
-async function loadCommit(sha) {
-  if (!sha || state.commitDetails.has(sha) || state.loadingCommitDetails.has(sha)) return;
+async function loadCommit(sha, options = {}) {
+  const includeDiff = Boolean(options.includeDiff);
+  if (!sha) return null;
+  const cached = state.commitDetails.get(sha);
+  if (cached && (!includeDiff || cached.diffLoaded)) return cached;
+  if (state.loadingCommitDetails.has(sha)) return null;
   const repoPath = repoPathSnapshot();
   const commit = state.data.commits.find((item) => item.sha === sha);
-  if (commit?.files?.length || commit?.diff?.length) {
-    state.commitDetails.set(sha, { files: commit.files || [], diff: commit.diff || [] });
-    return;
+  if ((commit?.files?.length || commit?.diff?.length) && (!includeDiff || commit?.diff?.length)) {
+    const detail = { files: commit.files || [], diff: includeDiff ? commit.diff || [] : [], diffLoaded: includeDiff };
+    state.commitDetails.set(sha, detail);
+    return detail;
   }
   state.loadingCommitDetails.add(sha);
   try {
-    const detail = await api(`/api/commit?sha=${encodeURIComponent(sha)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
-    state.commitDetails.set(sha, detail);
+    const detail = await api(`/api/commit?sha=${encodeURIComponent(sha)}${includeDiff ? "&diff=1" : ""}`);
+    if (!isCurrentRepoPath(repoPath)) return null;
+    const next = { ...(cached || {}), ...detail, diff: includeDiff ? detail.diff || [] : cached?.diff || detail.diff || [] };
+    state.commitDetails.set(sha, next);
+    return next;
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentRepoPath(repoPath)) return null;
     toast(error.message);
+    return null;
   } finally {
     state.loadingCommitDetails.delete(sha);
   }

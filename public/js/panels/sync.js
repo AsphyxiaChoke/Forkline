@@ -128,14 +128,15 @@ async function runStashAction(action, ref, button) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || t("{action}完成", { action: t(names[action] || "储藏操作") }));
     state.stashDetails.clear();
-    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
+    const data = await api("/api/worktree?stashes=1");
     if (!isCurrentRepoPath(repoPath)) return;
-    state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    mergeWorktreeState(data, { stashes: true });
     if (!state.data.stashes?.some((stash) => stash.ref === state.selectedStash)) {
       state.selectedStash = state.data.stashes?.[0]?.ref || "";
     }
-    renderAll();
+    renderWorkingFiles();
+    renderStage();
+    renderInspector();
     if (state.selectedSha && state.selectedTab !== "stashes") {
       await loadCommit(state.selectedSha);
       renderInspector();
@@ -220,7 +221,7 @@ function renderSyncTab() {
   }
   const selectedSyncCommit = state.selectedSyncSha ? syncCommits.find((commit) => commit.sha === state.selectedSyncSha) : null;
   const selectedSyncDetail = selectedSyncCommit ? state.commitDetails.get(selectedSyncCommit.sha) : null;
-  if (selectedSyncCommit && !selectedSyncDetail) {
+  if (selectedSyncCommit && !selectedSyncDetail?.diffLoaded) {
     loadSyncCommitPreview(selectedSyncCommit.sha);
   }
   const previewModel = selectedSyncCommit ? syncPreviewModel(selectedSyncCommit, selectedSyncDetail) : null;

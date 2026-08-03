@@ -5,6 +5,7 @@ const https = require("https");
 
 const DEFAULT_RELEASE_API_URL = "https://api.github.com/repos/AsphyxiaChoke/Forkline/releases/latest";
 const DEFAULT_RELEASE_PAGE_URL = "https://github.com/AsphyxiaChoke/Forkline/releases";
+const DEFAULT_RELEASE_LATEST_URL = "https://github.com/AsphyxiaChoke/Forkline/releases/latest";
 const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
@@ -42,7 +43,9 @@ function parseVersion(value) {
 function createAppUpdateChecker(options = {}) {
   const currentVersion = normalizeVersion(options.currentVersion);
   const releaseApiUrl = options.releaseApiUrl || DEFAULT_RELEASE_API_URL;
+  const releaseLatestUrl = options.releaseLatestUrl || DEFAULT_RELEASE_LATEST_URL;
   const requestJson = options.requestJson || requestJsonUrl;
+  const requestLatestRelease = options.requestLatestRelease || requestLatestReleaseRedirect;
   const cacheTtlMs = Number.isFinite(options.cacheTtlMs) ? options.cacheTtlMs : DEFAULT_CACHE_TTL_MS;
   const now = options.now || Date.now;
   let cached = null;
@@ -53,7 +56,7 @@ function createAppUpdateChecker(options = {}) {
     const timestamp = now();
     if (cached && timestamp - cachedAt < cacheTtlMs) return cached;
     if (pending) return pending;
-    pending = checkLatestRelease({ currentVersion, releaseApiUrl, requestJson })
+    pending = checkLatestRelease({ currentVersion, releaseApiUrl, releaseLatestUrl, requestJson, requestLatestRelease })
       .catch(() => emptyUpdate(currentVersion))
       .then((result) => {
         cached = result;
@@ -67,9 +70,14 @@ function createAppUpdateChecker(options = {}) {
   };
 }
 
-async function checkLatestRelease({ currentVersion, releaseApiUrl, requestJson }) {
+async function checkLatestRelease({ currentVersion, releaseApiUrl, releaseLatestUrl, requestJson, requestLatestRelease }) {
   if (!currentVersion) return emptyUpdate("");
-  const release = await requestJson(releaseApiUrl);
+  let release;
+  try {
+    release = await requestJson(releaseApiUrl);
+  } catch {
+    release = await requestLatestRelease(releaseLatestUrl);
+  }
   const latestVersion = normalizeVersion(release?.tag_name);
   if (!latestVersion) return emptyUpdate(currentVersion);
   const available = compareVersions(latestVersion, currentVersion) > 0;
@@ -82,6 +90,49 @@ async function checkLatestRelease({ currentVersion, releaseApiUrl, requestJson }
     publishedAt: String(release?.published_at || ""),
     url: available ? String(release?.html_url || DEFAULT_RELEASE_PAGE_URL) : "",
   };
+}
+
+function requestLatestReleaseRedirect(value) {
+  const url = new URL(value);
+  const transport = url.protocol === "https:" ? https : url.protocol === "http:" ? http : null;
+  if (!transport) return Promise.reject(new Error("Unsupported release page protocol"));
+  return new Promise((resolve, reject) => {
+    const request = transport.request(
+      url,
+      {
+        method: "HEAD",
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "Forkline-update-check",
+        },
+      },
+      (response) => {
+        response.resume();
+        const location = String(response.headers.location || "");
+        if (response.statusCode < 300 || response.statusCode >= 400 || !location) {
+          reject(new Error(`Release page returned ${response.statusCode}`));
+          return;
+        }
+        try {
+          const releaseUrl = new URL(location, url);
+          const match = releaseUrl.pathname.match(/\/releases\/tag\/([^/]+)\/?$/);
+          const tagName = match ? decodeURIComponent(match[1]) : "";
+          if (!normalizeVersion(tagName)) throw new Error("Release redirect did not contain a version tag");
+          resolve({
+            tag_name: tagName,
+            name: tagName,
+            html_url: releaseUrl.href,
+            published_at: "",
+          });
+        } catch (error) {
+          reject(error);
+        }
+      }
+    );
+    request.setTimeout(DEFAULT_TIMEOUT_MS, () => request.destroy(new Error("Release page request timed out")));
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 function emptyUpdate(currentVersion) {
@@ -143,4 +194,5 @@ module.exports = {
   compareVersions,
   createAppUpdateChecker,
   normalizeVersion,
+  requestLatestReleaseRedirect,
 };

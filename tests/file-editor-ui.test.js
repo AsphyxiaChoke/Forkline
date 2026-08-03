@@ -33,6 +33,18 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(editor, /文件还有未保存的修改，确认切换到/);
 });
 
+test("worktree selection updates in place so the same row can receive a double-click", () => {
+  const selectChangeSource = diffWorkbench.slice(
+    diffWorkbench.indexOf("function selectChangeFile"),
+    diffWorkbench.indexOf("function updateChangeSelection")
+  );
+  assert.match(selectChangeSource, /refreshChangeSelectionUi\(\)/);
+  assert.match(selectChangeSource, /loadWorkingDiff\(filePath\)/);
+  assert.doesNotMatch(selectChangeSource, /renderStage\(\)/);
+  assert.match(diffWorkbench, /function refreshChangeSelectionUi\(\)[\s\S]*?row\.classList\.toggle\("multi-selected", selected\)/);
+  assert.match(diffWorkbench, /actions\?\.querySelectorAll\("\[data-bulk-file-action\]"\)[\s\S]*?button\.disabled = selectedCount === 0/);
+});
+
 test("commit file double-click opens the shared comparison window in read-only mode", () => {
   assert.match(inspector, /bindFileTree\(els\.detailBody, \{ mode: "commit", commitSha: commit\.sha \}\)/);
   assert.match(diffWorkbench, /options\.mode === "commit"[\s\S]*row\.addEventListener\("dblclick"/);
@@ -52,70 +64,27 @@ test("commit file single-click keeps the long file list mounted for a following 
   const calls = [];
   const sandbox = {
     state: { selectedCommitFile: "src/first.js" },
-    renderSelectedCommitFileDiff: () => calls.push("diff"),
-    renderInspector: () => calls.push("inspector"),
   };
   vm.runInNewContext(diffWorkbench, sandbox);
+  sandbox.markCommitFile = () => calls.push("mark");
 
   sandbox.selectCommitFile("src/deep/target.js");
 
   assert.equal(sandbox.state.selectedCommitFile, "src/deep/target.js");
-  assert.deepEqual(calls, ["diff"]);
+  assert.deepEqual(calls, ["mark"]);
 });
 
-test("history diff keeps maximize data without rendering the removed workbench", () => {
-  let sideDiffRenders = 0;
-  let cleared = 0;
-  const sandbox = {
-    state: { data: {}, diffRequestId: 0, selectedDiffLines: new Set(), lastDiffLineKey: "" },
-    els: {
-      editWorktreeFile: null,
-      maximizeDiff: { disabled: true },
-      workDiffTitle: { textContent: "" },
-      workDiffPath: { textContent: "" },
-      workDiffView: {
-        className: "",
-        replaceChildren: () => {
-          cleared += 1;
-        },
-        set innerHTML(_value) {
-          sideDiffRenders += 1;
-        },
-      },
-    },
-    diffForFile: (diff) => diff,
-    shortFileName: (file) => file,
-    t: (value) => value,
-  };
-  vm.runInNewContext(diffWorkbench, sandbox);
-  sandbox.renderSideDiff = () => {
-    sideDiffRenders += 1;
-    return "large diff";
-  };
-
-  sandbox.renderHistoryDiffInWorkbench(
-    { short: "abc1234" },
-    {
-      diff: [
-        { type: "meta", text: "diff --git a/build/large.hex b/build/large.hex" },
-        { type: "add", text: "+line" },
-      ],
-    },
-    "build/large.hex"
-  );
-
-  assert.equal(sideDiffRenders, 0);
-  assert.equal(cleared, 1);
-  assert.equal(sandbox.state.activeDiff.source, "history");
-  assert.equal(sandbox.state.activeDiff.diff.length, 2);
-  assert.equal(sandbox.els.maximizeDiff.disabled, false);
+test("commit files tab keeps only the scrollable file tree and loads no inline diff preview", () => {
+  assert.match(inspector, /commit-file-tree commit-file-list-only/);
+  assert.doesNotMatch(inspector, /renderSelectedCommitFileDiff/);
+  assert.doesNotMatch(diffWorkbench, /renderHistoryDiffInWorkbench/);
+  assert.match(styles, /\.commit-file-tree\.commit-file-list-only\s*\{[^}]*max-height:/s);
 });
 
 test("large side diffs render an initial batch and expand without losing the full source", () => {
   const sandbox = {
     state: {
       selectedDiffLines: new Set(),
-      historyDiffPreview: { key: "commit:file", limit: 1000 },
       diffModalRenderLimit: 1000,
     },
     els: {},
@@ -125,34 +94,26 @@ test("large side diffs render an initial batch and expand without losing the ful
       (text, [key, replacement]) => text.replaceAll(`{${key}}`, String(replacement)),
       value
     ),
-    renderSelectedCommitFileDiff: () => {},
     renderDiffModalBody: () => {},
   };
   vm.runInNewContext(diffWorkbench, sandbox);
   const diff = Array.from({ length: 2500 }, (_, index) => ({ type: "ctx", text: ` line-${index}` }));
 
-  const html = sandbox.renderSideDiff(diff, "empty", { maxLines: 1000, loadMoreTarget: "history" });
+  const html = sandbox.renderSideDiff(diff, "empty", { maxLines: 1000, loadMoreTarget: "modal" });
 
   assert.equal((html.match(/class="side-row ctx/g) || []).length, 1000);
   assert.match(html, /line-999/);
   assert.doesNotMatch(html, /line-1000/);
-  assert.match(html, /data-side-diff-more="history"/);
+  assert.match(html, /data-side-diff-more="modal"/);
   assert.match(html, /data-next-limit="2000"/);
 
-  let historyRenders = 0;
   let modalRenders = 0;
-  sandbox.renderSelectedCommitFileDiff = () => {
-    historyRenders += 1;
-  };
   sandbox.renderDiffModalBody = () => {
     modalRenders += 1;
   };
-  sandbox.expandSideDiff({ dataset: { sideDiffMore: "history", nextLimit: "2000" } });
   sandbox.expandSideDiff({ dataset: { sideDiffMore: "modal", nextLimit: "2000" } });
 
-  assert.equal(sandbox.state.historyDiffPreview.limit, 2000);
   assert.equal(sandbox.state.diffModalRenderLimit, 2000);
-  assert.equal(historyRenders, 1);
   assert.equal(modalRenders, 1);
 });
 
@@ -161,15 +122,9 @@ test("large diff controls are delegated and closing the modal releases rendered 
   assert.match(diffWorkbench, /function closeDiffModal\(\)[\s\S]{0,260}els\.diffModalBody\.replaceChildren\(\)/);
 });
 
-test("historical comparison suspends the heavy commit preview and restores it on close", () => {
-  assert.match(
-    inspector,
-    /const previewSuspended = Boolean\(state\.fileEditor\?\.source === "commit" && els\.fileEditorModal\.classList\.contains\("show"\)\)/
-  );
-  assert.match(inspector, /previewSuspended[\s\S]*历史文件对照已打开[\s\S]*renderSideDiff\(selectedDiff/);
-  assert.match(editor, /els\.fileEditorModal\.classList\.add\("show"\);\s*els\.fileEditorModal\.setAttribute\("aria-hidden", "false"\);[\s\S]{0,180}if \(editor\.readOnly\) renderSelectedCommitFileDiff\(\);/);
-  assert.match(editor, /const restoreCommitPreview = state\.fileEditor\?\.source === "commit";/);
-  assert.match(editor, /els\.fileEditorModal\.setAttribute\("aria-hidden", "true"\);[\s\S]{0,260}if \(restoreCommitPreview\) renderSelectedCommitFileDiff\(\);/);
+test("historical comparison no longer coordinates with a removed inline preview", () => {
+  assert.doesNotMatch(inspector, /previewSuspended|renderSelectedCommitFileDiff/);
+  assert.doesNotMatch(editor, /restoreCommitPreview|renderSelectedCommitFileDiff/);
 });
 
 test("read-only historical comparison does not observe stage buttons", () => {
@@ -178,6 +133,17 @@ test("read-only historical comparison does not observe stage buttons", () => {
 
 test("read-only historical comparison avoids MergeView alignment loops", () => {
   assert.match(editor, /connect: editor\.readOnly \? null : "align"/);
+});
+
+test("large files use two lightweight CodeMirror panes instead of MergeView", () => {
+  const largeCompare = editor.match(/function createLargeFileCompare[\s\S]*?\n}\n\nfunction observeFileEditorStageButtons/)?.[0] || "";
+  assert.match(editor, /else if \(editor\.largeFile\) \{\s*createLargeFileCompare\(editor, codeMirrorOptions\);/s);
+  assert.match(largeCompare, /editor\.oldCodeMirror = CodeMirror\(oldHost/);
+  assert.match(largeCompare, /editor\.codeMirror = CodeMirror\(newHost/);
+  assert.doesNotMatch(largeCompare, /MergeView/);
+  assert.match(largeCompare, /editor\.oldCodeMirror\.on\("scroll", editor\.oldScrollHandler\)/);
+  assert.match(editor, /editor\?\.oldCodeMirror && editor\.oldScrollHandler[\s\S]*?\.off\("scroll", editor\.oldScrollHandler\)/);
+  assert.match(styles, /\.file-editor-large-compare\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 1px minmax\(0, 1fr\);/s);
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {
@@ -370,19 +336,49 @@ test("file editor maps working-tree selections to the matching Git hunk and line
 test("saving keeps the floating editor open and reloads its comparison", () => {
   const submitEditor = editor.match(/async function submitFileEditor[\s\S]*?\n}\n\nfunction closeFileEditor/)?.[0] || "";
   assert.match(editor, /await refreshWorktree\(true\)/);
-  assert.match(editor, /await openFileEditor\(file, previousFile, \{ force: true, reload: true \}\)/);
+  assert.match(submitEditor, /const restoreView = captureFileEditorView\(editor\)/);
+  assert.match(submitEditor, /await openFileEditor\(file, previousFile, \{ force: true, reload: true, restoreView, feedbackMessage: "文件已保存" \}\)/);
   assert.doesNotMatch(submitEditor, /state\.selectedChanges\.add[\s\S]{0,240}closeFileEditor\(true\)/);
+});
+
+test("file editor restores the viewed line after save and staging actions", () => {
+  const sandbox = {};
+  vm.runInNewContext(editor, sandbox);
+  const scrolls = [];
+  const current = {
+    getScrollInfo: () => ({ top: 420, left: 14 }),
+    lineAtHeight: (height) => height / 10,
+    firstLine: () => 0,
+    lastLine: () => 200,
+    heightAtLine: (line) => line * 10,
+    scrollTo: (left, top) => scrolls.push(["current", left, top]),
+  };
+  const old = {
+    getScrollInfo: () => ({ top: 390, left: 8 }),
+    lineAtHeight: (height) => height / 10,
+    firstLine: () => 0,
+    lastLine: () => 200,
+    heightAtLine: (line) => line * 10,
+    scrollTo: (left, top) => scrolls.push(["old", left, top]),
+  };
+  const view = sandbox.captureFileEditorView({ codeMirror: current, oldCodeMirror: old });
+
+  assert.deepEqual({ ...view }, { line: 42, left: 14, oldLine: 39, oldLeft: 8 });
+  sandbox.restoreFileEditorView({ codeMirror: current, oldCodeMirror: old }, view);
+  assert.deepEqual(scrolls, [["current", 14, 324], ["old", 8, 294]]);
+  assert.match(editor, /captureFileEditorView\(editor, options\.focusLine\)/);
+  assert.match(editor, /feedbackMessage: options\.feedbackMessage \|\| fallbackOutput/);
 });
 
 test("file editor exposes Chinese encoding and comparison messages in English mode", () => {
   assert.equal(catalog.translate("en", "查找替换"), "Find and replace");
-  assert.equal(catalog.translate("en", "历史文件对照已打开"), "Commit file comparison is open");
-  assert.equal(catalog.translate("en", "关闭对照窗口后恢复此处预览。"), "Close the comparison window to restore this preview.");
   assert.equal(catalog.translate("en", "拖动调整窗口大小"), "Drag to resize the window");
   assert.equal(catalog.translate("en", "暂存区中不存在"), "Not present in the index");
   assert.equal(catalog.translate("en", "暂存此改动块"), "Stage this change block");
   assert.equal(catalog.translate("en", "还原所选改动块"), "Restore the selected change block");
   assert.equal(catalog.translate("en", "切换同步滚动"), "Toggle synchronized scrolling");
+  assert.equal(catalog.translate("en", "大文件模式"), "Large file mode");
+  assert.equal(catalog.translate("en", "已暂存改动块"), "Change block staged");
   assert.equal(catalog.translate("en", "找到 {count} 个匹配", { count: 3 }), "Found 3 matches");
   assert.equal(catalog.translate("en", "已替换 {count} 处", { count: 2 }), "Replaced 2 matches");
   assert.equal(

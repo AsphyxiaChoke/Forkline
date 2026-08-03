@@ -112,6 +112,10 @@ function renderDetailsTab(commit, detail) {
   const canFold = !isMergeCommit && (commit.parents || []).length === 1;
   const canDrop = !isMergeCommit;
   const remoteUrl = commitRemoteUrl(commit.sha);
+  const historyPlanOpen = state.historyPlan?.sha === commit.sha;
+  const historyQueueOpen = Boolean(
+    state.historyQueue.items?.length || state.historyQueue.loading || state.historyQueue.preview || state.historyQueue.error
+  );
   els.detailBody.innerHTML = tt`
     <div class="meta-grid">
       <span>提交</span><div class="meta-value">${escapeHtml(commit.short)}</div>
@@ -146,21 +150,25 @@ function renderDetailsTab(commit, detail) {
       <button class="mini-btn" data-commit-tool="resetMixed" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --mixed：移动当前分支，改动保留在工作区"><span>混合重置</span><span class="command-hint">git reset --mixed</span></button>
       <button class="mini-btn danger" data-commit-tool="resetHard" data-sha="${escapeAttr(commit.sha)}" type="button" title="git reset --hard：移动当前分支，并丢弃工作区改动"><span>硬重置</span><span class="command-hint">git reset --hard</span></button>
     </div>
-    <div class="detail-section-title commit-action-section-title">历史编辑</div>
-    <div class="commit-tools commit-action-tools">
-      <button class="mini-btn" data-commit-tool="squash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩")}"><span>压缩进父提交</span><span class="command-hint">git rebase -i squash</span></button>
-      <button class="mini-btn" data-commit-tool="fixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补")}"><span>修补进父提交</span><span class="command-hint">git rebase -i fixup</span></button>
-      <button class="mini-btn danger" data-commit-tool="drop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交")}"><span>丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
-    </div>
-    ${renderHistoryRewritePlan(commit)}
-    <div class="detail-section-title commit-action-section-title">历史编辑队列</div>
-    <div class="commit-tools commit-action-tools">
-      <button class="mini-btn" data-commit-tool="queueSquash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(canFold ? "加入历史编辑队列，执行时压缩进前一条提交" : "此提交不能加入压缩队列")}"><span>加入队列：压缩</span><span class="command-hint">queue squash</span></button>
-      <button class="mini-btn" data-commit-tool="queueFixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(canFold ? "加入历史编辑队列，执行时修补进前一条提交" : "此提交不能加入修补队列")}"><span>加入队列：修补</span><span class="command-hint">queue fixup</span></button>
-      <button class="mini-btn" data-commit-tool="queueReword" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(canDrop ? "加入历史编辑队列，执行时修改提交信息" : "此提交不能加入改信息队列")}"><span>加入队列：改信息</span><span class="command-hint">queue reword</span></button>
-      <button class="mini-btn danger" data-commit-tool="queueDrop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(canDrop ? "加入历史编辑队列，执行时丢弃此提交" : "此提交不能加入丢弃队列")}"><span>加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
-    </div>
-    ${renderHistoryRewriteQueue()}
+    <details class="commit-action-disclosure" ${historyPlanOpen ? "open" : ""}>
+      <summary class="detail-section-title commit-action-section-title">历史编辑</summary>
+      <div class="commit-tools commit-action-tools">
+        <button class="mini-btn" data-commit-tool="squash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动压缩" : canFold ? "git rebase -i squash：把此提交和信息压缩进父提交" : "根提交没有父提交，不能压缩")}"><span>压缩进父提交</span><span class="command-hint">git rebase -i squash</span></button>
+        <button class="mini-btn" data-commit-tool="fixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动修补" : canFold ? "git rebase -i fixup：把此提交改动修补进父提交，并丢弃此提交信息" : "根提交没有父提交，不能修补")}"><span>修补进父提交</span><span class="command-hint">git rebase -i fixup</span></button>
+        <button class="mini-btn danger" data-commit-tool="drop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(isMergeCommit ? "merge 提交暂不支持自动丢弃" : "git rebase -i drop：从当前分支历史中删除此提交")}"><span>丢弃此提交</span><span class="command-hint">git rebase -i drop</span></button>
+      </div>
+      ${renderHistoryRewritePlan(commit)}
+    </details>
+    <details class="commit-action-disclosure" ${historyQueueOpen ? "open" : ""}>
+      <summary class="detail-section-title commit-action-section-title">历史编辑队列</summary>
+      <div class="commit-tools commit-action-tools">
+        <button class="mini-btn" data-commit-tool="queueSquash" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(canFold ? "加入历史编辑队列，执行时压缩进前一条提交" : "此提交不能加入压缩队列")}"><span>加入队列：压缩</span><span class="command-hint">queue squash</span></button>
+        <button class="mini-btn" data-commit-tool="queueFixup" data-sha="${escapeAttr(commit.sha)}" type="button" ${canFold ? "" : "disabled"} title="${t(canFold ? "加入历史编辑队列，执行时修补进前一条提交" : "此提交不能加入修补队列")}"><span>加入队列：修补</span><span class="command-hint">queue fixup</span></button>
+        <button class="mini-btn" data-commit-tool="queueReword" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(canDrop ? "加入历史编辑队列，执行时修改提交信息" : "此提交不能加入改信息队列")}"><span>加入队列：改信息</span><span class="command-hint">queue reword</span></button>
+        <button class="mini-btn danger" data-commit-tool="queueDrop" data-sha="${escapeAttr(commit.sha)}" type="button" ${canDrop ? "" : "disabled"} title="${t(canDrop ? "加入历史编辑队列，执行时丢弃此提交" : "此提交不能加入丢弃队列")}"><span>加入队列：丢弃</span><span class="command-hint">queue drop</span></button>
+      </div>
+      ${renderHistoryRewriteQueue()}
+    </details>
   `;
 }
 
@@ -383,42 +391,9 @@ function renderFilesTab(commit, detail) {
   }
   els.detailBody.innerHTML = tt`
     <div class="detail-section-title">变更文件</div>
-    <div class="commit-file-view">
-      <div class="commit-file-tree">${files.length ? fileTreeHtml(files) : `<div class="file-row"><span></span><span class="file-name">${t("没有文件列表")}</span><span></span></div>`}</div>
-      <div class="commit-file-diff"></div>
-    </div>
+    <div class="commit-file-tree commit-file-list-only">${files.length ? fileTreeHtml(files) : `<div class="file-row"><span></span><span class="file-name">${t("没有文件列表")}</span><span></span></div>`}</div>
   `;
   bindFileTree(els.detailBody, { mode: "commit", commitSha: commit.sha });
-  renderSelectedCommitFileDiff(commit, detail);
-}
-
-function renderSelectedCommitFileDiff(commit = commitRecordForSha(state.selectedSha), detail = null) {
-  if (!commit) return;
-  const diffPane = els.detailBody.querySelector(".commit-file-diff");
-  if (!diffPane) return;
-  const commitDetail = detail || state.commitDetails.get(commit.sha) || { files: commit.files || [], diff: commit.diff || [] };
-  const selectedDiff = state.selectedCommitFile ? diffForFile(commitDetail.diff || [], state.selectedCommitFile) : [];
-  const previewSuspended = Boolean(state.fileEditor?.source === "commit" && els.fileEditorModal.classList.contains("show"));
-  const previewLimit = historyDiffPreviewLimit(commit.sha, state.selectedCommitFile);
-  if (state.selectedCommitFile) renderHistoryDiffInWorkbench(commit, commitDetail, state.selectedCommitFile);
-  else renderWorkDiffEmpty("这个提交没有文件改动");
-  diffPane.innerHTML = tt`
-    <div class="panel-title compact">
-      <div class="panel-title-text">
-        <span>${escapeHtml(state.selectedCommitFile ? shortFileName(state.selectedCommitFile) : commit.short)}</span>
-        <span class="panel-subtitle">${escapeHtml(state.selectedCommitFile || t("未选择文件"))}</span>
-      </div>
-      <button class="mini-btn" data-file-history-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>文件历史</button>
-      <button class="mini-btn" data-file-blame-open data-file="${escapeAttr(state.selectedCommitFile || "")}" data-ref="${escapeAttr(commit.sha)}" type="button" ${state.selectedCommitFile ? "" : "disabled"}>逐行追踪</button>
-      <button class="mini-btn diff-max-btn" data-open-diff-modal type="button" ${selectedDiff.length ? "" : "disabled"}>最大化</button>
-    </div>
-    ${
-      previewSuspended
-        ? `<div class="empty-state"><strong>${t("历史文件对照已打开")}</strong><span>${t("关闭对照窗口后恢复此处预览。")}</span></div>`
-        : renderSideDiff(selectedDiff, "没有可显示的历史改动", { maxLines: previewLimit, loadMoreTarget: "history" })
-    }
-  `;
-  markCommitFile();
 }
 
 function renderFileHistoryTab() {

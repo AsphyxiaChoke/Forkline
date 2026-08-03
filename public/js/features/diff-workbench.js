@@ -150,8 +150,11 @@ function selectChangeFile(filePath, scope, event) {
     state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
     setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   }
-  renderStage();
-  if (selected) openSelectedFileInspector(filePath);
+  refreshChangeSelectionUi();
+  if (selected) {
+    loadWorkingDiff(filePath);
+    openSelectedFileInspector(filePath);
+  }
   else renderWorkDiffEmpty("未选择文件");
 }
 
@@ -217,10 +220,39 @@ function markSelectedFile() {
   });
 }
 
+function refreshChangeSelectionUi() {
+  [els.changeList, els.stagedChangeList].forEach((root) => {
+    root.querySelectorAll("[data-select-file][data-scope]").forEach((row) => {
+      const selected = state.selectedChanges.has(changeKey(row.dataset.scope || "", row.dataset.file || ""));
+      row.classList.toggle("multi-selected", selected);
+    });
+    root.querySelectorAll(".change-section").forEach((section) => {
+      const rows = [...section.querySelectorAll("[data-select-file][data-scope]")];
+      const selectedCount = rows.filter((row) => row.classList.contains("multi-selected")).length;
+      const actions = section.querySelector(".change-section-actions");
+      let count = actions?.querySelector(".selected-count");
+      if (selectedCount && actions) {
+        if (!count) {
+          count = document.createElement("span");
+          count.className = "selected-count";
+          actions.prepend(count);
+        }
+        count.textContent = t("{count} 已选", { count: selectedCount });
+      } else {
+        count?.remove();
+      }
+      actions?.querySelectorAll("[data-bulk-file-action]").forEach((button) => {
+        button.disabled = selectedCount === 0;
+      });
+    });
+  });
+  markSelectedFile();
+}
+
 function selectCommitFile(filePath) {
   if (!filePath || filePath === state.selectedCommitFile) return;
   state.selectedCommitFile = filePath;
-  renderSelectedCommitFileDiff();
+  markCommitFile();
 }
 
 function syncCommitBySha(sha) {
@@ -241,8 +273,8 @@ async function selectSyncCommit(sha) {
 }
 
 async function loadSyncCommitPreview(sha) {
-  if (!sha || state.commitDetails.has(sha) || state.loadingCommitDetails.has(sha)) return;
-  await loadCommit(sha);
+  if (!sha || state.commitDetails.get(sha)?.diffLoaded || state.loadingCommitDetails.has(sha)) return;
+  await loadCommit(sha, { includeDiff: true });
   if (state.selectedTab === "sync" && state.selectedSyncSha === sha) {
     renderInspector();
   }
@@ -337,19 +369,6 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
   els.workDiffView.className = "work-diff-view";
   els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, lineAction: selectedDiffLineAction(filePath, scope), filePath, scope });
   updateDiffLineSelectionToolbar();
-}
-
-function renderHistoryDiffInWorkbench(commit, detail, filePath) {
-  resetDiffLineSelection(false);
-  const diff = diffForFile(detail.diff || [], filePath);
-  const title = t("{file} · 历史提交", { file: shortFileName(filePath) });
-  const path = `${commit.short} · ${filePath}`;
-  setActiveDiff({ source: "history", title, path, diff, emptyText: t("没有可显示的历史改动") });
-  state.diffRequestId += 1;
-  els.workDiffTitle.textContent = title;
-  els.workDiffPath.textContent = path;
-  els.workDiffView.className = "work-diff-view empty";
-  els.workDiffView.replaceChildren();
 }
 
 function setActiveDiff(payload) {
@@ -512,25 +531,10 @@ function renderSideDiffLoadMore(total, shown, target) {
   `;
 }
 
-function historyDiffPreviewLimit(commitSha, filePath) {
-  const key = JSON.stringify([commitSha || "", filePath || ""]);
-  if (state.historyDiffPreview.key !== key) {
-    state.historyDiffPreview = { key, limit: SIDE_DIFF_INITIAL_RENDER_LINES };
-  }
-  return state.historyDiffPreview.limit || SIDE_DIFF_INITIAL_RENDER_LINES;
-}
-
 function expandSideDiff(button) {
   const target = button?.dataset?.sideDiffMore || "";
   const nextLimit = Number.parseInt(button?.dataset?.nextLimit || "", 10);
   if (!Number.isInteger(nextLimit) || nextLimit <= 0) return;
-  if (target === "history") {
-    const scrollTop = els.detailBody?.scrollTop;
-    state.historyDiffPreview.limit = nextLimit;
-    renderSelectedCommitFileDiff();
-    if (Number.isFinite(scrollTop)) els.detailBody.scrollTop = scrollTop;
-    return;
-  }
   if (target === "modal") {
     const scrollTop = els.diffModalBody?.scrollTop;
     state.diffModalRenderLimit = nextLimit;
@@ -1012,9 +1016,7 @@ async function refreshWorktree(silent = false) {
     const nextOperation = data.operation || null;
     const nextSignature = worktreeStateSignature(nextFiles, nextOperation);
     if (nextSignature !== state.worktreeSignature) {
-      state.data.workingFiles = nextFiles;
-      state.data.worktreeSnapshot = data.worktreeSnapshot || "";
-      state.data.repo.operation = nextOperation;
+      mergeWorktreeState(data);
       renderWorkingFiles();
       renderStage();
       if (!silent) toast(t("未提交修改已刷新"));

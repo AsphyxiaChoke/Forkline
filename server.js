@@ -27,6 +27,10 @@ const WORKTREE_DIFF_CONTEXT = "8";
 const FILE_EDITOR_DIFF_CONTEXT = 0;
 const UNTRACKED_DIFF_HUNK_SIZE = 40;
 const FILE_EDITOR_MAX_BYTES = 1024 * 1024;
+const FILE_VIEWER_MAX_BYTES = 16 * 1024 * 1024;
+const DEFAULT_HISTORY_LIMIT = 120;
+const MAX_HISTORY_LIMIT = 5000;
+const WORKTREE_SNAPSHOT_CACHE_LIMIT = 2048;
 const BRANCH_STALE_DAYS = 30;
 const PROTECTED_BRANCH_NAMES = new Set(["main", "master", "develop", "development", "dev", "trunk"]);
 const GIT_LOG_FIELD_SEPARATOR = "\0";
@@ -47,6 +51,7 @@ let selfUpdateInProgress = false;
 const activeOperations = new Map();
 const operationLog = [];
 const authDiagnosticsCache = new Map();
+const worktreeFileSnapshotCache = new Map();
 const REPO_SWITCHING_ACTIONS = new Set(["openWorktree", "cloneRepository", "initRepository"]);
 const REMOTE_CONFIG_SNAPSHOT_ACTIONS = new Set(["fetchRemote", "setRemoteUrl", "deleteRemote"]);
 const TAG_REMOTE_SNAPSHOT_ACTIONS = new Set(["pushTag", "deleteRemoteTag"]);
@@ -318,6 +323,7 @@ async function openRepo(repoPath) {
     throw new Error("请输入仓库路径");
   }
   const root = (await git(repoPath, ["rev-parse", "--show-toplevel"])).trim();
+  if (!currentRepo || !sameFsPath(currentRepo, root)) worktreeFileSnapshotCache.clear();
   currentRepo = root;
   return readState();
 }
@@ -330,8 +336,13 @@ async function readBranchDisplayName(repoPath) {
   return branch;
 }
 
-async function readState(ref = "") {
-  if (!currentRepo) return sampleState();
+async function readState(ref = "", rawHistoryLimit = DEFAULT_HISTORY_LIMIT) {
+  const historyLimit = normalizeHistoryLimit(rawHistoryLimit);
+  if (!currentRepo) {
+    const sample = sampleState();
+    const page = historyPage(sample.commits || [], historyLimit);
+    return { ...sample, commits: page.commits, history: page.history };
+  }
   const repoPath = currentRepo;
   const selectedRef = String(ref || "").trim();
   const hasSubmoduleConfig = repoHasSubmoduleConfig(repoPath);
@@ -353,7 +364,7 @@ async function readState(ref = "") {
     git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
     git(repoPath, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%cr"]).catch(() => ""),
     git(repoPath, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => ""),
-    git(repoPath, logArgs(selectedRef)).catch(() => ""),
+    git(repoPath, logArgs(selectedRef, historyLimit)).catch(() => ""),
   ]);
 
   const branches = [];
@@ -410,6 +421,7 @@ async function readState(ref = "") {
     readWorkingStatus(repoPath, statusOutput),
     readCurrentSyncDetails(repoPath, syncOptions),
   ]);
+  const commitPage = historyPage(parseLog(logOutput), historyLimit);
   return {
     repo: {
       name: path.basename(repoPath),
@@ -437,7 +449,8 @@ async function readState(ref = "") {
     tags: parseTags(tagOutput),
     runningOperations: listRunningOperations(),
     operationLog,
-    commits: parseLog(logOutput),
+    commits: commitPage.commits,
+    history: commitPage.history,
   };
 }
 
@@ -446,12 +459,14 @@ async function readReflogState(repoPath = currentRepo) {
   return { reflogEntries: parseReflogEntries(output) };
 }
 
-async function readRefState(ref = "") {
+async function readRefState(ref = "", rawHistoryLimit = DEFAULT_HISTORY_LIMIT) {
+  const historyLimit = normalizeHistoryLimit(rawHistoryLimit);
   if (!currentRepo) {
     const sample = sampleState();
     sample.repo.selectedRef = ref;
     if (ref) sample.commits = sampleBranchCommits(sample, ref);
-    return { repo: sample.repo, commits: sample.commits };
+    const page = historyPage(sample.commits || [], historyLimit);
+    return { repo: sample.repo, commits: page.commits, history: page.history };
   }
   const repoPath = currentRepo;
   const selectedRef = String(ref || "").trim();
@@ -459,8 +474,9 @@ async function readRefState(ref = "") {
   const [branch, headShaOutput, logOutput] = await Promise.all([
     readBranchDisplayName(repoPath),
     git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
-    git(repoPath, logArgs(selectedRef)).catch(() => ""),
+    git(repoPath, logArgs(selectedRef, historyLimit)).catch(() => ""),
   ]);
+  const commitPage = historyPage(parseLog(logOutput), historyLimit);
   return {
     repo: {
       name: path.basename(repoPath),
@@ -471,7 +487,8 @@ async function readRefState(ref = "") {
       isSample: false,
       operation: detectRepoOperation(repoPath),
     },
-    commits: parseLog(logOutput),
+    commits: commitPage.commits,
+    history: commitPage.history,
   };
 }
 
@@ -495,13 +512,36 @@ function refNamesFromText(refs) {
     .filter(Boolean);
 }
 
-function logArgs(ref) {
+function normalizeHistoryLimit(value) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isInteger(parsed)) return DEFAULT_HISTORY_LIMIT;
+  return Math.max(20, Math.min(MAX_HISTORY_LIMIT, parsed));
+}
+
+function historyPage(commits, limit) {
+  const list = Array.isArray(commits) ? commits : [];
+  const hasMore = list.length > limit;
+  const visible = hasMore ? list.slice(0, limit) : list;
+  return {
+    commits: visible,
+    history: {
+      limit,
+      loaded: visible.length,
+      hasMore,
+      pageSize: DEFAULT_HISTORY_LIMIT,
+      maxLimit: MAX_HISTORY_LIMIT,
+    },
+  };
+}
+
+function logArgs(ref, limit = DEFAULT_HISTORY_LIMIT) {
   const selectedRef = String(ref || "").trim();
+  const historyLimit = normalizeHistoryLimit(limit);
   const args = [
     "log",
     "--graph",
     "--topo-order",
-    "--max-count=120",
+    `--max-count=${historyLimit + 1}`,
     "--date=relative",
     `--pretty=format:%x00${REF_COMMIT_LOG_FORMAT}`,
   ];
@@ -513,31 +553,36 @@ function logArgs(ref) {
   return args;
 }
 
-async function readCommit(sha) {
+async function readCommit(sha, options = {}) {
+  const includeDiff = Boolean(options.includeDiff);
   if (!currentRepo) {
     const sample = sampleState();
     const commit = sample.commits.find((item) => item.sha === sha) || sample.commits[0];
-    return { ...commit, files: commit.files, diff: commit.diff };
+    return { ...commit, files: commit.files, diff: includeDiff ? commit.diff : [], diffLoaded: includeDiff };
   }
   const repoPath = currentRepo;
   const parentLine = (await git(repoPath, ["rev-list", "--parents", "-n", "1", sha]).catch(() => "")).trim();
   const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
   const diffBase = parents.length > 1 ? parents[0] : "";
-  const [filesOutput, diffOutput, messageOutput, basicCommit] = await Promise.all([
+  const diffPromise = includeDiff
+    ? diffBase
+      ? git(repoPath, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
+      : git(repoPath, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 })
+    : Promise.resolve("");
+  const [filesOutput, messageOutput, basicCommit, diffOutput] = await Promise.all([
     diffBase
       ? git(repoPath, ["diff", "--name-status", "--find-renames", diffBase, sha], { maxBuffer: 1024 * 1024 * 2 })
       : git(repoPath, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
-    diffBase
-      ? git(repoPath, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
-      : git(repoPath, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 }),
     git(repoPath, ["show", "-s", "--format=%B", sha], { maxBuffer: 1024 * 256 }),
     readBasicCommit(sha, repoPath),
+    diffPromise,
   ]);
   return {
     ...basicCommit,
     summary: basicCommit.message,
     files: parseNameStatus(filesOutput),
     diff: parseDiff(diffOutput),
+    diffLoaded: includeDiff,
     message: messageOutput.trimEnd(),
   };
 }
@@ -1090,14 +1135,28 @@ async function readHistoryRewriteQueuePreview(rawItems) {
   };
 }
 
-async function readWorktree() {
+async function readWorktree(options = {}) {
+  const includeStashes = Boolean(options.includeStashes);
   if (!currentRepo) {
-    return { workingFiles: sampleState().workingFiles, operation: null };
+    const sample = sampleState();
+    return {
+      workingFiles: sample.workingFiles,
+      operation: null,
+      ...(includeStashes ? { stashes: sample.stashes || [] } : {}),
+    };
   }
   const repoPath = currentRepo;
-  const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+  const [statusOutput, stashOutput] = await Promise.all([
+    git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+    includeStashes ? git(repoPath, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%cr"]).catch(() => "") : "",
+  ]);
   const working = await readWorkingStatus(repoPath, statusOutput);
-  return { workingFiles: working.files, worktreeSnapshot: working.snapshot, operation: detectRepoOperation(repoPath) };
+  return {
+    workingFiles: working.files,
+    worktreeSnapshot: working.snapshot,
+    operation: detectRepoOperation(repoPath),
+    ...(includeStashes ? { stashes: parseStashList(stashOutput) } : {}),
+  };
 }
 
 async function readWorkingDiff(filePath, rawScope = "auto") {
@@ -1178,6 +1237,8 @@ async function readEditableCommitFile(sha, filePath, previousFilePath = "", repo
     oldBom: old.bom,
     oldLineEnding: old.lineEnding,
     oldByteLength: old.byteLength,
+    readOnly: true,
+    largeFile: Boolean(current.largeFile || old.largeFile),
   };
 }
 
@@ -1187,7 +1248,7 @@ async function readEditableCommitBlob(ref, file, label, repoPath) {
   try {
     buffer = await gitBuffer(repoPath, ["cat-file", "blob", object], {
       timeout: 60000,
-      maxBuffer: FILE_EDITOR_MAX_BYTES + 1024,
+      maxBuffer: FILE_VIEWER_MAX_BYTES + 1024,
     });
   } catch {
     const type = (await git(repoPath, ["cat-file", "-t", object], { timeout: 60000 }).catch(() => "")).trim();
@@ -1195,11 +1256,11 @@ async function readEditableCommitBlob(ref, file, label, repoPath) {
     if (type !== "blob") throw new Error(`${label}中的 ${file} 不是普通文件，无法显示。`);
     const size = Number((await git(repoPath, ["cat-file", "-s", object], { timeout: 60000 })).trim());
     if (!Number.isFinite(size)) throw new Error(`${label}中的 ${file} 无法读取。`);
-    if (size > FILE_EDITOR_MAX_BYTES) throw new Error(`${label}中的文件超过 1 MiB，当前对照窗口暂不支持打开。`);
+    if (size > FILE_VIEWER_MAX_BYTES) throw new Error(`${label}中的文件超过 16 MiB，当前对照窗口暂不支持打开。`);
     throw new Error(`${label}中的 ${file} 无法读取。`);
   }
-  if (buffer.length > FILE_EDITOR_MAX_BYTES) {
-    throw new Error(`${label}中的文件超过 1 MiB，当前对照窗口暂不支持打开。`);
+  if (buffer.length > FILE_VIEWER_MAX_BYTES) {
+    throw new Error(`${label}中的文件超过 16 MiB，当前对照窗口暂不支持打开。`);
   }
   try {
     const payload = editableWorktreeFilePayload(file, buffer);
@@ -1210,6 +1271,7 @@ async function readEditableCommitBlob(ref, file, label, repoPath) {
       bom: payload.bom,
       lineEnding: payload.lineEnding,
       byteLength: payload.byteLength,
+      largeFile: buffer.length > FILE_EDITOR_MAX_BYTES,
     };
   } catch (error) {
     throw new Error(`${label}版本无法显示：${error.message}`);
@@ -1217,21 +1279,23 @@ async function readEditableCommitBlob(ref, file, label, repoPath) {
 }
 
 function emptyEditableCommitBlob() {
-  return { exists: false, content: "", encoding: "", bom: false, lineEnding: "", byteLength: 0 };
+  return { exists: false, content: "", encoding: "", bom: false, lineEnding: "", byteLength: 0, largeFile: false };
 }
 
 async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPath = currentRepo) {
-  const target = resolveEditableWorktreeFile(filePath, repoPath);
+  const target = resolveReadableWorktreeFile(filePath, repoPath);
   const buffer = fs.readFileSync(target.fullPath);
   const current = editableWorktreeFilePayload(target.file, buffer);
+  const largeFile = current.byteLength > FILE_EDITOR_MAX_BYTES;
   const status = await readStatusFileForDiff(target.file, "any", repoPath);
   const old = status?.conflict
-    ? { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "冲突文件的暂存区没有单一版本，请先解决冲突。" }
+    ? { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "冲突文件的暂存区没有单一版本，请先解决冲突。", largeFile: false }
     : await readIndexEditableWorktreeFile(target.file, repoPath);
+  const readOnly = Boolean(largeFile || old.largeFile);
   let diffScope = "";
   let diffOutput = "";
   const diffContext = FILE_EDITOR_DIFF_CONTEXT;
-  if (status?.unstaged && !status.conflict) {
+  if (!readOnly && status?.unstaged && !status.conflict) {
     if (status.indexStatus === "?") {
       diffScope = "untracked";
       diffOutput = readNewFileDiff(target.file, repoPath);
@@ -1250,25 +1314,39 @@ async function readEditableWorktreeFile(filePath, previousFilePath = "", repoPat
     diffScope,
     diffContext,
     diff,
-    canStage: Boolean(diffScope && diff.length),
     ...old,
+    canStage: Boolean(!readOnly && diffScope && diff.length),
+    readOnly,
+    largeFile: readOnly,
   };
 }
 
 async function readIndexEditableWorktreeFile(file, repoPath) {
   let buffer;
   try {
-    buffer = await gitBuffer(repoPath, ["show", `:${file}`], { maxBuffer: FILE_EDITOR_MAX_BYTES + 1024 });
+    buffer = await gitBuffer(repoPath, ["show", `:${file}`], { maxBuffer: FILE_VIEWER_MAX_BYTES + 1024 });
   } catch {
-    return { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "" };
+    const size = Number((await git(repoPath, ["cat-file", "-s", `:${file}`]).catch(() => "")).trim());
+    if (Number.isFinite(size) && size > FILE_VIEWER_MAX_BYTES) {
+      return {
+        oldExists: true,
+        oldContent: "",
+        oldEncoding: "",
+        oldLineEnding: "",
+        oldUnavailable: "暂存区版本超过 16 MiB，无法在对照窗口中显示。",
+        largeFile: true,
+      };
+    }
+    return { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "", largeFile: false };
   }
-  if (buffer.length > FILE_EDITOR_MAX_BYTES) {
+  if (buffer.length > FILE_VIEWER_MAX_BYTES) {
     return {
       oldExists: true,
       oldContent: "",
       oldEncoding: "",
       oldLineEnding: "",
-      oldUnavailable: "暂存区版本超过 1 MiB，无法在编辑器中显示。",
+      oldUnavailable: "暂存区版本超过 16 MiB，无法在对照窗口中显示。",
+      largeFile: true,
     };
   }
   try {
@@ -1279,6 +1357,7 @@ async function readIndexEditableWorktreeFile(file, repoPath) {
       oldEncoding: payload.encoding,
       oldLineEnding: payload.lineEnding,
       oldUnavailable: "",
+      largeFile: buffer.length > FILE_EDITOR_MAX_BYTES,
     };
   } catch (error) {
     return {
@@ -1287,6 +1366,7 @@ async function readIndexEditableWorktreeFile(file, repoPath) {
       oldEncoding: "",
       oldLineEnding: "",
       oldUnavailable: `暂存区版本无法显示：${error.message}`,
+      largeFile: false,
     };
   }
 }
@@ -1322,6 +1402,10 @@ function saveEditableWorktreeFile(body, repoPath = currentRepo) {
 }
 
 function resolveEditableWorktreeFile(filePath, repoPath = currentRepo) {
+  return resolveReadableWorktreeFile(filePath, repoPath, FILE_EDITOR_MAX_BYTES, "文件超过 1 MiB，当前编辑器暂不支持直接编辑。请使用大文件只读模式查看。");
+}
+
+function resolveReadableWorktreeFile(filePath, repoPath = currentRepo, maxBytes = FILE_VIEWER_MAX_BYTES, tooLargeMessage = "文件超过 16 MiB，当前对照窗口暂不支持打开。") {
   const file = validateEditableRepoFile(filePath);
   const repoRoot = path.resolve(repoPath);
   const fullPath = path.resolve(repoRoot, file);
@@ -1336,7 +1420,7 @@ function resolveEditableWorktreeFile(filePath, repoPath = currentRepo) {
   }
   if (stat.isSymbolicLink()) throw new Error("符号链接文件暂不支持直接编辑。");
   if (!stat.isFile()) throw new Error("只能编辑普通文本文件。");
-  if (stat.size > FILE_EDITOR_MAX_BYTES) throw new Error("文件超过 1 MiB，当前编辑器暂不支持打开。");
+  if (stat.size > maxBytes) throw new Error(tooLargeMessage.trim());
 
   const realRepoRoot = fs.realpathSync(repoRoot);
   const realFilePath = fs.realpathSync(fullPath);
@@ -6372,13 +6456,31 @@ function worktreeFileSnapshot(repoPath, file) {
   const repoRoot = path.resolve(repoPath);
   const fullPath = path.resolve(repoRoot, normalizeRepoFile(file));
   if (!sameFsPath(repoRoot, fullPath) && !isPathInside(repoRoot, fullPath)) return "outside";
+  const cacheKey = process.platform === "win32" ? fullPath.toLowerCase() : fullPath;
   try {
-    const stat = fs.statSync(fullPath);
-    if (!stat.isFile()) return stat.isDirectory() ? "directory" : "other";
+    const stat = fs.statSync(fullPath, { bigint: true });
+    if (!stat.isFile()) {
+      worktreeFileSnapshotCache.delete(cacheKey);
+      return stat.isDirectory() ? "directory" : "other";
+    }
+    const fingerprint = [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(":");
+    const cached = worktreeFileSnapshotCache.get(cacheKey);
+    if (cached?.fingerprint === fingerprint) {
+      worktreeFileSnapshotCache.delete(cacheKey);
+      worktreeFileSnapshotCache.set(cacheKey, cached);
+      return cached.snapshot;
+    }
     const hash = crypto.createHash("sha256");
     hash.update(fs.readFileSync(fullPath));
-    return `file:${stat.size}:${hash.digest("hex")}`;
+    const snapshot = `file:${stat.size}:${hash.digest("hex")}`;
+    worktreeFileSnapshotCache.delete(cacheKey);
+    worktreeFileSnapshotCache.set(cacheKey, { fingerprint, snapshot });
+    while (worktreeFileSnapshotCache.size > WORKTREE_SNAPSHOT_CACHE_LIMIT) {
+      worktreeFileSnapshotCache.delete(worktreeFileSnapshotCache.keys().next().value);
+    }
+    return snapshot;
   } catch (error) {
+    worktreeFileSnapshotCache.delete(cacheKey);
     if (error?.code === "ENOENT") return "missing";
     return `error:${error?.code || "unknown"}`;
   }
@@ -8030,7 +8132,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       ensureRequestRepoMatchesCurrent(req);
-      sendJson(res, 200, await readState(parsed.searchParams.get("ref") || ""));
+      sendJson(res, 200, await readState(parsed.searchParams.get("ref") || "", parsed.searchParams.get("limit") || ""));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/auth-diagnostics") {
@@ -8048,7 +8150,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/ref-state") {
       ensureRequestRepoMatchesCurrent(req);
-      sendJson(res, 200, await readRefState(parsed.searchParams.get("ref") || ""));
+      sendJson(res, 200, await readRefState(parsed.searchParams.get("ref") || "", parsed.searchParams.get("limit") || ""));
       return;
     }
     if (req.method === "POST" && parsed.pathname === "/api/open") {
@@ -8068,7 +8170,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/commit") {
       ensureRequestRepoMatchesCurrent(req);
-      sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || ""));
+      const includeDiff = ["1", "true"].includes(String(parsed.searchParams.get("diff") || "").toLowerCase());
+      sendJson(res, 200, await readCommit(parsed.searchParams.get("sha") || "", { includeDiff }));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/patch") {
@@ -8145,7 +8248,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree") {
       ensureRequestRepoMatchesCurrent(req);
-      sendJson(res, 200, await readWorktree());
+      sendJson(res, 200, await readWorktree({ includeStashes: parsed.searchParams.get("stashes") === "1" }));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree-diff") {

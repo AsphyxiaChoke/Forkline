@@ -32,7 +32,9 @@ const state = {
   fileHistory: { file: "", ref: "", data: null, loading: false, error: "" },
   fileBlame: { file: "", ref: "", data: null, loading: false, error: "" },
   activeDiff: null,
-  historyDiffPreview: { key: "", limit: 0 },
+  historyLimit: 120,
+  historyHasMore: false,
+  historyLoading: false,
   diffModalRenderLimit: 0,
   fileEditor: null,
   openDiffOnInit: false,
@@ -49,6 +51,8 @@ const state = {
   contextRemote: null,
   contextReflogEntry: null,
   diffRequestId: 0,
+  refRequestId: 0,
+  historyRequestId: 0,
   compareRequestId: 0,
   fileHistoryRequestId: 0,
   fileBlameRequestId: 0,
@@ -106,6 +110,22 @@ async function renderSelectedCommitForRepoPath(repoPath) {
   renderInspector();
 }
 
+function mergeWorktreeState(data, options = {}) {
+  if (!state.data || !data) return;
+  state.data.workingFiles = data.workingFiles || [];
+  state.data.worktreeSnapshot = data.worktreeSnapshot || "";
+  state.data.repo = { ...(state.data.repo || {}), operation: data.operation || null };
+  if (options.stashes) state.data.stashes = data.stashes || [];
+}
+
+function applyHistoryState(data = state.data) {
+  const history = data?.history || {};
+  const loaded = Array.isArray(data?.commits) ? data.commits.length : 0;
+  state.historyLimit = Number.isInteger(history.limit) ? history.limit : Math.max(120, loaded);
+  state.historyHasMore = Boolean(history.hasMore);
+  state.historyLoading = false;
+}
+
 const graphWidth = 176;
 const laneX = [28, 54, 80, 106, 132, 154, 166];
 const rowH = 62;
@@ -143,6 +163,7 @@ const els = {
   worktreeFilterCount: $("#worktreeFilterCount"),
   clearWorktreeFilter: $("#clearWorktreeFilter"),
   branchStrip: $("#branchStrip"),
+  historyScroll: $("#historyScroll"),
   commitGraph: $("#commitGraph"),
   changeList: $("#changeList"),
   stagedChangeList: $("#stagedChangeList"),

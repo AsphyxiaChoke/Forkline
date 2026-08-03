@@ -442,6 +442,9 @@ test("graph labels expand with the resized graph column and stay inside it", () 
   const wideText = wideMarkup.match(/<text[^>]*>([^<]*)<\/text>/)?.[1] || "";
   const wideRect = Number(wideMarkup.match(/<rect[^>]*width="([^"]+)"/)?.[1] || 0);
   const svgMarkup = context.renderGraphSvg(commits, 62, "", wideWidth);
+  const veryLongBranch = "forkline/portrait-very-long-branch-name-for-layout-test";
+  const expandedMarkup = context.graphLabel(28, 31, veryLongBranch, "#23c7b7", 420);
+  const expandedText = expandedMarkup.match(/<text[^>]*>([^<]*)<\/text>/)?.[1] || "";
 
   assert.equal(narrowWidth, 176);
   assert.ok(narrowText.endsWith("..."));
@@ -449,6 +452,7 @@ test("graph labels expand with the resized graph column and stay inside it", () 
   assert.equal(wideText, branch);
   assert.ok(wideRect <= wideWidth - 6 - (80 + 12));
   assert.match(svgMarkup, /style="width:360px"/);
+  assert.equal(expandedText, veryLongBranch);
 });
 
 test("graph mode badge keeps the complete scope name instead of shrinking", () => {
@@ -486,6 +490,15 @@ test("commit operation sections center without changing other detail headings", 
   assert.equal((inspectorSource.match(/class="commit-tools commit-action-tools"/g) || []).length, 3);
   assert.match(styles, /\.commit-action-section-title,[\s\S]*?\.history-queue-empty\s*\{[^}]*text-align:\s*center;/s);
   assert.doesNotMatch(styles, /\.detail-section-title\s*\{[^}]*text-align:\s*center;/s);
+});
+
+test("history editing controls are collapsed until a plan or queue needs attention", () => {
+  assert.equal((inspectorSource.match(/<details class="commit-action-disclosure"/g) || []).length, 2);
+  assert.match(inspectorSource, /const historyPlanOpen = state\.historyPlan\?\.sha === commit\.sha/);
+  assert.match(inspectorSource, /const historyQueueOpen = Boolean\([\s\S]*?state\.historyQueue\.items\?\.length[\s\S]*?state\.historyQueue\.error[\s\S]*?\)/);
+  assert.match(inspectorSource, /<details class="commit-action-disclosure" \$\{historyPlanOpen \? "open" : ""\}>/);
+  assert.match(inspectorSource, /<details class="commit-action-disclosure" \$\{historyQueueOpen \? "open" : ""\}>/);
+  assert.match(styles, /\.commit-action-disclosure > summary\s*\{[^}]*justify-content:\s*center;[^}]*cursor:\s*pointer;/s);
 });
 
 test("commit operation buttons use a compact responsive grid", () => {

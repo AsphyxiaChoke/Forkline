@@ -25,9 +25,10 @@ test("commit details omit the aggregate diff preview", () => {
   assert.doesNotMatch(inspectorSource, /DIFF 预览/);
 });
 
-test("commit files keep per-file diff and maximize tools", () => {
-  assert.match(inspectorSource, /renderSideDiff\(selectedDiff/);
-  assert.match(inspectorSource, /data-open-diff-modal/);
+test("commit files use the full-height file list without an inline diff", () => {
+  assert.match(inspectorSource, /commit-file-tree commit-file-list-only/);
+  assert.doesNotMatch(inspectorSource, /renderSideDiff\(selectedDiff/);
+  assert.doesNotMatch(inspectorSource, /data-open-diff-modal/);
 });
 
 test("side-by-side diffs reserve horizontal space for long code lines", () => {

@@ -6393,3 +6393,49 @@
 - `README.md`：重写为简洁的中文快速使用说明，并保留常见 Git 操作的直白解释。
 - `progress.md`：追加本轮文档简化范围、校验结果和回滚说明。
 - 回滚点为本任务开始前的 README（`61565` 字节、`181` 行）；提交后执行 `git revert <本任务提交哈希>`。提交前如执行 `git restore --source=HEAD -- README.md`，会同时撤销上一项尚未提交的 README 文案，需按上一条进度记录恢复图谱标签说明；`progress.md` 只删除末尾本任务段。
+
+## 2026-08-03 - Task: 收口 Forkline 0.2.1 性能与发布
+
+### What was done
+- 普通提交详情改为只读取元信息和完整文件清单，不再默认生成整条提交 Diff；右侧“文件”页只保留可滚动文件树，双击文件时才读取完整只读对照，同步提交预览继续按需读取 Diff。
+- 工作区和历史文件在任一侧超过 1 MiB、且不超过 16 MiB 时进入轻量只读双栏，使用两个独立 CodeMirror，不运行 MergeView、差异连接或块按钮；关闭窗口会销毁编辑器节点，保存和暂存后的普通编辑器继续恢复查看位置。
+- 提交历史默认读取 120 条并支持继续加载，最高 5000 条；加载使用轻量引用接口并保留滚动位置。分支切换和历史加载增加独立请求序号，快速连续切换或加载途中换分支时不会被旧响应覆盖。
+- 工作区文件快照增加基于文件元数据的 SHA-256 LRU 缓存；暂存全部、丢弃全部和常用储藏写操作改用轻量工作区状态合并，避免重复重建提交图谱、分支和同步数据。
+- GitHub Release REST API 失败或限流时，更新检查会通过 `releases/latest` 的 HEAD 重定向继续识别正式版本；低频历史编辑区域改为按需展开，图谱标签宽度和窄屏操作布局同步收口。
+- 版本升级为 `0.2.1`，README 和继续开发文档更新为当前真实行为，并补充大文件、历史加载、更新降级和发布维护说明。
+
+### Testing
+- `node --check` 覆盖 13 个本轮改动 JavaScript 文件，全部通过。
+- 定向运行 `node --test tests/commit-selection-performance.test.js`，7 项全部通过；新增覆盖加载更早提交后切换分支丢弃旧响应，以及快速连续选择引用只保留最新响应。
+- `npm.cmd test` 完整运行 119 项测试，119 项通过、0 项失败、退出码为 0；覆盖自更新、提交浏览、工作区、文件编辑器、冲突、储藏、历史编辑、同步、布局、多语言和便携运行时。
+- 使用 `D:/桌面/GitTest` 临时生成 `15,728,680` 字节 C 文件做浏览器现场验证：约 `1.1 s` 打开两个 CodeMirror、零个 MergeView，全页约 2140 个元素；连续 40 次滚动总耗时约 `466 ms`、平均约 `11.7 ms`、最慢约 `19 ms`，页面横向溢出为 0，关闭窗口后 CodeMirror 实例为 0。
+- 最终临时服务 `http://127.0.0.1:5296` 返回当前版本 `0.2.1`；普通提交响应 `diffLoaded=false` 且 Diff 为 0，显式 `diff=1` 的同一提交返回 `diffLoaded=true` 和 24 条 Diff；连续 5 次 `/api/worktree` 为 `83-86 ms`。
+- `git diff --check` 通过，仅显示仓库现有的 LF / CRLF 转换提示。测试大文件、暂存状态、`5296` 服务和临时日志均已清理，GitTest 恢复原有 4 个演示改动；用户已有的 `5177`、`5287` 服务未关闭或重启。
+
+### Notes
+- `README.md`：补充历史按需加载、提交文件页不自动生成 Diff 和大文件查看边界。
+- `app-update.js`：增加 GitHub Release 页面 HEAD 重定向降级检查。
+- `docs/CONTINUE.md`：记录当前历史、提交详情、大文件、快照缓存、更新降级和竞态保护行为。
+- `package.json`：发布版本升级为 `0.2.1`。
+- `public/js/app/events.js`：接入历史“加载更早提交”委托事件。
+- `public/js/app/init.js`：初始化共享历史加载状态。
+- `public/js/core.js`：增加历史分页、引用请求和轻量工作区状态合并状态。
+- `public/js/features/diff-workbench.js`：移除历史内联 Diff 协调并收口最大化 Diff 分批渲染。
+- `public/js/features/file-editor.js`：增加大文件只读双栏、查看位置恢复和历史对照减负。
+- `public/js/features/git-actions.js`：常用工作区动作改用轻量刷新，并保护快速引用切换的响应顺序。
+- `public/js/features/graph.js`：按实际图谱列宽恢复可见分支标签。
+- `public/js/features/history-list.js`：增加历史继续加载、滚动保持、SVG 层重绘和旧响应保护。
+- `public/js/i18n-catalog.js`：补充历史加载、大文件和更新状态中英文文案。
+- `public/js/panels/inspector.js`：提交文件页改为纯文件树，低频历史编辑区域默认折叠。
+- `public/js/panels/sync.js`：储藏操作使用轻量工作区刷新，同步预览按需加载 Diff。
+- `public/styles.css`：增加历史加载、大文件模式、折叠操作区和响应式布局样式。
+- `server.js`：增加历史分页、按需提交 Diff、大文件读取边界、工作区快照缓存和轻量工作区接口。
+- `tests/app-update.test.js`：覆盖 Release API 限流后的页面重定向降级。
+- `tests/commit-selection-performance.test.js`：覆盖提交按需 Diff、历史加载和引用切换竞态。
+- `tests/diff-preview.test.js`：更新提交详情无聚合 Diff 的边界断言。
+- `tests/file-editor-ui.test.js`：覆盖纯文件树、大文件双 CodeMirror、只读历史对照和位置恢复。
+- `tests/git-api.test.js`：覆盖历史超过 120 条继续加载、按需提交 Diff 和大文件接口。
+- `tests/layout-ui.test.js`：覆盖历史编辑折叠、按钮布局和图谱标签响应式行为。
+- `tests/worktree-refresh.test.js`：覆盖文件快照缓存失效和轻量工作区状态合并。
+- `progress.md`：追加本轮发布范围、验证证据、临时资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md app-update.js docs/CONTINUE.md package.json progress.md public/js/app/events.js public/js/app/init.js public/js/core.js public/js/features/diff-workbench.js public/js/features/file-editor.js public/js/features/git-actions.js public/js/features/graph.js public/js/features/history-list.js public/js/i18n-catalog.js public/js/panels/inspector.js public/js/panels/sync.js public/styles.css server.js tests/app-update.test.js tests/commit-selection-performance.test.js tests/diff-preview.test.js tests/file-editor-ui.test.js tests/git-api.test.js tests/layout-ui.test.js tests/worktree-refresh.test.js`；提交后执行 `git revert <本任务提交哈希>`。

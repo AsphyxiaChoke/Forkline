@@ -2,9 +2,13 @@
 async function selectRef(ref) {
   if (!state.data) return;
   const repoPath = repoPathSnapshot();
+  const requestId = ++state.refRequestId;
+  const cancelledHistoryLoad = state.historyLoading;
+  state.historyRequestId += 1;
+  state.historyLoading = false;
   try {
     const data = await api(`/api/ref-state?ref=${encodeURIComponent(ref)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (requestId !== state.refRequestId || !isCurrentRepoPath(repoPath)) return;
     setInspectorContext(ref ? "branch" : "commit", ref ? "branches" : "details");
     state.selectedRef = ref;
     els.searchInput.value = "";
@@ -19,7 +23,8 @@ async function selectRef(ref) {
     }
     toast(ref ? t("已查看 {ref}", { ref }) : t("已显示全部分支"));
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (requestId !== state.refRequestId || !isCurrentRepoPath(repoPath)) return;
+    if (cancelledHistoryLoad) renderCommits({ inspector: "never" });
     toast(error.message);
   }
 }
@@ -289,6 +294,8 @@ async function runAction(action) {
   };
   if (!state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return;
   const repoPath = repoPathSnapshot();
+  const worktreeOnly = action === "stageAll" || action === "discardAll";
+  const affectedFiles = worktreeOnly ? [...new Set((state.data.workingFiles || []).map((file) => file.file).filter(Boolean))] : [];
   try {
     const payload = { action, ...currentBranchSnapshotPayload() };
     if (action === "fetch") Object.assign(payload, allRemoteConfigSnapshotPayload());
@@ -302,6 +309,21 @@ async function runAction(action) {
     if (action === "commit") {
       els.commitSummary.value = "";
       els.commitBody.value = "";
+    }
+    if (worktreeOnly) {
+      const data = await api("/api/worktree");
+      if (!isCurrentRepoPath(repoPath)) return;
+      mergeWorktreeState(data);
+      if (action === "stageAll") {
+        syncFileSelectionAfterAction("stageFile", affectedFiles, state.data.workingFiles);
+      } else {
+        state.selectedChanges.clear();
+        state.selectedFile = "";
+        state.workDiffScope = "unstaged";
+      }
+      renderWorkingFiles();
+      renderStage();
+      return;
     }
     state.commitDetails.clear();
     const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
@@ -733,15 +755,16 @@ async function createStashFromSelection(files = null) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(t("已创建储藏，工作区更改已移到右侧“储藏”列表"));
-    const data = await loadStateForRepoPath(repoPath);
-    if (!data) return;
+    const data = await api("/api/worktree?stashes=1");
+    if (!isCurrentRepoPath(repoPath)) return;
     state.stashDetails.clear();
     state.selectedChanges.clear();
-    state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
+    mergeWorktreeState(data, { stashes: true });
     state.selectedStash = state.data.stashes?.[0]?.ref || state.selectedStash;
     state.selectedTab = "stashes";
-    renderAll();
+    renderWorkingFiles();
+    renderStage();
+    renderInspector();
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -771,9 +794,7 @@ async function ignoreWorktreePath(action, file) {
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
-    state.data.workingFiles = data.workingFiles || [];
-    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
-    state.data.repo.operation = data.operation || null;
+    mergeWorktreeState(data);
     renderWorkingFiles();
     renderStage();
   } catch (error) {
@@ -809,9 +830,7 @@ async function runSingleFileAction(action, file) {
     state.selectedChanges.delete(changeKey("staged", file));
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
-    state.data.workingFiles = data.workingFiles || [];
-    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
-    state.data.repo.operation = data.operation || null;
+    mergeWorktreeState(data);
     syncFileSelectionAfterAction(action, [file], state.data.workingFiles);
     renderWorkingFiles();
     renderStage();
@@ -900,9 +919,7 @@ async function runFileBatchAction(action, scope, button) {
     toast(t("{action}完成：{count} 个文件", { action: t(name), count: files.length }));
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
-    state.data.workingFiles = data.workingFiles || [];
-    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
-    state.data.repo.operation = data.operation || null;
+    mergeWorktreeState(data);
     syncFileSelectionAfterAction(action, files, state.data.workingFiles);
     renderWorkingFiles();
     renderStage();

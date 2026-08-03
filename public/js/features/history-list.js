@@ -19,16 +19,17 @@ function renderCommits(options = {}) {
     state.selectedSha = state.filtered[0].sha;
   }
 
-  const minHeight = Math.max(rowH, state.filtered.length * rowH);
+  const graphHeight = Math.max(rowH, state.filtered.length * rowH);
+  const footerHeight = state.historyHasMore || state.historyLoading ? 48 : 0;
   const isBranchScope = Boolean(state.selectedRef);
-  els.commitGraph.style.minHeight = `${minHeight}px`;
+  els.commitGraph.style.minHeight = `${graphHeight + footerHeight}px`;
   els.commitGraph.classList.toggle("branch-scope", isBranchScope);
   els.commitGraph.classList.toggle("all-scope", !isBranchScope);
   els.graphModeLabel.textContent = isBranchScope ? state.selectedRef : t("全部分支");
   els.graphModeLabel.title = isBranchScope ? t("当前只显示 {branch}", { branch: state.selectedRef }) : t("当前显示所有分支");
   const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
   const renderedGraphWidth = graphRenderWidth(graphCommits, state.selectedRef);
-  els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef, renderedGraphWidth);
+  els.commitGraph.innerHTML = renderGraphSvg(graphCommits, graphHeight, state.selectedRef, renderedGraphWidth);
 
   if (!state.filtered.length) {
     const emptyTitle = terms.length ? t("没有匹配的提交") : t("还没有提交");
@@ -37,6 +38,7 @@ function renderCommits(options = {}) {
       "beforeend",
       `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>${emptyTitle}</strong><span>${emptySub}</span></div></div>`
     );
+    appendHistoryLoadMore();
     renderCommitInspector(inspectorMode, previousSelectedSha);
     return;
   }
@@ -65,7 +67,66 @@ function renderCommits(options = {}) {
     rows.appendChild(row);
   });
   els.commitGraph.appendChild(rows);
+  appendHistoryLoadMore();
   renderCommitInspector(inspectorMode, previousSelectedSha);
+}
+
+function appendHistoryLoadMore() {
+  const history = state.data?.history || {};
+  if (!state.historyHasMore && !state.historyLoading) return;
+  const loaded = state.data?.commits?.length || 0;
+  const maxLimit = Number.isInteger(history.maxLimit) ? history.maxLimit : 5000;
+  const reachedLimit = state.historyLimit >= maxLimit;
+  const label = state.historyLoading
+    ? t("正在加载更早提交...")
+    : reachedLimit
+      ? t("已达到 {count} 条显示上限", { count: maxLimit })
+      : t("加载更早提交");
+  els.commitGraph.insertAdjacentHTML(
+    "beforeend",
+    `<div class="history-load-more"><button class="mini-btn" data-load-more-commits type="button" ${state.historyLoading || reachedLimit ? "disabled" : ""}>${escapeHtml(label)}</button><span>${escapeHtml(t("已载入 {count} 条", { count: loaded }))}</span></div>`
+  );
+}
+
+async function loadMoreCommits(button) {
+  if (!state.data || state.historyLoading || !state.historyHasMore) return;
+  const history = state.data.history || {};
+  const pageSize = Number.isInteger(history.pageSize) ? history.pageSize : 120;
+  const maxLimit = Number.isInteger(history.maxLimit) ? history.maxLimit : 5000;
+  const nextLimit = Math.min(maxLimit, Math.max(state.historyLimit, state.data.commits?.length || 0) + pageSize);
+  if (nextLimit <= state.historyLimit) return;
+
+  const repoPath = repoPathSnapshot();
+  const selectedRef = state.selectedRef;
+  const requestId = ++state.historyRequestId;
+  const scrollTop = els.historyScroll?.scrollTop || 0;
+  state.historyLoading = true;
+  if (button) {
+    button.disabled = true;
+    button.textContent = t("正在加载更早提交...");
+  }
+  try {
+    const data = await api(`/api/ref-state?ref=${encodeURIComponent(selectedRef)}&limit=${nextLimit}`);
+    if (requestId !== state.historyRequestId || !isCurrentRepoPath(repoPath) || state.selectedRef !== selectedRef) return;
+    state.data.repo = { ...state.data.repo, ...(data.repo || {}) };
+    state.data.commits = data.commits || [];
+    state.data.history = data.history || { limit: nextLimit, loaded: state.data.commits.length, hasMore: false, pageSize, maxLimit };
+    applyHistoryState(state.data);
+    renderCommits({ inspector: "never" });
+    window.requestAnimationFrame(() => {
+      if (requestId === state.historyRequestId && isCurrentRepoPath(repoPath) && state.selectedRef === selectedRef && els.historyScroll) {
+        els.historyScroll.scrollTop = scrollTop;
+      }
+    });
+  } catch (error) {
+    if (requestId !== state.historyRequestId || !isCurrentRepoPath(repoPath) || state.selectedRef !== selectedRef) return;
+    state.historyLoading = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = t("加载更早提交");
+    }
+    toast(error.message);
+  }
 }
 
 function scheduleCommitGraphResize() {

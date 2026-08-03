@@ -132,6 +132,28 @@ test("backend locale follows the request without translating Git data", { timeou
   assert.equal(afterCreate.body.repo.branch, branch);
 });
 
+test("commit history loads older pages beyond the default 120 commits", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-history-page-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  await initRepository(repo);
+  await createFastLinearHistory(repo, 150);
+
+  const initial = await openRepo(repo);
+  assert.equal(initial.commits.length, 120);
+  assert.equal(initial.history.limit, 120);
+  assert.equal(initial.history.hasMore, true);
+
+  const expanded = await request("/api/ref-state?limit=240", { repoPath: repo });
+  assertStatus(expanded, 200);
+  assert.equal(expanded.body.commits.length, 150);
+  assert.equal(expanded.body.history.limit, 240);
+  assert.equal(expanded.body.history.hasMore, false);
+  assert.equal(expanded.body.commits[0].message, "history 150");
+  assert.equal(expanded.body.commits.at(-1).message, "history 001");
+});
+
 test("worktree file editor reads and saves UTF-8 text with stale-content protection", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-"));
   t.after(() => removeFixture(root));
@@ -139,6 +161,9 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   const repo = path.join(root, "repo");
   const notePath = path.join(repo, "note.txt");
   const binaryPath = path.join(repo, "binary.bin");
+  const largePath = path.join(repo, "large.txt");
+  const indexedLargePath = path.join(repo, "indexed-large.txt");
+  const tooLargePath = path.join(repo, "too-large.txt");
   await initRepository(repo);
   await fs.writeFile(notePath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("base\r\nlocal\r\n", "utf8")]));
   await git(repo, ["add", "note.txt"]);
@@ -147,6 +172,11 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   await git(repo, ["add", "note.txt"]);
   await fs.appendFile(notePath, "change\r\n", "utf8");
   await fs.writeFile(binaryPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
+  await fs.writeFile(largePath, Buffer.alloc(1024 * 1024 + 1, 0x61));
+  await fs.writeFile(indexedLargePath, Buffer.alloc(1024 * 1024 + 1, 0x62));
+  await git(repo, ["add", "indexed-large.txt"]);
+  await fs.writeFile(indexedLargePath, "small worktree version\n", "utf8");
+  await fs.writeFile(tooLargePath, Buffer.alloc(16 * 1024 * 1024 + 1, 0x63));
   await openRepo(repo);
 
   const opened = await request("/api/worktree-file?file=note.txt", { repoPath: repo });
@@ -202,6 +232,24 @@ test("worktree file editor reads and saves UTF-8 text with stale-content protect
   const binary = await request("/api/worktree-file?file=binary.bin", { repoPath: repo });
   assertStatus(binary, 400);
   assert.match(binary.body.error, /二进制/);
+
+  const large = await request("/api/worktree-file?file=large.txt", { repoPath: repo });
+  assertStatus(large, 200);
+  assert.equal(large.body.largeFile, true);
+  assert.equal(large.body.readOnly, true);
+  assert.equal(large.body.canStage, false);
+  assert.equal(large.body.content.length, 1024 * 1024 + 1);
+
+  const indexedLarge = await request("/api/worktree-file?file=indexed-large.txt", { repoPath: repo });
+  assertStatus(indexedLarge, 200);
+  assert.equal(indexedLarge.body.largeFile, true);
+  assert.equal(indexedLarge.body.readOnly, true);
+  assert.equal(indexedLarge.body.oldContent.length, 1024 * 1024 + 1);
+  assert.equal(indexedLarge.body.content, "small worktree version\n");
+
+  const tooLarge = await request("/api/worktree-file?file=too-large.txt", { repoPath: repo });
+  assertStatus(tooLarge, 400);
+  assert.match(tooLarge.body.error, /超过 16 MiB/);
 });
 
 test("commit file viewer returns complete parent and commit versions for changed paths", { timeout: 120000 }, async (t) => {
@@ -217,6 +265,7 @@ test("commit file viewer returns complete parent and commit versions for changed
   const gbkPath = path.join(repo, "说明.txt");
   const binaryPath = path.join(repo, "binary.bin");
   const largePath = path.join(repo, "large.txt");
+  const tooLargePath = path.join(repo, "too-large.txt");
   await initRepository(repo);
   await fs.writeFile(changedPath, "before\nkeep\n", "utf8");
   await fs.writeFile(deletedPath, "deleted from next commit\n", "utf8");
@@ -224,6 +273,7 @@ test("commit file viewer returns complete parent and commit versions for changed
   await fs.writeFile(gbkPath, iconv.encode("旧版本\r\n", "gbk"));
   await fs.writeFile(binaryPath, Buffer.from([0x00, 0x01, 0xff]));
   await fs.writeFile(largePath, Buffer.alloc(1024 * 1024 + 1, 0x61));
+  await fs.writeFile(tooLargePath, Buffer.alloc(16 * 1024 * 1024 + 1, 0x62));
   await git(repo, ["add", "."]);
   await git(repo, ["commit", "-m", "base files"]);
   const baseSha = await git(repo, ["rev-parse", "HEAD"]);
@@ -241,8 +291,15 @@ test("commit file viewer returns complete parent and commit versions for changed
 
   const detail = await request(`/api/commit?sha=${commitSha}`, { repoPath: repo });
   assertStatus(detail, 200);
+  assert.equal(detail.body.diffLoaded, false);
+  assert.deepEqual(detail.body.diff, []);
   const renamedFile = detail.body.files.find((file) => file.file === "rename-new.txt");
   assert.equal(renamedFile?.previousFile, "rename-old.txt");
+
+  const detailWithDiff = await request(`/api/commit?sha=${commitSha}&diff=1`, { repoPath: repo });
+  assertStatus(detailWithDiff, 200);
+  assert.equal(detailWithDiff.body.diffLoaded, true);
+  assert.ok(detailWithDiff.body.diff.some((line) => String(line.text || "").includes("added line")));
 
   const changed = await request(`/api/commit-file?sha=${commitSha}&file=changed.txt`, { repoPath: repo });
   assertStatus(changed, 200);
@@ -295,8 +352,14 @@ test("commit file viewer returns complete parent and commit versions for changed
   assert.match(binary.body.error, /二进制/);
 
   const large = await request(`/api/commit-file?sha=${baseSha}&file=large.txt`, { repoPath: repo });
-  assertStatus(large, 400);
-  assert.match(large.body.error, /超过 1 MiB/);
+  assertStatus(large, 200);
+  assert.equal(large.body.largeFile, true);
+  assert.equal(large.body.readOnly, true);
+  assert.equal(large.body.content.length, 1024 * 1024 + 1);
+
+  const tooLarge = await request(`/api/commit-file?sha=${baseSha}&file=too-large.txt`, { repoPath: repo });
+  assertStatus(tooLarge, 400);
+  assert.match(tooLarge.body.error, /超过 16 MiB/);
 });
 
 test("file history and blame keep valid refs fast while preserving unborn branch guidance", { timeout: 120000 }, async (t) => {
@@ -466,11 +529,16 @@ test("ordinary parent stash still creates, applies, and pops", { timeout: 120000
   });
   assertStatus(created, 200);
 
-  state = await readState(fixture.parent);
-  const stash = state.stashes.find((item) => item.message === "ordinary-control");
+  let worktree = await request("/api/worktree?stashes=1", { repoPath: fixture.parent });
+  assertStatus(worktree, 200);
+  assert.equal(worktree.body.workingFiles.length, 0);
+  assert.equal(worktree.body.commits, undefined);
+  assert.equal(worktree.body.branches, undefined);
+  const stash = worktree.body.stashes.find((item) => item.message === "ordinary-control");
   assert.ok(stash, "ordinary stash should appear in state");
   assert.equal(await fs.readFile(fixture.notePath, "utf8"), "base\n");
 
+  state = await readState(fixture.parent);
   const applied = await action(fixture.parent, state, {
     action: "applyStash",
     ref: stash.ref,
@@ -479,8 +547,10 @@ test("ordinary parent stash still creates, applies, and pops", { timeout: 120000
   assertStatus(applied, 200);
   assert.match(await fs.readFile(fixture.notePath, "utf8"), /ordinary change/);
 
-  state = await readState(fixture.parent);
-  assert.ok(state.stashes.some((item) => item.sha === stash.sha), "apply should keep the stash");
+  worktree = await request("/api/worktree?stashes=1", { repoPath: fixture.parent });
+  assertStatus(worktree, 200);
+  assert.ok(worktree.body.stashes.some((item) => item.sha === stash.sha), "apply should keep the stash");
+  assert.deepEqual(worktree.body.workingFiles.map((item) => item.file), ["note.txt"]);
   await git(fixture.parent, ["restore", "--source=HEAD", "--", "note.txt"]);
 
   state = await readState(fixture.parent);
@@ -492,8 +562,9 @@ test("ordinary parent stash still creates, applies, and pops", { timeout: 120000
   assertStatus(popped, 200);
   assert.match(await fs.readFile(fixture.notePath, "utf8"), /ordinary change/);
 
-  state = await readState(fixture.parent);
-  assert.ok(!state.stashes.some((item) => item.sha === stash.sha), "pop should remove only the applied stash");
+  worktree = await request("/api/worktree?stashes=1", { repoPath: fixture.parent });
+  assertStatus(worktree, 200);
+  assert.ok(!worktree.body.stashes.some((item) => item.sha === stash.sha), "pop should remove only the applied stash");
 });
 
 test("gitlink stash is rejected before creation and existing stash is preserved", { timeout: 120000 }, async (t) => {
@@ -1424,6 +1495,44 @@ async function initRepository(repoPath) {
   await git(repoPath, ["config", "user.name", "Forkline Test"]);
   await git(repoPath, ["config", "user.email", "forkline@example.invalid"]);
   await git(repoPath, ["config", "core.autocrlf", "false"]);
+}
+
+async function createFastLinearHistory(repoPath, count) {
+  const lines = ["blob", "mark :1", "data 5", "base", ""];
+  const timestamp = 1700000000;
+  for (let index = 1; index <= count; index += 1) {
+    const message = `history ${String(index).padStart(3, "0")}`;
+    lines.push(
+      "commit refs/heads/main",
+      `mark :${index + 1}`,
+      `author Forkline Test <forkline@example.invalid> ${timestamp + index} +0000`,
+      `committer Forkline Test <forkline@example.invalid> ${timestamp + index} +0000`,
+      `data ${Buffer.byteLength(message)}`,
+      message
+    );
+    if (index === 1) lines.push("M 100644 :1 history.txt");
+    lines.push("");
+  }
+  lines.push("done", "");
+
+  await new Promise((resolve, reject) => {
+    const child = spawn("git", ["-C", repoPath, "fast-import", "--quiet"], {
+      env: gitEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`git fast-import failed (${code}): ${stderr}`));
+    });
+    child.stdin.end(lines.join("\n"));
+  });
+  await git(repoPath, ["reset", "--hard", "main"]);
 }
 
 async function git(repoPath, args) {

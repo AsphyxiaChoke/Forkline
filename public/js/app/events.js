@@ -62,6 +62,11 @@ els.clearWorktreeFilter.addEventListener("click", clearWorktreeFilter);
 els.searchInput.addEventListener("input", () => scheduleCommitRender());
 els.clearSearch.addEventListener("click", clearCommitSearch);
 els.commitGraph.addEventListener("click", (event) => {
+  const loadMore = event.target.closest("[data-load-more-commits]");
+  if (loadMore) {
+    loadMoreCommits(loadMore).catch((error) => toast(error.message));
+    return;
+  }
   const row = event.target.closest(".commit-row[data-sha]");
   if (!row) return;
   selectCommit(row.dataset.sha || "").catch((error) => toast(error.message));

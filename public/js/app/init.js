@@ -124,6 +124,7 @@ async function waitForSelfUpdateRestart(targetVersion) {
 
 function renderAll() {
   cancelScheduledCommitRender();
+  applyHistoryState();
   renderRepo();
   renderBranches();
   renderWorkingFiles();
