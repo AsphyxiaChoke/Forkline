@@ -464,6 +464,9 @@ els.detailBody.addEventListener("click", (event) => {
     if (action === "resetLayout") {
       resetLayoutPreferences();
     }
+    if (action === "installUpdate") {
+      installAppUpdate().catch((error) => toast(error.message));
+    }
     return;
   }
   const fileHistoryOpen = event.target.closest("[data-file-history-open]");

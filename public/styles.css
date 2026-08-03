@@ -2833,6 +2833,99 @@ button.file-row {
   font-size: 12px;
 }
 
+.settings-card-head > .settings-update-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  margin-top: 0;
+  padding: 3px 8px;
+  overflow: visible;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.settings-update-status.current {
+  border-color: rgba(var(--teal-rgb), 0.48);
+  background: rgba(var(--teal-rgb), 0.1);
+  color: var(--teal);
+}
+
+.settings-update-status.available {
+  border-color: color-mix(in srgb, var(--amber) 58%, var(--line-soft));
+  background: color-mix(in srgb, var(--panel-2) 86%, var(--amber) 14%);
+  color: var(--amber);
+}
+
+.settings-version-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-version-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.settings-version-item:first-child {
+  padding-left: 0;
+  border-right: 1px solid var(--line-soft);
+}
+
+.settings-version-item:last-child {
+  padding-right: 0;
+}
+
+.settings-version-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-version-item strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.settings-update-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.settings-update-actions .mini-btn {
+  max-width: 100%;
+}
+
+.settings-update-note {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-update-error {
+  overflow-wrap: anywhere;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line-soft));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .settings-choice-row,
 .settings-list,
 .settings-policy-grid {

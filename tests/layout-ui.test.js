@@ -15,6 +15,7 @@ const inspectorSource = fs.readFileSync(path.join(root, "public", "js", "panels"
 const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-changes.js"), "utf8");
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
+const settingsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery-settings.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
@@ -53,10 +54,13 @@ test("app update indicator stays hidden until a newer release is returned", asyn
       attributes.set(name, value);
     },
   };
-  let response = { available: false, url: "" };
+  const state = { data: {}, selectedTab: "details", appUpdate: {} };
+  let response = { available: false, currentVersion: "0.2.0", latestVersion: "0.2.0", installSupported: true, url: "" };
   const context = vm.createContext({
     els: { appUpdateIndicator: indicator },
+    state,
     api: async () => response,
+    renderInspector: () => {},
     t: (message, values = {}) => message.replace("{version}", values.version || ""),
   });
   vm.runInContext(initSource, context);
@@ -64,22 +68,91 @@ test("app update indicator stays hidden until a newer release is returned", asyn
   await context.checkForAppUpdate();
   assert.equal(indicator.hidden, true);
   assert.equal(indicator.href, "");
+  assert.equal(state.appUpdate.status, "current");
+  assert.equal(state.appUpdate.currentVersion, "0.2.0");
 
   response = {
     available: true,
-    latestVersion: "0.2.0",
-    url: "https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.2.0",
+    currentVersion: "0.2.0",
+    latestVersion: "0.3.0",
+    installSupported: true,
+    url: "https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.3.0",
   };
   await context.checkForAppUpdate();
   assert.equal(indicator.hidden, false);
   assert.equal(indicator.href, response.url);
-  assert.match(indicator.title, /0\.2\.0/);
-  assert.match(attributes.get("aria-label"), /0\.2\.0/);
+  assert.equal(state.appUpdate.status, "available");
+  assert.equal(state.appUpdate.installSupported, true);
+  assert.match(indicator.title, /0\.3\.0/);
+  assert.match(attributes.get("aria-label"), /0\.3\.0/);
 });
 
 test("app update indicator is absent from layout when no update exists", () => {
   assert.match(indexHtml, /id="appUpdateIndicator"[\s\S]*?hidden/);
   assert.match(styles, /\.app-update-indicator\[hidden\]\s*{\s*display:\s*none;/);
+});
+
+test("settings makes the current update state explicit", () => {
+  const state = {
+    appUpdate: { status: "current", currentVersion: "0.2.0", latestVersion: "0.2.0", url: "" },
+  };
+  const context = vm.createContext({
+    state,
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+  });
+  vm.runInContext(settingsSource, context);
+
+  let view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.currentVersion, "v0.2.0");
+  assert.equal(view.latestVersion, "v0.2.0");
+  assert.equal(view.statusText, "已是最新版本");
+
+  state.appUpdate = { status: "available", currentVersion: "0.2.0", latestVersion: "0.3.0", url: "https://example.test", installSupported: true };
+  view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.statusClass, "available");
+  assert.equal(view.showInstallAction, true);
+  assert.match(view.statusText, /v0\.3\.0/);
+
+  state.appUpdate.installSupported = false;
+  view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.showInstallAction, false);
+  assert.match(view.installNote, /不支持一键更新/);
+
+  state.appUpdate.installing = true;
+  view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.statusText, "正在更新并重启");
+  assert.equal(view.installing, true);
+
+  state.appUpdate = { status: "unavailable", currentVersion: "0.2.0", latestVersion: "", url: "" };
+  view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.currentVersion, "v0.2.0");
+  assert.equal(view.latestVersion, "未知");
+  assert.equal(view.statusText, "暂时无法检查更新");
+
+  assert.match(settingsSource, /关于 Forkline/);
+  assert.match(settingsSource, /settings-version-grid/);
+  assert.match(settingsSource, /data-settings-action="installUpdate"/);
+  assert.match(eventsSource, /action === "installUpdate"[\s\S]*?installAppUpdate\(\)/);
+  assert.match(styles, /\.settings-update-status\.current/);
+  assert.match(styles, /\.settings-update-status\.available/);
+});
+
+test("self update results restore the previous repository and distinguish rollback failures", async () => {
+  const calls = [];
+  const context = vm.createContext({
+    api: async (url, options) => {
+      calls.push({ url, options });
+      return {};
+    },
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+  });
+  vm.runInContext(initSource, context);
+
+  const message = context.selfUpdateFailureMessage({ error: "更新后的 Forkline 服务没有正常启动。", rolledBack: true });
+  assert.match(message, /已恢复到更新前版本/);
+  await context.restoreSelfUpdateRepo({ repoPath: "D:\\GitTest" });
+  assert.equal(calls[0].url, "/api/open");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { path: "D:\\GitTest" });
 });
 
 test("command hint observer starts before the app renders dynamic panels", () => {

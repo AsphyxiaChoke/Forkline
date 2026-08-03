@@ -34,6 +34,7 @@ test("app update checker only reports a newer release and caches the result", as
   assert.equal(first.available, true);
   assert.equal(first.currentVersion, "0.1.0");
   assert.equal(first.latestVersion, "0.2.0");
+  assert.equal(first.tagName, "v0.2.0");
   assert.equal(requests, 1);
 
   time = 1050;
@@ -62,6 +63,7 @@ test("app update checker hides equal versions and network failures", async () =>
     available: false,
     currentVersion: "0.1.0",
     latestVersion: "",
+    tagName: "",
     releaseName: "",
     publishedAt: "",
     url: "",

@@ -7,7 +7,16 @@ const { execFile, execFileSync } = require("child_process");
 const iconv = require("./vendor/iconv-lite");
 const i18nCatalog = require("./public/js/i18n-catalog.js");
 const packageInfo = require("./package.json");
-const { createAppUpdateChecker } = require("./app-update");
+const { createAppUpdateChecker, normalizeVersion } = require("./app-update");
+const {
+  cleanupCandidateRef,
+  clearSelfUpdateStatus,
+  launchSelfUpdateRunner,
+  prepareSelfUpdate,
+  readSelfUpdateStatus,
+  selfUpdateStatusFile,
+  writeSelfUpdateStatus,
+} = require("./app-self-update");
 
 const PORT = Number(process.env.PORT || 5177);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -29,10 +38,12 @@ const readAppUpdate = createAppUpdateChecker({
   currentVersion: process.env.FORKLINE_APP_VERSION || packageInfo.version,
   releaseApiUrl: process.env.FORKLINE_RELEASE_API_URL,
 });
+const SELF_UPDATE_STATUS_FILE = selfUpdateStatusFile(__dirname);
 
 let currentRepo = null;
 let nextOperationId = 1;
 let repoSwitchInProgress = false;
+let selfUpdateInProgress = false;
 const activeOperations = new Map();
 const operationLog = [];
 const authDiagnosticsCache = new Map();
@@ -179,6 +190,52 @@ const CURRENT_BRANCH_SNAPSHOT_ACTIONS = new Set([
 ]);
 
 const laneColors = ["#23c7b7", "#ff7a67", "#f0b85b", "#5ca9ff", "#9c7cff", "#6bd58c", "#f071b8"];
+
+function selfUpdateRuntimeSupported() {
+  return !process.env.FORKLINE_APP_VERSION && !process.env.FORKLINE_RELEASE_API_URL && fs.existsSync(path.join(__dirname, ".git"));
+}
+
+async function readAppUpdateState() {
+  const update = await readAppUpdate();
+  return { ...update, installSupported: selfUpdateRuntimeSupported() };
+}
+
+async function prepareSelfUpdateLaunch(body) {
+  if (process.env.FORKLINE_APP_VERSION || process.env.FORKLINE_RELEASE_API_URL) {
+    throw new Error("当前处于版本检查测试模式，不能执行一键更新。");
+  }
+  if (!fs.existsSync(path.join(__dirname, ".git"))) {
+    throw new Error("当前 Forkline 是源码压缩包，不是 Git 克隆，不能一键更新。请打开 Release 下载新版本。");
+  }
+  if (repoSwitchInProgress || activeOperations.size) throw new Error("Forkline 还有操作正在执行，请等待完成后再更新。");
+  const update = await readAppUpdate();
+  const requestedVersion = normalizeVersion(body?.version);
+  if (!update.available || !update.latestVersion || !update.tagName) throw new Error("当前没有可安装的新版本。");
+  if (!requestedVersion || requestedVersion !== update.latestVersion) {
+    throw new Error("页面中的目标版本已经过期，请刷新后重新检查更新。");
+  }
+  return prepareSelfUpdate({
+    repoDir: __dirname,
+    gitBin: GIT_BIN,
+    currentVersion: update.currentVersion,
+    targetVersion: update.latestVersion,
+    tagName: update.tagName,
+    port: PORT,
+    parentPid: process.pid,
+    managedRepo: currentRepo || "",
+  });
+}
+
+function scheduleSelfUpdateShutdown() {
+  setTimeout(() => {
+    const forceExit = setTimeout(() => process.exit(0), 2000);
+    server.close(() => {
+      clearTimeout(forceExit);
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
+  }, 250);
+}
 
 function git(repoPath, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -7938,7 +7995,37 @@ const server = http.createServer(async (req, res) => {
   res.forklineLocale = requestLocale(req);
   try {
     if (req.method === "GET" && parsed.pathname === "/api/app-update") {
-      sendJson(res, 200, await readAppUpdate());
+      sendJson(res, 200, await readAppUpdateState());
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/app-update/status") {
+      const consume = ["1", "true"].includes(String(parsed.searchParams.get("consume") || "").toLowerCase());
+      sendJson(res, 200, readSelfUpdateStatus(SELF_UPDATE_STATUS_FILE, { consume }) || { state: "idle" });
+      return;
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/app-update/install") {
+      if (selfUpdateInProgress) throw new Error("Forkline 更新已经开始，请等待服务重启。");
+      selfUpdateInProgress = true;
+      let plan = null;
+      try {
+        const body = await readJson(req);
+        plan = await prepareSelfUpdateLaunch(body);
+        clearSelfUpdateStatus(SELF_UPDATE_STATUS_FILE);
+        writeSelfUpdateStatus(SELF_UPDATE_STATUS_FILE, {
+          state: "starting",
+          currentVersion: plan.currentVersion,
+          targetVersion: plan.targetVersion,
+          repoPath: plan.managedRepo,
+          message: `正在准备更新到 v${plan.targetVersion}`,
+        });
+        const runnerPid = await launchSelfUpdateRunner(plan);
+        sendJson(res, 200, { ok: true, restarting: true, targetVersion: plan.targetVersion, runnerPid });
+        scheduleSelfUpdateShutdown();
+      } catch (error) {
+        selfUpdateInProgress = false;
+        if (plan) await cleanupCandidateRef(plan);
+        throw error;
+      }
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/state") {

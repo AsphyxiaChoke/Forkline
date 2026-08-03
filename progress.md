@@ -6288,3 +6288,63 @@
 - `package.json`：将用于更新比较的当前应用版本提升到 `0.2.0`。
 - `progress.md`：追加 `v0.2.0` 发布内容、验证和回滚记录。
 - 回滚方式：发布前执行 `git restore -- package.json progress.md`；发布后执行 `gh release delete v0.2.0 --yes --cleanup-tag` 删除 Release 与远端标签，再执行 `git revert <本任务提交哈希>` 回退 `main`。
+
+## 2026-08-03 - Task: 在设置页显示版本与更新状态
+
+### What was done
+- 在设置页顶部增加“关于 Forkline”卡片，常驻显示当前应用版本、GitHub 最新正式版本和明确的更新状态。
+- 更新检查状态区分“正在检查更新”“已是最新版本”“发现新版本”和“暂时无法检查更新”；网络或接口失败不会再被误解成已经是最新版。
+- 复用现有 `/api/app-update` 结果更新设置页，左上角更新图标仍只在存在更高正式版本时显示，没更新时继续完全隐藏。
+- 增加紧凑双列版本布局、窄右栏换行保护及完整中英文文本，并同步 README 和继续开发文档。
+
+### Testing
+- `npm.cmd test` 完整运行仓库测试，98 项全部通过，退出码为 0；覆盖版本相同、发现新版本、检查失败、布局、中英文目录及全部 Git 集成流程。
+- `node --check public/js/app/init.js`、`node --check public/js/core.js`、`node --check public/js/panels/recovery-settings.js`、`node --check public/js/i18n-catalog.js` 均通过。
+- `git diff --check` 通过，仅显示仓库现有的 LF / CRLF 工作区转换提示。
+- 尝试使用临时端口 `5301` 做内置浏览器现场验证时，被浏览器本机策略拒绝访问该端口，因此本轮没有记录浏览器截图为通过；临时 Node 服务及监听端口已关闭，布局和状态显隐由定向回归覆盖。
+
+### Notes
+- `public/js/core.js`：增加共享的应用更新检查状态。
+- `public/js/app/init.js`：保存更新检查结果，并在设置页打开时刷新版本状态卡片。
+- `public/js/panels/recovery-settings.js`：增加当前版本、最新版本和更新状态展示。
+- `public/styles.css`：增加版本信息双列布局和状态样式。
+- `public/js/i18n-catalog.js`：增加版本与更新状态的英文翻译。
+- `tests/layout-ui.test.js`：覆盖最新、可更新和检查失败三种设置页状态，并保持左上角图标原有规则。
+- `README.md`：说明设置页可直接确认当前版本和更新状态。
+- `docs/CONTINUE.md`：记录版本状态卡片的数据来源、失败语义和发布维护要求。
+- `progress.md`：追加本轮实现、验证、缺口和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/init.js public/js/core.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-03 - Task: 增加项目内一键更新并重启
+
+### What was done
+- 在设置页发现新正式版本时提供“立即更新并重启”，更新期间保持明确状态并在服务恢复后自动刷新；ZIP 安装方式继续引导到 Release 手动下载。
+- 一键更新仅允许官方 `AsphyxiaChoke/Forkline` origin、`main` 分支、干净工作区、无未完成 Git 操作且能够快进到目标 Release Tag 的 Git 克隆；不会自动储藏、不会使用硬重置，也不会修改当前管理的仓库。
+- 主服务确认更新计划并返回响应后退出，由独立更新器执行 `git merge --ff-only`、原端口重启和首页健康检查；新版本启动失败时仅使用 `git reset --keep` 回退并重新启动旧版本。
+- 更新结果跨服务重启保存在系统临时目录，成功、失败和已回退失败使用可翻译的结构化状态；重启后会恢复更新前正在查看的仓库。文件编辑器有未保存修改、提交信息框有草稿或 Forkline 正在执行操作时会阻止更新。
+
+### Testing
+- `node --check app-self-update.js`、`node --check self-update-runner.js`、`node --check server.js`、`node --check public/js/app/init.js`、`node --check public/js/app/events.js`、`node --check public/js/panels/recovery-settings.js`、`node --check public/js/i18n-catalog.js` 均通过。
+- 定向运行 `node --test --test-concurrency=1 tests/app-update.test.js tests/app-self-update.test.js tests/layout-ui.test.js`，37 项全部通过；覆盖官方远端校验、真实临时 Git 仓库快进、脏工作区与分叉阻止、状态跨重启、旧服务退出、新服务启动，以及启动失败后回退并重启旧版本。
+- `npm.cmd test` 完整运行 106 项测试，全部通过，退出码为 0；既有工作区、历史编辑、冲突、同步、储藏、文件编辑器、布局和多语言流程均未回归。
+- 临时端口 `58638` 启动真实服务做只读 API 冒烟：`GET /api/app-update` 返回当前与最新版本均为 `0.2.0`、`available: false`、`installSupported: true`，`GET /api/app-update/status` 返回 `idle`；未调用安装接口。测试进程 `21296` 和端口均已确认关闭。
+- `git diff --check` 通过，仅显示仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `app-self-update.js`：实现官方远端、分支、工作区与快进校验，更新候选引用、快进更新、受保护回退、状态持久化和服务健康检查。
+- `self-update-runner.js`：增加脱离旧服务生命周期的更新执行入口和启动失败状态记录。
+- `server.js`：增加更新状态与安装 API、运行中操作阻止、更新器启动和响应后关闭服务。
+- `app-update.js`：在 Release 检查结果中保留精确 Tag 名供安装阶段重新校验。
+- `public/js/core.js`：保存应用更新检查与安装状态。
+- `public/js/app/init.js`：轮询跨重启更新结果、显示成功或回退提示、自动刷新并恢复此前打开的仓库。
+- `public/js/app/events.js`：接入设置页一键更新操作。
+- `public/js/panels/recovery-settings.js`：展示安装按钮、安装限制和更新进度，并阻止未保存编辑或提交草稿下更新。
+- `public/styles.css`：增加版本卡片、状态、说明与操作区样式。
+- `public/js/i18n-catalog.js`：增加一键更新、安全限制、重启、失败和回退状态的英文翻译。
+- `tests/app-update.test.js`：覆盖 Release Tag 透传。
+- `tests/app-self-update.test.js`：覆盖更新安全边界、快进、回退、服务重启、状态保存和仓库上下文保存。
+- `tests/layout-ui.test.js`：覆盖设置页安装状态、ZIP 限制、回退提示和仓库恢复请求。
+- `README.md`：说明 Git 克隆版一键更新、ZIP 限制和安全回退行为。
+- `docs/CONTINUE.md`：记录更新器架构、执行约束、状态恢复和后续发布要求。
+- `progress.md`：追加本轮实现、验证、临时服务清理和回滚记录。
+- 回滚方式：提交前执行 `git restore -- README.md app-update.js docs/CONTINUE.md progress.md public/js/app/events.js public/js/app/init.js public/js/core.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css server.js tests/app-update.test.js tests/layout-ui.test.js`，再执行 `Remove-Item -LiteralPath app-self-update.js,self-update-runner.js,tests/app-self-update.test.js`；提交后执行 `git revert <本任务提交哈希>`。

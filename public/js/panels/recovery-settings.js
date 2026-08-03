@@ -544,12 +544,42 @@ function renderSettingsTab() {
   const repos = recentRepos();
   const policy = normalizedRecoveryPolicy();
   const policyLabel = t(recoveryPolicyLabel(policy) || "策略未启用");
+  const appUpdate = settingsAppUpdateView();
   els.detailTitle.textContent = t("设置");
   els.detailSub.textContent = t("本机偏好和界面行为");
   els.detailNode.style.borderColor = "var(--violet)";
   setActiveDiff(null);
   els.detailBody.innerHTML = tt`
     <div class="settings-layout">
+      <section class="settings-card settings-version-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>关于 Forkline</strong>
+            <span>当前版本和 GitHub Release 更新状态。</span>
+          </div>
+          <span class="settings-update-status ${appUpdate.statusClass}">${escapeHtml(appUpdate.statusText)}</span>
+        </div>
+        <div class="settings-version-grid">
+          <div class="settings-version-item">
+            <span>当前版本</span>
+            <strong>${escapeHtml(appUpdate.currentVersion)}</strong>
+          </div>
+          <div class="settings-version-item">
+            <span>最新版本</span>
+            <strong>${escapeHtml(appUpdate.latestVersion)}</strong>
+          </div>
+        </div>
+        ${
+          appUpdate.showInstallAction
+            ? `<div class="settings-update-actions">
+                <button class="mini-btn primary" data-settings-action="installUpdate" type="button" ${appUpdate.installing ? "disabled" : ""}>${escapeHtml(appUpdate.installing ? t("正在更新并重启") : t("立即更新并重启"))}</button>
+              </div>`
+            : ""
+        }
+        ${appUpdate.installNote ? `<div class="settings-update-note">${escapeHtml(appUpdate.installNote)}</div>` : ""}
+        ${appUpdate.installError ? `<div class="settings-update-error">${escapeHtml(appUpdate.installError)}</div>` : ""}
+      </section>
+
       <section class="settings-card">
         <div class="settings-card-head">
           <div>
@@ -625,6 +655,79 @@ function renderSettingsTab() {
       </section>
     </div>
   `;
+}
+
+function settingsAppUpdateView() {
+  const update = state.appUpdate || {};
+  const status = update.status || "loading";
+  const installing = Boolean(update.installing);
+  const installError = String(update.installError || "");
+  const displayVersion = (value) => {
+    const version = String(value || "").trim();
+    return version ? (version.startsWith("v") ? version : `v${version}`) : "";
+  };
+  const currentVersion = displayVersion(update.currentVersion) || t("正在读取");
+  const latestVersion = displayVersion(update.latestVersion) || (status === "loading" ? t("正在检查") : t("未知"));
+  const shared = {
+    currentVersion,
+    latestVersion,
+    installing,
+    installError,
+    showInstallAction: status === "available" && Boolean(update.installSupported),
+    installNote: status === "available" && !update.installSupported
+      ? t("当前安装方式不支持一键更新，请点击左上角更新图标打开 Release。")
+      : "",
+  };
+  if (installing) {
+    return { ...shared, statusClass: "loading", statusText: t("正在更新并重启") };
+  }
+  if (installError) {
+    return { ...shared, statusClass: "unavailable", statusText: t("更新失败") };
+  }
+  if (status === "available") {
+    return {
+      ...shared,
+      statusClass: "available",
+      statusText: t("发现新版本 {version}", { version: latestVersion }),
+    };
+  }
+  if (status === "current") {
+    return { ...shared, statusClass: "current", statusText: t("已是最新版本") };
+  }
+  if (status === "unavailable") {
+    return { ...shared, statusClass: "unavailable", statusText: t("暂时无法检查更新") };
+  }
+  return { ...shared, statusClass: "loading", statusText: t("正在检查更新") };
+}
+
+async function installAppUpdate() {
+  const update = state.appUpdate || {};
+  if (update.installing || update.status !== "available" || !update.installSupported) return;
+  if (typeof fileEditorDirty === "function" && fileEditorDirty()) {
+    throw new Error(t("文件编辑器还有未保存的修改，请先保存或关闭后再更新 Forkline。"));
+  }
+  if (String(els.commitSummary?.value || "").trim() || String(els.commitBody?.value || "").trim()) {
+    throw new Error(t("提交信息框还有未提交内容，请先处理后再更新 Forkline。"));
+  }
+  const current = update.currentVersion ? `v${String(update.currentVersion).replace(/^v/i, "")}` : t("未知");
+  const latest = update.latestVersion ? `v${String(update.latestVersion).replace(/^v/i, "")}` : t("未知");
+  if (!confirm(t("确认将 Forkline 从 {current} 更新到 {latest}？\n\n只会更新 Forkline 自身，不会修改当前管理的仓库。页面会短暂断开，完成后自动刷新。", { current, latest }))) return;
+
+  state.appUpdate.installing = true;
+  state.appUpdate.installError = "";
+  renderInspector();
+  try {
+    await api("/api/app-update/install", {
+      method: "POST",
+      body: JSON.stringify({ version: update.latestVersion }),
+    });
+    await waitForSelfUpdateRestart(update.latestVersion);
+  } catch (error) {
+    state.appUpdate.installing = false;
+    state.appUpdate.installError = error.message;
+    if (state.selectedTab === "settings") renderInspector();
+    toast(error.message);
+  }
 }
 
 function settingsThemeButton(theme) {
