@@ -1,6 +1,9 @@
 // Commit list rendering and commit search.
+let commitGraphResizeFrame = 0;
+
 function renderCommits(options = {}) {
   cancelScheduledCommitRender();
+  cancelScheduledCommitGraphResize();
   const previousSelectedSha = state.selectedSha;
   const inspectorMode = options.inspector || "always";
   const terms = commitSearchTerms();
@@ -25,7 +28,6 @@ function renderCommits(options = {}) {
   els.graphModeLabel.title = isBranchScope ? t("当前只显示 {branch}", { branch: state.selectedRef }) : t("当前显示所有分支");
   const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
   const renderedGraphWidth = graphRenderWidth(graphCommits, state.selectedRef);
-  els.commitGraph.closest(".history")?.style.setProperty("--graph-w", `${renderedGraphWidth}px`);
   els.commitGraph.innerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef, renderedGraphWidth);
 
   if (!state.filtered.length) {
@@ -64,6 +66,29 @@ function renderCommits(options = {}) {
   });
   els.commitGraph.appendChild(rows);
   renderCommitInspector(inspectorMode, previousSelectedSha);
+}
+
+function scheduleCommitGraphResize() {
+  if (commitGraphResizeFrame || !state.data || !els.commitGraph) return;
+  commitGraphResizeFrame = window.requestAnimationFrame(() => {
+    commitGraphResizeFrame = 0;
+    refreshCommitGraphForColumnWidth();
+  });
+}
+
+function cancelScheduledCommitGraphResize() {
+  if (!commitGraphResizeFrame) return;
+  window.cancelAnimationFrame(commitGraphResizeFrame);
+  commitGraphResizeFrame = 0;
+}
+
+function refreshCommitGraphForColumnWidth() {
+  const currentGraph = els.commitGraph.querySelector(".graph-lines");
+  if (!currentGraph || !Array.isArray(state.filtered)) return;
+  const minHeight = Math.max(rowH, state.filtered.length * rowH);
+  const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
+  const renderedGraphWidth = graphRenderWidth(graphCommits, state.selectedRef);
+  currentGraph.outerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef, renderedGraphWidth);
 }
 
 function renderCommitInspector(mode, previousSelectedSha) {

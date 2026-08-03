@@ -281,6 +281,7 @@ test("history header resizer updates the graph column and saves all visible widt
   const handleListeners = new Map();
   const documentListeners = new Map();
   const bodyClasses = new Set();
+  let graphResizeRequests = 0;
   const cell = (name, width) => ({
     dataset: { historyColumn: name },
     getBoundingClientRect: () => ({ width: name === "graph" ? Number.parseFloat(values.get("--history-graph-col-w")) || width : width }),
@@ -322,14 +323,19 @@ test("history header resizer updates the graph column and saves all visible widt
       getItem: (name) => stored.get(name) ?? null,
       setItem: (name, value) => stored.set(name, String(value)),
     },
+    scheduleCommitGraphResize: () => {
+      graphResizeRequests += 1;
+    },
     window: { addEventListener: () => {}, innerWidth: 1600 },
   });
   vm.runInContext(layoutSource, context);
   context.initHistoryColumnResizers();
 
   handleListeners.get("pointerdown")({ clientX: 200, pointerId: 1, preventDefault: () => {} });
+  graphResizeRequests = 0;
   documentListeners.get("pointermove")({ clientX: 240 });
   assert.equal(values.get("--history-graph-col-w"), "216px");
+  assert.equal(graphResizeRequests, 1);
   assert.equal(bodyClasses.has("resizing"), true);
 
   documentListeners.get("pointerup")();
@@ -406,26 +412,43 @@ test("portrait width calculation leaves room for the graph instead of the docked
   assert.equal(values.get("--inspector-w"), "340px");
 });
 
-test("long graph labels stay inside the graph column without squeezing commit messages", () => {
+test("graph labels expand with the resized graph column and stay inside it", () => {
+  let graphColumnWidth = 176;
+  const history = {};
   const context = vm.createContext({
     graphWidth: 176,
+    rowH: 62,
     laneX: [28, 54, 80, 106, 132, 154, 166],
     state: { data: { branches: ["feature/complete-portrait-layout"], remotes: [], repo: { remoteNames: [] } } },
+    els: { commitGraph: { closest: () => history } },
+    document: { documentElement: {} },
+    getComputedStyle: () => ({
+      getPropertyValue: (name) => name === "--history-graph-col-w" ? `${graphColumnWidth}px` : "",
+    }),
     escapeHtml: (value) => String(value),
     laneColor: () => "#23c7b7",
   });
   vm.runInContext(graphSource, context);
 
   const branch = "feature/complete-portrait-layout";
-  const commits = [{ lane: 2, refs: branch }];
-  const width = context.graphRenderWidth(commits, "");
-  const markup = context.graphLabel(80, 31, branch, "#23c7b7", width);
-  const renderedText = markup.match(/<text[^>]*>([^<]*)<\/text>/)?.[1] || "";
+  const commits = [{ sha: "a", short: "a", lane: 2, refs: branch, parents: [], color: "#23c7b7" }];
+  const narrowWidth = context.graphRenderWidth(commits, "");
+  const narrowMarkup = context.graphLabel(80, 31, branch, "#23c7b7", narrowWidth);
+  const narrowText = narrowMarkup.match(/<text[^>]*>([^<]*)<\/text>/)?.[1] || "";
 
-  assert.equal(width, 176);
-  assert.equal(context.graphLabelWidth(branch), 128);
-  assert.ok(renderedText.endsWith("..."));
-  assert.ok(renderedText.length < branch.length);
+  graphColumnWidth = 360;
+  const wideWidth = context.graphRenderWidth(commits, "");
+  const wideMarkup = context.graphLabel(80, 31, branch, "#23c7b7", wideWidth);
+  const wideText = wideMarkup.match(/<text[^>]*>([^<]*)<\/text>/)?.[1] || "";
+  const wideRect = Number(wideMarkup.match(/<rect[^>]*width="([^"]+)"/)?.[1] || 0);
+  const svgMarkup = context.renderGraphSvg(commits, 62, "", wideWidth);
+
+  assert.equal(narrowWidth, 176);
+  assert.ok(narrowText.endsWith("..."));
+  assert.equal(wideWidth, 360);
+  assert.equal(wideText, branch);
+  assert.ok(wideRect <= wideWidth - 6 - (80 + 12));
+  assert.match(svgMarkup, /style="width:360px"/);
 });
 
 test("graph mode badge keeps the complete scope name instead of shrinking", () => {

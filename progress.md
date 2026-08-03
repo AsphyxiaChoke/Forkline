@@ -6348,3 +6348,48 @@
 - `docs/CONTINUE.md`：记录更新器架构、执行约束、状态恢复和后续发布要求。
 - `progress.md`：追加本轮实现、验证、临时服务清理和回滚记录。
 - 回滚方式：提交前执行 `git restore -- README.md app-update.js docs/CONTINUE.md progress.md public/js/app/events.js public/js/app/init.js public/js/core.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css server.js tests/app-update.test.js tests/layout-ui.test.js`，再执行 `Remove-Item -LiteralPath app-self-update.js,self-update-runner.js,tests/app-self-update.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-03 - Task: 图谱列拉宽后恢复完整分支标签
+
+### What was done
+- 修复提交图谱表头拉宽后，图谱 SVG 仍固定停留在 `176px`、分支标签继续按旧宽度省略的问题。
+- 图谱渲染宽度现在读取实际的 `--history-graph-col-w`；拖拽或键盘调整图谱列时，通过 `requestAnimationFrame` 只重绘 SVG 图层，不重建提交列表和右侧详情。
+- 取消分支标签原有的 `128px` 固定上限，改为按节点所在位置和当前图谱列剩余空间决定宽度：窄列保持省略并保留完整悬停提示，空间足够时自动恢复更多文字或完整名称。
+- 保持默认图谱最小宽度、提交信息最小宽度、列宽保存和响应式隐藏规则不变，并同步 README 与继续开发文档。
+
+### Testing
+- 先增加失败回归：拖动图谱列后未请求 SVG 重绘，且图谱列从 `176px` 模拟扩到 `360px` 时 `graphRenderWidth` 仍返回 `176`；修复前定向测试稳定以这两个断言失败。
+- `node --test tests/layout-ui.test.js` 修复后 27 项全部通过；覆盖拖拽回调、窄列省略、宽列完整显示、标签不越过图谱列和 SVG 实际宽度同步。
+- `node --check public/js/features/graph.js`、`node --check public/js/features/history-list.js`、`node --check public/js/app/layout-utils.js` 均通过。
+- `npm.cmd test` 完整运行 106 项测试，全部通过，退出码为 0；提交选择原地更新、图谱布局、工作区、同步、冲突、历史编辑、文件编辑器和一键更新均未回归。
+- 使用当前已有的 `http://127.0.0.1:5177/` 和 `D:/桌面/GitTest` 现场验证：图谱列为 `176px` 时 `tag: forkline-v0.1.0` 显示为 `tag: forkline-...`，拉宽到 `315px` 后恢复完整名称；SVG CSS 宽度和 `viewBox` 同步从 `176` 变为 `315`，再缩窄和拉宽时标签会实时往返变化。页面控制台错误为 0。
+- 本轮没有启动新的测试服务，用户当前的 `5177` 页面继续保留。
+
+### Notes
+- `public/js/features/graph.js`：使用实际图谱列宽生成 SVG，并按可用空间计算分支标签宽度。
+- `public/js/features/history-list.js`：增加按动画帧合并的 SVG 图层重绘，不重建提交行。
+- `public/js/app/layout-utils.js`：图谱列宽变化时通知 SVG 重绘。
+- `tests/layout-ui.test.js`：增加图谱列拖拽回调及标签窄宽切换回归。
+- `README.md`：说明分支标签会随图谱列实时恢复完整显示。
+- `docs/CONTINUE.md`：更新标签宽度规则和 SVG 单层重绘实现说明。
+- `progress.md`：追加本轮复现、修复、全量测试和浏览器验证记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/layout-utils.js public/js/features/graph.js public/js/features/history-list.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-03 - Task: 简化 README 使用说明
+
+### What was done
+- 将 README 从堆叠实现细节和回归历史的长功能清单，改写为面向首次使用者的中文说明。
+- 按“快速开始、界面说明、常用流程、历史操作、安全说明、更新、开发文档”重新组织内容，保留启动、提交、分支、储藏、冲突、同步和危险操作的必要说明。
+- 将 API 校验、缓存策略、性能数据和逐项回归细节移出 README，继续由 `docs/CONTINUE.md` 和 `progress.md` 保存。
+- README 从 `61565` 字节缩减为 `6775` 字节，最长正文行缩短到 `97` 个字符，避免一条项目符号塞入大量功能。
+
+### Testing
+- 核对 `start.cmd` 实际执行 `node server.js`，服务默认地址仍为 `http://127.0.0.1:5177`，Windows 启动后会自动打开浏览器。
+- 核对 `pull-latest.cmd`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md` 和 `progress.md` 均存在，README 中的命令与链接有真实落点。
+- `git diff --check -- README.md` 退出码为 0，没有空白错误；仅显示仓库现有的自动换行符转换提示。
+- 本轮只修改文档，没有改动运行代码，因此未重复执行应用测试。
+
+### Notes
+- `README.md`：重写为简洁的中文快速使用说明，并保留常见 Git 操作的直白解释。
+- `progress.md`：追加本轮文档简化范围、校验结果和回滚说明。
+- 回滚点为本任务开始前的 README（`61565` 字节、`181` 行）；提交后执行 `git revert <本任务提交哈希>`。提交前如执行 `git restore --source=HEAD -- README.md`，会同时撤销上一项尚未提交的 README 文案，需按上一条进度记录恢复图谱标签说明；`progress.md` 只删除末尾本任务段。

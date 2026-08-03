@@ -1,5 +1,5 @@
 // Commit graph layout and SVG rendering.
-const GRAPH_LABEL_MAX_WIDTH = 128;
+const GRAPH_LABEL_MAX_WIDTH = 360;
 const GRAPH_LABEL_MIN_WIDTH = 42;
 const GRAPH_LABEL_PADDING = 16;
 function renderGraphSvg(commits, height, selectedRef, width = graphRenderWidth(commits, selectedRef)) {
@@ -39,7 +39,7 @@ function renderOverviewGraphSvg(commits, height, width) {
     });
   });
   return `
-    <svg class="graph-lines overview" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines overview" height="${height}" viewBox="0 0 ${width} ${height}" style="width:${width}px" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${guides}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -70,7 +70,7 @@ function renderBranchGraphSvg(commits, height, selectedRef, width) {
     if (index === 0) labels += graphLabel(x, y, selectedRef, color, width);
   });
   return `
-    <svg class="graph-lines focus" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines focus" height="${height}" viewBox="0 0 ${width} ${height}" style="width:${width}px" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${branchLaneGuide(x, height, color)}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -277,7 +277,11 @@ function graphLabel(x, y, label, color, renderWidth) {
 }
 
 function graphRenderWidth(commits, selectedRef) {
-  return graphWidth;
+  const history = typeof els !== "undefined" ? els.commitGraph?.closest?.(".history") : null;
+  const target = history || (typeof document !== "undefined" ? document.documentElement : null);
+  if (!target || typeof getComputedStyle !== "function") return graphWidth;
+  const resizedWidth = Number.parseFloat(getComputedStyle(target).getPropertyValue("--history-graph-col-w"));
+  return Math.max(graphWidth, Number.isFinite(resizedWidth) ? Math.round(resizedWidth) : graphWidth);
 }
 
 function graphLabelWidth(label, availableWidth = GRAPH_LABEL_MAX_WIDTH) {

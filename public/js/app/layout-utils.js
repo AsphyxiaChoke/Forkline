@@ -251,6 +251,7 @@ function updateHistoryColumnPreference(name, width) {
 function setHistoryColumnWidth(name, width) {
   const variable = historyColumnVariables[name];
   if (variable) document.documentElement.style.setProperty(variable, `${Math.round(width)}px`);
+  if (name === "graph" && typeof scheduleCommitGraphResize === "function") scheduleCommitGraphResize();
 }
 
 function applyHistoryColumnPreferences() {
