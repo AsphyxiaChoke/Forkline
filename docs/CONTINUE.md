@@ -342,6 +342,8 @@
 ## 2026-08-04 后端模块化基线
 
 - `server.js` 已从约 7900 行收口到约 1200 行，只保留启动、共享接线、HTTP 辅助和路由编排。
-- Git 命令运行、仓库读取、提交/文件历史、Git 写操作、文件编辑和应用更新分别位于 `server/git-runtime.js`、`server/repository-service.js`、`server/repository-history.js`、`server/git-operations-service.js`、`server/file-editor-service.js` 和 `server/update-service.js`。
-- 模块使用 CommonJS 工厂和显式依赖；当前仓库切换由仓库服务统一同步给操作服务，操作日志和运行中操作仍由入口共享，API 响应结构及 Git 语义保持不变。
-- 新增 `tests/backend-modules.test.js` 固定模块边界；真实 Git API 回归继续覆盖文件编辑、GBK/GB18030、储藏、分支、合并、历史改写、冲突、同步和取消操作。
+- 顶层仍由 `server/git-runtime.js`、`server/repository-service.js`、`server/repository-history.js`、`server/git-operations-service.js`、`server/file-editor-service.js` 和 `server/update-service.js` 分担 Git 运行、仓库读取、提交/文件历史、Git 写操作、文件编辑和应用更新。
+- Git 写操作门面进一步拆为 `git-branch-service.js`、`git-worktree-service.js`、`git-history-service.js` 和 `git-recovery-service.js`；仓库读取门面进一步拆为 `repository-browse-service.js`、`repository-auth-service.js`、`repository-submodule-service.js`、`repository-worktree-service.js` 和 `repository-state-service.js`。两个门面目前分别约 1200 行和 990 行，仍维持原 API 响应与 Git 语义。
+- `worktree-patch.js` 和 `temp-files.js` 保存可独立验证的补丁与临时文件辅助；直接服务测试曾发现并补齐补丁模块遗漏的块序号校验依赖。
+- 模块使用 CommonJS 工厂和显式依赖；当前仓库切换会同步给全部读取/写操作子服务，操作日志和运行中操作仍由入口共享。
+- `tests/backend-modules.test.js` 固定两层模块边界，`tests/backend-services.test.js` 直接覆盖补丁、路径、认证 URL、恢复策略、分支保护和历史分页；完整 `npm test` 当前为 `130/130`，真实 Git 回归继续覆盖文件编辑、GBK/GB18030、储藏、分支、合并、历史改写、冲突、同步和取消操作。

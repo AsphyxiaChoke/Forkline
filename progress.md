@@ -6527,3 +6527,42 @@
 - `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录新的后端分层和继续开发基线。
 - `progress.md`：追加本轮实现、验证、临时服务清理和回滚方式。
 - 回滚方式：提交前先执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md server.js tests/app-self-update.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath server/file-editor-service.js,server/git-operations-service.js,server/git-runtime.js,server/repository-history.js,server/repository-service.js,server/update-service.js,tests/backend-modules.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-04 - Task: 后端服务二级拆分与直接回归
+
+### What was done
+- 将 `git-operations-service.js` 继续拆为分支/远端、工作区/储藏、历史写操作和恢复点四个领域服务，并将临时文件与工作区补丁处理拆为独立辅助模块。
+- 将 `repository-service.js` 继续拆为目录浏览、认证、工作树/子模块、工作区读取和状态编排五个领域服务；两个门面分别收口到约 1200 行和 990 行，原 API 响应及 Git 行为保持不变。
+- 增加直接服务测试，覆盖补丁裁剪、路径边界、认证 URL、恢复点保留策略、受保护分支和历史分页；测试发现并补齐 `worktree-patch.js` 遗漏的块序号校验依赖。
+- 同步更新 README、架构与继续开发说明，并清理全部一次性迁移脚本、冒烟日志和测试服务。
+
+### Testing
+- `node --check` 检查仓库内除 `vendor/` 外的 62 个 JavaScript 文件，全部通过；格式清理后再次检查全部 `server/*.js`，全部通过。
+- `node --test --test-concurrency=1 tests/backend-modules.test.js tests/backend-services.test.js tests/worktree-refresh.test.js` 运行 13 项，13 项通过、0 项失败。
+- 两轮真实 Git 定向回归各运行 6 项并全部通过，覆盖示例/历史状态、工作区、储藏、认证缓存、子模块签出保护和提交追加/丢弃流程。
+- `npm.cmd test` 完整运行 130 项，130 项通过、0 项失败，退出码为 0，耗时约 91.3 秒。
+- 随机端口 `57238` 启动 Forkline 后，`GET /api/state` 返回 HTTP 200、示例仓库和 11 条提交；PID `17952` 随后结束，端口和仓库相关 Node 进程均确认无遗留。
+- `git diff --check` 通过；本轮 `C:\tmp` 中 3 个迁移/分析脚本与 2 个冒烟日志已按明确路径删除。
+
+### Notes
+- `server/git-operations-service.js`：改为 Git 写操作门面并接线四个领域子服务。
+- `server/git-branch-service.js`：承接克隆/初始化、分支、远端、Tag、工作树、子模块和同步写操作。
+- `server/git-worktree-service.js`：承接暂存、丢弃、储藏、冲突处理和补丁应用。
+- `server/git-history-service.js`：承接合并、变基、挑选、还原、重置和历史编辑。
+- `server/git-recovery-service.js`：承接恢复点、reflog 恢复和保留策略。
+- `server/temp-files.js`：集中临时文件写入和可靠清理辅助。
+- `server/worktree-patch.js`：集中纯补丁裁剪/行选择逻辑，并补齐块序号校验。
+- `server/repository-service.js`：改为仓库读取门面并同步全部读取子服务的仓库上下文。
+- `server/repository-browse-service.js`：承接目录浏览、快捷路径和路径边界判断。
+- `server/repository-auth-service.js`：承接认证诊断缓存和 PR/MR URL 生成。
+- `server/repository-submodule-service.js`：承接工作树/子模块解析、增强和清理快照。
+- `server/repository-worktree-service.js`：承接工作区、Diff、储藏、同步详情和文件快照读取。
+- `server/repository-state-service.js`：承接示例/全量/轻量状态编排和历史分页。
+- `tests/backend-modules.test.js`：固定入口、门面与二级服务边界。
+- `tests/backend-services.test.js`：直接验证拆出服务中的纯逻辑和保护规则。
+- `tests/worktree-refresh.test.js`：将工作区快照缓存回归切换到新的读取服务源码。
+- `README.md`：简要说明仓库读取与 Git 写操作的二级服务拆分。
+- `docs/ARCHITECTURE.md`：记录各子服务职责、仓库上下文同步和直接服务测试边界。
+- `docs/CONTINUE.md`：记录当前门面规模、模块清单和 130/130 回归基线。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md server/git-operations-service.js server/repository-service.js tests/backend-modules.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath server/git-branch-service.js,server/git-history-service.js,server/git-recovery-service.js,server/git-worktree-service.js,server/repository-auth-service.js,server/repository-browse-service.js,server/repository-state-service.js,server/repository-submodule-service.js,server/repository-worktree-service.js,server/temp-files.js,server/worktree-patch.js,tests/backend-services.test.js`；提交后执行 `git revert <本任务提交哈希>`。

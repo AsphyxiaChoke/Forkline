@@ -4,13 +4,23 @@
 
 - `server.js`：进程启动、共享状态接线、HTTP 本地化/错误转换、静态资源和 API 路由编排；不再直接实现 Git 领域行为。
 - `server/git-runtime.js`：Git 可执行文件发现、文本/二进制命令执行、长操作输出捕获、凭据隐藏和进程树终止。
-- `server/repository-service.js`：仓库打开、状态/工作区/同步/认证读取、目录浏览，以及分支、远端、工作树、子模块和 Diff 的只读解析。
+- `server/repository-service.js`：仓库读取门面，负责打开/切换仓库、引用与远端通用校验，以及下列读取子服务的显式接线。
+- `server/repository-browse-service.js`：目录浏览、快捷路径和仓库内路径边界判断。
+- `server/repository-auth-service.js`：认证环境按需诊断与缓存，以及 PR/MR 网页地址生成。
+- `server/repository-submodule-service.js`：工作树/子模块解析、状态增强和失效工作树快照。
+- `server/repository-worktree-service.js`：工作区状态、文件快照、Diff、储藏和同步详情读取。
+- `server/repository-state-service.js`：示例状态、全量/轻量仓库状态编排和历史分页。
 - `server/repository-history.js`：提交详情、补丁、文件历史、逐行追踪和分支比较。
-- `server/git-operations-service.js`：分支、远端、储藏、提交、合并、变基、挑选、还原、重置、历史编辑、恢复点和操作生命周期。
+- `server/git-operations-service.js`：Git 写操作门面，负责请求分派、共享快照校验和下列写操作子服务的显式接线。
+- `server/git-branch-service.js`：克隆/初始化、分支、远端、Tag、工作树、子模块和同步写操作。
+- `server/git-worktree-service.js`：暂存/取消暂存、丢弃、储藏、冲突处理和补丁应用。
+- `server/git-history-service.js`：合并、变基、挑选、还原、重置和历史编辑。
+- `server/git-recovery-service.js`：恢复点创建/恢复/清理、reflog 恢复和保留策略。
+- `server/worktree-patch.js`、`server/temp-files.js`：可直接测试的纯补丁处理和临时文件清理辅助。
 - `server/file-editor-service.js`：历史/工作区文件读取、UTF-8/GBK/GB18030 解码、编辑边界、旧内容校验和保存。
 - `server/update-service.js`：Release 检查、更新状态和安装请求。
 
-后端模块继续使用 CommonJS 工厂函数，由 `server.js` 显式传入 Git 运行时、当前仓库状态和共享操作记录。新增行为应放入对应服务，路由只负责解析请求、调用服务和发送响应。
+后端模块继续使用 CommonJS 工厂函数，由 `server.js` 显式传入 Git 运行时、当前仓库状态和共享操作记录。仓库或 Git 操作门面切换当前仓库时，会同步更新其全部子服务。新增行为应放入对应服务，路由只负责解析请求、调用服务和发送响应。
 
 ## 前端分层
 
@@ -112,6 +122,8 @@
 - Reflog 测试覆盖仓库上下文边界和无提交/有提交响应；`tests/reflog-ui-state.test.js` 验证当前结果写入和旧仓库响应丢弃。
 - `tests/checkout-stash-ui-state.test.js` 验证签出储藏提醒在实际分支或查看引用变化后被丢弃，保留当前分支总览中的正常提示，并验证 Forkline 主动签出后的自动恢复不显示确认框。
 - `tests/worktree-refresh.test.js` 验证文件快照影响刷新签名，以及页面隐藏或失焦时不执行周期读取。
+- `tests/backend-modules.test.js` 固定入口、门面与二级服务边界，防止实现重新回流到 `server.js` 或两个门面文件。
+- `tests/backend-services.test.js` 直接覆盖补丁裁剪、路径边界、远端网页 URL、恢复点保留策略、受保护分支和历史分页等纯服务逻辑。
 - `tests/api-repo-context.test.js` 覆盖中文仓库路径请求头编码和当前语言请求头。
 - `tests/i18n.test.js` 覆盖语言标准化、中文默认、英文切换、浏览器持久化、静态文案回切，以及路径和原始 Git 输出不被翻译。
 - API 集成测试覆盖中文仓库名、中文提交信息和中文分支名在英文响应中保持原值，同时验证默认中文、英文错误和不支持语言回退中文。
