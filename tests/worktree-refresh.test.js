@@ -11,7 +11,7 @@ const source = fs.readFileSync(path.join(root, "public", "js", "features", "diff
 const coreSource = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8");
 const gitActionsSource = fs.readFileSync(path.join(root, "public", "js", "features", "git-actions.js"), "utf8");
 const syncSource = fs.readFileSync(path.join(root, "public", "js", "panels", "sync.js"), "utf8");
-const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const repositorySource = fs.readFileSync(path.join(root, "server", "repository-service.js"), "utf8");
 
 test("worktree signatures include file snapshots", () => {
   const context = vm.createContext({});
@@ -74,9 +74,9 @@ test("worktree polling runs only while the page is visible and focused", () => {
 });
 
 test("worktree file snapshots reuse hashes until file metadata changes", () => {
-  const snapshotSource = serverSource.slice(
-    serverSource.indexOf("function worktreeFileSnapshot"),
-    serverSource.indexOf("function sha256Json")
+  const snapshotSource = repositorySource.slice(
+    repositorySource.indexOf("function worktreeFileSnapshot"),
+    repositorySource.indexOf("function sha256Json")
   );
   let reads = 0;
   let content = "first";

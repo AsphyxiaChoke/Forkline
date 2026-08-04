@@ -1,6 +1,18 @@
-# Forkline 前端架构
+# Forkline 架构
 
-## 当前分层
+## 后端分层
+
+- `server.js`：进程启动、共享状态接线、HTTP 本地化/错误转换、静态资源和 API 路由编排；不再直接实现 Git 领域行为。
+- `server/git-runtime.js`：Git 可执行文件发现、文本/二进制命令执行、长操作输出捕获、凭据隐藏和进程树终止。
+- `server/repository-service.js`：仓库打开、状态/工作区/同步/认证读取、目录浏览，以及分支、远端、工作树、子模块和 Diff 的只读解析。
+- `server/repository-history.js`：提交详情、补丁、文件历史、逐行追踪和分支比较。
+- `server/git-operations-service.js`：分支、远端、储藏、提交、合并、变基、挑选、还原、重置、历史编辑、恢复点和操作生命周期。
+- `server/file-editor-service.js`：历史/工作区文件读取、UTF-8/GBK/GB18030 解码、编辑边界、旧内容校验和保存。
+- `server/update-service.js`：Release 检查、更新状态和安装请求。
+
+后端模块继续使用 CommonJS 工厂函数，由 `server.js` 显式传入 Git 运行时、当前仓库状态和共享操作记录。新增行为应放入对应服务，路由只负责解析请求、调用服务和发送响应。
+
+## 前端分层
 
 - `public/js/core.js`：共享状态、存储键、常量、DOM 引用和 `window.Forkline` 命名空间。
 - `public/js/i18n-catalog.js`：中英文文案目录、语言标准化、模板插值和已知服务端文本翻译；同时支持浏览器和 CommonJS 测试/服务端引用。

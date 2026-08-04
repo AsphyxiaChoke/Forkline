@@ -22,6 +22,7 @@ const {
 } = require("../app-self-update");
 
 const serverSource = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const updateServiceSource = fs.readFileSync(path.resolve(__dirname, "..", "server", "update-service.js"), "utf8");
 const updaterSource = fs.readFileSync(path.resolve(__dirname, "..", "app-self-update.js"), "utf8");
 
 test("self update only accepts the official Forkline repository", () => {
@@ -109,10 +110,12 @@ test("self update status survives restart and terminal results can be consumed",
 });
 
 test("self update API keeps JSON confirmation and avoids destructive reset modes", () => {
-  assert.match(serverSource, /req\.method === "POST" && parsed\.pathname === "\/api\/app-update\/install"/);
-  assert.match(serverSource, /const body = await readJson\(req\);[\s\S]*?prepareSelfUpdateLaunch\(body\)/);
-  assert.match(serverSource, /managedRepo: currentRepo \|\| ""/);
-  assert.match(serverSource, /scheduleSelfUpdateShutdown\(\)/);
+  assert.match(serverSource, /createUpdateService\([\s\S]*?getManagedRepo: \(\) => currentRepo[\s\S]*?scheduleShutdown: scheduleSelfUpdateShutdown/);
+  assert.match(serverSource, /await updateService\.handleRequest\(req, res, parsed\)/);
+  assert.match(updateServiceSource, /req\.method === "POST" && parsed\.pathname === "\/api\/app-update\/install"/);
+  assert.match(updateServiceSource, /const body = await readJson\(req\);[\s\S]*?prepareLaunch\(body\)/);
+  assert.match(updateServiceSource, /managedRepo: getManagedRepo\(\) \|\| ""/);
+  assert.match(updateServiceSource, /scheduleShutdown\(\)/);
   assert.match(updaterSource, /\["merge", "--ff-only", plan\.targetSha\]/);
   assert.match(updaterSource, /\["reset", "--keep", plan\.expectedHead\]/);
   assert.doesNotMatch(updaterSource, /reset", "--hard/);

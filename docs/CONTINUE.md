@@ -338,3 +338,10 @@
 
 2. 远端同步体验继续补：同步摘要、force-with-lease、远端 URL 管理、upstream 管理、推送前分叉保护、变基拉取、同步提交预览、诊断向导和按需认证环境检测已完成，后续可继续做系统凭据管理器的操作入口、远端托管平台状态检查，以及把同步状态刷新从全量 `/api/state` 中进一步拆成更轻的独立读取。
 3. 恢复点策略继续增强：现在已有手动策略清理、本地偏好记忆和清理前候选列表展开；后续可以增加危险操作完成后可选自动执行保留策略，以及按仓库单独保存策略。
+
+## 2026-08-04 后端模块化基线
+
+- `server.js` 已从约 7900 行收口到约 1200 行，只保留启动、共享接线、HTTP 辅助和路由编排。
+- Git 命令运行、仓库读取、提交/文件历史、Git 写操作、文件编辑和应用更新分别位于 `server/git-runtime.js`、`server/repository-service.js`、`server/repository-history.js`、`server/git-operations-service.js`、`server/file-editor-service.js` 和 `server/update-service.js`。
+- 模块使用 CommonJS 工厂和显式依赖；当前仓库切换由仓库服务统一同步给操作服务，操作日志和运行中操作仍由入口共享，API 响应结构及 Git 语义保持不变。
+- 新增 `tests/backend-modules.test.js` 固定模块边界；真实 Git API 回归继续覆盖文件编辑、GBK/GB18030、储藏、分支、合并、历史改写、冲突、同步和取消操作。

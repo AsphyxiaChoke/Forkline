@@ -6498,3 +6498,32 @@
 - `tests/file-editor-ui.test.js`：覆盖模式切换、大文件不启用及 MergeView 左侧滚动恢复。
 - `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html public/js/app/events.js public/js/core.js public/js/features/file-editor.js public/js/i18n-catalog.js public/styles.css tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-04 - Task: 后端 Git 服务模块化
+
+### What was done
+- 将原本集中在 `server.js` 的 Git 运行、仓库读取、提交/文件历史、Git 写操作、文件编辑和应用更新拆为独立 CommonJS 工厂模块，API 响应与 Git 行为保持不变。
+- `server.js` 从约 7900 行收口到约 1200 行，只保留进程启动、共享状态接线、HTTP 本地化/错误处理、静态资源和路由编排。
+- 增加后端模块边界测试，并同步调整更新服务与工作区快照源码测试的读取位置；删除本轮全部一次性迁移脚本。
+- 更新架构、继续开发和 README 说明，后续新增逻辑可直接落入对应服务，不再继续扩大入口文件。
+
+### Testing
+- `node --check server.js`、`server/*.js` 和 `tests/backend-modules.test.js` 全部通过；`git diff --check` 通过。
+- `node --test --test-concurrency=1 tests\\git-api.test.js` 运行 24 项，24 项通过、0 项失败；覆盖文件编辑、GBK/GB18030、储藏、分支、合并、历史改写、冲突、同步和长操作取消。
+- `npm.cmd test` 完整运行 123 项，123 项通过、0 项失败，退出码为 0，耗时约 98.1 秒。
+- 临时随机端口 `53836` 启动后 `/api/state` 返回 HTTP 200 和示例仓库状态；检查后 PID `37724` 已结束，端口确认关闭，没有遗留测试服务。
+
+### Notes
+- `server.js`：仅保留启动、共享接线、HTTP 辅助和 API 路由编排。
+- `server/git-runtime.js`：集中 Git 可执行文件发现、命令运行、输出捕获、凭据隐藏和进程终止。
+- `server/repository-service.js`：集中仓库状态、工作区、同步、认证、目录浏览和共享只读解析。
+- `server/repository-history.js`：集中提交详情、补丁、文件历史、逐行追踪和分支比较。
+- `server/git-operations-service.js`：集中分支、远端、储藏、提交、合并/变基、历史改写、恢复点和操作生命周期。
+- `server/file-editor-service.js`：集中历史/工作区文件读取、编码处理、编辑边界和保存。
+- `server/update-service.js`：集中 Release 检查、更新状态和安装接口。
+- `tests/backend-modules.test.js`：固定后端模块接线和入口文件边界。
+- `tests/app-self-update.test.js`：更新自更新接口断言到更新服务模块。
+- `tests/worktree-refresh.test.js`：从仓库服务读取工作区快照实现进行缓存回归。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录新的后端分层和继续开发基线。
+- `progress.md`：追加本轮实现、验证、临时服务清理和回滚方式。
+- 回滚方式：提交前先执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md server.js tests/app-self-update.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath server/file-editor-service.js,server/git-operations-service.js,server/git-runtime.js,server/repository-history.js,server/repository-service.js,server/update-service.js,tests/backend-modules.test.js`；提交后执行 `git revert <本任务提交哈希>`。
