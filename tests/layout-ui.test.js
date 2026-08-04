@@ -9,12 +9,14 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const layoutSource = fs.readFileSync(path.join(root, "public", "js", "app", "layout-utils.js"), "utf8");
 const initSource = fs.readFileSync(path.join(root, "public", "js", "app", "init.js"), "utf8");
+const apiSource = fs.readFileSync(path.join(root, "public", "js", "api.js"), "utf8");
 const bootstrapSource = fs.readFileSync(path.join(root, "public", "js", "bootstrap.js"), "utf8");
 const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const inspectorSource = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-changes.js"), "utf8");
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
+const repositoriesSource = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 const settingsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery-settings.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -135,6 +137,51 @@ test("settings makes the current update state explicit", () => {
   assert.match(eventsSource, /action === "installUpdate"[\s\S]*?installAppUpdate\(\)/);
   assert.match(styles, /\.settings-update-status\.current/);
   assert.match(styles, /\.settings-update-status\.available/);
+});
+
+test("operation log shows live Git output and exposes real cancellation", () => {
+  const context = vm.createContext({
+    state: { data: { runningOperations: [] } },
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+    tt: (strings, ...values) => strings.reduce((output, text, index) => `${output}${text}${values[index] ?? ""}`, ""),
+    escapeHtml: (value) => String(value),
+    escapeAttr: (value) => String(value),
+  });
+  vm.runInContext(settingsSource, context);
+
+  const runningMarkup = context.renderRunningOperationItem({
+    id: "7",
+    action: "fetch",
+    label: "抓取远端",
+    elapsed: "3 秒",
+    startedTime: "2026-08-04 10:00:00",
+    phase: "running",
+    command: "git -C D:/repo fetch --progress --all --prune",
+    outputTail: "Receiving objects: 42%",
+    cancelSupported: true,
+    cancellable: true,
+    cancelRequested: false,
+  });
+  assert.match(runningMarkup, /data-operation-cancel="7"/);
+  assert.match(runningMarkup, /git -C D:\/repo fetch --progress --all --prune/);
+  assert.match(runningMarkup, /Receiving objects: 42%/);
+
+  const cancelledMarkup = context.renderOperationLogItem({
+    action: "fetch",
+    label: "抓取远端",
+    status: "cancelled",
+    durationMs: 1200,
+    command: "git fetch --progress --all --prune",
+    summary: "操作已取消",
+    outputTail: "Receiving objects: 42%",
+  });
+  assert.match(cancelledMarkup, /operation-log-item cancelled/);
+  assert.match(cancelledMarkup, /已取消/);
+  assert.match(apiSource, /startOperationPolling\(\);/);
+  assert.match(apiSource, /fetch\("\/api\/operations"/);
+  assert.match(eventsSource, /data-operation-cancel/);
+  assert.match(repositoriesSource, /cancelCloneOrClose[\s\S]*?cancelRunningOperation/);
+  assert.match(styles, /\.operation-log-command\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
 });
 
 test("self update results restore the previous repository and distinguish rollback failures", async () => {

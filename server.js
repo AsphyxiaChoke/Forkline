@@ -38,6 +38,19 @@ const BASIC_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%P";
 const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
 const AUTH_DIAGNOSTICS_CACHE_TTL_MS = 60 * 1000;
 const AUTH_DIAGNOSTICS_CACHE_LIMIT = 12;
+const OPERATION_OUTPUT_LIMIT = 24 * 1024;
+const OPERATION_CANCELLED_CODE = "FORKLINE_OPERATION_CANCELLED";
+const CANCELLABLE_ACTIONS = new Set([
+  "cloneRepository",
+  "fetch",
+  "fetchRemote",
+  "pull",
+  "pullRebase",
+  "push",
+  "forcePushLease",
+  "initSubmodules",
+  "updateSubmodules",
+]);
 const readAppUpdate = createAppUpdateChecker({
   currentVersion: process.env.FORKLINE_APP_VERSION || packageInfo.version,
   releaseApiUrl: process.env.FORKLINE_RELEASE_API_URL,
@@ -243,9 +256,28 @@ function scheduleSelfUpdateShutdown() {
 }
 
 function git(repoPath, args, options = {}) {
+  const fullArgs = ["-C", repoPath, "-c", "core.quotepath=false", ...args];
+  return executeGit(fullArgs, {
+    ...options,
+    command: formatGitCommand(args, repoPath),
+  });
+}
+
+function gitStandalone(args, options = {}) {
+  return executeGit(["-c", "core.quotepath=false", ...args], {
+    ...options,
+    command: formatGitCommand(args),
+  });
+}
+
+function executeGit(fullArgs, options = {}) {
   return new Promise((resolve, reject) => {
-    const fullArgs = ["-C", repoPath, "-c", "core.quotepath=false", ...args];
-    execFile(
+    const operation = options.operation;
+    if (operation?.cancelRequested) {
+      reject(operationCancelledError(operation));
+      return;
+    }
+    const child = execFile(
       GIT_BIN,
       fullArgs,
       {
@@ -258,37 +290,62 @@ function git(repoPath, args, options = {}) {
       (error, stdout, stderr) => {
         const output = [stdout, stderr].filter(Boolean).join("\n");
         if (error) {
+          if (operation?.cancelRequested) {
+            reject(operationCancelledError(operation));
+            return;
+          }
           reject(new Error(output.trim() || error.message));
           return;
         }
         resolve(options.stdoutOnly ? stdout : output);
       }
     );
+    if (operation) trackOperationProcess(operation, child, options.command || "git");
   });
 }
 
-function gitStandalone(args, options = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      GIT_BIN,
-      ["-c", "core.quotepath=false", ...args],
-      {
-        windowsHide: true,
-        timeout: options.timeout || 15000,
-        maxBuffer: options.maxBuffer || 1024 * 1024 * 8,
-        encoding: "utf8",
-        env: options.env ? { ...process.env, ...options.env } : process.env,
-      },
-      (error, stdout, stderr) => {
-        const output = [stdout, stderr].filter(Boolean).join("\n");
-        if (error) {
-          reject(new Error(output.trim() || error.message));
-          return;
-        }
-        resolve(output);
-      }
-    );
+function trackOperationProcess(operation, child, command) {
+  operation.command = command;
+  operation.processes.add(child);
+  operation.pid = child.pid || 0;
+  operation.commandStartedAt = Date.now();
+  child.stdout?.on("data", (chunk) => appendOperationOutput(operation, chunk));
+  child.stderr?.on("data", (chunk) => appendOperationOutput(operation, chunk));
+  child.once("close", () => {
+    operation.processes.delete(child);
+    if (operation.pid === child.pid) operation.pid = 0;
   });
+  if (operation.cancelRequested) terminateOperationProcess(child);
+}
+
+function appendOperationOutput(operation, chunk) {
+  const text = String(chunk || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!text) return;
+  const output = `${operation.outputTail || ""}${text}`;
+  operation.outputTail = output.length > OPERATION_OUTPUT_LIMIT
+    ? `...\n${output.slice(-(OPERATION_OUTPUT_LIMIT - 4))}`
+    : output;
+  operation.lastOutputAt = Date.now();
+}
+
+function formatGitCommand(args, repoPath = "") {
+  const prefix = repoPath ? ["git", "-C", repoPath] : ["git"];
+  return [...prefix, ...args].map(formatCommandArgument).join(" ");
+}
+
+function formatCommandArgument(value) {
+  const sanitized = String(value ?? "").replace(/([a-z][a-z0-9+.-]*:\/\/)([^/@\s]+@)/gi, "$1***@");
+  return /^[A-Za-z0-9_./:@=+-]+$/.test(sanitized) ? sanitized : JSON.stringify(sanitized);
+}
+
+function operationCancelledError(operation) {
+  const error = new Error(`操作已取消：${operation?.label || "Git 操作"}`);
+  error.code = OPERATION_CANCELLED_CODE;
+  return error;
+}
+
+function isOperationCancelledError(error, operation) {
+  return error?.code === OPERATION_CANCELLED_CODE || Boolean(operation?.cancelRequested);
 }
 
 function findGitExecutable() {
@@ -1525,10 +1582,10 @@ async function readStash(ref) {
   };
 }
 
-async function runAction(body) {
+async function runAction(body, operation) {
   const action = body.action;
   if (action === "cloneRepository") {
-    return cloneRepository(body);
+    return cloneRepository(body, operation);
   }
   if (action === "initRepository") {
     return initRepository(body);
@@ -1553,31 +1610,31 @@ async function runAction(body) {
     return pruneAllWorktrees();
   }
   if (action === "initSubmodules") {
-    return initSubmodules();
+    return initSubmodules(operation);
   }
   if (action === "updateSubmodules") {
-    return updateSubmodules(body);
+    return updateSubmodules(body, operation);
   }
   if (action === "syncSubmodules") {
     return syncSubmodules();
   }
   if (action === "fetch") {
-    return fetchRemotes();
+    return fetchRemotes(operation);
   }
   if (action === "pull") {
-    return pullCurrentBranch();
+    return pullCurrentBranch(operation);
   }
   if (action === "pullRebase") {
-    return pullRebaseCurrentBranch();
+    return pullRebaseCurrentBranch(operation);
   }
   if (action === "push") {
-    return pushCurrentBranch();
+    return pushCurrentBranch(operation);
   }
   if (action === "forcePushLease") {
-    return forcePushCurrentBranchWithLease(body);
+    return forcePushCurrentBranchWithLease(body, operation);
   }
   if (action === "fetchRemote") {
-    return fetchRemote(body);
+    return fetchRemote(body, operation);
   }
   if (action === "testRemote") {
     return testRemote(body);
@@ -1841,12 +1898,19 @@ function ensureCanStartAction(body = {}, operation = {}) {
 }
 
 function beginOperation(body = {}) {
+  const action = String(body.action || "");
   const operation = {
     id: nextOperationId++,
-    action: String(body.action || ""),
+    action,
     label: actionLabel(body),
     repoSwitching: actionChangesRepo(body),
     startedAt: Date.now(),
+    cancelSupported: CANCELLABLE_ACTIONS.has(action),
+    cancelRequested: false,
+    command: "",
+    outputTail: "",
+    processes: new Set(),
+    pid: 0,
   };
   activeOperations.set(operation.id, operation);
   return operation;
@@ -1864,6 +1928,8 @@ function recordOperation(operation, body, status, detail) {
     durationMs: Math.max(0, finishedAt - (operation?.startedAt || finishedAt)),
     time: formatLocalTime(new Date(finishedAt)),
     summary: shortText(detail, 700),
+    command: operation?.command || "",
+    outputTail: String(operation?.outputTail || detail || "").trim().slice(-OPERATION_OUTPUT_LIMIT),
   });
   if (operationLog.length > 40) operationLog.length = 40;
 }
@@ -1887,7 +1953,55 @@ function listRunningOperations(excludeId) {
       startedTime: formatLocalTime(new Date(operation.startedAt)),
       durationMs: Math.max(0, now - operation.startedAt),
       elapsed: formatDuration(now - operation.startedAt),
+      command: operation.command || "",
+      outputTail: String(operation.outputTail || "").trim(),
+      phase: operationPhase(operation),
+      cancelSupported: operation.cancelSupported,
+      cancelRequested: operation.cancelRequested,
+      cancellable: operationCanCancel(operation),
     }));
+}
+
+function operationPhase(operation) {
+  if (operation.cancelRequested) return "cancelling";
+  if (!operation.command) return "preparing";
+  if (operation.processes.size) return "running";
+  return "finishing";
+}
+
+function operationCanCancel(operation) {
+  if (!operation.cancelSupported || operation.cancelRequested) return false;
+  return !operation.command || operation.processes.size > 0;
+}
+
+async function cancelActiveOperation(rawId) {
+  const id = Number.parseInt(String(rawId || ""), 10);
+  const operation = activeOperations.get(id);
+  if (!operation) throw new Error("这个 Git 操作已经结束，请刷新操作日志查看结果。");
+  if (!operation.cancelSupported) throw new Error("这个 Git 操作不支持取消，请等待执行完成。");
+  if (operation.cancelRequested) return operation;
+  if (!operationCanCancel(operation)) throw new Error("Git 命令已经执行完成，正在整理结果，不能再取消。");
+
+  operation.cancelRequested = true;
+  operation.cancelRequestedAt = Date.now();
+  operation.cancelledProcessCount = operation.processes.size;
+  await Promise.all([...operation.processes].map((child) => terminateOperationProcess(child)));
+  return operation;
+}
+
+function terminateOperationProcess(child) {
+  if (!child?.pid || child.exitCode !== null || child.killed) return Promise.resolve();
+  if (process.platform === "win32") {
+    return new Promise((resolve) => {
+      execFile("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, () => resolve());
+    });
+  }
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    // The process may have finished between the status read and the cancel request.
+  }
+  return Promise.resolve();
 }
 
 function actionLabel(body = {}) {
@@ -2223,7 +2337,7 @@ async function deleteBranches(body) {
   return { ok: true, deleted, failed, output: lines.join("\n") };
 }
 
-async function pushCurrentBranch() {
+async function pushCurrentBranch(operation) {
   const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能直接推送分支。请先切换或创建本地分支。");
@@ -2237,12 +2351,12 @@ async function pushCurrentBranch() {
   if (upstream) {
     ensurePushIsSafe(before);
     await ensureProtectedUpstreamPushAllowed(branch, upstream);
-    output = await git(currentRepo, ["push"], { timeout: 120000 });
+    output = await git(currentRepo, ["push", "--progress"], { timeout: 120000, operation });
   } else {
     const remoteNames = await readRemoteNames();
     const remote = remoteNames.includes("origin") ? "origin" : remoteNames[0];
     if (!remote) throw new Error("当前仓库没有远端。请先添加远端仓库后再推送。");
-    output = await git(currentRepo, ["push", "-u", remote, branch], { timeout: 120000 });
+    output = await git(currentRepo, ["push", "--progress", "-u", remote, branch], { timeout: 120000, operation });
   }
   const after = await readCurrentSyncState();
   return syncCommandResult("push", output, before, after);
@@ -2267,7 +2381,7 @@ async function ensureProtectedUpstreamPushAllowed(branch, upstream) {
   }
 }
 
-async function forcePushCurrentBranchWithLease(body = {}) {
+async function forcePushCurrentBranchWithLease(body = {}, operation) {
   const branch = (await readBranchDisplayName(currentRepo).catch(() => "")).trim();
   if (!branch || branch === "detached HEAD") {
     throw new Error("当前处于游离 HEAD，不能直接强推。请先切换或创建本地分支。");
@@ -2288,22 +2402,22 @@ async function forcePushCurrentBranchWithLease(body = {}) {
     throw new Error(`远端分支 ${before.upstream} 是主干/长期分支，Forkline 默认保护，不允许从这里安全强推。`);
   }
   const leaseSha = normalizeExpectedUpstreamSha(body.expectedUpstreamSha);
-  const output = await git(currentRepo, ["push", `--force-with-lease=refs/heads/${parsed.branch}:${leaseSha}`, parsed.remote, `HEAD:${parsed.branch}`], { timeout: 120000 });
+  const output = await git(currentRepo, ["push", "--progress", `--force-with-lease=refs/heads/${parsed.branch}:${leaseSha}`, parsed.remote, `HEAD:${parsed.branch}`], { timeout: 120000, operation });
   const after = await readCurrentSyncState();
   return syncCommandResult("forcePush", output, before, after);
 }
 
-async function fetchRemotes() {
+async function fetchRemotes(operation) {
   const before = await readCurrentSyncState();
-  const output = await git(currentRepo, ["fetch", "--all", "--prune"], { timeout: 120000 });
+  const output = await git(currentRepo, ["fetch", "--progress", "--all", "--prune"], { timeout: 120000, operation });
   const after = await readCurrentSyncState();
   return syncCommandResult("fetch", output, before, after);
 }
 
-async function fetchRemote(body) {
+async function fetchRemote(body, operation) {
   const remote = await ensureRemoteName(body.name);
   const before = await readCurrentSyncState();
-  const output = await git(currentRepo, ["fetch", remote, "--prune"], { timeout: 120000 });
+  const output = await git(currentRepo, ["fetch", "--progress", remote, "--prune"], { timeout: 120000, operation });
   const after = await readCurrentSyncState();
   return syncCommandResult("fetch", output || `已抓取远端 ${remote}`, before, after);
 }
@@ -2495,7 +2609,7 @@ function extractRemoteHost(remoteUrl) {
   return scpLike?.[1] || "";
 }
 
-async function pullCurrentBranch() {
+async function pullCurrentBranch(operation) {
   await currentLocalBranch("拉取");
   const before = await readCurrentSyncState();
   if (!before.upstream) {
@@ -2505,17 +2619,17 @@ async function pullCurrentBranch() {
     throw new Error(`当前分支的 upstream ${before.upstream} 已不存在，不能拉取。请先抓取远端并重新设置 upstream。`);
   }
   const dirtySubmodules = await readDirtySubmoduleWorktrees();
-  const args = ["pull", "--ff-only"];
+  const args = ["pull", "--progress", "--ff-only"];
   if (dirtySubmodules.length) args.push("--no-recurse-submodules");
-  const output = await git(currentRepo, args, { timeout: 120000 });
+  const output = await git(currentRepo, args, { timeout: 120000, operation });
   const after = await readCurrentSyncState();
   return appendSkippedSubmoduleUpdate(syncCommandResult("pull", output, before, after), dirtySubmodules);
 }
 
-async function pullRebaseCurrentBranch() {
+async function pullRebaseCurrentBranch(operation) {
   await currentLocalBranch("变基拉取");
-  const operation = detectRepoOperation(currentRepo);
-  if (operation) throw new Error(`仓库还有未完成操作：${operation.label}。请先继续或中止后再变基拉取。`);
+  const repoOperation = detectRepoOperation(currentRepo);
+  if (repoOperation) throw new Error(`仓库还有未完成操作：${repoOperation.label}。请先继续或中止后再变基拉取。`);
   await ensureCleanWorktree("当前有未提交修改。请先提交或储藏后再执行变基拉取。");
   const before = await readCurrentSyncState();
   if (!before.upstream) {
@@ -2526,9 +2640,9 @@ async function pullRebaseCurrentBranch() {
   }
   const dirtySubmodules = await readDirtySubmoduleWorktrees();
   const recovery = await createRecoveryPoint("pull-rebase");
-  const args = ["pull", "--rebase"];
+  const args = ["pull", "--progress", "--rebase"];
   if (dirtySubmodules.length) args.push("--no-recurse-submodules");
-  const output = await git(currentRepo, args, { timeout: 120000 });
+  const output = await git(currentRepo, args, { timeout: 120000, operation });
   const after = await readCurrentSyncState();
   return appendRecoveryLine(appendSkippedSubmoduleUpdate(syncCommandResult("pullRebase", output, before, after), dirtySubmodules), recovery);
 }
@@ -2544,7 +2658,7 @@ function appendSkippedSubmoduleUpdate(result, dirtySubmodules) {
   };
 }
 
-async function cloneRepository(body) {
+async function cloneRepository(body, operation) {
   const source = normalizeRemoteUrl(body.url || body.source);
   const targetPath = normalizeCloneTargetPath(body.targetPath || body.path);
   const parent = path.dirname(targetPath);
@@ -2555,7 +2669,7 @@ async function cloneRepository(body) {
     if (fs.readdirSync(targetPath).length) throw new Error(`目标文件夹不是空的：${targetPath}`);
   }
 
-  const output = await gitStandalone(["clone", "--progress", "--", source, targetPath], { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
+  const output = await gitStandalone(["clone", "--progress", "--", source, targetPath], { timeout: 600000, maxBuffer: 1024 * 1024 * 16, operation });
   const lines = [`克隆完成`, `来源：${source}`, `位置：${targetPath}`];
   const result = { ok: true, output: lines.join("\n"), clonedPath: targetPath, gitOutput: shortText(output, 2000) };
   if (body.openAfter !== false) {
@@ -2636,13 +2750,13 @@ async function pruneAllWorktrees() {
   };
 }
 
-async function initSubmodules() {
+async function initSubmodules(operation) {
   const submodules = parseSubmodules(
     await git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
   );
   if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
-  const output = await git(currentRepo, ["submodule", "update", "--init", "--recursive"], { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
+  const output = await git(currentRepo, ["submodule", "update", "--progress", "--init", "--recursive"], { timeout: 600000, maxBuffer: 1024 * 1024 * 16, operation });
   return {
     ok: true,
     output: output.trim() || "已初始化并更新所有子模块",
@@ -2650,21 +2764,21 @@ async function initSubmodules() {
   };
 }
 
-async function updateSubmodules(body) {
+async function updateSubmodules(body, operation) {
   const submodules = parseSubmodules(
     await git(currentRepo, submoduleConfigArgs()).catch(() => ""),
     await git(currentRepo, ["submodule", "status", "--recursive"]).catch(() => "")
   );
   if (!submodules.length) throw new Error("当前仓库没有配置子模块。");
   const submodulePath = body.path === undefined || body.path === null ? "" : String(body.path);
-  const args = ["submodule", "update", "--init", "--recursive"];
+  const args = ["submodule", "update", "--progress", "--init", "--recursive"];
   let label = "所有子模块";
   if (submodulePath) {
     const file = normalizeSubmodulePath(submodulePath, submodules);
     args.push("--", file);
     label = file;
   }
-  const output = await git(currentRepo, args, { timeout: 600000, maxBuffer: 1024 * 1024 * 16 });
+  const output = await git(currentRepo, args, { timeout: 600000, maxBuffer: 1024 * 1024 * 16, operation });
   return {
     ok: true,
     output: output.trim() || `已更新${label}`,
@@ -8261,6 +8375,21 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, await readStash(parsed.searchParams.get("ref") || ""));
       return;
     }
+    if (req.method === "GET" && parsed.pathname === "/api/operations") {
+      sendJson(res, 200, { operationLog, runningOperations: listRunningOperations() });
+      return;
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/operations/cancel") {
+      const body = await readJson(req);
+      const operation = await cancelActiveOperation(body.id);
+      sendJson(res, 200, {
+        ok: true,
+        output: operation.cancelledProcessCount ? "已发送取消请求，正在终止 Git 进程。" : "已记录取消请求，正在停止操作。",
+        operationLog,
+        runningOperations: listRunningOperations(),
+      });
+      return;
+    }
     if (req.method === "POST" && parsed.pathname === "/api/action") {
       const body = await readJson(req);
       ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
@@ -8268,13 +8397,18 @@ const server = http.createServer(async (req, res) => {
       try {
         ensureCanStartAction(body, operation);
         if (operation.repoSwitching) repoSwitchInProgress = true;
-        const result = await runAction(body);
+        const result = await runAction(body, operation);
         recordOperation(operation, body, "success", actionOutputSummary(result) || "操作已完成");
         const runningOperations = listRunningOperations(operation.id);
         sendJson(res, 200, result && typeof result === "object" ? { ...result, operationLog, runningOperations } : { ok: true, output: String(result || ""), operationLog, runningOperations });
       } catch (error) {
-        recordOperation(operation, body, "error", friendlyErrorMessage(error, { body, operation }));
-        sendError(res, error, { body, operation });
+        if (isOperationCancelledError(error, operation)) {
+          recordOperation(operation, body, "cancelled", "操作已取消");
+          sendJson(res, 400, { error: "操作已取消", cancelled: true, operationLog, runningOperations: listRunningOperations(operation.id) });
+        } else {
+          recordOperation(operation, body, "error", friendlyErrorMessage(error, { body, operation }));
+          sendError(res, error, { body, operation });
+        }
       } finally {
         if (operation.repoSwitching) repoSwitchInProgress = false;
         activeOperations.delete(operation.id);

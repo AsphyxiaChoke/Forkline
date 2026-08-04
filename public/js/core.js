@@ -83,6 +83,7 @@ const state = {
   worktreeFilter: "",
   commitSearchRenderTimer: 0,
   cloneTargetAuto: false,
+  cloneOperationPending: false,
   commandPaletteIndex: 0,
   folderBrowse: null,
   folderBrowseRequestId: 0,

@@ -83,6 +83,10 @@ function clearRecentRepos() {
 }
 
 function openCloneModal() {
+  if (state.cloneOperationPending) {
+    toast(t("克隆操作仍在进行，请到操作日志查看进度或取消。"));
+    return;
+  }
   els.cloneUrlInput.value = "";
   els.cloneTargetInput.value = "";
   els.cloneOpenToggle.checked = true;
@@ -98,6 +102,41 @@ function closeCloneModal() {
   els.cloneModal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
   state.cloneTargetAuto = false;
+}
+
+function setCloneOperationPending(pending, cancelling = false) {
+  state.cloneOperationPending = pending;
+  els.cloneSubmit.disabled = pending;
+  els.cloneUrlInput.disabled = pending;
+  els.cloneTargetInput.disabled = pending;
+  els.cloneOpenToggle.disabled = pending;
+  els.cloneCancel.disabled = cancelling;
+  els.cloneCancel.textContent = pending ? (cancelling ? t("取消中") : t("取消克隆")) : t("取消");
+}
+
+async function cancelCloneOrClose() {
+  if (!state.cloneOperationPending) {
+    closeCloneModal();
+    return;
+  }
+  setCloneOperationPending(true, true);
+  await refreshOperationProgress();
+  let operation = (state.data?.runningOperations || []).find((item) => item.action === "cloneRepository");
+  if (!operation) {
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+    await refreshOperationProgress();
+    operation = (state.data?.runningOperations || []).find((item) => item.action === "cloneRepository");
+  }
+  if (!operation) {
+    setCloneOperationPending(true, false);
+    throw new Error(t("克隆操作正在启动，请稍候再取消。"));
+  }
+  try {
+    await cancelRunningOperation(operation.id, { confirm: false, button: els.cloneCancel });
+  } catch (error) {
+    setCloneOperationPending(true, false);
+    throw error;
+  }
 }
 
 function syncCloneTargetSuggestion() {
@@ -160,7 +199,7 @@ async function submitCloneForm(event) {
   );
   if (!confirm(message)) return;
 
-  els.cloneSubmit.disabled = true;
+  setCloneOperationPending(true);
   const openRequestId = openAfter ? ++state.openRepoRequestId : 0;
   try {
     const result = await api("/api/action", {
@@ -177,9 +216,10 @@ async function submitCloneForm(event) {
     closeCloneModal();
     toast(result.output || t("克隆完成"));
   } catch (error) {
+    if (error.data?.cancelled) closeCloneModal();
     toast(error.message);
   } finally {
-    els.cloneSubmit.disabled = false;
+    setCloneOperationPending(false);
   }
 }
 

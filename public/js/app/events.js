@@ -32,7 +32,7 @@ els.folderList.addEventListener("click", (event) => {
   if (row) loadFolder(row.dataset.folderPath || "");
 });
 els.cloneForm.addEventListener("submit", submitCloneForm);
-els.cloneCancel.addEventListener("click", closeCloneModal);
+els.cloneCancel.addEventListener("click", () => cancelCloneOrClose().catch((error) => toast(error.message)));
 els.cloneUrlInput.addEventListener("input", syncCloneTargetSuggestion);
 els.cloneTargetInput.addEventListener("input", () => {
   state.cloneTargetAuto = !els.cloneTargetInput.value.trim();
@@ -422,6 +422,12 @@ els.detailBody.addEventListener("click", (event) => {
   if (reflogRow) {
     event.preventDefault();
     selectReflogEntry(reflogRow.dataset.reflogSelector || "");
+    return;
+  }
+  const operationCancel = event.target.closest("[data-operation-cancel]");
+  if (operationCancel) {
+    event.preventDefault();
+    if (!operationCancel.disabled) cancelRunningOperation(operationCancel.dataset.operationCancel || "", { button: operationCancel }).catch((error) => toast(error.message));
     return;
   }
   const logRefresh = event.target.closest("[data-log-refresh]");

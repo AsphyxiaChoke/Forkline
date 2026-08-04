@@ -1398,6 +1398,74 @@ test("common sync flow covers rebase pull, push, fetch, fast-forward pull, and r
   assert.equal(await git(repo, ["tag", "--list", "qa-sync"]), "");
 });
 
+test("long-running fetch streams progress and cancellation stops its process tree", { timeout: 120000, skip: process.platform !== "win32" }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-operation-cancel-"));
+  const repo = path.join(root, "repo");
+  const helperPath = path.join(root, "slow-ssh.js");
+  const pidPath = path.join(root, "slow-ssh.pid");
+  let helperPid = 0;
+  t.after(async () => {
+    await terminateTestProcess(helperPid);
+    await removeFixture(root);
+  });
+
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await fs.writeFile(helperPath, `
+"use strict";
+const fs = require("node:fs");
+fs.writeFileSync(process.argv[2], String(process.pid));
+process.stderr.write("forkline-progress-ready\\n");
+setInterval(() => process.stderr.write("forkline-progress-tick\\n"), 100);
+`, "utf8");
+  const sshCommand = `node "${helperPath.replaceAll("\\", "/")}" "${pidPath.replaceAll("\\", "/")}"`;
+  await git(repo, ["config", "core.sshCommand", sshCommand]);
+  await git(repo, ["config", "ssh.variant", "ssh"]);
+  await git(repo, ["remote", "add", "origin", "ssh://forkline.invalid/repo.git"]);
+
+  const state = await openRepo(repo);
+  const actionPromise = action(repo, state, {
+    action: "fetch",
+    expectedRemotes: state.sync.remotes.map((item) => ({
+      name: item.name,
+      fetchUrl: item.fetchUrl,
+      pushUrl: item.pushUrl,
+      pushUrls: item.pushUrls,
+    })),
+  });
+  const running = await waitForRunningOperation("fetch", (item) => item.outputTail.includes("forkline-progress-ready"));
+  assert.equal(running.cancellable, true);
+  assert.equal(running.phase, "running");
+  assert.match(running.command, /git -C .* fetch --progress --all --prune/);
+  assert.match(running.outputTail, /forkline-progress-ready/);
+  helperPid = Number(await waitForFile(pidPath));
+  assert.equal(processExists(helperPid), true);
+
+  const cancelled = await request("/api/operations/cancel", {
+    method: "POST",
+    body: { id: running.id },
+  });
+  assertStatus(cancelled, 200);
+  assert.match(cancelled.body.output, /取消请求/);
+
+  const actionResult = await withTimeout(actionPromise, 10000, "cancelled fetch response");
+  assertStatus(actionResult, 400);
+  assert.equal(actionResult.body.cancelled, true);
+  assert.match(actionResult.body.error, /操作已取消/);
+  await waitForProcessExit(helperPid);
+
+  const operations = await waitForNoRunningOperations();
+  const log = operations.operationLog.find((item) => item.action === "fetch" && item.status === "cancelled");
+  assert.ok(log, "missing cancelled fetch log");
+  assert.match(log.command, /fetch --progress --all --prune/);
+  assert.match(log.outputTail, /forkline-progress-ready/);
+  for (const lockName of ["index.lock", "FETCH_HEAD.lock", "packed-refs.lock", "shallow.lock"]) {
+    assert.equal(await fileExists(path.join(repo, ".git", lockName)), false, `${lockName} should not remain after cancellation`);
+  }
+});
+
 async function createStateSnapshotFixture(label) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `forkline-${label}-`));
   const repo = path.join(root, "repo");
@@ -1677,6 +1745,92 @@ async function stopServer() {
   serverProcess.kill();
   await Promise.race([exited, delay(5000)]);
   if (serverProcess.exitCode === null) serverProcess.kill("SIGKILL");
+}
+
+async function waitForRunningOperation(actionName, predicate = () => true) {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    const response = await request("/api/operations");
+    assertStatus(response, 200);
+    const operation = response.body.runningOperations.find((item) => item.action === actionName);
+    if (operation && predicate(operation)) return operation;
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for running operation ${actionName}\nServer log:\n${serverLog}`);
+}
+
+async function waitForNoRunningOperations() {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    const response = await request("/api/operations");
+    assertStatus(response, 200);
+    if (!response.body.runningOperations.length) return response.body;
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for operations to finish\nServer log:\n${serverLog}`);
+}
+
+async function waitForFile(filePath) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      return await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await delay(50);
+  }
+  throw new Error(`Timed out waiting for file ${filePath}`);
+}
+
+async function waitForProcessExit(pid) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (!processExists(pid)) return;
+    await delay(50);
+  }
+  throw new Error(`Process ${pid} is still running after cancellation`);
+}
+
+function processExists(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function terminateTestProcess(pid) {
+  if (!processExists(pid)) return;
+  if (process.platform === "win32") {
+    await execFileAsync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }).catch(() => {});
+    return;
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // The process already exited.
+  }
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function withTimeout(promise, timeoutMs, label) {
+  return Promise.race([
+    promise,
+    delay(timeoutMs).then(() => {
+      throw new Error(`Timed out waiting for ${label}`);
+    }),
+  ]);
 }
 
 async function removeFixture(root) {

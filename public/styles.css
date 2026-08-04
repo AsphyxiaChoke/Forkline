@@ -4389,6 +4389,10 @@ button.file-row {
   border-left-color: var(--danger);
 }
 
+.operation-log-item.cancelled {
+  border-left-color: var(--quiet);
+}
+
 .operation-log-item.running {
   border-left-color: var(--amber);
 }
@@ -4415,6 +4419,11 @@ button.file-row {
 .operation-log-item.error .log-status {
   background: rgba(240, 99, 99, 0.12);
   color: var(--danger);
+}
+
+.operation-log-item.cancelled .log-status {
+  background: color-mix(in srgb, var(--quiet) 16%, transparent);
+  color: var(--quiet);
 }
 
 .operation-log-item.running .log-status {
@@ -4470,6 +4479,36 @@ button.file-row {
 
 .operation-log-meta code {
   font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.operation-log-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.operation-log-command code {
+  min-width: 0;
+  max-height: 76px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.operation-log-command .mini-btn {
+  min-width: 74px;
+  place-items: center;
+  text-align: center;
 }
 
 .operation-log-item pre {

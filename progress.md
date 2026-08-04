@@ -6439,3 +6439,34 @@
 - `tests/worktree-refresh.test.js`：覆盖文件快照缓存失效和轻量工作区状态合并。
 - `progress.md`：追加本轮发布范围、验证证据、临时资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md app-update.js docs/CONTINUE.md package.json progress.md public/js/app/events.js public/js/app/init.js public/js/core.js public/js/features/diff-workbench.js public/js/features/file-editor.js public/js/features/git-actions.js public/js/features/graph.js public/js/features/history-list.js public/js/i18n-catalog.js public/js/panels/inspector.js public/js/panels/sync.js public/styles.css server.js tests/app-update.test.js tests/commit-selection-performance.test.js tests/diff-preview.test.js tests/file-editor-ui.test.js tests/git-api.test.js tests/layout-ui.test.js tests/worktree-refresh.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-04 - Task: 长时间 Git 操作实时进度与取消
+
+### What was done
+- 克隆、抓取全部/指定远端、拉取/变基拉取、推送/安全强推、初始化/更新子模块执行时，操作日志会实时显示阶段、耗时、实际 Git 命令和最近原始输出。
+- 新增运行中操作查询与取消接口；每个动作使用独立操作 ID，取消白名单外的动作不会误显示可取消。Windows 取消会终止完整 Git 进程树，原请求和日志统一记录为“已取消”，不再混入普通失败。
+- 操作日志在轮询刷新时保留右侧栏滚动位置，并自动跟随当前输出；克隆弹窗执行期间的“取消”会真正停止克隆。
+- 保持原菜单和右键菜单结构不变，并补充用户说明、继续开发记录和操作生命周期架构说明。
+
+### Testing
+- `node --check server.js` 通过；本轮其余改动 JavaScript 在完整测试加载和执行时无语法错误。
+- `node --test tests/layout-ui.test.js` 运行 29 项，29 项通过、0 项失败；覆盖操作日志实时输出、取消按钮和既有桌面/竖屏布局。
+- `npm.cmd test` 完整运行 121 项，121 项通过、0 项失败、退出码为 0，耗时约 89.6 秒；真实 Git 回归覆盖长时间 fetch 输出流、取消接口和 Git/SSH 子进程树退出。
+- 使用隔离目录 `C:\tmp\forkline-visual-cancel` 的真实挂起抓取验证取消状态为 `cancelled / 已取消`，运行中操作清空；本轮临时 `5297` 服务、浏览器标签、请求包装进程和测试目录均已关闭或清理，用户已有 `5287`、`5288` 服务未处理。
+
+### Notes
+- `server.js`：跟踪长时间 Git 子进程、命令、输出尾部和阶段，提供运行状态与取消接口，并区分取消和失败日志。
+- `public/js/api.js`：在动作请求期间轮询运行状态，合并操作日志并保持面板滚动位置。
+- `public/js/app/events.js`：接入操作日志取消按钮和克隆取消事件。
+- `public/js/core.js`：增加克隆执行状态。
+- `public/js/features/repositories.js`：让克隆弹窗在执行期间可请求真实取消并正确收尾。
+- `public/js/i18n-catalog.js`：增加进度阶段、取消确认、取消结果和提示的英文文案。
+- `public/js/panels/recovery-settings.js`：渲染运行中命令、耗时、输出和取消入口，并展示已取消日志。
+- `public/styles.css`：增加运行中操作、命令区、输出区和取消状态的紧凑响应式样式。
+- `tests/git-api.test.js`：增加真实长时间 fetch 输出和进程树取消回归。
+- `tests/layout-ui.test.js`：增加操作日志实时进度与取消布局回归。
+- `README.md`：说明实时进度、取消入口及取消不会回退已完成传输和克隆残留边界。
+- `docs/CONTINUE.md`：记录当前接口、轮询、Windows 取消方式和 121/121 回归基线。
+- `docs/ARCHITECTURE.md`：记录操作 ID、输出限制、轮询和取消生命周期。
+- `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/js/api.js public/js/app/events.js public/js/core.js public/js/features/repositories.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css server.js tests/git-api.test.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
