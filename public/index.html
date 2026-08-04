@@ -516,6 +516,10 @@
           <span id="fileEditorPath"></span>
         </div>
         <div class="file-editor-head-actions">
+          <div id="fileEditorCompareMode" class="file-editor-compare-mode" role="group" aria-label="历史对照方式" hidden>
+            <button class="mini-btn active" data-file-editor-compare-mode="connect" type="button" aria-pressed="true" title="使用差异连线对照">连线</button>
+            <button class="mini-btn" data-file-editor-compare-mode="align" type="button" aria-pressed="false" title="用空白行补齐两侧差异">行对齐</button>
+          </div>
           <button id="fileEditorToggleSearch" class="mini-btn" type="button" title="查找或替换文件内容">查找替换</button>
           <button id="fileEditorClose" class="icon-btn" type="button" title="关闭编辑器">关闭</button>
         </div>

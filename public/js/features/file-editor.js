@@ -81,6 +81,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     codeMirror: null,
     oldCodeMirror: null,
     mergeView: null,
+    compareMode: source === "commit" ? normalizeFileEditorCompareMode(state.commitFileCompareMode) : "align",
     restoreView: options.restoreView || null,
     feedbackMessage: options.feedbackMessage || "",
     resizeObserver: null,
@@ -163,6 +164,7 @@ function updateFileEditorModeUi(editor) {
   const commitView = editor.source === "commit";
   els.fileEditorForm.classList.toggle("is-readonly", readOnly);
   els.fileEditorForm.classList.toggle("is-large-file", Boolean(editor.largeFile));
+  els.fileEditorForm.classList.toggle("is-line-aligned", commitView && editor.compareMode === "align");
   els.fileEditorTitle.textContent = t(commitView ? "历史文件对照" : editor.largeFile ? "大文件只读对照" : "编辑文件");
   els.fileEditorPath.textContent = commitView && editor.previousFile && editor.previousFile !== editor.file
     ? `${editor.previousFile} -> ${editor.file}`
@@ -175,6 +177,48 @@ function updateFileEditorModeUi(editor) {
   els.fileEditorOldText.setAttribute("aria-label", t(commitView ? "父提交版本文件内容" : "暂存区文件内容"));
   els.fileEditorText.setAttribute("aria-label", t(commitView ? "此提交版本文件内容" : "工作区文件内容"));
   els.fileEditorText.readOnly = readOnly;
+  updateFileEditorCompareModeUi(editor);
+}
+
+function normalizeFileEditorCompareMode(mode) {
+  return mode === "align" ? "align" : "connect";
+}
+
+function updateFileEditorCompareModeUi(editor, forceDisabled = false) {
+  const commitView = editor.source === "commit";
+  const showCompareMode = commitView && !editor.largeFile && !editor.conflict;
+  const hasMergeView = typeof CodeMirror === "function" && typeof CodeMirror.MergeView === "function";
+  els.fileEditorCompareMode.hidden = !showCompareMode || !hasMergeView;
+  els.fileEditorCompareMode.setAttribute("aria-label", t("历史对照方式"));
+  els.fileEditorCompareMode.querySelectorAll("[data-file-editor-compare-mode]").forEach((button) => {
+    const mode = normalizeFileEditorCompareMode(button.dataset.fileEditorCompareMode);
+    const active = mode === editor.compareMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.textContent = t(mode === "align" ? "行对齐" : "连线");
+    button.title = t(mode === "align" ? "用空白行补齐两侧差异" : "使用差异连线对照");
+    button.disabled = forceDisabled || editor.loading || editor.saving || editor.operating || !showCompareMode || !hasMergeView;
+  });
+}
+
+function setFileEditorCompareMode(mode) {
+  const editor = state.fileEditor;
+  if (!editor || editor.source !== "commit" || editor.largeFile || editor.conflict || editor.loading || editor.saving || editor.operating) return false;
+  const nextMode = normalizeFileEditorCompareMode(mode);
+  if (editor.compareMode === nextMode) return true;
+
+  const restoreView = captureFileEditorView(editor);
+  destroyFileEditorInstance();
+  editor.compareMode = nextMode;
+  editor.restoreView = restoreView;
+  state.commitFileCompareMode = nextMode;
+  updateFileEditorModeUi(editor);
+  createFileEditorInstance(editor);
+  setFileEditorControlsDisabled(false);
+  updateFileEditorCompareLabels(editor);
+  updateFileEditorStatus();
+  scheduleFileEditorSearchRefresh();
+  return true;
 }
 
 async function submitFileEditor(event) {
@@ -289,7 +333,9 @@ function createFileEditorInstance(editor) {
       ...codeMirrorOptions,
       origLeft: editor.oldContent,
       highlightDifferences: true,
-      connect: editor.readOnly ? null : "align",
+      connect: editor.readOnly
+        ? editor.compareMode === "align" ? "align" : null
+        : "align",
       collapseIdentical: false,
       chunkClassLocation: ["background", "gutter"],
       revertButtons: editor.canStage,
@@ -719,11 +765,12 @@ function captureFileEditorView(editor, focusLine = null) {
   const current = editor?.codeMirror;
   if (!current) return null;
   const currentScroll = current.getScrollInfo();
-  const oldScroll = editor.oldCodeMirror?.getScrollInfo?.();
+  const original = fileEditorOriginalCodeMirror(editor);
+  const oldScroll = original?.getScrollInfo?.();
   return {
     line: Number.isInteger(focusLine) ? Math.max(0, focusLine) : current.lineAtHeight(currentScroll.top, "local"),
     left: currentScroll.left,
-    oldLine: oldScroll ? editor.oldCodeMirror.lineAtHeight(oldScroll.top, "local") : null,
+    oldLine: oldScroll ? original.lineAtHeight(oldScroll.top, "local") : null,
     oldLeft: oldScroll?.left || 0,
   };
 }
@@ -736,7 +783,11 @@ function restoreFileEditorView(editor, view) {
     codeMirror.scrollTo(left, Math.max(0, codeMirror.heightAtLine(target, "local") - 96));
   };
   scrollToLine(editor.codeMirror, view.line, view.left);
-  scrollToLine(editor.oldCodeMirror, view.oldLine ?? view.line, view.oldLeft);
+  scrollToLine(fileEditorOriginalCodeMirror(editor), view.oldLine ?? view.line, view.oldLeft);
+}
+
+function fileEditorOriginalCodeMirror(editor) {
+  return editor?.oldCodeMirror || editor?.mergeView?.leftOriginal?.() || null;
 }
 
 function fileEditorWindowCanFloat() {
@@ -893,6 +944,7 @@ function destroyFileEditorInstance() {
   els.fileEditorForm.classList.remove("is-operating");
   els.fileEditorForm.classList.remove("is-readonly");
   els.fileEditorForm.classList.remove("is-large-file");
+  els.fileEditorForm.classList.remove("is-line-aligned");
   els.fileEditorText.readOnly = false;
   els.fileEditorSave.hidden = false;
   hideFileEditorContextMenu();
@@ -1023,6 +1075,7 @@ function setFileEditorControlsDisabled(disabled) {
   [els.fileEditorReplaceInput, els.fileEditorReplaceOne, els.fileEditorReplaceAll].forEach((control) => {
     control.disabled = disabled || readOnly;
   });
+  if (editor) updateFileEditorCompareModeUi(editor, disabled);
 }
 
 function openFileEditorSearch(focusReplace = false) {

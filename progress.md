@@ -6470,3 +6470,31 @@
 - `docs/ARCHITECTURE.md`：记录操作 ID、输出限制、轮询和取消生命周期。
 - `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/js/api.js public/js/app/events.js public/js/core.js public/js/features/repositories.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css server.js tests/git-api.test.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-04 - Task: 历史文件对照增加行对齐模式
+
+### What was done
+- 历史提交的小文件只读对照顶部增加“连线 / 行对齐”切换；默认保留原连线方式，行对齐会在增删行的另一侧补空白，使后续相同行保持同一水平位置。
+- 行对齐复用 CodeMirror MergeView 原生 spacer，不改文件内容、Diff 结果或 Git 语义；切换时重建当前只读对照并恢复两侧查看位置，选择会在当前页面会话内沿用。
+- 切换仅对历史提交的小文件显示；工作区编辑器、冲突单栏编辑器和 1 MiB 以上的大文件轻量双栏保持原行为，避免重新引入大型 MergeView 卡顿。
+- 增加中英文文案、紧凑分段按钮样式及回归测试，并同步更新用户说明和继续开发记录。
+
+### Testing
+- `node --test tests\\file-editor-ui.test.js` 运行 23 项，23 项通过、0 项失败；覆盖模式入口、MergeView `align` 配置、大文件边界和切换前后两侧滚动位置恢复。
+- `node --check` 检查 `public/js/core.js`、`public/js/app/events.js`、`public/js/features/file-editor.js`、`public/js/i18n-catalog.js`，全部通过。
+- `npm.cmd test` 完整运行 122 项，122 项通过、0 项失败、退出码为 0，耗时约 90.5 秒。
+- 内置浏览器在临时服务 `5299` 打开 `D:/桌面/GitTest`，只读查看提交 `cb138fd`：切到“行对齐”后表单包含 `is-line-aligned`、连线 SVG 为 0；新增文件 `189.txt` 的缺失侧生成 1 个 `.CodeMirror-merge-spacer`。切回“连线”后连线 SVG 恢复为 1、spacer 为 0，模式按钮状态同步正确，页面无报错。
+- 本轮没有修改 GitTest，原有 4 个工作区演示改动保持不变。临时浏览器标签和 `5297`、`5298`、`5299` 服务已关闭，用户已有的 `5287`、`5288` 服务保持运行。
+
+### Notes
+- `README.md`：说明历史文件对照的“连线 / 行对齐”用途。
+- `docs/CONTINUE.md`：记录行对齐适用范围、会话内记忆、大文件边界及 122/122 回归基线。
+- `public/index.html`：增加历史对照方式分段按钮。
+- `public/js/app/events.js`：接入模式切换事件和中文错误提示。
+- `public/js/core.js`：保存当前页面会话使用的历史对照方式并缓存对应 DOM。
+- `public/js/features/file-editor.js`：控制模式显示、MergeView 重建、spacer 对齐和两侧查看位置恢复。
+- `public/js/i18n-catalog.js`：增加模式名称及悬停说明的英文文案。
+- `public/styles.css`：增加紧凑分段按钮和行对齐模式下的中间栏宽度。
+- `tests/file-editor-ui.test.js`：覆盖模式切换、大文件不启用及 MergeView 左侧滚动恢复。
+- `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html public/js/app/events.js public/js/core.js public/js/features/file-editor.js public/js/i18n-catalog.js public/styles.css tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

@@ -131,8 +131,21 @@ test("read-only historical comparison does not observe stage buttons", () => {
   assert.match(editor, /if \(editor\.canStage\) observeFileEditorStageButtons\(editor\);/);
 });
 
-test("read-only historical comparison avoids MergeView alignment loops", () => {
-  assert.match(editor, /connect: editor\.readOnly \? null : "align"/);
+test("historical comparison can switch between connectors and aligned spacer rows", () => {
+  assert.match(html, /id="fileEditorCompareMode"[\s\S]*data-file-editor-compare-mode="connect"[\s\S]*data-file-editor-compare-mode="align"/);
+  assert.match(core, /commitFileCompareMode:\s*"connect"/);
+  assert.match(core, /fileEditorCompareMode:\s*\$\("#fileEditorCompareMode"\)/);
+  assert.match(events, /fileEditorCompareMode\.addEventListener\("click"[\s\S]*setFileEditorCompareMode/);
+  assert.match(editor, /compareMode:\s*source === "commit" \? normalizeFileEditorCompareMode\(state\.commitFileCompareMode\) : "align"/);
+  assert.match(editor, /connect:\s*editor\.readOnly\s*\?\s*editor\.compareMode === "align" \? "align" : null\s*:\s*"align"/s);
+  assert.match(editor, /function setFileEditorCompareMode[\s\S]*captureFileEditorView\(editor\)[\s\S]*destroyFileEditorInstance\(\)[\s\S]*createFileEditorInstance\(editor\)/);
+  assert.match(styles, /\.file-editor-compare-mode\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
+  assert.equal(catalog.translateKnown("en", "行对齐"), "Align lines");
+});
+
+test("large historical files keep the lightweight comparison path", () => {
+  assert.match(editor, /const showCompareMode = commitView && !editor\.largeFile && !editor\.conflict/);
+  assert.match(editor, /if \(!editor \|\| editor\.source !== "commit" \|\| editor\.largeFile \|\| editor\.conflict/);
 });
 
 test("large files use two lightweight CodeMirror panes instead of MergeView", () => {
@@ -366,6 +379,11 @@ test("file editor restores the viewed line after save and staging actions", () =
   assert.deepEqual({ ...view }, { line: 42, left: 14, oldLine: 39, oldLeft: 8 });
   sandbox.restoreFileEditorView({ codeMirror: current, oldCodeMirror: old }, view);
   assert.deepEqual(scrolls, [["current", 14, 324], ["old", 8, 294]]);
+  const mergeViewEditor = { codeMirror: current, oldCodeMirror: null, mergeView: { leftOriginal: () => old } };
+  const mergeView = sandbox.captureFileEditorView(mergeViewEditor);
+  assert.deepEqual({ ...mergeView }, { line: 42, left: 14, oldLine: 39, oldLeft: 8 });
+  sandbox.restoreFileEditorView(mergeViewEditor, mergeView);
+  assert.deepEqual(scrolls.slice(-2), [["current", 14, 324], ["old", 8, 294]]);
   assert.match(editor, /captureFileEditorView\(editor, options\.focusLine\)/);
   assert.match(editor, /feedbackMessage: options\.feedbackMessage \|\| fallbackOutput/);
 });

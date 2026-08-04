@@ -6154,10 +6154,40 @@ button.file-row {
 
 .file-editor-head-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
   cursor: default;
+}
+
+.file-editor-compare-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--field));
+}
+
+.file-editor-compare-mode[hidden] {
+  display: none;
+}
+
+.file-editor-head .file-editor-compare-mode .mini-btn {
+  min-width: 50px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.file-editor-head .file-editor-compare-mode .mini-btn.active {
+  background: color-mix(in srgb, var(--teal) 24%, var(--field));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--teal) 58%, var(--line-soft));
 }
 
 body.file-editor-window-dragging,
@@ -6376,6 +6406,18 @@ body.file-editor-window-resizing * {
 
 .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-gap {
   width: 48px;
+}
+
+.file-editor-dialog.is-line-aligned .file-editor-compare-labels {
+  grid-template-columns: calc(50% - 14px) 28px calc(50% - 14px);
+}
+
+.file-editor-dialog.is-line-aligned .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-pane {
+  width: calc(50% - 14px);
+}
+
+.file-editor-dialog.is-line-aligned .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-gap {
+  width: 28px;
 }
 
 .file-editor-merge .CodeMirror,
@@ -6667,6 +6709,11 @@ body.file-editor-window-resizing * {
   .file-editor-head .mini-btn {
     min-width: 54px;
     padding-inline: 8px;
+  }
+
+  .file-editor-head .file-editor-compare-mode .mini-btn {
+    min-width: 46px;
+    padding-inline: 6px;
   }
 
   .file-editor-search {

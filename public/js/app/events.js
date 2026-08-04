@@ -119,6 +119,15 @@ els.fileEditorForm.addEventListener("submit", (event) => submitFileEditor(event)
 els.fileEditorText.addEventListener("input", () => updateFileEditorStatus());
 els.fileEditorMerge.addEventListener("contextmenu", showFileEditorContextMenu);
 els.fileEditorText.addEventListener("contextmenu", showFileEditorContextMenu);
+els.fileEditorCompareMode.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-file-editor-compare-mode]");
+  if (!button || button.disabled) return;
+  try {
+    setFileEditorCompareMode(button.dataset.fileEditorCompareMode);
+  } catch (error) {
+    toast(error.message);
+  }
+});
 els.fileEditorToggleSearch.addEventListener("click", toggleFileEditorSearch);
 els.fileEditorSearchInput.addEventListener("input", scheduleFileEditorSearchRefresh);
 els.fileEditorSearchInput.addEventListener("keydown", handleFileEditorSearchKeydown);
