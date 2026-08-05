@@ -930,6 +930,7 @@ function destroyFileEditorInstance() {
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
   if (editor?.oldCodeMirror && editor.oldScrollHandler) editor.oldCodeMirror.off("scroll", editor.oldScrollHandler);
   if (editor?.codeMirror && editor.newScrollHandler) editor.codeMirror.off("scroll", editor.newScrollHandler);
+  editor?.mergeView?.destroy?.();
   if (els.fileEditorMerge) els.fileEditorMerge.replaceChildren();
   els.fileEditorOldLabel.hidden = false;
   els.fileEditorOldLabel.parentElement?.classList.remove("is-single-pane");

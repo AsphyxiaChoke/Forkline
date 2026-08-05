@@ -6676,3 +6676,28 @@
 - `docs/CONTINUE.md`：记录恢复优先级、浏览器存储和更新流程兼容行为。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/init.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-05 - Task: 历史文件对照偶发卡死修复
+
+### What was done
+- 复现到历史文件对照反复切换“连线 / 行对齐”时，旧 CodeMirror MergeView 在 DOM 已移除后仍由全局 `resize` 监听和 5 秒脱离检测定时器保留；刷新页面会一次性清空这些旧实例，因此表现为卡住后刷新恢复。
+- 为本地 MergeView 增加显式销毁入口，并在切换对照方式、切换文件、关闭浮窗或切换仓库移除编辑器 DOM 前立即解绑窗口监听和清除定时器。
+- 保留“连线 / 行对齐”、工作区编辑、按块暂存、浮窗拖动缩放和 Git 接口语义，仅缩短旧编辑器实例的释放时间。
+
+### Testing
+- 修复前在独立 `692 KiB`、约 60,000 行 `main.c` 对照中连续切换 8 次：浏览器保留节点达到约 `73,713`、事件监听器 `1,053`、已用堆约 `111.2 MB`，约 `6.5 s` 后才回落。
+- 修复后同一路径连续切换 8 次：切换结束只保留当前编辑器的一套监听，约 `0.8 s` 内回到 `5,044` 个节点、`415` 个监听器和约 `16.2 MB` 已用堆；继续滚动、拖动缩放和状态读取均可响应，控制台错误为 0。
+- `node --check public/js/features/file-editor.js` 与 `node --check public/vendor/codemirror/addon/merge/merge.js` 通过。
+- `node --test --test-concurrency=1 tests/file-editor-ui.test.js` 运行 28 项，28 项通过、0 项失败；新增旧 MergeView 立即释放回归。
+- `npm.cmd test` 完整运行 145 项，145 项通过、0 项失败、退出码为 0，耗时约 98 秒。
+- `git diff --check` 通过，仅输出仓库现有的 LF / CRLF 工作区转换提示。
+- `127.0.0.1:5177` 保持运行并已切回 `D:/桌面/GitTest`；临时仓库 `C:\tmp\forkline-freeze-repro-20260805` 已删除。GitTest 仍只保留原有 `测试.txt` 修改和 3 个未跟踪编辑器演示文件。
+
+### Notes
+- `public/vendor/codemirror/addon/merge/merge.js`：增加 MergeView 显式销毁，并让原有脱离检测复用同一清理入口。
+- `public/js/features/file-editor.js`：在移除编辑器 DOM 前立即销毁当前 MergeView。
+- `tests/file-editor-ui.test.js`：固定显式销毁入口及调用顺序。
+- `README.md`：补充历史对照切换和关闭时会立即释放旧编辑器。
+- `docs/CONTINUE.md`：记录卡死原因、释放边界和 145/145 当前回归基线。
+- `progress.md`：追加本轮实现、性能证据、验证和清理记录。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js public/vendor/codemirror/addon/merge/merge.js tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

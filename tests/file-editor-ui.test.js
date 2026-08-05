@@ -15,6 +15,7 @@ const diffWorkbench = fs.readFileSync(path.join(root, "public", "js", "features"
 const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 const editor = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor.js"), "utf8");
+const mergeAddon = fs.readFileSync(path.join(root, "public", "vendor", "codemirror", "addon", "merge", "merge.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const catalog = require(path.join(root, "public", "js", "i18n-catalog.js"));
 
@@ -348,6 +349,13 @@ test("historical comparison can switch between connectors and aligned spacer row
   assert.match(editor, /function setFileEditorCompareMode[\s\S]*captureFileEditorView\(editor\)[\s\S]*destroyFileEditorInstance\(\)[\s\S]*createFileEditorInstance\(editor\)/);
   assert.match(styles, /\.file-editor-compare-mode\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.equal(catalog.translateKnown("en", "行对齐"), "Align lines");
+});
+
+test("replaced MergeView instances release global resize tracking immediately", () => {
+  assert.match(editor, /editor\?\.mergeView\?\.destroy\?\.\(\);[\s\S]*?fileEditorMerge\) els\.fileEditorMerge\.replaceChildren\(\)/);
+  assert.match(mergeAddon, /this\._onResize = onResize;[\s\S]*?this\._resizeInterval = setInterval/);
+  assert.match(mergeAddon, /if \(!p\) self\.destroy\(\);/);
+  assert.match(mergeAddon, /destroy: function\(\) \{[\s\S]*?clearInterval\(this\._resizeInterval\)[\s\S]*?CodeMirror\.off\(window, "resize", this\._onResize\)/);
 });
 
 test("large historical files keep the lightweight comparison path", () => {

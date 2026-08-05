@@ -597,10 +597,11 @@
       if (left) makeConnections(left);
       if (right) makeConnections(right);
     };
+    this._onResize = onResize;
     CodeMirror.on(window, "resize", onResize);
-    var resizeInterval = setInterval(function() {
+    this._resizeInterval = setInterval(function() {
       for (var p = wrapElt.parentNode; p && p != document.body; p = p.parentNode) {}
-      if (!p) { clearInterval(resizeInterval); CodeMirror.off(window, "resize", onResize); }
+      if (!p) self.destroy();
     }, 5000);
   };
 
@@ -651,6 +652,16 @@
     },
     leftChunks: function() {
       if (this.left) { ensureDiff(this.left); return this.left.chunks; }
+    },
+    destroy: function() {
+      if (this._resizeInterval != null) {
+        clearInterval(this._resizeInterval);
+        this._resizeInterval = null;
+      }
+      if (this._onResize) {
+        CodeMirror.off(window, "resize", this._onResize);
+        this._onResize = null;
+      }
     }
   };
 
