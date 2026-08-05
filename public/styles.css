@@ -2319,6 +2319,78 @@ button.file-row {
   box-shadow: var(--shadow-soft);
 }
 
+.work-diff-feedback {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  width: min(100%, calc(100vw - 64px));
+  min-height: 38px;
+  height: 38px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-strong);
+  border-left: 3px solid var(--blue);
+  background: color-mix(in srgb, var(--surface) 92%, var(--field));
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+}
+
+.work-diff-feedback.success {
+  border-left-color: var(--teal);
+}
+
+.work-diff-feedback-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.work-diff-feedback-copy strong,
+.work-diff-feedback-detail,
+.work-diff-feedback-state {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-diff-feedback-copy strong {
+  flex: 0 1 auto;
+}
+
+.work-diff-feedback-detail {
+  flex: 1 1 auto;
+  color: var(--muted);
+}
+
+.work-diff-feedback-state {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.side-diff.has-work-feedback .diff-line-toolbar {
+  position: sticky;
+  top: 38px;
+  z-index: 3;
+}
+
+.side-diff.has-work-feedback .side-diff-head {
+  top: 38px;
+}
+
+.side-diff.has-work-feedback .diff-line-toolbar + .side-diff-head {
+  top: 76px;
+}
+
 .diff-line-toolbar {
   display: flex;
   align-items: center;
@@ -7298,6 +7370,7 @@ body.file-editor-window-resizing * {
   --diff-gutter-width: 62px;
   min-width: 1040px;
   width: max(1040px, 100%, calc(var(--diff-old-width) + var(--diff-new-width)));
+  overflow: visible;
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--field) 94%, var(--surface));
   font-family: var(--font-code);

@@ -437,6 +437,63 @@ test("file editor stages only the selected visual chunk when nearby changes shar
   assert.match(worktreeDiff, /line 10 second change/);
 });
 
+test("untracked line staging keeps the remaining CRLF content in the worktree", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-untracked-lines-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const fileName = "部分暂存.txt";
+  const filePath = path.join(repo, fileName);
+  const worktreeContent = Buffer.from("第一行\r\n第二行\r\n第三行", "utf8");
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await fs.writeFile(filePath, worktreeContent);
+  const state = await openRepo(repo);
+  const file = state.workingFiles.find((item) => item.file === fileName);
+  assert.ok(file?.snapshot);
+
+  const opened = await request(`/api/worktree-diff?file=${encodeURIComponent(fileName)}&scope=unstaged`, { repoPath: repo });
+  assertStatus(opened, 200);
+  assert.equal(opened.body.scope, "untracked");
+  const selectedLine = diffSelectionForText(opened.body.diff, "+第三行");
+  assert.ok(selectedLine);
+
+  const staged = await action(repo, state, {
+    action: "stageSelectedLines",
+    file: fileName,
+    scope: opened.body.scope,
+    lines: [selectedLine],
+    expectedFileSnapshot: file.snapshot,
+  });
+  assertStatus(staged, 200);
+  assert.match(staged.body.output, /已暂存所选 1 行/);
+
+  const after = await request("/api/worktree", { repoPath: repo });
+  assertStatus(after, 200);
+  const afterFile = after.body.workingFiles.find((item) => item.file === fileName);
+  assert.equal(afterFile?.indexStatus, "A");
+  assert.equal(afterFile?.worktreeStatus, "M");
+  assert.equal(afterFile?.staged, true);
+  assert.equal(afterFile?.unstaged, true);
+
+  const { stdout: stagedBlob } = await execFileAsync("git", ["-C", repo, "show", `:${fileName}`], {
+    env: gitEnv,
+    encoding: null,
+    maxBuffer: 16 * 1024 * 1024,
+    windowsHide: true,
+  });
+  assert.deepEqual(Buffer.from(stagedBlob), Buffer.from("第三行", "utf8"));
+  assert.deepEqual(await fs.readFile(filePath), worktreeContent);
+
+  const cachedDiff = await git(repo, ["diff", "--cached", "--", fileName]);
+  const worktreeDiff = await git(repo, ["diff", "--", fileName]);
+  assert.match(cachedDiff, /第三行/);
+  assert.doesNotMatch(cachedDiff, /第一行|第二行/);
+  assert.match(worktreeDiff, /第一行|第二行/);
+});
+
 test("worktree file editor compares the index and preserves GBK or GB18030 encoding", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-gbk-"));
   t.after(() => removeFixture(root));
@@ -1601,6 +1658,24 @@ async function createFastLinearHistory(repoPath, count) {
     child.stdin.end(lines.join("\n"));
   });
   await git(repoPath, ["reset", "--hard", "main"]);
+}
+
+function diffSelectionForText(diff, targetText) {
+  let hunkIndex = -1;
+  let lineIndex = -1;
+  for (const line of diff || []) {
+    if (line.type === "meta") {
+      if (String(line.text || "").startsWith("@@ ")) {
+        hunkIndex = line.hunkIndex;
+        lineIndex = -1;
+      }
+      continue;
+    }
+    if (!Number.isInteger(hunkIndex)) continue;
+    lineIndex += 1;
+    if (line.text === targetText) return { hunkIndex, lineIndex };
+  }
+  return null;
 }
 
 async function git(repoPath, args) {

@@ -145,6 +145,7 @@ function selectChangeFile(filePath, scope, event) {
   if (!filePath) return;
   updateChangeSelection(scope, filePath, event);
   const selected = state.selectedChanges.has(changeKey(scope, filePath));
+  if (!selected) state.workDiffFeedback = null;
   state.selectedFile = selected ? filePath : "";
   if (selected) {
     state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
@@ -324,6 +325,7 @@ async function loadWorkingDiff(filePath) {
     renderWorkDiffEmpty("未选择文件");
     return;
   }
+  if (state.workDiffFeedback?.file && state.workDiffFeedback.file !== filePath) state.workDiffFeedback = null;
   const fileInfo = selectedWorkingFileInfo(filePath);
   const scope = normalizeWorkDiffScopeChoice(state.workDiffScope, fileInfo);
   state.workDiffScope = scope;
@@ -400,6 +402,49 @@ function isUntrackedFile(fileInfo) {
   return Boolean(fileInfo && fileInfo.indexStatus === "?" && fileInfo.worktreeStatus === "?");
 }
 
+function setWorkDiffFeedback(file, message, options = {}) {
+  state.workDiffFeedback = {
+    file,
+    message,
+    partialUntracked: Boolean(options.partialUntracked),
+  };
+}
+
+function workDiffFeedbackForFile(filePath) {
+  return state.workDiffFeedback?.file === filePath ? state.workDiffFeedback : null;
+}
+
+function renderWorkDiffFeedback(options = {}) {
+  const filePath = options.filePath || "";
+  if (!filePath) return "";
+  const fileInfo = selectedWorkingFileInfo(filePath, options.scope);
+  const feedback = workDiffFeedbackForFile(filePath);
+  const untrackedHint = !feedback && isUntrackedFile(fileInfo) && (options.scope === "untracked" || options.scope === "unstaged");
+  if (!feedback && !untrackedHint) return "";
+  const message = feedback?.message || t("未跟踪文件：部分暂存后，其余内容仍保留在工作区。");
+  const detail = feedback?.partialUntracked && fileChangeFlags(fileInfo).hasUnstaged ? t("其余内容仍保留在工作区") : "";
+  const stateText = feedback ? workDiffFeedbackStateText(fileInfo) : "";
+  return `
+    <div class="work-diff-feedback ${feedback ? "success" : "notice"}" role="status" aria-live="polite">
+      <span class="work-diff-feedback-copy">
+        <strong>${escapeHtml(message)}</strong>
+        ${detail ? `<span class="work-diff-feedback-detail">${escapeHtml(detail)}</span>` : ""}
+      </span>
+      ${stateText ? `<span class="work-diff-feedback-state">${escapeHtml(stateText)}</span>` : ""}
+    </div>
+  `;
+}
+
+function workDiffFeedbackStateText(fileInfo) {
+  if (!fileInfo) return t("此文件没有剩余未提交改动");
+  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  const labels = [
+    hasUnstaged ? t("仍有未暂存改动") : "",
+    hasStaged ? t("已有暂存内容") : "",
+  ].filter(Boolean);
+  return labels.join(" · ") || t("此文件没有剩余未提交改动");
+}
+
 function preferredWorkDiffScope(fileInfo) {
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
   if (hasUnstaged) return "unstaged";
@@ -434,6 +479,7 @@ async function runWorkDiffHunkAction(action, button) {
     return;
   }
   state.selectedFile = file;
+  const view = captureWorkDiffActionView();
   if (action === "discardWorktreeHunk" && !state.data?.repo?.isSample && !confirm(t("确认丢弃这个改动块？\n\n文件：{file}\n此操作无法撤销。", { file }))) return;
   const buttons = document.querySelectorAll(".work-diff-view [data-hunk-action], .diff-modal-body [data-hunk-action]");
   buttons.forEach((item) => {
@@ -446,17 +492,10 @@ async function runWorkDiffHunkAction(action, button) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || t("改动块操作完成"));
-    await refreshWorktree(true);
-    if (!isCurrentRepoPath(repoPath)) return;
-    if (state.selectedFile) {
-      state.workDiffScope = normalizeWorkDiffScopeChoice(state.workDiffScope, selectedWorkingFileInfo(state.selectedFile));
-      await loadWorkingDiff(state.selectedFile);
-      if (!isCurrentRepoPath(repoPath)) return;
-      if (els.diffModal.classList.contains("show")) {
-        if (state.activeDiff?.diff?.length) openDiffModal();
-        else closeDiffModal();
-      }
-    }
+    setWorkDiffFeedback(file, result.output || t("改动块操作完成"), {
+      partialUntracked: scope === "untracked" && action === "stageHunk",
+    });
+    await refreshWorkDiffAfterAction(file, scope, view, repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -469,7 +508,8 @@ async function runWorkDiffHunkAction(action, button) {
 }
 
 function openDiffModal() {
-  if (!state.activeDiff?.diff?.length) {
+  const feedback = state.activeDiff?.source === "worktree" ? workDiffFeedbackForFile(state.activeDiff.path || "") : null;
+  if (!state.activeDiff || (!state.activeDiff.diff?.length && !feedback)) {
     toast(t("没有可最大化的对照内容"));
     return;
   }
@@ -483,7 +523,7 @@ function openDiffModal() {
 }
 
 function renderDiffModalBody() {
-  if (!state.activeDiff?.diff?.length) return;
+  if (!state.activeDiff) return;
   els.diffModalBody.innerHTML = renderSideDiff(state.activeDiff.diff, state.activeDiff.emptyText || "没有可显示的差异", {
     ...diffModalOptions(),
     maxLines: state.diffModalRenderLimit || SIDE_DIFF_INITIAL_RENDER_LINES,
@@ -500,13 +540,15 @@ function closeDiffModal() {
 }
 
 function renderSideDiff(diff, emptyText, options = {}) {
-  if (!diff?.length) return `<div class="diff-empty">${escapeHtml(t(emptyText))}</div>`;
+  const feedback = renderWorkDiffFeedback(options);
+  if (!diff?.length) return `${feedback}<div class="diff-empty">${escapeHtml(t(emptyText))}</div>`;
   const visibleCount = sideDiffVisibleCount(diff.length, options.maxLines);
   const visibleDiff = visibleCount < diff.length ? diff.slice(0, visibleCount) : diff;
   const lineAction = options.lineAction && diffHasSelectableLines(visibleDiff) ? options.lineAction : null;
   const columnWidths = diffColumnCharacterWidths(visibleDiff);
   return `
-    <div class="side-diff ${lineAction ? "line-selectable" : ""}" style="--diff-old-ch:${columnWidths.old};--diff-new-ch:${columnWidths.new}">
+    <div class="side-diff ${lineAction ? "line-selectable" : ""} ${feedback ? "has-work-feedback" : ""}" style="--diff-old-ch:${columnWidths.old};--diff-new-ch:${columnWidths.new}">
+      ${feedback}
       ${lineAction ? renderDiffLineToolbar(lineAction) : ""}
       <div class="side-diff-head"><span>${t("旧版本")}</span><span>${t("新版本")}</span></div>
       ${sideBySideRows(visibleDiff, { ...options, lineAction })}
@@ -904,6 +946,7 @@ async function runWorkDiffLineAction(button) {
     return;
   }
   state.selectedFile = file;
+  const view = captureWorkDiffActionView();
   if (action === "stageSelectedLines" && scope !== "unstaged" && scope !== "untracked") {
     toast(t("只能暂存工作区中未暂存的行"));
     return;
@@ -924,18 +967,11 @@ async function runWorkDiffLineAction(button) {
     });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || t("所选行操作完成"));
+    setWorkDiffFeedback(file, result.output || t("所选行操作完成"), {
+      partialUntracked: scope === "untracked" && action === "stageSelectedLines",
+    });
     resetDiffLineSelection(false);
-    await refreshWorktree(true);
-    if (!isCurrentRepoPath(repoPath)) return;
-    if (state.selectedFile) {
-      state.workDiffScope = scope === "staged" ? "staged" : "unstaged";
-      await loadWorkingDiff(state.selectedFile);
-      if (!isCurrentRepoPath(repoPath)) return;
-      if (els.diffModal.classList.contains("show")) {
-        if (state.activeDiff?.diff?.length) openDiffModal();
-        else closeDiffModal();
-      }
-    }
+    await refreshWorkDiffAfterAction(file, scope, view, repoPath);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -947,6 +983,66 @@ async function runWorkDiffLineAction(button) {
     });
     syncDiffLineSelectionRows();
   }
+}
+
+function captureWorkDiffActionView() {
+  return {
+    modalOpen: Boolean(els.diffModal?.classList.contains("show")),
+    modalScrollTop: Number(els.diffModalBody?.scrollTop) || 0,
+    modalScrollLeft: Number(els.diffModalBody?.scrollLeft) || 0,
+    workScrollTop: Number(els.workDiffView?.scrollTop) || 0,
+    workScrollLeft: Number(els.workDiffView?.scrollLeft) || 0,
+    renderLimit: state.diffModalRenderLimit || SIDE_DIFF_INITIAL_RENDER_LINES,
+  };
+}
+
+async function refreshWorkDiffAfterAction(file, scope, view, repoPath) {
+  await refreshWorktree(true);
+  if (!isCurrentRepoPath(repoPath)) return;
+  const fileInfo = selectedWorkingFileInfo(file, scope);
+  if (fileInfo) {
+    state.selectedFile = file;
+    state.workDiffScope = normalizeWorkDiffScopeChoice(scope, fileInfo);
+    await loadWorkingDiff(file);
+    if (!isCurrentRepoPath(repoPath)) return;
+  } else {
+    renderCompletedWorkDiff(file, scope);
+  }
+  restoreWorkDiffActionView(view);
+}
+
+function renderCompletedWorkDiff(file, scope) {
+  resetDiffLineSelection(false);
+  const normalizedScope = scope === "staged" ? "staged" : "unstaged";
+  const title = `${shortFileName(file)} · ${t("无剩余更改")}`;
+  state.workDiffScope = normalizedScope;
+  setActiveDiff({ source: "worktree", title, path: file, diff: [], scope: normalizedScope, emptyText: t("此文件没有剩余未提交改动") });
+  els.workDiffTitle.textContent = title;
+  els.workDiffPath.textContent = file;
+  els.workDiffView.className = "work-diff-view";
+  els.workDiffView.innerHTML = renderSideDiff([], "此文件没有剩余未提交改动", { filePath: file, scope: normalizedScope });
+}
+
+function restoreWorkDiffActionView(view) {
+  if (!view) return;
+  state.diffModalRenderLimit = Math.max(SIDE_DIFF_INITIAL_RENDER_LINES, Number(view.renderLimit) || 0);
+  restoreWorkDiffScrollAfterRender(els.workDiffView, view.workScrollTop, view.workScrollLeft);
+  if (!view.modalOpen) return;
+  openDiffModal();
+  restoreWorkDiffScrollAfterRender(els.diffModalBody, view.modalScrollTop, view.modalScrollLeft);
+}
+
+function restoreWorkDiffScrollAfterRender(element, top, left) {
+  restoreWorkDiffScroll(element, top, left);
+  const restore = () => restoreWorkDiffScroll(element, top, left);
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+  if (typeof setTimeout === "function") setTimeout(restore, 60);
+}
+
+function restoreWorkDiffScroll(element, top, left) {
+  if (!element) return;
+  if (Number.isFinite(top)) element.scrollTop = top;
+  if (Number.isFinite(left)) element.scrollLeft = left;
 }
 
 function activeWorktreeDiffFile() {

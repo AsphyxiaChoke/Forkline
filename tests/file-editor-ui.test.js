@@ -122,6 +122,134 @@ test("large diff controls are delegated and closing the modal releases rendered 
   assert.match(diffWorkbench, /function closeDiffModal\(\)[\s\S]{0,260}els\.diffModalBody\.replaceChildren\(\)/);
 });
 
+test("worktree diff explains partial staging and keeps the latest result visible", () => {
+  const state = {
+    data: {
+      workingFiles: [{
+        file: "部分暂存.txt",
+        indexStatus: "?",
+        worktreeStatus: "?",
+        staged: false,
+        unstaged: true,
+      }],
+    },
+    selectedDiffLines: new Set(),
+    workDiffFeedback: null,
+  };
+  const sandbox = {
+    state,
+    els: {},
+    escapeHtml: (value) => String(value),
+    escapeAttr: (value) => String(value),
+    t: (value, replacements = {}) => Object.entries(replacements).reduce(
+      (text, [key, replacement]) => text.replaceAll(`{${key}}`, String(replacement)),
+      value
+    ),
+  };
+  vm.runInNewContext(diffWorkbench, sandbox);
+  const diff = [
+    { type: "meta", text: "@@ -0,0 +1,3 @@", hunkIndex: 0 },
+    { type: "add", text: "+第一行", hunkIndex: 0 },
+    { type: "add", text: "+第二行", hunkIndex: 0 },
+    { type: "add", text: "+第三行", hunkIndex: 0 },
+  ];
+
+  const hint = sandbox.renderSideDiff(diff, "empty", { filePath: "部分暂存.txt", scope: "untracked", hunkActions: true });
+  assert.match(hint, /work-diff-feedback notice/);
+  assert.match(hint, /未跟踪文件：部分暂存后，其余内容仍保留在工作区。/);
+
+  state.data.workingFiles = [{
+    file: "部分暂存.txt",
+    indexStatus: "A",
+    worktreeStatus: "M",
+    staged: true,
+    unstaged: true,
+  }];
+  sandbox.setWorkDiffFeedback("部分暂存.txt", "已暂存所选 1 行", { partialUntracked: true });
+  const result = sandbox.renderSideDiff(diff, "empty", { filePath: "部分暂存.txt", scope: "unstaged" });
+  assert.match(result, /work-diff-feedback success/);
+  assert.match(result, /已暂存所选 1 行/);
+  assert.match(result, /其余内容仍保留在工作区/);
+  assert.match(result, /仍有未暂存改动 · 已有暂存内容/);
+
+  state.data.workingFiles = [];
+  const empty = sandbox.renderSideDiff([], "此文件没有剩余未提交改动", { filePath: "部分暂存.txt", scope: "unstaged" });
+  assert.match(empty, /已暂存所选 1 行/);
+  assert.match(empty, /此文件没有剩余未提交改动/);
+  assert.equal(catalog.translateKnown("en", "未跟踪文件：部分暂存后，其余内容仍保留在工作区。"), "Untracked file: after partial staging, the remaining content stays in the worktree.");
+});
+
+test("worktree diff actions restore the modal, loaded range, and both scroll axes", () => {
+  let modalOpens = 0;
+  const frameCallbacks = [];
+  const timerCallbacks = [];
+  const state = { diffModalRenderLimit: 2400 };
+  const els = {
+    diffModal: { classList: { contains: (name) => name === "show" } },
+    diffModalBody: { scrollTop: 680, scrollLeft: 145 },
+    workDiffView: { scrollTop: 230, scrollLeft: 55 },
+  };
+  const sandbox = {
+    state,
+    els,
+    requestAnimationFrame: (callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    },
+    setTimeout: (callback, delay) => {
+      timerCallbacks.push({ callback, delay });
+      return timerCallbacks.length;
+    },
+  };
+  vm.runInNewContext(diffWorkbench, sandbox);
+  const view = sandbox.captureWorkDiffActionView();
+
+  state.diffModalRenderLimit = 1000;
+  els.diffModalBody.scrollTop = 0;
+  els.diffModalBody.scrollLeft = 0;
+  els.workDiffView.scrollTop = 0;
+  els.workDiffView.scrollLeft = 0;
+  sandbox.openDiffModal = () => {
+    modalOpens += 1;
+  };
+  sandbox.restoreWorkDiffActionView(view);
+
+  assert.equal(state.diffModalRenderLimit, 2400);
+  assert.equal(modalOpens, 1);
+  assert.equal(els.diffModalBody.scrollTop, 680);
+  assert.equal(els.diffModalBody.scrollLeft, 145);
+  assert.equal(els.workDiffView.scrollTop, 230);
+  assert.equal(els.workDiffView.scrollLeft, 55);
+  assert.equal(frameCallbacks.length, 2);
+  assert.deepEqual(timerCallbacks.map((item) => item.delay), [60, 60]);
+
+  els.diffModalBody.scrollTop = 0;
+  els.diffModalBody.scrollLeft = 0;
+  els.workDiffView.scrollTop = 0;
+  els.workDiffView.scrollLeft = 0;
+  frameCallbacks.forEach((callback) => callback());
+  assert.equal(els.diffModalBody.scrollTop, 680);
+  assert.equal(els.diffModalBody.scrollLeft, 145);
+  assert.equal(els.workDiffView.scrollTop, 230);
+  assert.equal(els.workDiffView.scrollLeft, 55);
+
+  els.diffModalBody.scrollTop = 0;
+  els.diffModalBody.scrollLeft = 0;
+  els.workDiffView.scrollTop = 0;
+  els.workDiffView.scrollLeft = 0;
+  timerCallbacks.forEach(({ callback }) => callback());
+  assert.equal(els.diffModalBody.scrollTop, 680);
+  assert.equal(els.diffModalBody.scrollLeft, 145);
+  assert.equal(els.workDiffView.scrollTop, 230);
+  assert.equal(els.workDiffView.scrollLeft, 55);
+});
+
+test("maximized diffs keep feedback, line actions, and headers sticky while scrolling", () => {
+  assert.match(styles, /\.diff-modal-body \.side-diff\s*\{[^}]*overflow:\s*visible/s);
+  assert.match(styles, /\.side-diff\.has-work-feedback \.diff-line-toolbar\s*\{[^}]*position:\s*sticky[^}]*top:\s*38px/s);
+  assert.match(styles, /\.side-diff\.has-work-feedback \.diff-line-toolbar \+ \.side-diff-head\s*\{[^}]*top:\s*76px/s);
+});
+
 test("historical comparison no longer coordinates with a removed inline preview", () => {
   assert.doesNotMatch(inspector, /previewSuspended|renderSelectedCommitFileDiff/);
   assert.doesNotMatch(editor, /restoreCommitPreview|renderSelectedCommitFileDiff/);

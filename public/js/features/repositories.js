@@ -371,6 +371,7 @@ function clearOpenedRepoState() {
   state.selectedDiffLines.clear();
   state.lastChangeSelection = null;
   state.lastDiffLineKey = "";
+  state.workDiffFeedback = null;
   setActiveDiff(null);
   state.commitDetails.clear();
   state.loadingCommitDetails.clear();

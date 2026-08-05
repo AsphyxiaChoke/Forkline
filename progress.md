@@ -6566,3 +6566,32 @@
 - `docs/CONTINUE.md`：记录当前门面规模、模块清单和 130/130 回归基线。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md server/git-operations-service.js server/repository-service.js tests/backend-modules.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath server/git-branch-service.js,server/git-history-service.js,server/git-recovery-service.js,server/git-worktree-service.js,server/repository-auth-service.js,server/repository-browse-service.js,server/repository-state-service.js,server/repository-submodule-service.js,server/repository-worktree-service.js,server/temp-files.js,server/worktree-patch.js,tests/backend-services.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-05 - Task: 工作区精细提交反馈与长 Diff 原位操作
+
+### What was done
+- 未跟踪文件对照增加部分暂存说明，明确只把选中块或行加入暂存区，其余内容仍保留在工作区。
+- 按块或按行操作后保留当前文件和最大化窗口，并显示本次操作结果以及“仍有未暂存改动 / 已有暂存内容”的当前状态；最后一处改动处理完成后也保留窗口并明确显示无剩余更改。
+- 操作刷新前记录弹窗状态、横纵滚动位置和已加载 Diff 行数，刷新后分阶段恢复，避免长文件操作后跳回顶部或缩回首批内容。
+- 最大化工作区 Diff 放开内部裁剪，使结果提示、行操作栏和新旧版本表头在长 Diff 中保持吸顶；补充中英文文案、用户说明和回归覆盖。
+
+### Testing
+- `node --check public/js/features/diff-workbench.js` 通过。
+- `node --test --test-concurrency=1 tests/file-editor-ui.test.js` 运行 26 项，26 项通过、0 项失败；覆盖未跟踪提示、操作结果、弹窗与加载范围保持、横纵滚动恢复和长 Diff 吸顶。
+- `node --test --test-concurrency=1 tests/git-api.test.js` 运行 25 项，25 项通过、0 项失败；真实 Git 回归覆盖中文路径、CRLF、无末尾换行、GBK/GB18030、冲突和按块/按行暂存。
+- `npm.cmd test` 完整运行 134 项，134 项通过、0 项失败、退出码为 0，耗时约 89.8 秒。
+- 真实浏览器在 320 行未跟踪文件第 260 行附近执行按行暂存，操作前后 `scrollTop` 均为 `7064.1787109375`，结果提示、操作栏和表头保持吸顶，控制台错误为 `[]`。
+- `git diff --check` 通过，仅输出仓库现有的 LF/CRLF 转换提示；临时 `5347` 服务、测试仓库、日志和浏览器测试页均已关闭或清理，本轮收尾没有启动新服务。
+
+### Notes
+- `README.md`：补充工作区右键对照、未跟踪部分暂存和长 Diff 原位操作说明。
+- `docs/CONTINUE.md`：记录精细提交反馈、视图恢复、吸顶行为、浏览器验证结果和后续开发落点。
+- `public/js/core.js`：增加当前工作区 Diff 操作反馈状态。
+- `public/js/features/diff-workbench.js`：渲染未跟踪提示和操作结果，保留当前文件、弹窗、加载范围及滚动位置，并在无剩余改动时保留完成状态。
+- `public/js/features/repositories.js`：切换仓库时清理工作区 Diff 操作反馈。
+- `public/js/i18n-catalog.js`：增加部分暂存、剩余状态和完成状态的英文文案。
+- `public/styles.css`：增加结果提示及长 Diff 提示条、操作栏、表头吸顶样式。
+- `tests/file-editor-ui.test.js`：增加提示、原位恢复、无剩余改动和吸顶布局回归。
+- `tests/git-api.test.js`：增加未跟踪文件按行暂存并保持剩余 CRLF 内容的真实 Git 回归。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/core.js public/js/features/diff-workbench.js public/js/features/repositories.js public/js/i18n-catalog.js public/styles.css tests/file-editor-ui.test.js tests/git-api.test.js`；提交后执行 `git revert <本任务提交哈希>`。

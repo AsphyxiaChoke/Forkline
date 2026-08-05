@@ -32,6 +32,7 @@ const state = {
   fileHistory: { file: "", ref: "", data: null, loading: false, error: "" },
   fileBlame: { file: "", ref: "", data: null, loading: false, error: "" },
   activeDiff: null,
+  workDiffFeedback: null,
   historyLimit: 120,
   historyHasMore: false,
   historyLoading: false,
