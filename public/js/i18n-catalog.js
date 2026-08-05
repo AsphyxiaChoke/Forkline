@@ -379,6 +379,7 @@
     "请先打开真实 Git 仓库": "Open a real Git repository first",
     "请选择要编辑的文件": "Select a file to edit",
     "仓库已经切换，请在目标仓库中重新打开文件": "The repository changed. Reopen the file in the target repository.",
+    "仓库当前分支或最新提交已经变化，请先刷新仓库再查看同步状态。": "The current branch or HEAD changed. Refresh the repository before viewing sync status.",
     "文件还有未保存的修改，确认关闭编辑器？": "This file has unsaved changes. Close the editor?",
     "文件还有未保存的修改，确认切换到 {file}？": "This file has unsaved changes. Switch to {file}?",
     "编辑器正在处理文件，请稍候。": "The editor is processing the file. Please wait.",

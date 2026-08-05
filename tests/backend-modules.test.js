@@ -59,6 +59,7 @@ test("Git operation and repository facades delegate their subdomains", () => {
   assert.match(repositorySubmoduleSource, /function parseSubmodules\(/);
   assert.match(repositoryWorktreeSource, /async function readWorktree\(/);
   assert.match(repositoryStateSource, /async function readState\(/);
+  assert.match(repositoryStateSource, /async function readSyncState\(/);
 });
 
 function read(relativePath) {

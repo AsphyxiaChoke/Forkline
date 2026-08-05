@@ -229,6 +229,7 @@ const {
   openRepo,
   readBranchDisplayName,
   readState,
+  readSyncState,
   readReflogState,
   readRefState,
   sampleBranchCommits,
@@ -1036,6 +1037,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       ensureRequestRepoMatchesCurrent(req);
       sendJson(res, 200, await readState(parsed.searchParams.get("ref") || "", parsed.searchParams.get("limit") || ""));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/sync-state") {
+      ensureRequestRepoMatchesCurrent(req);
+      sendJson(res, 200, await readSyncState());
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/auth-diagnostics") {

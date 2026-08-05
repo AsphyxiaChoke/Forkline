@@ -6619,3 +6619,37 @@
 - `tests/file-editor-ui.test.js`：增加目标 hunk 匹配、过期、自动清理、样式和动作接线回归。
 - `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/diff-workbench.js public/styles.css tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-05 - Task: 同步页轻量状态刷新
+
+### What was done
+- 新增独立 `/api/sync-state`，只读取同步页需要的当前分支、HEAD、upstream、领先/落后、远端配置、远端分支和同步提交摘要，不再连带读取提交图、工作区、储藏、恢复点、Tag、工作树和子模块。
+- 切换到“同步”页时按仓库路径、当前分支和 HEAD 校验响应，再局部更新同步详情与分支条；旧请求、已切换仓库或外部改变 HEAD 的结果不会混入当前页面。
+- 设置或取消 upstream 后改用轻量状态刷新，保留提交图、工作区、当前提交选择和已加载的提交详情；会改变引用、历史或工作区的同步动作仍使用完整状态刷新。
+- 把全量状态中原有的本地/远端分支解析提取为同一内部辅助，保证轻量与全量接口沿用相同过滤语义。
+
+### Testing
+- `node --check server.js`、`server/repository-state-service.js`、`public/js/panels/sync.js`、`public/js/features/folder-command.js`、`public/js/features/git-actions.js`、`public/js/i18n-catalog.js` 和 `tests/sync-state-performance.test.js` 均通过。
+- `node --test tests/sync-state-performance.test.js tests/backend-modules.test.js` 运行 5 项，5 项通过、0 项失败；覆盖轻量接口接线、upstream 局部刷新、提交图/工作区/提交详情保持和 HEAD 变化保护。
+- `node --test --test-name-pattern "sync state endpoint" tests/git-api.test.js` 运行 1 项真实 Git 定向测试并通过，确认响应不包含提交、工作区、储藏、Tag、工作树、子模块或恢复点数据。
+- `npm.cmd test` 完整运行 139 项，139 项通过、0 项失败、退出码为 0，耗时约 100.4 秒。
+- `D:\桌面\GitTest` 只读测量 6 轮：全量 `/api/state` 平均 `230.5 ms`、`14365` 字节，轻量 `/api/sync-state` 平均 `101.5 ms`、`1145` 字节，约快 `2.27` 倍、响应体缩小约 `92%`。
+- 测量使用随机端口 `53628`，脚本结束后确认端口无监听并删除 `C:\tmp\forkline-sync-measure.js`；GitTest 仍只保留测量前已有的 `测试.txt` 修改和 3 个未跟踪编辑器演示文件。
+- `git diff --check` 通过，仅输出仓库现有的 LF/CRLF 转换提示。
+
+### Notes
+- `server/repository-state-service.js`：新增轻量同步状态编排，并让全量与轻量读取共用分支引用解析。
+- `server/repository-service.js`：向仓库读取门面导出 `readSyncState`。
+- `server.js`：接入 `GET /api/sync-state` 路由和仓库上下文校验。
+- `public/js/core.js`：增加同步状态请求序号，阻止较旧响应覆盖新结果。
+- `public/js/panels/sync.js`：合并轻量同步数据，保留分支 SHA 快照并校验仓库、分支与 HEAD。
+- `public/js/features/folder-command.js`：切换到同步页时按需触发轻量刷新。
+- `public/js/features/git-actions.js`：设置和取消 upstream 后改为局部同步刷新。
+- `public/js/i18n-catalog.js`：补充仓库分支或 HEAD 已变化时的英文提示。
+- `tests/backend-modules.test.js`：固定轻量同步读取仍属于仓库状态子服务。
+- `tests/git-api.test.js`：增加轻量同步响应边界的真实 Git 回归。
+- `tests/sync-state-performance.test.js`：增加前端局部更新、状态保持和 HEAD 快照保护回归。
+- `README.md`：说明同步页和 upstream 操作不会重读提交图与工作区。
+- `docs/CONTINUE.md`：记录接口边界、性能实测、后续同步方向和 139/139 基线。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/core.js public/js/features/folder-command.js public/js/features/git-actions.js public/js/i18n-catalog.js public/js/panels/sync.js server.js server/repository-service.js server/repository-state-service.js tests/backend-modules.test.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath tests/sync-state-performance.test.js`；提交后执行 `git revert <本任务提交哈希>`。

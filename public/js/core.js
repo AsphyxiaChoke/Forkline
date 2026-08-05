@@ -58,6 +58,7 @@ const state = {
   compareRequestId: 0,
   fileHistoryRequestId: 0,
   fileBlameRequestId: 0,
+  syncRequestId: 0,
   refreshingWorktree: false,
   worktreeSignature: "",
   commitDetails: new Map(),

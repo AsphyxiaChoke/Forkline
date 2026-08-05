@@ -366,6 +366,31 @@ function createRepositoryStateService(options) {
       })),
     };
   }
+  function parseBranchRefs(output, remoteNames) {
+    const branches = [];
+    const remotes = [];
+    for (const raw of String(output || "").split(/\r?\n/)) {
+      const refname = raw.trim();
+      if (!refname) continue;
+      if (refname.startsWith("refs/heads/")) {
+        branches.push(refname.replace(/^refs\/heads\//, ""));
+        continue;
+      }
+      if (refname.startsWith("refs/remotes/")) {
+        const remoteBranch = refname.replace(/^refs\/remotes\//, "");
+        if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
+        continue;
+      }
+      if (refname.endsWith("/HEAD") || refname === "origin" || refname === "upstream") continue;
+      if (refname.startsWith("remotes/")) {
+        const remoteBranch = refname.replace(/^remotes\//, "");
+        if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
+      } else if (/^[^/]+\/.+/.test(refname) && isKnownRemoteBranch(refname, remoteNames)) remotes.push(refname);
+      else branches.push(refname);
+    }
+    return { branches, remotes };
+  }
+
   async function readState(ref = "", rawHistoryLimit = DEFAULT_HISTORY_LIMIT) {
     const historyLimit = normalizeHistoryLimit(rawHistoryLimit);
     if (!currentRepo) {
@@ -397,28 +422,8 @@ function createRepositoryStateService(options) {
       git(repoPath, logArgs(selectedRef, historyLimit)).catch(() => ""),
     ]);
 
-    const branches = [];
-    const remotes = [];
     const remoteNames = parseRemoteNames(remoteOutput);
-    for (const raw of branchOutput.split(/\r?\n/)) {
-      const refname = raw.trim();
-      if (!refname) continue;
-      if (refname.startsWith("refs/heads/")) {
-        branches.push(refname.replace(/^refs\/heads\//, ""));
-        continue;
-      }
-      if (refname.startsWith("refs/remotes/")) {
-        const remoteBranch = refname.replace(/^refs\/remotes\//, "");
-        if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
-        continue;
-      }
-      if (refname.endsWith("/HEAD") || refname === "origin" || refname === "upstream") continue;
-      if (refname.startsWith("remotes/")) {
-        const remoteBranch = refname.replace(/^remotes\//, "");
-        if (isKnownRemoteBranch(remoteBranch, remoteNames)) remotes.push(remoteBranch);
-      } else if (/^[^/]+\/.+/.test(refname) && isKnownRemoteBranch(refname, remoteNames)) remotes.push(refname);
-      else branches.push(refname);
-    }
+    const { branches, remotes } = parseBranchRefs(branchOutput, remoteNames);
     const currentBranch = branch.trim();
     if (currentBranch && currentBranch !== "detached HEAD" && !branches.includes(currentBranch)) {
       branches.unshift(currentBranch);
@@ -481,6 +486,68 @@ function createRepositoryStateService(options) {
       operationLog,
       commits: commitPage.commits,
       history: commitPage.history,
+    };
+  }
+  async function readSyncState() {
+    if (!currentRepo) {
+      const sample = sampleState();
+      const branch = sample.repo?.branch || "";
+      return {
+        repo: sample.repo,
+        branchInfo: branch && sample.branchInfo?.[branch] ? { [branch]: sample.branchInfo[branch] } : {},
+        remotes: sample.remotes || [],
+        remoteInfo: sample.remoteInfo || {},
+        sync: sample.sync || {},
+      };
+    }
+    const repoPath = currentRepo;
+    const [branch, headShaOutput, branchOutput, trackingOutput, remoteMetaOutput, remoteOutput, remoteVerboseOutput] = await Promise.all([
+      readBranchDisplayName(repoPath),
+      git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
+      git(repoPath, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
+      git(repoPath, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
+      git(repoPath, ["for-each-ref", "refs/remotes", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)"]).catch(() => ""),
+      git(repoPath, ["remote"]).catch(() => ""),
+      git(repoPath, ["remote", "-v"]).catch(() => ""),
+    ]);
+    const remoteNames = parseRemoteNames(remoteOutput);
+    const { branches, remotes } = parseBranchRefs(branchOutput, remoteNames);
+    const currentBranch = branch.trim();
+    if (currentBranch && currentBranch !== "detached HEAD" && !branches.includes(currentBranch)) branches.unshift(currentBranch);
+    const branchTracking = parseBranchTracking(trackingOutput);
+    const syncOptions = {
+      branch: currentBranch,
+      hasCommit: Boolean(headShaOutput.trim()),
+      remotes: parseRemoteDetails(remoteVerboseOutput, remoteNames),
+      localBranches: branches,
+      remoteNames,
+    };
+    if (branchTracking[currentBranch]) syncOptions.upstream = branchTracking[currentBranch].upstream;
+    const sync = await readCurrentSyncDetails(repoPath, syncOptions);
+    const branchInfo = currentBranch && currentBranch !== "detached HEAD"
+      ? {
+          [currentBranch]: {
+            ...(branchTracking[currentBranch] || {}),
+            upstream: sync.upstream || "",
+            ahead: sync.ahead || 0,
+            behind: sync.behind || 0,
+            upstreamGone: Boolean(sync.upstreamGone),
+          },
+        }
+      : {};
+    return {
+      repo: {
+        name: path.basename(repoPath),
+        path: repoPath,
+        branch: currentBranch || "detached HEAD",
+        headSha: headShaOutput.trim(),
+        isSample: false,
+        remoteNames,
+      },
+      branchInfo,
+      remotes,
+      remoteInfo: parseRemoteBranchInfo(remoteMetaOutput, remoteNames),
+      sync,
     };
   }
   async function readReflogState(repoPath = currentRepo) {
@@ -584,6 +651,7 @@ function createRepositoryStateService(options) {
     readRefState,
     readReflogState,
     readState,
+    readSyncState,
     refNamesFromText,
     sampleBranchCommits,
     sampleState,

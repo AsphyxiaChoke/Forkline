@@ -208,6 +208,55 @@ function stashActionConfirmMessage(action, ref) {
   return t("确认操作 {ref}？", { ref });
 }
 
+function mergeSyncState(data) {
+  if (!state.data || !data) return;
+  const repo = data.repo || {};
+  state.data.repo = {
+    ...state.data.repo,
+    ...(Array.isArray(repo.remoteNames) ? { remoteNames: repo.remoteNames } : {}),
+  };
+  if (Array.isArray(data.remotes)) state.data.remotes = data.remotes;
+  if (data.remoteInfo) state.data.remoteInfo = data.remoteInfo;
+  if (data.branchInfo) {
+    const branchInfo = { ...(state.data.branchInfo || {}) };
+    for (const [branch, info] of Object.entries(data.branchInfo)) {
+      branchInfo[branch] = { ...(branchInfo[branch] || {}), ...info };
+    }
+    state.data.branchInfo = branchInfo;
+  }
+  if (data.sync) state.data.sync = data.sync;
+}
+
+function syncRepoSnapshotMatches(data, repoPath) {
+  const current = state.data?.repo || {};
+  const incoming = data?.repo || {};
+  return incoming.path === repoPath
+    && incoming.branch === current.branch
+    && incoming.headSha === current.headSha;
+}
+
+async function refreshSyncState() {
+  if (!state.data) return false;
+  const repoPath = repoPathSnapshot();
+  const requestId = ++state.syncRequestId;
+  try {
+    const data = await api("/api/sync-state");
+    if (requestId !== state.syncRequestId || !isCurrentRepoPath(repoPath)) return false;
+    if (!syncRepoSnapshotMatches(data, repoPath)) {
+      toast(t("仓库当前分支或最新提交已经变化，请先刷新仓库再查看同步状态。"));
+      return false;
+    }
+    mergeSyncState(data);
+    renderBranches();
+    if (state.selectedTab === "sync") renderInspector();
+    return true;
+  } catch (error) {
+    if (requestId !== state.syncRequestId || !isCurrentRepoPath(repoPath)) return false;
+    toast(error.message);
+    return false;
+  }
+}
+
 function renderSyncTab() {
   const sync = state.data?.sync || {};
   const hasUpstream = Boolean(sync.upstream);

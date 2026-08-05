@@ -271,6 +271,9 @@ function renderInspectorTabs() {
 }
 
 function ensureInspectorTabData(tab) {
+  if (tab === "sync") {
+    refreshSyncState().catch((error) => toast(error.message));
+  }
   if (tab === "fileHistory" && state.selectedFile && state.fileHistory.file !== state.selectedFile) {
     openFileHistory(state.selectedFile).catch((error) => toast(error.message));
   }

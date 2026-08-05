@@ -700,6 +700,28 @@ test("stash checkout rejects hidden dirty submodule before partial mutation", { 
   assert.equal(await git(fixture.parent, ["stash", "list", "--format=%H"]), "");
 });
 
+test("sync state endpoint returns only data needed by the sync inspector", { timeout: 120000 }, async (t) => {
+  const fixture = await createRemoteFixture("sync-state");
+  t.after(() => removeFixture(fixture.root));
+
+  const full = await openRepo(fixture.repo);
+  const response = await request("/api/sync-state", { repoPath: fixture.repo });
+  assertStatus(response, 200);
+  const syncState = response.body;
+
+  assert.equal(path.resolve(syncState.repo.path), path.resolve(fixture.repo));
+  assert.equal(syncState.repo.branch, full.repo.branch);
+  assert.equal(syncState.repo.headSha, full.repo.headSha);
+  assert.deepEqual(syncState.repo.remoteNames, ["origin"]);
+  assert.equal(syncState.sync.branch, full.sync.branch);
+  assert.equal(syncState.sync.remotes[0].name, "origin");
+  assert.equal(syncState.branchInfo[full.repo.branch].upstream, "");
+  for (const field of ["commits", "history", "workingFiles", "worktreeSnapshot", "stashes", "tags", "branches", "worktrees", "submodules", "recoveryPoints"]) {
+    assert.equal(syncState[field], undefined, `${field} must stay out of the lightweight sync response`);
+  }
+  assert.ok(JSON.stringify(syncState).length < JSON.stringify(full).length);
+});
+
 test("authentication diagnostics load on demand and cache by remote configuration", { timeout: 120000 }, async (t) => {
   const fixture = await createRemoteFixture("auth-diagnostics");
   t.after(() => removeFixture(fixture.root));

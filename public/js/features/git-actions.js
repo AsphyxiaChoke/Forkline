@@ -542,13 +542,8 @@ async function runUpstreamAction(action, ref = "", button = null) {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify(payload) });
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || t("upstream 操作完成"));
-    state.commitDetails.clear();
-    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
-    state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedTab = "sync";
-    renderAll();
+    if (!await refreshSyncState()) renderInspector();
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
