@@ -6595,3 +6595,27 @@
 - `tests/git-api.test.js`：增加未跟踪文件按行暂存并保持剩余 CRLF 内容的真实 Git 回归。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/core.js public/js/features/diff-workbench.js public/js/features/repositories.js public/js/i18n-catalog.js public/styles.css tests/file-editor-ui.test.js tests/git-api.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-05 - Task: 工作区 Diff 操作后目标块短时高亮
+
+### What was done
+- 按块或按行操作前记录目标 hunk 的旧/新行范围和改动内容，刷新后重新匹配仍存在的目标块；前方块被移除、hunk 序号变化时仍能定位正确，目标块已经消失时不会误亮其他块。
+- 为匹配到的块标题增加低开销琥珀色提示，只动画单个 hunk 标题而不是整块全部代码行，避免大型 Diff 同时触发大量节点绘制。
+- 普通环境下高亮渐隐；系统开启“减少动态效果”时使用静态提示。两种模式都会在 1.8 秒后移除 DOM 标记并清空高亮状态，避免后台轮询再次触发。
+- 同步更新 README、继续开发说明和界面回归测试，不改变暂存、取消暂存或丢弃的 Git 行为。
+
+### Testing
+- `node --check public/js/features/diff-workbench.js` 通过。
+- `node --test --test-concurrency=1 tests/file-editor-ui.test.js` 运行 27 项，27 项通过、0 项失败；覆盖 hunk 序号变化后的重新匹配、过期不显示、1.8 秒自动移除、减少动态效果兜底及按块/按行接线。
+- `npm.cmd test` 最终完整运行 135 项，135 项通过、0 项失败、退出码为 0，耗时约 102.0 秒。
+- 真实浏览器使用隔离仓库 `C:\tmp\forkline-highlight-test`：从 3 处修改中暂存第二处后剩余 2 处，目标标题数量为 1；减少动态效果环境下 `animationName = none`，但琥珀色背景和双侧内边标记可见。等待 1.9 秒后目标标记数量变为 0，操作结果条仍保留，控制台错误为 `[]`。
+- `git diff --check` 通过，仅输出仓库现有的 LF/CRLF 转换提示。临时 `5353` 服务 PID `45020` 已关闭并确认无监听，隔离仓库、标准输出日志、错误日志和浏览器测试页均已删除或关闭。
+
+### Notes
+- `README.md`：说明工作区操作刷新后会短暂高亮仍存在的目标改动块。
+- `docs/CONTINUE.md`：记录目标块重新匹配、性能边界、减少动态效果行为和状态清理方式。
+- `public/js/features/diff-workbench.js`：捕获并重新匹配操作目标 hunk，渲染标题高亮并在到时后清理 DOM 与反馈状态。
+- `public/styles.css`：增加琥珀色 hunk 标题渐隐动画及减少动态效果时的静态提示。
+- `tests/file-editor-ui.test.js`：增加目标 hunk 匹配、过期、自动清理、样式和动作接线回归。
+- `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/diff-workbench.js public/styles.css tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

@@ -2609,6 +2609,25 @@ button.file-row {
   background: rgba(255, 107, 116, 0.2);
 }
 
+.side-row.meta.work-diff-target .side-meta {
+  background-color: color-mix(in srgb, var(--amber) 22%, transparent);
+  box-shadow: inset 4px 0 0 var(--amber), inset -4px 0 0 var(--amber);
+  animation: work-diff-target-flash 1.8s ease-out forwards;
+}
+
+@keyframes work-diff-target-flash {
+  0%,
+  34% {
+    background-color: color-mix(in srgb, var(--amber) 22%, transparent);
+    box-shadow: inset 4px 0 0 var(--amber), inset -4px 0 0 var(--amber);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 transparent;
+  }
+}
+
 .hunk-actions {
   display: flex;
   flex: 0 0 auto;
@@ -7460,6 +7479,10 @@ body.file-editor-window-resizing * {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .side-row.meta.work-diff-target .side-meta {
+    animation: none !important;
   }
 }
 

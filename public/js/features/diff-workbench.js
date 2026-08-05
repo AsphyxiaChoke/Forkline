@@ -1,5 +1,7 @@
 // Diff rendering, file trees, workbench diff, and active diff modal.
 const SIDE_DIFF_INITIAL_RENDER_LINES = 1000;
+const WORK_DIFF_TARGET_HIGHLIGHT_DURATION = 1800;
+const WORK_DIFF_TARGET_HIGHLIGHT_TTL = 4000;
 
 function fileTreeHtml(files, options = {}) {
   const root = { dirs: new Map(), files: [] };
@@ -370,6 +372,7 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
   }
   els.workDiffView.className = "work-diff-view";
   els.workDiffView.innerHTML = renderSideDiff(diff, "没有可显示的差异", { hunkActions: true, lineAction: selectedDiffLineAction(filePath, scope), filePath, scope });
+  scheduleWorkDiffTargetClear(els.workDiffView);
   updateDiffLineSelectionToolbar();
 }
 
@@ -403,10 +406,14 @@ function isUntrackedFile(fileInfo) {
 }
 
 function setWorkDiffFeedback(file, message, options = {}) {
+  const highlight = options.highlight?.hunks?.length
+    ? { ...options.highlight, expiresAt: Date.now() + WORK_DIFF_TARGET_HIGHLIGHT_TTL }
+    : null;
   state.workDiffFeedback = {
     file,
     message,
     partialUntracked: Boolean(options.partialUntracked),
+    highlight,
   };
 }
 
@@ -445,6 +452,82 @@ function workDiffFeedbackStateText(fileInfo) {
   return labels.join(" · ") || t("此文件没有剩余未提交改动");
 }
 
+function captureWorkDiffTarget(hunkIndexes, diff = state.activeDiff?.diff) {
+  const requested = new Set((hunkIndexes || []).filter((index) => Number.isInteger(index)));
+  const hunks = workDiffHunks(diff)
+    .filter((hunk) => requested.has(hunk.hunkIndex))
+    .map(({ oldStart, oldCount, newStart, newCount, changeKeys }) => ({ oldStart, oldCount, newStart, newCount, changeKeys }));
+  return hunks.length ? { hunks } : null;
+}
+
+function highlightedWorkDiffHunks(diff, feedback) {
+  const highlight = feedback?.highlight;
+  if (!highlight?.hunks?.length || Number(highlight.expiresAt) <= Date.now()) return new Set();
+  const candidates = workDiffHunks(diff);
+  const matched = new Set();
+  for (const target of highlight.hunks) {
+    const targetKeys = new Set(target.changeKeys || []);
+    let best = null;
+    let bestScore = -1;
+    for (const candidate of candidates) {
+      if (matched.has(candidate.hunkIndex) || !workDiffHunkRangesTouch(target, candidate)) continue;
+      const sharedChanges = candidate.changeKeys.filter((key) => targetKeys.has(key)).length;
+      if (!sharedChanges) continue;
+      const distance = Math.abs(candidate.oldStart - target.oldStart) + Math.abs(candidate.newStart - target.newStart);
+      const score = (sharedChanges * 1000) - distance;
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+    if (best) matched.add(best.hunkIndex);
+  }
+  return matched;
+}
+
+function workDiffHunks(diff) {
+  const hunks = [];
+  let current = null;
+  for (const line of diff || []) {
+    const range = line?.type === "meta" ? parseDiffHunkRange(line.text) : null;
+    if (range) {
+      current = {
+        hunkIndex: Number.isInteger(line.hunkIndex) ? line.hunkIndex : hunks.length,
+        ...range,
+        changeKeys: [],
+      };
+      hunks.push(current);
+      continue;
+    }
+    if (current && (line?.type === "add" || line?.type === "del")) {
+      const key = `${line.type}:${trimDiffPrefix(line.text)}`;
+      if (!current.changeKeys.includes(key)) current.changeKeys.push(key);
+    }
+  }
+  return hunks;
+}
+
+function workDiffHunkRangesTouch(left, right) {
+  return diffRangesTouch(left.oldStart, left.oldCount, right.oldStart, right.oldCount)
+    || diffRangesTouch(left.newStart, left.newCount, right.newStart, right.newCount);
+}
+
+function diffRangesTouch(leftStart, leftCount, rightStart, rightCount) {
+  const leftEnd = leftStart + Math.max(1, leftCount) - 1;
+  const rightEnd = rightStart + Math.max(1, rightCount) - 1;
+  return leftStart <= rightEnd + 3 && rightStart <= leftEnd + 3;
+}
+
+function scheduleWorkDiffTargetClear(root) {
+  const rows = Array.from(root?.querySelectorAll?.(".work-diff-target") || []);
+  if (!rows.length || typeof setTimeout !== "function") return;
+  const highlight = state.workDiffFeedback?.highlight;
+  setTimeout(() => {
+    rows.forEach((row) => row.classList.remove("work-diff-target"));
+    if (state.workDiffFeedback?.highlight === highlight) state.workDiffFeedback.highlight = null;
+  }, WORK_DIFF_TARGET_HIGHLIGHT_DURATION);
+}
+
 function preferredWorkDiffScope(fileInfo) {
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
   if (hasUnstaged) return "unstaged";
@@ -479,6 +562,7 @@ async function runWorkDiffHunkAction(action, button) {
     return;
   }
   state.selectedFile = file;
+  const highlight = captureWorkDiffTarget([hunkIndex]);
   const view = captureWorkDiffActionView();
   if (action === "discardWorktreeHunk" && !state.data?.repo?.isSample && !confirm(t("确认丢弃这个改动块？\n\n文件：{file}\n此操作无法撤销。", { file }))) return;
   const buttons = document.querySelectorAll(".work-diff-view [data-hunk-action], .diff-modal-body [data-hunk-action]");
@@ -494,6 +578,7 @@ async function runWorkDiffHunkAction(action, button) {
     toast(result.output || t("改动块操作完成"));
     setWorkDiffFeedback(file, result.output || t("改动块操作完成"), {
       partialUntracked: scope === "untracked" && action === "stageHunk",
+      highlight,
     });
     await refreshWorkDiffAfterAction(file, scope, view, repoPath);
   } catch (error) {
@@ -529,6 +614,7 @@ function renderDiffModalBody() {
     maxLines: state.diffModalRenderLimit || SIDE_DIFF_INITIAL_RENDER_LINES,
     loadMoreTarget: "modal",
   });
+  scheduleWorkDiffTargetClear(els.diffModalBody);
   syncDiffLineSelectionRows();
 }
 
@@ -545,13 +631,14 @@ function renderSideDiff(diff, emptyText, options = {}) {
   const visibleCount = sideDiffVisibleCount(diff.length, options.maxLines);
   const visibleDiff = visibleCount < diff.length ? diff.slice(0, visibleCount) : diff;
   const lineAction = options.lineAction && diffHasSelectableLines(visibleDiff) ? options.lineAction : null;
+  const targetHunks = highlightedWorkDiffHunks(visibleDiff, workDiffFeedbackForFile(options.filePath || ""));
   const columnWidths = diffColumnCharacterWidths(visibleDiff);
   return `
     <div class="side-diff ${lineAction ? "line-selectable" : ""} ${feedback ? "has-work-feedback" : ""}" style="--diff-old-ch:${columnWidths.old};--diff-new-ch:${columnWidths.new}">
       ${feedback}
       ${lineAction ? renderDiffLineToolbar(lineAction) : ""}
       <div class="side-diff-head"><span>${t("旧版本")}</span><span>${t("新版本")}</span></div>
-      ${sideBySideRows(visibleDiff, { ...options, lineAction })}
+      ${sideBySideRows(visibleDiff, { ...options, lineAction, targetHunks })}
       ${renderSideDiffLoadMore(diff.length, visibleCount, options.loadMoreTarget)}
     </div>
   `;
@@ -778,8 +865,9 @@ function renderDiffLineToolbar(action) {
 function renderSideMetaRow(line, text, options = {}) {
   const actions = options.hunkActions && text.startsWith("@@ ") ? workDiffHunkActionButtons(options.filePath, options.scope, line.hunkIndex) : "";
   const hunkSummary = readableHunkHeader(text);
+  const target = options.targetHunks?.has(line.hunkIndex);
   return `
-    <div class="side-row meta ${actions ? "has-actions" : ""}">
+    <div class="side-row meta ${actions ? "has-actions" : ""} ${target ? "work-diff-target" : ""}">
       <div class="side-meta">
         <span class="side-meta-text ${hunkSummary ? "hunk-summary" : ""}" title="${escapeAttr(text)}">${escapeHtml(hunkSummary || text)}</span>
         ${actions}
@@ -789,18 +877,26 @@ function renderSideMetaRow(line, text, options = {}) {
 }
 
 function readableHunkHeader(text) {
-  const match = String(text || "").match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:\s*(.*))?$/);
-  if (!match) return "";
-  const oldStart = match[1];
-  const oldCount = match[2] || "1";
-  const newStart = match[3];
-  const newCount = match[4] || "1";
+  const range = parseDiffHunkRange(text);
+  if (!range) return "";
+  const { oldStart, oldCount, newStart, newCount } = range;
   return t("改动位置：旧版第 {oldStart} 行，新版第 {newStart} 行；范围：旧 {oldCount} 行，新 {newCount} 行", {
     oldStart,
     newStart,
     oldCount,
     newCount,
   });
+}
+
+function parseDiffHunkRange(text) {
+  const match = String(text || "").match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+  if (!match) return null;
+  return {
+    oldStart: Number(match[1]),
+    oldCount: Number(match[2] || 1),
+    newStart: Number(match[3]),
+    newCount: Number(match[4] || 1),
+  };
 }
 
 function workDiffHunkActionButtons(filePath, scope, hunkIndex) {
@@ -956,6 +1052,7 @@ async function runWorkDiffLineAction(button) {
     return;
   }
   if (action !== "stageSelectedLines" && action !== "unstageSelectedLines") return;
+  const highlight = captureWorkDiffTarget(lines.map((line) => line.hunkIndex));
   const buttons = document.querySelectorAll(".work-diff-view [data-line-action], .work-diff-view [data-hunk-action], .diff-modal-body [data-line-action], .diff-modal-body [data-hunk-action]");
   buttons.forEach((item) => {
     item.disabled = true;
@@ -969,6 +1066,7 @@ async function runWorkDiffLineAction(button) {
     toast(result.output || t("所选行操作完成"));
     setWorkDiffFeedback(file, result.output || t("所选行操作完成"), {
       partialUntracked: scope === "untracked" && action === "stageSelectedLines",
+      highlight,
     });
     resetDiffLineSelection(false);
     await refreshWorkDiffAfterAction(file, scope, view, repoPath);

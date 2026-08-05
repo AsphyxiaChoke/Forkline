@@ -179,6 +179,85 @@ test("worktree diff explains partial staging and keeps the latest result visible
   assert.equal(catalog.translateKnown("en", "未跟踪文件：部分暂存后，其余内容仍保留在工作区。"), "Untracked file: after partial staging, the remaining content stays in the worktree.");
 });
 
+test("worktree diff briefly highlights the matching hunk after an action refresh", () => {
+  const timers = [];
+  const state = {
+    data: {
+      workingFiles: [{
+        file: "target.c",
+        indexStatus: " ",
+        worktreeStatus: "M",
+        staged: false,
+        unstaged: true,
+      }],
+    },
+    selectedDiffLines: new Set(),
+    workDiffFeedback: null,
+  };
+  const sandbox = {
+    state,
+    els: {},
+    escapeHtml: (value) => String(value),
+    escapeAttr: (value) => String(value),
+    setTimeout: (callback, delay) => {
+      timers.push({ callback, delay });
+      return timers.length;
+    },
+    t: (value, replacements = {}) => Object.entries(replacements).reduce(
+      (text, [key, replacement]) => text.replaceAll(`{${key}}`, String(replacement)),
+      value
+    ),
+  };
+  vm.runInNewContext(diffWorkbench, sandbox);
+  const before = [
+    { type: "meta", text: "@@ -1 +1,2 @@", hunkIndex: 0 },
+    { type: "add", text: "+first change", hunkIndex: 0 },
+    { type: "meta", text: "@@ -20,2 +20,3 @@", hunkIndex: 1 },
+    { type: "del", text: "-old target", hunkIndex: 1 },
+    { type: "add", text: "+new target", hunkIndex: 1 },
+    { type: "add", text: "+keep target", hunkIndex: 1 },
+  ];
+  const highlight = sandbox.captureWorkDiffTarget([1], before);
+  sandbox.setWorkDiffFeedback("target.c", "已暂存所选 1 行", { highlight });
+
+  const after = [
+    { type: "meta", text: "@@ -20,2 +20,2 @@", hunkIndex: 0 },
+    { type: "del", text: "-old target", hunkIndex: 0 },
+    { type: "add", text: "+keep target", hunkIndex: 0 },
+    { type: "meta", text: "@@ -100 +100,2 @@", hunkIndex: 1 },
+    { type: "add", text: "+elsewhere", hunkIndex: 1 },
+  ];
+  const rendered = sandbox.renderSideDiff(after, "empty", { filePath: "target.c", scope: "unstaged", hunkActions: true });
+
+  assert.equal(highlight.hunks.length, 1);
+  assert.equal((rendered.match(/work-diff-target/g) || []).length, 1);
+  assert.match(rendered, /side-row meta[^\"]*work-diff-target/);
+  assert.match(diffWorkbench, /captureWorkDiffTarget\(\[hunkIndex\]\)/);
+  assert.match(diffWorkbench, /captureWorkDiffTarget\(lines\.map\(\(line\) => line\.hunkIndex\)\)/);
+  assert.match(styles, /@keyframes work-diff-target-flash/);
+  assert.match(styles, /prefers-reduced-motion:[\s\S]*\.side-row\.meta\.work-diff-target \.side-meta\s*\{[^}]*animation:\s*none !important/s);
+
+  const missing = sandbox.renderSideDiff([
+    { type: "meta", text: "@@ -100 +100,2 @@", hunkIndex: 0 },
+    { type: "add", text: "+unrelated change", hunkIndex: 0 },
+  ], "empty", { filePath: "target.c", scope: "unstaged" });
+  assert.doesNotMatch(missing, /work-diff-target/);
+
+  state.workDiffFeedback.highlight.expiresAt = Date.now() - 1;
+  const expired = sandbox.renderSideDiff(after, "empty", { filePath: "target.c", scope: "unstaged" });
+  assert.doesNotMatch(expired, /work-diff-target/);
+  sandbox.setWorkDiffFeedback("target.c", "已暂存所选 1 行", { highlight });
+
+  let removed = false;
+  sandbox.scheduleWorkDiffTargetClear({
+    querySelectorAll: () => [{ classList: { remove: (name) => { removed = name === "work-diff-target"; } } }],
+  });
+  assert.deepEqual(timers.map((timer) => timer.delay), [1800]);
+  timers[0].callback();
+  assert.equal(removed, true);
+  assert.equal(state.workDiffFeedback.highlight, null);
+});
+
 test("worktree diff actions restore the modal, loaded range, and both scroll axes", () => {
   let modalOpens = 0;
   const frameCallbacks = [];
