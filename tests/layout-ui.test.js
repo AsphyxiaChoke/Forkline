@@ -202,6 +202,109 @@ test("self update results restore the previous repository and distinguish rollba
   assert.deepEqual(JSON.parse(calls[0].options.body), { path: "D:\\GitTest" });
 });
 
+test("startup keeps a repository already restored by the server", async () => {
+  const calls = [];
+  const saved = [];
+  const serverRepo = { repo: { path: "D:\\GitTest", name: "GitTest", branch: "main", isSample: false } };
+  const context = vm.createContext({
+    api: async (url) => {
+      calls.push(url);
+      return serverRepo;
+    },
+    recentRepos: () => [{ path: "D:\\OlderRepo" }],
+    saveRecentRepo: (repo) => saved.push(repo),
+  });
+  vm.runInContext(initSource, context);
+
+  const result = await context.loadInitialRepoState("");
+  assert.strictEqual(result, serverRepo);
+  assert.deepEqual(calls, ["/api/state?ref="]);
+  assert.deepEqual(saved, [serverRepo.repo]);
+  assert.match(initSource, /state\.data = await loadInitialRepoState\(initialRef\)/);
+});
+
+test("startup restores the latest recent repository", async () => {
+  const calls = [];
+  const saved = [];
+  const sample = { repo: { path: "示例仓库", isSample: true } };
+  const restored = { repo: { path: "D:\\GitTest", name: "GitTest", branch: "main", isSample: false } };
+  const context = vm.createContext({
+    api: async (url, options) => {
+      calls.push({ url, options });
+      return url === "/api/open" ? restored : sample;
+    },
+    recentRepos: () => [{ path: "D:\\GitTest" }, { path: "D:\\OlderRepo" }],
+    saveRecentRepo: (repo) => saved.push(repo),
+  });
+  vm.runInContext(initSource, context);
+
+  const result = await context.loadInitialRepoState("");
+  assert.strictEqual(result, restored);
+  assert.deepEqual(calls.map((item) => item.url), ["/api/state?ref=", "/api/open"]);
+  assert.deepEqual(JSON.parse(calls[1].options.body), { path: "D:\\GitTest" });
+  assert.deepEqual(saved, [restored.repo]);
+});
+
+test("startup stays on the sample repository when there is no recent repository", async () => {
+  const calls = [];
+  const sample = { repo: { path: "示例仓库", isSample: true } };
+  const context = vm.createContext({
+    api: async (url) => {
+      calls.push(url);
+      return sample;
+    },
+    recentRepos: () => [],
+    saveRecentRepo: () => assert.fail("示例仓库不应写入最近仓库"),
+  });
+  vm.runInContext(initSource, context);
+
+  const result = await context.loadInitialRepoState("");
+  assert.strictEqual(result, sample);
+  assert.deepEqual(calls, ["/api/state?ref="]);
+});
+
+test("startup falls back to the sample repository when the saved path is unavailable", async () => {
+  const calls = [];
+  const sample = { repo: { path: "示例仓库", isSample: true } };
+  const context = vm.createContext({
+    api: async (url) => {
+      calls.push(url);
+      if (url === "/api/open") throw new Error("仓库不存在");
+      return sample;
+    },
+    recentRepos: () => [{ path: "D:\\MissingRepo" }],
+    saveRecentRepo: () => assert.fail("失效路径不应保存为最近仓库"),
+  });
+  vm.runInContext(initSource, context);
+
+  const result = await context.loadInitialRepoState("");
+  assert.strictEqual(result, sample);
+  assert.deepEqual(calls, ["/api/state?ref=", "/api/open"]);
+});
+
+test("startup reapplies a requested ref after restoring the repository", async () => {
+  const calls = [];
+  const saved = [];
+  const sample = { repo: { path: "示例仓库", isSample: true } };
+  const restored = { repo: { path: "D:\\GitTest", branch: "main", isSample: false } };
+  const selected = { repo: { path: "D:\\GitTest", branch: "main", selectedRef: "feature/test", isSample: false } };
+  const responses = [sample, restored, selected];
+  const context = vm.createContext({
+    api: async (url) => {
+      calls.push(url);
+      return responses.shift();
+    },
+    recentRepos: () => [{ path: "D:\\GitTest" }],
+    saveRecentRepo: (repo) => saved.push(repo),
+  });
+  vm.runInContext(initSource, context);
+
+  const result = await context.loadInitialRepoState("feature/test");
+  assert.strictEqual(result, selected);
+  assert.deepEqual(calls, ["/api/state?ref=feature%2Ftest", "/api/open", "/api/state?ref=feature%2Ftest"]);
+  assert.deepEqual(saved, [selected.repo]);
+});
+
 test("command hint observer starts before the app renders dynamic panels", () => {
   assert.match(bootstrapSource, /initCommandHints\(\);[\s\S]*?init\(\);/);
 });

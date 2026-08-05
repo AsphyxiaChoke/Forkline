@@ -11,7 +11,7 @@ async function init() {
     state.openDiffOnInit = params.get("diff") === "max";
     if (["details", "files", "fileHistory", "fileBlame", "branches", "worktrees", "submodules", "sync", "compare", "stashes", "tags", "recovery", "logs", "settings"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
-    state.data = await api(`/api/state?ref=${encodeURIComponent(initialRef)}`);
+    state.data = await loadInitialRepoState(initialRef);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
     state.selectedSha = state.data.commits[0]?.sha || "";
     renderAll();
@@ -24,6 +24,36 @@ async function init() {
   } catch (error) {
     toast(error.message);
   }
+}
+
+async function loadInitialRepoState(initialRef = "") {
+  const statePath = `/api/state?ref=${encodeURIComponent(initialRef)}`;
+  const initialData = await api(statePath);
+  if (!initialData?.repo?.isSample) {
+    saveRecentRepo(initialData.repo);
+    return initialData;
+  }
+
+  const previousRepo = recentRepos()[0];
+  if (!previousRepo?.path) return initialData;
+
+  let restoredData;
+  try {
+    restoredData = await api("/api/open", {
+      method: "POST",
+      body: JSON.stringify({ path: previousRepo.path }),
+    });
+  } catch {
+    return initialData;
+  }
+
+  if (initialRef) {
+    try {
+      restoredData = await api(statePath);
+    } catch {}
+  }
+  saveRecentRepo(restoredData.repo);
+  return restoredData;
 }
 
 async function checkForAppUpdate() {

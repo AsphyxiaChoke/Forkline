@@ -6653,3 +6653,26 @@
 - `docs/CONTINUE.md`：记录接口边界、性能实测、后续同步方向和 139/139 基线。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/core.js public/js/features/folder-command.js public/js/features/git-actions.js public/js/i18n-catalog.js public/js/panels/sync.js server.js server/repository-service.js server/repository-state-service.js tests/backend-modules.test.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath tests/sync-state-performance.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-05 - Task: 启动时恢复上次打开的仓库
+
+### What was done
+- 应用启动会先读取服务端当前状态；服务端已经保持真实仓库时直接沿用，不会被浏览器中的旧记录覆盖。
+- 服务端处于示例仓库时，自动打开最近仓库列表第一项；路径已移动、删除或失效时保留最近记录并回到示例页面。
+- 带 `ref` 参数启动时会在恢复仓库后重新读取目标引用；恢复成功后刷新最近仓库的分支和最后打开时间。
+- README 和继续开发文档同步说明首次打开、后续自动恢复及失效路径回退行为。
+
+### Testing
+- `node --check public/js/app/init.js` 和 `node --check tests/layout-ui.test.js` 均通过。
+- `node --test --test-concurrency=1 tests/layout-ui.test.js` 运行 34 项，34 项通过、0 项失败；覆盖服务端已有真实仓库、最近仓库恢复、无最近记录、路径失效和指定引用恢复。
+- `npm.cmd test` 完整运行 144 项，144 项通过、0 项失败、退出码为 0，耗时约 89.4 秒。
+- `git diff --check` 通过，仅输出仓库现有的 LF/CRLF 转换提示。
+- 本轮没有启动新的常驻测试服务；清理了昨天遗留的 `forkline-operation-cancel-*` 自动测试进程，当前 `127.0.0.1:5177` 服务 PID `46316` 保持运行。
+
+### Notes
+- `public/js/app/init.js`：增加启动状态读取和最近仓库自动恢复逻辑。
+- `tests/layout-ui.test.js`：增加五种启动仓库状态的 VM 回归。
+- `README.md`：说明后续启动会恢复上次成功打开的仓库及失效路径回退。
+- `docs/CONTINUE.md`：记录恢复优先级、浏览器存储和更新流程兼容行为。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/init.js tests/layout-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
