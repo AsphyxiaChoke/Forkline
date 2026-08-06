@@ -14,6 +14,7 @@ function offerRecoveryUndo(result) {
     running: false,
   };
   renderRecoveryUndoButton();
+  if (typeof maybeOfferRecoveryPolicyCleanup === "function") maybeOfferRecoveryPolicyCleanup(result);
   return true;
 }
 

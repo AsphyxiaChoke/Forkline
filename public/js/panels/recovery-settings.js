@@ -187,6 +187,7 @@ function recoveryRetentionHtml(points) {
           <input data-recovery-policy="maxPerBranch" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.maxPerBranch)}" />
           <em>${t("个")}</em>
         </label>
+        ${recoveryAutoPruneHtml()}
       </div>
       <div class="recovery-retention-actions">
         <span>${escapeHtml(recoveryPolicyLabel(policy) || t("策略未启用"))}</span>
@@ -305,17 +306,56 @@ function recoveryActionValue(point) {
   return point.action || point.actionLabel || "";
 }
 
-function defaultRecoveryPolicy() {
-  const fallback = { keepDays: "90", maxPerBranch: "50" };
+function defaultRecoveryPolicy(repoPath = repoPathSnapshot()) {
+  const fallback = recoveryPolicyFallback();
+  const stored = readRecoveryPolicyPreferences();
+  const repoKey = recoveryPolicyRepoKey(repoPath);
+  const repoPolicy = repoKey && stored.repositories && typeof stored.repositories === "object"
+    ? stored.repositories[repoKey]
+    : null;
+  const raw = repoPolicy && typeof repoPolicy === "object"
+    ? repoPolicy
+    : isLegacyRecoveryPolicyPreferences(stored)
+      ? stored
+      : {};
+  return {
+    keepDays: recoveryPolicyInputValue(raw.keepDays, fallback.keepDays),
+    maxPerBranch: recoveryPolicyInputValue(raw.maxPerBranch, fallback.maxPerBranch),
+    autoPrune: Boolean(raw.autoPrune),
+  };
+}
+
+function recoveryPolicyFallback() {
+  return { keepDays: "90", maxPerBranch: "50", autoPrune: false };
+}
+
+function recoveryPolicyRepoKey(value) {
+  const path = String(value || "").trim().replaceAll("\\", "/").replace(/\/+$/, "");
+  return /^[a-z]:\//i.test(path) || path.startsWith("//") ? path.toLowerCase() : path;
+}
+
+function readRecoveryPolicyPreferences() {
   try {
     const stored = JSON.parse(localStorage.getItem(recoveryPolicyStorageKey) || "{}");
-    return {
-      keepDays: recoveryPolicyInputValue(stored.keepDays, fallback.keepDays),
-      maxPerBranch: recoveryPolicyInputValue(stored.maxPerBranch, fallback.maxPerBranch),
-    };
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
   } catch {
-    return fallback;
+    return {};
   }
+}
+
+function isLegacyRecoveryPolicyPreferences(stored) {
+  return Object.prototype.hasOwnProperty.call(stored || {}, "keepDays")
+    || Object.prototype.hasOwnProperty.call(stored || {}, "maxPerBranch")
+    || Object.prototype.hasOwnProperty.call(stored || {}, "autoPrune");
+}
+
+function loadRecoveryPolicyForRepo(repo = state.data?.repo) {
+  const repoPath = repo && !repo.isSample ? repo.path || "" : "";
+  const stored = readRecoveryPolicyPreferences();
+  state.recoveryPolicyRepoPath = repoPath;
+  state.recoveryPolicy = defaultRecoveryPolicy(repoPath);
+  if (repoPath && isLegacyRecoveryPolicyPreferences(stored)) saveRecoveryPolicyPreference();
+  return state.recoveryPolicy;
 }
 
 function recoveryPolicyInputValue(value, fallback = "") {
@@ -324,12 +364,23 @@ function recoveryPolicyInputValue(value, fallback = "") {
 }
 
 function saveRecoveryPolicyPreference() {
+  const repoPath = state.recoveryPolicyRepoPath || (state.data?.repo && !state.data.repo.isSample ? state.data.repo.path : "");
+  const repoKey = recoveryPolicyRepoKey(repoPath);
+  if (!repoKey) return false;
   try {
-    localStorage.setItem(recoveryPolicyStorageKey, JSON.stringify({
+    const stored = readRecoveryPolicyPreferences();
+    const repositories = stored.repositories && typeof stored.repositories === "object" && !Array.isArray(stored.repositories)
+      ? { ...stored.repositories }
+      : {};
+    repositories[repoKey] = {
       keepDays: state.recoveryPolicy?.keepDays || "",
       maxPerBranch: state.recoveryPolicy?.maxPerBranch || "",
-    }));
+      autoPrune: Boolean(state.recoveryPolicy?.autoPrune),
+    };
+    localStorage.setItem(recoveryPolicyStorageKey, JSON.stringify({ version: 2, repositories }));
+    return true;
   } catch {
+    return false;
   }
 }
 
@@ -338,6 +389,7 @@ function normalizedRecoveryPolicy() {
   return {
     keepDays: boundedRecoveryPolicyNumber(raw.keepDays, 3650),
     maxPerBranch: boundedRecoveryPolicyNumber(raw.maxPerBranch, 500),
+    autoPrune: Boolean(raw.autoPrune),
   };
 }
 
@@ -544,6 +596,9 @@ function renderSettingsTab() {
   const repos = recentRepos();
   const policy = normalizedRecoveryPolicy();
   const policyLabel = t(recoveryPolicyLabel(policy) || "策略未启用");
+  const policyRepoLabel = state.data?.repo?.isSample
+    ? t("示例仓库不保存策略")
+    : t("仅应用于当前仓库：{name}", { name: state.data?.repo?.name || t("当前仓库") });
   const appUpdate = settingsAppUpdateView();
   els.detailTitle.textContent = t("设置");
   els.detailSub.textContent = t("本机偏好和界面行为");
@@ -627,7 +682,7 @@ function renderSettingsTab() {
         <div class="settings-card-head">
           <div>
             <strong>恢复点保留策略</strong>
-            <span>${escapeHtml(policyLabel)}</span>
+            <span>${escapeHtml(`${policyLabel} · ${policyRepoLabel}`)}</span>
           </div>
         </div>
         <div class="settings-policy-grid">
@@ -641,6 +696,7 @@ function renderSettingsTab() {
             <input data-recovery-policy="maxPerBranch" type="text" inputmode="numeric" maxlength="4" value="${escapeAttr(state.recoveryPolicy.maxPerBranch)}" />
             <em>${t("个")}</em>
           </label>
+          ${recoveryAutoPruneHtml()}
         </div>
       </section>
 
@@ -654,6 +710,16 @@ function renderSettingsTab() {
         </div>
       </section>
     </div>
+  `;
+}
+
+function recoveryAutoPruneHtml() {
+  return tt`
+    <label class="recovery-auto-prune" title="危险操作创建恢复点后检查保留策略；发现候选时仍会先询问，不会静默删除。">
+      <input data-recovery-policy="autoPrune" type="checkbox" ${state.recoveryPolicy.autoPrune ? "checked" : ""} />
+      <span>操作后提醒整理</span>
+      <em>显示候选并确认</em>
+    </label>
   `;
 }
 
@@ -906,7 +972,13 @@ function resetRecoveryFilter() {
 }
 
 function updateRecoveryPolicy(key, value, input) {
-  if (!["keepDays", "maxPerBranch"].includes(key)) return;
+  if (!["keepDays", "maxPerBranch", "autoPrune"].includes(key)) return;
+  if (key === "autoPrune") {
+    state.recoveryPolicy = { ...(state.recoveryPolicy || {}), autoPrune: Boolean(value) };
+    saveRecoveryPolicyPreference();
+    renderInspector();
+    return;
+  }
   const cleanValue = recoveryPolicyInputValue(value);
   state.recoveryPolicy = { ...(state.recoveryPolicy || {}), [key]: cleanValue };
   saveRecoveryPolicyPreference();
@@ -922,24 +994,55 @@ function updateRecoveryPolicy(key, value, input) {
   }
 }
 
-async function pruneRecoveryPointsByPolicy(button) {
-  if (!state.data) return;
+function recoveryPruneConfirmationMessage(plan, policy, automatic = false) {
+  const preview = plan.deletePoints.slice(0, 6).map((point) => [
+    t(point.actionLabel || point.action || "恢复点"),
+    point.branch || "HEAD",
+    point.short || point.sha?.slice(0, 7) || point.shortRef || point.ref,
+    point.time || "",
+  ].filter(Boolean).join(" · "));
+  const extra = Math.max(0, plan.deleteCount - preview.length);
+  const heading = automatic
+    ? t("危险操作已完成并创建了恢复点。当前仓库有 {count} 个旧恢复点超出保留策略，确认清理以下候选？", { count: plan.deleteCount })
+    : t("确认按当前仓库的保留策略清理 {count} 个恢复点？", { count: plan.deleteCount });
+  return [
+    heading,
+    "",
+    t("策略：{policy}", { policy: recoveryPolicyLabel(policy) }),
+    t("保留：{count} 个", { count: plan.keepCount }),
+    "",
+    t("候选预览："),
+    ...preview.map((item) => `- ${item}`),
+    extra ? t("另有 {count} 个候选未在此处列出。", { count: extra }) : "",
+    "",
+    t("命令：git update-ref -d <恢复点引用>"),
+    t("删除后不能再通过 Forkline 恢复到这些引用。"),
+  ].filter((line, index, lines) => line || (index > 0 && lines[index - 1])).join("\n");
+}
+
+async function maybeOfferRecoveryPolicyCleanup(result) {
+  if (!result?.recovery?.ref || !result.recovery.sha || !state.data || state.data.repo.isSample || !state.recoveryPolicy?.autoPrune) return false;
+  const policy = normalizedRecoveryPolicy();
+  if (!recoveryPolicyActive(policy)) return false;
+  const plan = recoveryRetentionPlan(state.data.recoveryPoints || [], policy);
+  if (!plan.deleteCount) return false;
+  return pruneRecoveryPointsByPolicy(null, { automatic: true });
+}
+
+async function pruneRecoveryPointsByPolicy(button, options = {}) {
+  if (!state.data) return false;
   const policy = normalizedRecoveryPolicy();
   if (!recoveryPolicyActive(policy)) {
-    toast(t("请先设置恢复点保留策略。"));
-    return;
+    if (!options.automatic) toast(t("请先设置恢复点保留策略。"));
+    return false;
   }
   const plan = recoveryRetentionPlan(state.data.recoveryPoints || [], policy);
   if (!plan.deleteCount) {
-    toast(t("当前没有需要清理的恢复点。"));
-    return;
+    if (!options.automatic) toast(t("当前没有需要清理的恢复点。"));
+    return false;
   }
-  const message = t("确认按保留策略清理 {deleteCount} 个恢复点？\n\n{policy}\n保留：{keepCount} 个\n命令：git update-ref -d <恢复点引用>\n\n删除后不能再通过 Forkline 恢复到这些引用。", {
-    deleteCount: plan.deleteCount,
-    policy: recoveryPolicyLabel(policy),
-    keepCount: plan.keepCount,
-  });
-  if (!state.data.repo.isSample && !confirm(message)) return;
+  const message = recoveryPruneConfirmationMessage(plan, policy, Boolean(options.automatic));
+  if (!state.data.repo.isSample && !confirm(message)) return false;
   const repoPath = repoPathSnapshot();
   try {
     if (button) button.disabled = true;
@@ -960,9 +1063,11 @@ async function pruneRecoveryPointsByPolicy(button) {
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedRecoveryRef = filteredRecoveryPoints()[0]?.ref || "";
     renderAll();
+    return true;
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentRepoPath(repoPath)) return false;
     toast(error.message);
+    return false;
   } finally {
     if (button) button.disabled = false;
   }

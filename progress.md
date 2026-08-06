@@ -6808,3 +6808,28 @@
 - `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录使用方式、安全边界、接口结构、验证结果和后续优化顺序。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `a99eabe`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/i18n-catalog.js public/js/panels/sync.js public/styles.css server.js server/repository-auth-service.js server/repository-service.js tests/backend-services.test.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath tests/auth-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 按仓库保存恢复点策略并增加操作后整理提醒
+
+### What was done
+- 将恢复点保留策略从浏览器全局值改为按规范化仓库路径隔离保存，并在首次打开真实仓库时迁移旧的全局策略；仓库首次加载和切换时立即应用各自偏好。
+- 在“恢复点”和“设置”页增加“操作后提醒整理”复选框；只有危险历史操作成功并返回自动恢复点后才检查候选，确认框会列出策略、保留数量和候选预览，不会静默删除。
+- 保持后端现有候选 ref + SHA 重新计算与一致性校验，示例仓库不执行操作后整理；补齐中英文文案和窄侧栏自适应布局。
+
+### Testing
+- `node --check` 通过恢复设置、撤销、事件、初始化、仓库切换和新增测试脚本；定向运行 `tests/recovery-policy-ui.test.js` 与 `tests/recovery-undo-ui.test.js` 共 5 项，5 项通过。
+- `npm.cmd test` 完整运行 155 项，155 项通过、0 项失败、0 项跳过，耗时约 102.7 秒；真实 Chromium 复杂文件打开约 232.7 ms、最大事件循环延迟约 92.7 ms，监听器保持 `3 -> 4 -> 5 -> 5 -> 4` 回落。
+- 临时 `C:\tmp\forkline-recovery-policy-ui-*` 仓库包含 2 条恢复点和 1 条清理候选；真实页面验证设置页、恢复点页、复选框、候选预览和清理确认框。普通侧栏及约 `710px` CSS 宽的窄竖屏下页面和右栏横向溢出均为 0，控制台无错误；取消确认后 2 条恢复点仍存在。
+- 临时 `5299` 服务、浏览器标签和测试仓库均已关闭或删除；端口确认无监听，未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/core.js`：增加操作后整理偏好和当前策略仓库路径状态。
+- `public/js/app/init.js`、`public/js/features/repositories.js`：首次加载和切换仓库时读取该仓库的恢复策略。
+- `public/js/panels/recovery-settings.js`：实现版本化按仓库存储、旧数据迁移、复选框、候选确认文本和操作后检查流程。
+- `public/js/features/recovery-undo.js`、`public/js/app/events.js`：危险操作登记恢复点后触发策略检查，并正确读取复选框状态。
+- `public/js/i18n-catalog.js`、`public/styles.css`：补齐中英文提示和窄侧栏复选框布局。
+- `tests/recovery-policy-ui.test.js`、`tests/recovery-undo-ui.test.js`：覆盖仓库隔离、迁移、取消不删除、示例仓库边界和撤销触发。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录使用方式、存储结构、安全边界、验证结果和下一步顺序。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `eb9f39b`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/app/init.js public/js/core.js public/js/features/recovery-undo.js public/js/features/repositories.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css tests/recovery-undo-ui.test.js`，再执行 `Remove-Item -LiteralPath tests/recovery-policy-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+- 最终补充启动/切换仓库接线回归后，定向测试为 6/6，完整 `npm.cmd test` 为 156/156，耗时约 102.4 秒；真实 Chromium 复杂文件打开约 170.2 ms、最大事件循环延迟约 52.0 ms，本条结果取代上方施工过程中记录的 5/5 与 155/155 中间值。

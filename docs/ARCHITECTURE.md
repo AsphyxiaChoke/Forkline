@@ -66,6 +66,8 @@
 
 前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`i18n-catalog.js` 和 `i18n.js` 必须先于 API、功能和面板脚本加载；`js/app/events.js` 之前必须已经存在全部事件处理函数；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
 
+恢复点策略保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。
+
 ## 国际化规则
 
 - 中文是默认语言，设置页可切换英语；当前语言保存在浏览器的 `forkline-locale` 中。
@@ -125,6 +127,7 @@
 - `tests/worktree-refresh.test.js` 验证文件快照影响刷新签名，以及页面隐藏或失焦时不执行周期读取。
 - `tests/backend-modules.test.js` 固定入口、门面与二级服务边界，防止实现重新回流到 `server.js` 或两个门面文件。
 - `tests/backend-services.test.js` 直接覆盖补丁裁剪、路径边界、远端网页 URL、恢复点保留策略、受保护分支和历史分页等纯服务逻辑。
+- `tests/recovery-policy-ui.test.js` 覆盖旧策略迁移、按仓库隔离、操作后整理确认和示例仓库边界；`tests/recovery-undo-ui.test.js` 验证危险操作返回恢复点后会登记一键撤销并触发策略检查。
 - `tests/api-repo-context.test.js` 覆盖中文仓库路径请求头编码和当前语言请求头。
 - `tests/i18n.test.js` 覆盖语言标准化、中文默认、英文切换、浏览器持久化、静态文案回切，以及路径和原始 Git 输出不被翻译。
 - API 集成测试覆盖中文仓库名、中文提交信息和中文分支名在英文响应中保持原值，同时验证默认中文、英文错误和不支持语言回退中文。

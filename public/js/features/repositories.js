@@ -348,6 +348,7 @@ async function applyOpenedRepoData(data, requestId = 0) {
     state.data = refData;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
   }
+  loadRecoveryPolicyForRepo(state.data.repo);
   state.selectedSha = state.data.commits[0]?.sha || "";
   els.searchInput.value = "";
   renderAll();

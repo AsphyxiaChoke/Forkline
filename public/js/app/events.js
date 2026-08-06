@@ -240,7 +240,7 @@ els.detailBody.addEventListener("input", (event) => {
   }
   const policy = event.target.closest("[data-recovery-policy]");
   if (policy && (state.selectedTab === "recovery" || state.selectedTab === "settings")) {
-    updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
+    updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.type === "checkbox" ? policy.checked : policy.value, policy);
   }
 });
 els.detailBody.addEventListener("keydown", (event) => {
@@ -263,7 +263,7 @@ els.detailBody.addEventListener("change", (event) => {
   }
   const policy = event.target.closest("[data-recovery-policy]");
   if (policy && (state.selectedTab === "recovery" || state.selectedTab === "settings")) {
-    updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.value, policy);
+    updateRecoveryPolicy(policy.dataset.recoveryPolicy, policy.type === "checkbox" ? policy.checked : policy.value, policy);
   }
 });
 els.detailBody.addEventListener("click", (event) => {

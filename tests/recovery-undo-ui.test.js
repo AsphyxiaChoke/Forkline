@@ -12,7 +12,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 function createHarness(apiResult = { ok: true, output: "已恢复", recovery: { ref: "refs/forkline/recovery/after", sha: "after" } }) {
-  const calls = { api: [], reload: [], toast: [] };
+  const calls = { api: [], reload: [], toast: [], cleanup: [] };
   const attributes = new Map();
   const button = {
     hidden: true,
@@ -44,6 +44,7 @@ function createHarness(apiResult = { ok: true, output: "已恢复", recovery: { 
     repoPathSnapshot: () => state.data.repo.path,
     isCurrentRepoPath: (repoPath) => repoPath === state.data.repo.path,
     currentBranchSnapshotPayload: () => ({ expectedBranch: state.data.repo.branch, expectedHead: state.data.repo.headSha, expectedWorktreeSnapshot: "clean" }),
+    maybeOfferRecoveryPolicyCleanup: (result) => calls.cleanup.push(result.recovery.ref),
     api: async (requestPath, options) => {
       calls.api.push({ path: requestPath, options });
       return apiResult;
@@ -75,6 +76,7 @@ test("one-click recovery button is only shown for the matching repository, branc
   assert.equal(harness.button.hidden, false);
   assert.equal(harness.button.disabled, false);
   assert.equal(harness.button.textContent, "撤销");
+  assert.deepEqual(harness.calls.cleanup, ["refs/forkline/recovery/20260806/main/reset-hard"]);
   assert.match(harness.button.title, /git reset --hard refs\/forkline\/recovery/);
   assert.match(harness.attributes.get("aria-label"), /不包含未提交文件/);
 

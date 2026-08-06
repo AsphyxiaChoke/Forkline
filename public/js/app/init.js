@@ -12,6 +12,7 @@ async function init() {
     if (["details", "files", "fileHistory", "fileBlame", "branches", "worktrees", "submodules", "sync", "compare", "stashes", "tags", "recovery", "logs", "settings"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await loadInitialRepoState(initialRef);
+    loadRecoveryPolicyForRepo(state.data.repo);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
     state.selectedSha = state.data.commits[0]?.sha || "";
     renderAll();
