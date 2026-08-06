@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { createRepositoryWorktreeService } = require("../server/repository-worktree-service");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-refresh.js"), "utf8");
@@ -12,6 +13,32 @@ const coreSource = fs.readFileSync(path.join(root, "public", "js", "core.js"), "
 const gitActionsSource = fs.readFileSync(path.join(root, "public", "js", "features", "git-actions.js"), "utf8");
 const stashesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "stashes.js"), "utf8");
 const repositoryWorktreeSource = fs.readFileSync(path.join(root, "server", "repository-worktree-service.js"), "utf8");
+
+function createWorktreeService(git) {
+  return createRepositoryWorktreeService({
+    git,
+    getCurrentRepo: () => "C:/repo",
+    browseService: {
+      isPathInside: () => true,
+      sameFsPath: () => true,
+    },
+    authService: { readPullRequestLink: () => "" },
+    readBranchDisplayName: async () => "main",
+    hasHeadCommit: async () => true,
+    readRemoteDetails: async () => [],
+    normalizeStashRef: (value) => value,
+    sampleState: () => ({ workingFiles: [], stashes: [] }),
+    detectRepoOperation: () => null,
+    worktreeDiffContext: 8,
+    fileEditorDiffContext: 0,
+    worktreeSnapshotCacheLimit: 8,
+    untrackedDiffHunkSize: 200,
+    gitLogFieldSeparator: "\u001f",
+    refCommitLogFormat: "%H",
+    laneColors: ["#000"],
+    worktreeFileSnapshotCache: new Map(),
+  });
+}
 
 test("worktree signatures include file snapshots", () => {
   const context = vm.createContext({});
@@ -73,9 +100,9 @@ test("worktree polling runs only while the page is visible and focused", () => {
   assert.deepEqual(calls, [true, true, true]);
 });
 
-test("worktree file snapshots reuse hashes until file metadata changes", () => {
+test("worktree file snapshots reuse hashes until file metadata changes", async () => {
   const snapshotSource = repositoryWorktreeSource.slice(
-    repositoryWorktreeSource.indexOf("function worktreeFileSnapshot"),
+    repositoryWorktreeSource.indexOf("async function worktreeFileSnapshot"),
     repositoryWorktreeSource.indexOf("function sha256Json")
   );
   let reads = 0;
@@ -91,33 +118,62 @@ test("worktree file snapshots reuse hashes until file metadata changes", () => {
     sameFsPath: () => true,
     isPathInside: () => true,
     fs: {
-      statSync: () => ({
-        dev: 1n,
-        ino: 2n,
-        size: BigInt(Buffer.byteLength(content)),
-        mtimeNs,
-        ctimeNs: mtimeNs,
-        isFile: () => true,
-        isDirectory: () => false,
-      }),
-      readFileSync: () => {
-        reads += 1;
-        return Buffer.from(content);
+      promises: {
+        stat: async () => ({
+          dev: 1n,
+          ino: 2n,
+          size: BigInt(Buffer.byteLength(content)),
+          mtimeNs,
+          ctimeNs: mtimeNs,
+          isFile: () => true,
+          isDirectory: () => false,
+        }),
+        readFile: async () => {
+          reads += 1;
+          return Buffer.from(content);
+        },
       },
     },
   });
   vm.runInContext(snapshotSource, context);
 
-  const first = context.worktreeFileSnapshot("C:/repo", "note.txt");
-  const second = context.worktreeFileSnapshot("C:/repo", "note.txt");
+  const first = await context.worktreeFileSnapshot("C:/repo", "note.txt");
+  const second = await context.worktreeFileSnapshot("C:/repo", "note.txt");
   assert.equal(second, first);
   assert.equal(reads, 1);
 
   content = "other";
   mtimeNs = 2n;
-  const changed = context.worktreeFileSnapshot("C:/repo", "note.txt");
+  const changed = await context.worktreeFileSnapshot("C:/repo", "note.txt");
   assert.notEqual(changed, first);
   assert.equal(reads, 2);
+});
+
+test("worktree index snapshots skip untracked paths", async () => {
+  const calls = [];
+  const service = createWorktreeService(async (_repo, args) => {
+    calls.push(args);
+    return "";
+  });
+
+  await service.readWorkingStatus("C:/repo", "?? untracked-a.txt\0?? folder/untracked-b.txt\0");
+  assert.deepEqual(calls, []);
+});
+
+test("worktree index snapshot queries keep large path lists below the Windows command limit", async () => {
+  const calls = [];
+  const service = createWorktreeService(async (_repo, args) => {
+    calls.push(args);
+    return "";
+  });
+  const status = Array.from(
+    { length: 1600 },
+    (_value, index) => ` M folder-${String(index).padStart(4, "0")}/tracked-file-${String(index).padStart(5, "0")}.txt\0`
+  ).join("");
+
+  await service.readWorkingStatus("C:/repo", status);
+  assert.ok(calls.length > 1);
+  assert.ok(calls.every((args) => args.join("\0").length <= 24 * 1024));
 });
 
 test("lightweight worktree merges preserve commit and branch state", () => {

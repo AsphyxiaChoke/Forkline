@@ -7009,3 +7009,27 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录五个模块职责、权威加载顺序、验证结果和下一项性能测量方向。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `4f9547b`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/features/branches.js public/js/features/diff-workbench.js tests/commit-selection-performance.test.js tests/diff-preview.test.js tests/file-editor-ui.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath public/js/features/file-tree.js,public/js/features/diff-renderer.js,public/js/features/diff-selection.js,public/js/features/worktree-refresh.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 优化大工作区状态读取与文件快照性能
+
+### What was done
+- 用独立临时仓库分段测量 4000 文件工作区，确认主要成本来自逐文件快照，并复现全部路径一次传给 `git ls-files` 时 Windows 返回 `ENAMETOOLONG`。
+- 未跟踪路径不再查询索引；已跟踪路径按 24 KiB 参数上限分批，最多并行 4 个只读查询，避免大量修改文件时索引快照静默缺失。
+- 文件元数据与内容 SHA-256 改为最多 32 路受限并发，缓存容量从 2048 提高到 8192；返回结构、工作区签名、内容哈希和 Git 操作快照语义保持不变。
+- 真实 Chromium 性能回归增加同一 4000 文件工作区的冷 API 和紧接着的热 API，并确认两次文件数与工作区快照一致。
+
+### Testing
+- `node --check` 通过 `server.js`、工作区服务和两个受影响测试文件；工作区/后端专项回归运行 9 项，9 项通过、0 项失败。
+- 独立 4000 个未跟踪文件基准中，原实现 2048 项缓存的冷/热读取约为 567.3/538.1 ms；优化后 8192 项缓存约为 407.7-417.1/248.0-258.7 ms。
+- 独立 1600 个已跟踪修改文件基准中，原始单命令路径列表稳定触发 `ENAMETOOLONG`；优化后的分批查询无错误，冷/热结果均为 1600 个文件且快照一致。
+- `npm.cmd run test:browser` 真实 Chromium 专项通过；完整 `npm.cmd test` 运行 161 项，161 项通过、0 项失败、0 项跳过，耗时约 139.2 秒。最终 4000 文件冷 API 约 433.7 ms、热 API 约 266.7 ms、前端树渲染约 39.8 ms；复杂历史文件打开约 325.1 ms、最大事件循环延迟约 61.3 ms。
+- 仓库反复切换约 9.7 秒，编辑器连续开关 30 次约 3.4 秒，`resize` 监听器保持 `4 -> 4`，DOM 和 GC 后堆边界稳定。
+
+### Notes
+- `server.js`：将工作区文件快照 LRU 上限提高到 8192。
+- `server/repository-worktree-service.js`：过滤未跟踪索引路径、按安全长度分批读取已跟踪索引，并发生成内容快照。
+- `tests/worktree-refresh.test.js`：覆盖未跟踪路径过滤、Windows 命令长度边界和异步快照缓存。
+- `tests/browser-performance.test.js`：增加 4000 文件冷/热 API 与快照一致性回归。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录性能边界、实现约束、实测结果和后续优化顺序。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `70848e1`；提交前可执行 `git restore -- server.js server/repository-worktree-service.js tests/worktree-refresh.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

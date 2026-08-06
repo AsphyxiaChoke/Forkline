@@ -421,6 +421,9 @@ test("real Chromium keeps historical file comparison responsive", {
     const requestStarted = performance.now();
     const data = await api("/api/worktree");
     const apiMs = performance.now() - requestStarted;
+    const warmRequestStarted = performance.now();
+    const warmData = await api("/api/worktree");
+    const warmApiMs = performance.now() - warmRequestStarted;
     state.data.workingFiles = data.workingFiles || [];
     state.data.worktreeSnapshot = data.worktreeSnapshot || "";
     state.data.repo = { ...state.data.repo, operation: data.operation || null };
@@ -446,6 +449,9 @@ test("real Chromium keeps historical file comparison responsive", {
     clearInterval(timer);
     return {
       apiMs,
+      warmApiMs,
+      warmLoadedFiles: warmData.workingFiles?.length || 0,
+      sameSnapshot: warmData.worktreeSnapshot === data.worktreeSnapshot,
       renderMs,
       filterMs,
       restoreMs,
@@ -456,8 +462,10 @@ test("real Chromium keeps historical file comparison responsive", {
       pageNodes: document.querySelectorAll("body *").length,
     };
   })()`);
+  assert.equal(worktreeMetrics.warmLoadedFiles, worktreeMetrics.loadedFiles);
+  assert.equal(worktreeMetrics.sameSnapshot, true);
   t.diagnostic(
-    `large worktree ${worktreeMetrics.loadedFiles} files: API ${worktreeMetrics.apiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
+    `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms, warm API ${worktreeMetrics.warmApiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
   );
 
   const baselineRepoPath = await evaluate(cdp, `(async () => {

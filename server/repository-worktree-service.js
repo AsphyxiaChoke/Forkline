@@ -8,6 +8,10 @@ const fs = require("fs");
 
 const path = require("path");
 
+const INDEX_PATHSPEC_MAX_CHARS = 24 * 1024;
+const INDEX_QUERY_CONCURRENCY = 4;
+const WORKTREE_SNAPSHOT_CONCURRENCY = 32;
+
 
 
 function createRepositoryWorktreeService(options) {
@@ -275,10 +279,12 @@ function createRepositoryWorktreeService(options) {
 
   async function readWorkingStatus(repoPath, statusOutput) {
     const files = parseStatus(statusOutput);
-    const paths = [...new Set(files.flatMap((file) => [file.file, file.previousFile].filter(Boolean)))];
+    const paths = [...new Set(files.flatMap((file) => (
+      file.indexStatus === "?" ? [] : [file.file, file.previousFile].filter(Boolean)
+    )))];
     const indexEntries = await readIndexSnapshotEntries(repoPath, paths);
-    const enriched = files.map((file) => {
-      const snapshot = statusFileSnapshot(repoPath, file, indexEntries);
+    const enriched = await mapWithConcurrency(files, WORKTREE_SNAPSHOT_CONCURRENCY, async (file) => {
+      const snapshot = await statusFileSnapshot(repoPath, file, indexEntries);
       return { ...file, snapshot };
     });
     return {
@@ -290,17 +296,22 @@ function createRepositoryWorktreeService(options) {
   async function readIndexSnapshotEntries(repoPath, files) {
     const entries = new Map();
     if (!files.length) return entries;
-    const output = await git(repoPath, ["ls-files", "-s", "-z", "--", ...files], { maxBuffer: 1024 * 1024 * 8 }).catch(() => "");
-    for (const record of String(output || "").split("\0").filter(Boolean)) {
-      const tabIndex = record.indexOf("\t");
-      if (tabIndex < 0) continue;
-      const meta = record.slice(0, tabIndex).trim().split(/\s+/);
-      const file = record.slice(tabIndex + 1);
-      if (meta.length < 3 || !file) continue;
-      const value = `${meta[0]}:${meta[1]}:${meta[2]}`;
-      const list = entries.get(file) || [];
-      list.push(value);
-      entries.set(file, list);
+    const batches = indexPathspecBatches(files);
+    const outputs = await mapWithConcurrency(batches, INDEX_QUERY_CONCURRENCY, (batch) => (
+      git(repoPath, ["ls-files", "-s", "-z", "--", ...batch], { maxBuffer: 1024 * 1024 * 8 }).catch(() => "")
+    ));
+    for (const output of outputs) {
+      for (const record of String(output || "").split("\0").filter(Boolean)) {
+        const tabIndex = record.indexOf("\t");
+        if (tabIndex < 0) continue;
+        const meta = record.slice(0, tabIndex).trim().split(/\s+/);
+        const file = record.slice(tabIndex + 1);
+        if (meta.length < 3 || !file) continue;
+        const value = `${meta[0]}:${meta[1]}:${meta[2]}`;
+        const list = entries.get(file) || [];
+        list.push(value);
+        entries.set(file, list);
+      }
     }
     for (const [file, list] of entries) {
       entries.set(file, list.sort().join(","));
@@ -308,7 +319,29 @@ function createRepositoryWorktreeService(options) {
     return entries;
   }
 
-  function statusFileSnapshot(repoPath, file, indexEntries) {
+  function indexPathspecBatches(files) {
+    const batches = [];
+    let batch = [];
+    let chars = "ls-files\0-s\0-z\0--\0".length;
+    for (const file of files) {
+      const nextChars = String(file).length + 1;
+      if (batch.length && chars + nextChars > INDEX_PATHSPEC_MAX_CHARS) {
+        batches.push(batch);
+        batch = [];
+        chars = "ls-files\0-s\0-z\0--\0".length;
+      }
+      batch.push(file);
+      chars += nextChars;
+    }
+    if (batch.length) batches.push(batch);
+    return batches;
+  }
+
+  async function statusFileSnapshot(repoPath, file, indexEntries) {
+    const [worktree, previousWorktree] = await Promise.all([
+      worktreeFileSnapshot(repoPath, file.file),
+      file.previousFile ? worktreeFileSnapshot(repoPath, file.previousFile) : "",
+    ]);
     return sha256Json({
       file: file.file,
       previousFile: file.previousFile || "",
@@ -321,8 +354,8 @@ function createRepositoryWorktreeService(options) {
       worktreeStatus: file.worktreeStatus || "",
       index: indexEntries.get(file.file) || "missing",
       previousIndex: file.previousFile ? indexEntries.get(file.previousFile) || "missing" : "",
-      worktree: worktreeFileSnapshot(repoPath, file.file),
-      previousWorktree: file.previousFile ? worktreeFileSnapshot(repoPath, file.previousFile) : "",
+      worktree,
+      previousWorktree,
     });
   }
 
@@ -330,13 +363,13 @@ function createRepositoryWorktreeService(options) {
     return sha256Json(files.map((file) => `${file.file}\0${file.previousFile || ""}\0${file.snapshot || ""}`).sort());
   }
 
-  function worktreeFileSnapshot(repoPath, file) {
+  async function worktreeFileSnapshot(repoPath, file) {
     const repoRoot = path.resolve(repoPath);
     const fullPath = path.resolve(repoRoot, normalizeRepoFile(file));
     if (!sameFsPath(repoRoot, fullPath) && !isPathInside(repoRoot, fullPath)) return "outside";
     const cacheKey = process.platform === "win32" ? fullPath.toLowerCase() : fullPath;
     try {
-      const stat = fs.statSync(fullPath, { bigint: true });
+      const stat = await fs.promises.stat(fullPath, { bigint: true });
       if (!stat.isFile()) {
         worktreeFileSnapshotCache.delete(cacheKey);
         return stat.isDirectory() ? "directory" : "other";
@@ -349,7 +382,7 @@ function createRepositoryWorktreeService(options) {
         return cached.snapshot;
       }
       const hash = crypto.createHash("sha256");
-      hash.update(fs.readFileSync(fullPath));
+      hash.update(await fs.promises.readFile(fullPath));
       const snapshot = `file:${stat.size}:${hash.digest("hex")}`;
       worktreeFileSnapshotCache.delete(cacheKey);
       worktreeFileSnapshotCache.set(cacheKey, { fingerprint, snapshot });
@@ -362,6 +395,21 @@ function createRepositoryWorktreeService(options) {
       if (error?.code === "ENOENT") return "missing";
       return `error:${error?.code || "unknown"}`;
     }
+  }
+
+  async function mapWithConcurrency(items, limit, mapper) {
+    if (!items.length) return [];
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+    return results;
   }
 
   function sha256Json(value) {
