@@ -6960,3 +6960,27 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新面板职责、权威加载顺序、验证结果和下一项优化。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `2668902`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/panels/sync.js tests/auth-ui.test.js tests/layout-ui.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath public/js/panels/stashes.js,public/js/panels/auth.js,public/js/panels/compare.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 拆分文件编辑器核心、动作、窗口、查找和工具模块
+
+### What was done
+- 保留文件打开、数据加载、保存和 CodeMirror 初始化在 `file-editor.js`，将暂存/还原动作、浮窗生命周期、查找替换和内容工具分别移动到独立脚本。
+- 将搜索数量、窗口尺寸和复杂文件轻量路径阈值常量移动到实际使用模块；拖拽和缩放状态只保留在窗口生命周期模块。
+- 保持现有全局函数名、状态结构、Git hunk/行映射、API 请求和浏览器交互不变，并用脚本顺序断言固定五个模块在仓库切换和事件绑定之前加载。
+
+### Testing
+- `node --check` 通过五个文件编辑器模块和编辑器 UI 测试；`tests/file-editor-ui.test.js` 运行 29 项，29 项通过、0 项失败。
+- `npm.cmd test` 完整运行 159 项，159 项通过、0 项失败、0 项跳过，耗时约 124.9 秒；真实 Chromium 复杂历史文件打开约 168.3 ms、最大事件循环延迟约 50.6 ms。
+- 连续开关编辑器 30 次约 2.7 秒，`resize` 监听器保持 `4 -> 4`，DOM `documents/nodes/listeners` 保持 `1/2071/139 -> 1/2071/139`，GC 后堆约 `3.2 MiB -> 3.6 MiB`。
+- `git diff --check` 通过，仅显示仓库现有 LF / CRLF 转换提示。最终资源检查确认相关 Node / Edge / Chrome 进程为 0、性能测试临时目录为 0、机械拆分脚本已删除；未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/features/file-editor-utils.js`：承接文件模式、内容标准化、轻量对照判断和格式化工具。
+- `public/js/features/file-editor-actions.js`：承接双栏轻量对照、暂存块/选中行、右键还原和 Git 动作刷新。
+- `public/js/features/file-editor-window.js`：承接视图状态、拖动/拉伸、ResizeObserver、实例销毁、状态和标签。
+- `public/js/features/file-editor-search.js`：承接查找、匹配标记、上一处/下一处和单个/全部替换。
+- `public/js/features/file-editor.js`：只保留编辑器核心打开、加载、保存和 CodeMirror 初始化。
+- `public/index.html`、`tests/file-editor-ui.test.js`：更新脚本顺序并固定五个模块职责和原有交互回归。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新编辑器职责、权威加载顺序、验证结果和下一项优化。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `f9f6f6f`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/features/file-editor.js tests/file-editor-ui.test.js`，再执行 `Remove-Item -LiteralPath public/js/features/file-editor-utils.js,public/js/features/file-editor-actions.js,public/js/features/file-editor-window.js,public/js/features/file-editor-search.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

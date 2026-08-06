@@ -14,7 +14,12 @@ const contextMenus = fs.readFileSync(path.join(root, "public", "js", "features",
 const diffWorkbench = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
 const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
-const editor = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor.js"), "utf8");
+const editorUtils = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-utils.js"), "utf8");
+const editorActions = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-actions.js"), "utf8");
+const editorWindow = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-window.js"), "utf8");
+const editorSearch = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-search.js"), "utf8");
+const editorCore = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor.js"), "utf8");
+const editor = [editorUtils, editorActions, editorWindow, editorSearch, editorCore].join("\n");
 const mergeAddon = fs.readFileSync(path.join(root, "public", "vendor", "codemirror", "addon", "merge", "merge.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const catalog = require(path.join(root, "public", "js", "i18n-catalog.js"));
@@ -25,6 +30,27 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(html, /id="fileEditorModal"/);
   assert.match(html, /id="fileEditorText"[^>]*wrap="off"/);
   assert.match(html, /js\/features\/file-editor\.js/);
+  const editorScripts = [
+    "./js/features/file-editor-utils.js",
+    "./js/features/file-editor-actions.js",
+    "./js/features/file-editor-window.js",
+    "./js/features/file-editor-search.js",
+    "./js/features/file-editor.js",
+    "./js/features/repositories.js",
+    "./js/app/events.js",
+  ];
+  let previousScript = -1;
+  for (const script of editorScripts) {
+    const position = html.indexOf(`<script src="${script}"></script>`);
+    assert.ok(position > previousScript, `${script} should load after the previous editor module`);
+    previousScript = position;
+  }
+  assert.match(editorCore, /async function openFileEditor\(/);
+  assert.match(editorActions, /async function stageFileEditorChunk\(/);
+  assert.match(editorWindow, /function destroyFileEditorInstance\(/);
+  assert.match(editorSearch, /function openFileEditorSearch\(/);
+  assert.match(editorUtils, /function detectFileEditorLightweightCompare\(/);
+  assert.doesNotMatch(editorCore, /async function stageFileEditorChunk|function beginFileEditorDrag|function openFileEditorSearch/);
   assert.match(contextMenus, /action === "edit"/);
   assert.match(contextMenus, /previousFile: fileInfo\.previousFile/);
   assert.match(contextMenus, /openFileEditor\(context\.file, context\.previousFile/);

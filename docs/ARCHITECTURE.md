@@ -34,6 +34,7 @@
 - `public/js/panels/workspaces.js`：工作树和子模块面板。
 - `public/js/panels/stashes.js`、`auth.js`、`sync.js`、`compare.js`：分别负责储藏、认证诊断、轻量同步状态和分支/引用比较面板。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、Git 操作日志、应用设置与在线更新面板。
+- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：分别负责文件类型与轻量对照判断、暂存/还原动作、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
 - `public/index.html`：静态结构和有序脚本加载。
@@ -67,15 +68,19 @@
 22. `js/panels/settings.js`
 23. `js/features/recovery-undo.js`
 24. `js/features/diff-workbench.js`
-25. `js/features/file-editor.js`
-26. `js/features/repositories.js`
-27. `js/features/git-actions.js`
-28. `js/app/layout-utils.js`
-29. `js/app/events.js`
-30. `app.js`
-31. `js/bootstrap.js`
+25. `js/features/file-editor-utils.js`
+26. `js/features/file-editor-actions.js`
+27. `js/features/file-editor-window.js`
+28. `js/features/file-editor-search.js`
+29. `js/features/file-editor.js`
+30. `js/features/repositories.js`
+31. `js/features/git-actions.js`
+32. `js/app/layout-utils.js`
+33. `js/app/events.js`
+34. `app.js`
+35. `js/bootstrap.js`
 
-前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`i18n-catalog.js` 和 `i18n.js` 必须先于 API、功能和面板脚本加载；四个右侧面板模块和 `recovery-undo.js` 必须先于 `js/app/events.js`；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
+前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`i18n-catalog.js` 和 `i18n.js` 必须先于 API、功能和面板脚本加载；右侧面板模块、恢复点撤销和五个文件编辑器模块必须先于 `js/app/events.js`；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
 
 恢复点策略保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。
 
