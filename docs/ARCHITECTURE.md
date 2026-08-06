@@ -35,7 +35,7 @@
 - `public/js/panels/stashes.js`、`auth.js`、`sync.js`、`compare.js`：分别负责储藏、认证诊断、轻量同步状态和分支/引用比较面板。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、Git 操作日志、应用设置与在线更新面板。
 - `public/js/features/file-tree.js`、`diff-renderer.js`、`diff-workbench.js`、`diff-selection.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、双栏 Diff 渲染、Diff 数据加载与弹窗编排、按行操作与滚动恢复，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu/scroll 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。工作区与暂存区超过 800 个文件时先渲染首批，接近底部滚动或点击“继续显示”后按 800 个增量合并目录节点；目录数量仍按完整文件集合计算。
-- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：分别负责文件类型与轻量对照判断、暂存/还原动作、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。
+- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；两种路径都只允许编辑中间的合并结果。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
 - `public/index.html`：静态结构和有序脚本加载。
@@ -112,6 +112,13 @@
 
 - `node server.js` 默认在 `127.0.0.1:5177` 启动 Forkline，并在 Windows 上自动打开应用。
 - 本地验证不需要自动打开浏览器时，设置 `FORKLINE_NO_OPEN=1`。
+
+## 文件编辑器
+
+- `GET /api/worktree-file` 发现未合并状态时，从 Git index stage 2 和 stage 3 分别读取当前版本与对方版本；工作区文件继续作为可编辑的合并结果。缺失版本、编码错误、二进制和 `16 MiB` 上限沿用普通文件读取边界。
+- 普通冲突创建“当前版本 / 合并结果 / 对方版本”三栏 MergeView，左右差异块按钮只把对应内容应用到中间；按钮观察器只能在文案或定位真实变化时更新 DOM，避免观察器回调再次触发自身。
+- 任一侧达到复杂度阈值时创建三个独立 CodeMirror，并按滚动比例同步。关闭、切换文件或切换仓库时必须解除三栏滚动监听、销毁 MergeView，并清空编辑器 DOM。
+- 保存接口只写工作区并保持编码、换行和快照保护，不自动执行 `git add`；用户仍需在冲突解决后显式暂存文件，再继续合并、变基、挑选或还原。
 
 ## 状态与诊断
 

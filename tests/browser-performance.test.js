@@ -55,6 +55,8 @@ test("real Chromium keeps historical file comparison responsive", {
   const head = await createComparisonFixture(repo);
   const alternateRepo = path.join(root, "alternate-repo");
   const alternateHead = await createComparisonFixture(alternateRepo);
+  const conflictRepo = path.join(root, "conflict-repo");
+  await createConflictEditorFixture(conflictRepo);
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, [serverPath], {
@@ -238,6 +240,118 @@ test("real Chromium keeps historical file comparison responsive", {
   );
   t.diagnostic(
     `small open ${smallOpened.openMs.toFixed(1)} ms, eight switches ${switches.elapsed.toFixed(1)} ms, resize listeners ${baselineResizeListeners} -> ${warmedResizeListeners} -> ${smallResizeListeners} -> ${switchedResizeListeners} -> ${finalResizeListeners}`
+  );
+
+  const conflictMetrics = await evaluate(cdp, `(async () => {
+    await openRepo(${JSON.stringify(conflictRepo)});
+    let maxDelay = 0;
+    let lastTick = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      maxDelay = Math.max(maxDelay, now - lastTick - 25);
+      lastTick = now;
+    }, 25);
+    const smallStarted = performance.now();
+    const smallOpened = await openFileEditor("small-conflict.c");
+    const smallOpenMs = performance.now() - smallStarted;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    const incomingButton = document.querySelector("#fileEditorMerge .CodeMirror-merge-copybuttons-right .CodeMirror-merge-copy");
+    let appliedClicks = 0;
+    while (state.fileEditor?.codeMirror?.getValue?.() !== "side\\n" && appliedClicks < 8) {
+      const button = document.querySelector("#fileEditorMerge .CodeMirror-merge-copybuttons-right .CodeMirror-merge-copy");
+      if (!button) break;
+      button.click();
+      appliedClicks += 1;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+    const appliedValue = state.fileEditor?.codeMirror?.getValue?.() || "";
+    const small = {
+      opened: smallOpened,
+      openMs: smallOpenMs,
+      mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-3pane").length,
+      codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      currentLabel: document.querySelector("#fileEditorOldLabel")?.textContent || "",
+      resultLabel: document.querySelector("#fileEditorResultLabel")?.textContent || "",
+      incomingLabel: document.querySelector("#fileEditorNewLabel")?.textContent || "",
+      incomingButton: incomingButton?.textContent || "",
+      appliedClicks,
+      appliedValue,
+    };
+    await submitFileEditor({ preventDefault() {} });
+    small.savedValue = state.fileEditor?.codeMirror?.getValue?.() || "";
+    closeFileEditor(true);
+
+    const largeStarted = performance.now();
+    const largeOpened = await openFileEditor("large-conflict.c");
+    const largeOpenMs = performance.now() - largeStarted;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const panes = [state.fileEditor?.oldCodeMirror, state.fileEditor?.codeMirror, state.fileEditor?.theirsCodeMirror].filter(Boolean);
+    panes[0]?.scrollTo(0, 500000);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const visibleLines = panes.map((pane) => {
+      const info = pane.getScrollInfo();
+      return pane.lineAtHeight(info.top, "local");
+    });
+    const scrollRatios = panes.map((pane) => {
+      const info = pane.getScrollInfo();
+      return info.top / Math.max(1, info.height - info.clientHeight);
+    });
+    const large = {
+      opened: largeOpened,
+      openMs: largeOpenMs,
+      mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+      codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      status: document.querySelector("#fileEditorStatus")?.textContent || "",
+      visibleLines,
+      scrollRatios,
+    };
+    closeFileEditor(true);
+
+    let reopenFailures = 0;
+    const reopenStarted = performance.now();
+    for (let index = 0; index < 8; index += 1) {
+      if (!await openFileEditor("small-conflict.c")) reopenFailures += 1;
+      closeFileEditor(true);
+    }
+    const reopenMs = performance.now() - reopenStarted;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    clearInterval(timer);
+    await openRepo(${JSON.stringify(repo)});
+    return {
+      small,
+      large,
+      reopenFailures,
+      reopenMs,
+      maxDelay,
+      remainingCodeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      remainingMergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+    };
+  })()`);
+  assert.equal(conflictMetrics.small.opened, true);
+  assert.equal(conflictMetrics.small.mergeViews, 1);
+  assert.equal(conflictMetrics.small.codeMirrors, 3);
+  assert.match(conflictMetrics.small.currentLabel, /当前版本/);
+  assert.match(conflictMetrics.small.resultLabel, /合并结果/);
+  assert.match(conflictMetrics.small.incomingLabel, /对方版本/);
+  assert.equal(conflictMetrics.small.incomingButton, "应用");
+  assert.ok(conflictMetrics.small.appliedClicks > 0 && conflictMetrics.small.appliedClicks <= 8);
+  assert.equal(conflictMetrics.small.appliedValue, "side\n");
+  assert.equal(conflictMetrics.small.savedValue, "side\n");
+  assert.ok(conflictMetrics.small.openMs < 2000, `small conflict editor opened in ${conflictMetrics.small.openMs.toFixed(1)} ms`);
+  assert.equal(conflictMetrics.large.opened, true);
+  assert.equal(conflictMetrics.large.mergeViews, 0);
+  assert.equal(conflictMetrics.large.codeMirrors, 3);
+  assert.match(conflictMetrics.large.status, /复杂文件轻量模式 · 行数较多/);
+  assert.ok(Math.max(...conflictMetrics.large.scrollRatios) - Math.min(...conflictMetrics.large.scrollRatios) <= 0.01);
+  assert.ok(conflictMetrics.large.openMs < 5000, `large conflict editor opened in ${conflictMetrics.large.openMs.toFixed(1)} ms`);
+  assert.equal(conflictMetrics.reopenFailures, 0);
+  assert.ok(conflictMetrics.reopenMs < 5000, `eight conflict editor reopen cycles took ${conflictMetrics.reopenMs.toFixed(1)} ms`);
+  assert.ok(conflictMetrics.maxDelay < 1500, `conflict editor blocked the event loop for ${conflictMetrics.maxDelay.toFixed(1)} ms`);
+  assert.equal(conflictMetrics.remainingCodeMirrors, 0);
+  assert.equal(conflictMetrics.remainingMergeViews, 0);
+  assert.equal(await countWindowListeners(cdp, "resize"), warmedResizeListeners);
+  t.diagnostic(
+    `conflict editor small ${conflictMetrics.small.openMs.toFixed(1)} ms, large ${conflictMetrics.large.openMs.toFixed(1)} ms, eight reopen cycles ${conflictMetrics.reopenMs.toFixed(1)} ms, max delay ${conflictMetrics.maxDelay.toFixed(1)} ms`
   );
 
   const largeHistory = await appendLargeHistoryFixture(repo);
@@ -686,6 +800,37 @@ async function createComparisonFixture(repo) {
   await git(repo, ["add", "."]);
   await git(repo, ["commit", "-m", "change browser performance fixtures"]);
   return git(repo, ["rev-parse", "HEAD"]);
+}
+
+async function createConflictEditorFixture(repo) {
+  await fs.mkdir(repo, { recursive: true });
+  await git("", ["init", "--initial-branch=main", repo]);
+  await git(repo, ["config", "user.name", "Forkline Browser Test"]);
+  await git(repo, ["config", "user.email", "forkline-browser@example.invalid"]);
+  await git(repo, ["config", "core.autocrlf", "false"]);
+
+  const large = Array.from({ length: 25000 }, (_, index) => `int conflict_${String(index).padStart(5, "0")} = ${index};`);
+  await fs.writeFile(path.join(repo, "small-conflict.c"), "base\n", "utf8");
+  await fs.writeFile(path.join(repo, "large-conflict.c"), `${large.join("\n")}\n`, "utf8");
+  await git(repo, ["add", "."]);
+  await git(repo, ["commit", "-m", "add conflict editor fixtures"]);
+
+  await git(repo, ["checkout", "-b", "conflict-side"]);
+  const sideLarge = [...large];
+  sideLarge[12500] = "int conflict_12500 = 30000;";
+  await fs.writeFile(path.join(repo, "small-conflict.c"), "side\n", "utf8");
+  await fs.writeFile(path.join(repo, "large-conflict.c"), `${sideLarge.join("\n")}\n`, "utf8");
+  await git(repo, ["add", "."]);
+  await git(repo, ["commit", "-m", "change conflict fixtures on side"]);
+
+  await git(repo, ["checkout", "main"]);
+  const mainLarge = [...large];
+  mainLarge[12500] = "int conflict_12500 = 20000;";
+  await fs.writeFile(path.join(repo, "small-conflict.c"), "main\n", "utf8");
+  await fs.writeFile(path.join(repo, "large-conflict.c"), `${mainLarge.join("\n")}\n`, "utf8");
+  await git(repo, ["add", "."]);
+  await git(repo, ["commit", "-m", "change conflict fixtures on main"]);
+  await assert.rejects(git(repo, ["merge", "conflict-side", "--no-edit"]), /CONFLICT|Automatic merge failed|failed/i);
 }
 
 async function appendLargeHistoryFixture(repo) {

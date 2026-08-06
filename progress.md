@@ -7124,3 +7124,39 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录分批渲染边界、性能数据和当前大仓库结论。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `2ab21be`；提交前可执行 `git restore -- public/js/core.js public/js/features/file-tree.js public/js/features/repositories.js public/js/features/worktree-changes.js public/js/i18n-catalog.js public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 增强冲突文件三栏编辑器
+
+### What was done
+- 冲突文件读取 Git index stage 2/3，分别提供当前版本和对方版本，并把真实工作区作为可编辑的合并结果。
+- 普通冲突显示“当前版本 / 合并结果 / 对方版本”三栏，左右差异块可应用到中间；保存只写工作区，不自动暂存。
+- 超长或差异复杂的冲突自动使用三个轻量 CodeMirror，并按滚动比例同步；关闭、切换文件或仓库时解除监听并清理旧实例。
+- 修正冲突块按钮观察器的重复 DOM 写入，避免 MutationObserver 回调触发自身导致页面卡死。
+- 真实浏览器性能回归增加小冲突应用与保存、25,000 行冲突滚动、连续开关和实例释放检查。
+
+### Testing
+- `node --check` 检查服务端、文件编辑器、国际化和测试脚本，全部通过。
+- `node --test --test-name-pattern="worktree file editor returns current and incoming conflict versions" tests/git-api.test.js` 运行 1 项真实 Git 专项，1 项通过。
+- `node --test --test-concurrency=1 tests/file-editor-ui.test.js tests/layout-ui.test.js tests/i18n.test.js` 运行 71 项，71 项通过。
+- `npm.cmd run test:browser` 运行 1 项真实 Chromium 回归并通过：小冲突打开约 `115.6 ms`，25,000 行冲突约 `171.7 ms`，连续开关 8 次约 `887.5 ms`，最大事件循环延迟约 `53.4 ms`。
+- `npm.cmd test` 完整运行 165 项，165 项通过、0 项失败、0 项跳过，耗时约 118 秒；其中小冲突打开约 `111.5 ms`，大冲突约 `161.4 ms`，8 次开关约 `856.7 ms`，最大延迟约 `62.7 ms`。
+- `git diff --check` 通过；测试结束后未发现相关 Node、Edge、Chrome 进程或 `forkline-browser-performance-*` 临时目录，未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `server/file-editor-service.js`：读取冲突文件的 stage 2/3 版本并复用统一的编码和大小边界。
+- `public/index.html`：增加三栏冲突编辑器的“合并结果”标题节点。
+- `public/js/core.js`：注册合并结果标题元素。
+- `public/js/features/file-editor-utils.js`：规范化冲突版本响应数据。
+- `public/js/features/file-editor-actions.js`：创建轻量三栏、同步滚动并管理冲突块应用按钮。
+- `public/js/features/file-editor-window.js`：保存和恢复第三栏视图，并在销毁时解除三栏资源。
+- `public/js/features/file-editor.js`：选择普通三栏或复杂文件轻量三栏并更新冲突模式文案。
+- `public/js/i18n-catalog.js`：增加三栏冲突编辑器中英文文案。
+- `public/styles.css`：增加三栏标题、普通 MergeView 和轻量三栏布局与配色。
+- `tests/git-api.test.js`：验证 stage 2/3 内容及冲突结果保存。
+- `tests/file-editor-ui.test.js`：固定三栏初始化、按钮文案、布局和轻量路径接线。
+- `tests/browser-performance.test.js`：增加真实冲突仓库、应用保存、25,000 行滚动和连续开关回归。
+- `README.md`：更新冲突编辑器使用方式和“保存后再暂存”流程。
+- `docs/ARCHITECTURE.md`：记录 stage 2/3、三栏模式、轻量降级和资源释放边界。
+- `docs/CONTINUE.md`：更新当前实现说明并记录真实浏览器性能数据。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `15078cd`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md public/index.html public/js/core.js public/js/features/file-editor-actions.js public/js/features/file-editor-utils.js public/js/features/file-editor-window.js public/js/features/file-editor.js public/js/i18n-catalog.js public/styles.css server/file-editor-service.js tests/browser-performance.test.js tests/file-editor-ui.test.js tests/git-api.test.js progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

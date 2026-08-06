@@ -9,8 +9,11 @@ let fileEditorResizeState = null;
 function refreshFileEditorCodeMirror(editor) {
   editor.codeMirror?.refresh();
   editor.oldCodeMirror?.refresh();
+  editor.theirsCodeMirror?.refresh();
   editor.mergeView?.leftOriginal()?.refresh();
+  editor.mergeView?.rightOriginal()?.refresh();
   refreshFileEditorStageButtons(editor);
+  refreshFileEditorConflictButtons(editor);
 }
 
 function captureFileEditorView(editor, focusLine = null) {
@@ -19,12 +22,19 @@ function captureFileEditorView(editor, focusLine = null) {
   const currentScroll = current.getScrollInfo();
   const original = fileEditorOriginalCodeMirror(editor);
   const oldScroll = original?.getScrollInfo?.();
-  return {
+  const incoming = fileEditorIncomingCodeMirror(editor);
+  const incomingScroll = incoming?.getScrollInfo?.();
+  const view = {
     line: Number.isInteger(focusLine) ? Math.max(0, focusLine) : current.lineAtHeight(currentScroll.top, "local"),
     left: currentScroll.left,
     oldLine: oldScroll ? original.lineAtHeight(oldScroll.top, "local") : null,
     oldLeft: oldScroll?.left || 0,
   };
+  if (incomingScroll) {
+    view.incomingLine = incoming.lineAtHeight(incomingScroll.top, "local");
+    view.incomingLeft = incomingScroll.left;
+  }
+  return view;
 }
 
 function restoreFileEditorView(editor, view) {
@@ -36,10 +46,15 @@ function restoreFileEditorView(editor, view) {
   };
   scrollToLine(editor.codeMirror, view.line, view.left);
   scrollToLine(fileEditorOriginalCodeMirror(editor), view.oldLine ?? view.line, view.oldLeft);
+  scrollToLine(fileEditorIncomingCodeMirror(editor), view.incomingLine ?? view.line, view.incomingLeft);
 }
 
 function fileEditorOriginalCodeMirror(editor) {
   return editor?.oldCodeMirror || editor?.mergeView?.leftOriginal?.() || null;
+}
+
+function fileEditorIncomingCodeMirror(editor) {
+  return editor?.theirsCodeMirror || editor?.mergeView?.rightOriginal?.() || null;
 }
 
 function fileEditorWindowCanFloat() {
@@ -182,14 +197,19 @@ function destroyFileEditorInstance() {
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
   if (editor?.oldCodeMirror && editor.oldScrollHandler) editor.oldCodeMirror.off("scroll", editor.oldScrollHandler);
   if (editor?.codeMirror && editor.newScrollHandler) editor.codeMirror.off("scroll", editor.newScrollHandler);
+  editor?.conflictScrollHandlers?.forEach(({ source, handler }) => source.off("scroll", handler));
   editor?.mergeView?.destroy?.();
   if (els.fileEditorMerge) els.fileEditorMerge.replaceChildren();
   els.fileEditorOldLabel.hidden = false;
+  els.fileEditorResultLabel.hidden = true;
   els.fileEditorOldLabel.parentElement?.classList.remove("is-single-pane");
+  els.fileEditorOldLabel.parentElement?.classList.remove("is-conflict-three-way");
   if (editor) {
     editor.codeMirror = null;
     editor.oldCodeMirror = null;
+    editor.theirsCodeMirror = null;
     editor.mergeView = null;
+    editor.conflictScrollHandlers = null;
     editor.resizeObserver = null;
     editor.buttonObserver = null;
     editor.resizeFrame = 0;
@@ -198,6 +218,7 @@ function destroyFileEditorInstance() {
   els.fileEditorForm.classList.remove("is-readonly");
   els.fileEditorForm.classList.remove("is-large-file");
   els.fileEditorForm.classList.remove("is-lightweight-compare");
+  els.fileEditorForm.classList.remove("is-conflict-editor");
   els.fileEditorForm.classList.remove("is-line-aligned");
   els.fileEditorText.readOnly = false;
   els.fileEditorSave.hidden = false;
@@ -259,17 +280,34 @@ function updateFileEditorCompareLabels(editor) {
   const labels = els.fileEditorOldLabel.parentElement;
   if (editor.source === "commit") {
     labels?.classList.remove("is-single-pane");
+    labels?.classList.remove("is-conflict-three-way");
     els.fileEditorOldLabel.hidden = false;
+    els.fileEditorResultLabel.hidden = true;
     updateCommitFileCompareLabels(editor);
     return;
   }
-  labels?.classList.toggle("is-single-pane", editor.conflict);
-  els.fileEditorOldLabel.hidden = editor.conflict;
   if (editor.conflict) {
-    const conflictNote = fileEditorOldUnavailableLabel(editor.oldUnavailable);
-    els.fileEditorNewLabel.textContent = `${t("工作区")} · ${conflictNote} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
+    if (editor.conflictFallback) {
+      labels?.classList.add("is-single-pane");
+      labels?.classList.remove("is-conflict-three-way");
+      els.fileEditorOldLabel.hidden = true;
+      els.fileEditorResultLabel.hidden = true;
+      els.fileEditorNewLabel.textContent = `${t("合并结果")} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
+      return;
+    }
+    labels?.classList.remove("is-single-pane");
+    labels?.classList.add("is-conflict-three-way");
+    els.fileEditorOldLabel.hidden = false;
+    els.fileEditorResultLabel.hidden = false;
+    els.fileEditorOldLabel.textContent = fileEditorConflictVersionLabel("当前版本", editor.conflictVersions.ours);
+    els.fileEditorResultLabel.textContent = `${t("合并结果")} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}`;
+    els.fileEditorNewLabel.textContent = fileEditorConflictVersionLabel("对方版本", editor.conflictVersions.theirs);
     return;
   }
+  labels?.classList.remove("is-single-pane");
+  labels?.classList.remove("is-conflict-three-way");
+  els.fileEditorOldLabel.hidden = false;
+  els.fileEditorResultLabel.hidden = true;
   const oldDetails = [];
   if (editor.oldUnavailable) oldDetails.push(fileEditorOldUnavailableLabel(editor.oldUnavailable));
   else if (!editor.oldExists) oldDetails.push(t("暂存区中不存在"));
@@ -279,6 +317,18 @@ function updateFileEditorCompareLabels(editor) {
   }
   els.fileEditorOldLabel.textContent = `${t("暂存区")}${oldDetails.length ? ` · ${oldDetails.join(" · ")}` : ""}`;
   els.fileEditorNewLabel.textContent = `${t("工作区")} · ${String(editor.encoding || "utf-8").toUpperCase()} · ${t(editor.mode?.label || "纯文本")}${editor.largeFile ? ` · ${t("大文件只读模式")}` : ""}`;
+}
+
+function fileEditorConflictVersionLabel(title, version) {
+  const details = [];
+  if (!version?.exists) details.push(t("版本不存在"));
+  else if (version.tooLarge) details.push(t("版本超过 16 MiB，无法在冲突编辑器中显示。"));
+  else if (version.unavailable) details.push(t("版本无法显示：{reason}", { reason: t(version.unavailable) }));
+  else {
+    if (version.encoding) details.push(String(version.encoding).toUpperCase());
+    if (version.lineEnding) details.push(fileEditorLineEndingLabel(version.lineEnding));
+  }
+  return `${t(title)}${details.length ? ` · ${details.join(" · ")}` : ""}`;
 }
 
 function updateCommitFileCompareLabels(editor) {

@@ -7,6 +7,26 @@ function normalizeFileEditorContent(value) {
   return String(value || "").replace(/\r\n|\r/g, "\n");
 }
 
+function normalizeFileEditorConflictVersions(value = {}) {
+  return {
+    ours: normalizeFileEditorConflictVersion(value.ours),
+    theirs: normalizeFileEditorConflictVersion(value.theirs),
+  };
+}
+
+function normalizeFileEditorConflictVersion(value = {}) {
+  return {
+    exists: Boolean(value?.exists),
+    content: normalizeFileEditorContent(value?.content || ""),
+    encoding: String(value?.encoding || ""),
+    lineEnding: String(value?.lineEnding || ""),
+    byteLength: Math.max(0, Number(value?.byteLength || 0)),
+    unavailable: String(value?.unavailable || ""),
+    tooLarge: Boolean(value?.tooLarge),
+    largeFile: Boolean(value?.largeFile),
+  };
+}
+
 function detectFileEditorLightweightCompare(source, oldContent, content, largeFile = false) {
   if (source !== "commit" || largeFile) return { enabled: false, reason: "" };
   const oldText = String(oldContent || "");

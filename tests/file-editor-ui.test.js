@@ -601,11 +601,23 @@ test("file editor loads local CodeMirror MergeView with line numbers and syntax 
   assert.match(styles, /\.cm-s-default \.cm-keyword/);
 });
 
-test("conflict file editor uses one CodeMirror pane instead of an empty MergeView comparison", () => {
+test("conflict file editor uses current, result, and incoming panes", () => {
+  assert.match(html, /id="fileEditorResultLabel"/);
+  assert.match(core, /fileEditorResultLabel:\s*\$\("#fileEditorResultLabel"\)/);
   assert.match(editor, /editor\.conflict = Boolean\(data\.conflict\)/);
-  assert.match(editor, /if \(editor\.conflict\) \{\s*editor\.codeMirror = CodeMirror\(els\.fileEditorMerge, codeMirrorOptions\);/s);
+  assert.match(editor, /editor\.conflictVersions = normalizeFileEditorConflictVersions\(data\.conflictVersions\)/);
+  assert.match(editor, /detectFileEditorLightweightCompare\(\s*"commit",\s*editor\.conflictVersions\.ours\.content,\s*editor\.conflictVersions\.theirs\.content/s);
+  assert.match(editor, /else if \(editor\.conflict\) \{\s*editor\.mergeView = CodeMirror\.MergeView/s);
+  assert.match(editor, /if \(editor\.conflict && \(editor\.lightweightCompare \|\| !canUseMergeView\)\) \{\s*createConflictFileCompare\(editor, codeMirrorOptions\);/s);
+  assert.match(editor, /function createConflictFileCompare\(/);
+  assert.match(editor, /function bindConflictFileEditorScroll\(/);
+  assert.match(editor, /origLeft: editor\.conflictVersions\.ours\.content/);
+  assert.match(editor, /origRight: editor\.conflictVersions\.theirs\.content/);
+  assert.match(editor, /"Revert chunk": t\("将此侧改动应用到合并结果"\)/);
+  assert.match(editor, /if \(button\.textContent !== t\("应用"\)\) button\.textContent = t\("应用"\)/);
   assert.match(editor, /else \{\s*editor\.mergeView = CodeMirror\.MergeView/s);
-  assert.match(styles, /\.file-editor-compare-labels\.is-single-pane\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.match(styles, /\.file-editor-compare-labels\.is-conflict-three-way\s*\{[^}]*grid-template-columns:[^}]*calc\(\(100% - 56px\) \/ 3\)/s);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-3pane \.CodeMirror-merge-pane/);
 });
 
 test("file editor provides find, replace, shortcuts, and repository cleanup", () => {

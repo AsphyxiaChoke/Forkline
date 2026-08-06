@@ -541,7 +541,7 @@ test("worktree file editor compares the index and preserves GBK or GB18030 encod
   assert.equal(openedGb18030.body.oldContent, "旧字符𠀀\n");
 });
 
-test("worktree file editor marks conflicts without inventing an index comparison", { timeout: 120000 }, async (t) => {
+test("worktree file editor returns current and incoming conflict versions", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-conflict-"));
   t.after(() => removeFixture(root));
 
@@ -566,9 +566,28 @@ test("worktree file editor marks conflicts without inventing an index comparison
   assert.equal(opened.body.oldExists, false);
   assert.equal(opened.body.oldContent, "");
   assert.match(opened.body.oldUnavailable, /没有单一版本/);
+  assert.equal(opened.body.conflictVersions.ours.exists, true);
+  assert.equal(opened.body.conflictVersions.ours.content, "main\n");
+  assert.equal(opened.body.conflictVersions.ours.encoding, "utf-8");
+  assert.equal(opened.body.conflictVersions.theirs.exists, true);
+  assert.equal(opened.body.conflictVersions.theirs.content, "side\n");
+  assert.equal(opened.body.conflictVersions.theirs.encoding, "utf-8");
   assert.equal(opened.body.diffScope, "");
   assert.equal(opened.body.canStage, false);
   assert.match(opened.body.content, /<<<<<<< HEAD/);
+
+  const saved = await request("/api/worktree-file", {
+    method: "POST",
+    repoPath: repo,
+    body: {
+      file: "conflict.txt",
+      content: "resolved\n",
+      expectedSnapshot: opened.body.snapshot,
+    },
+  });
+  assertStatus(saved, 200);
+  assert.equal(saved.body.content, "resolved\n");
+  assert.equal(await fs.readFile(conflictPath, "utf8"), "resolved\n");
 });
 
 test("ordinary parent stash still creates, applies, and pops", { timeout: 120000 }, async (t) => {

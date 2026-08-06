@@ -68,6 +68,8 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     diff: [],
     canStage: false,
     conflict: false,
+    conflictVersions: normalizeFileEditorConflictVersions(),
+    conflictFallback: false,
     exists: true,
     branchSnapshot: null,
     fileSnapshot: null,
@@ -129,12 +131,22 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.diff = Array.isArray(data.diff) ? data.diff : [];
     editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
     editor.conflict = Boolean(data.conflict);
-    const lightweightCompare = detectFileEditorLightweightCompare(
-      editor.source,
-      editor.oldContent,
-      editor.originalContent,
-      editor.largeFile
-    );
+    editor.conflictVersions = normalizeFileEditorConflictVersions(data.conflictVersions);
+    const lightweightCompare = editor.conflict
+      ? editor.largeFile
+        ? { enabled: true, reason: "size" }
+        : detectFileEditorLightweightCompare(
+          "commit",
+          editor.conflictVersions.ours.content,
+          editor.conflictVersions.theirs.content,
+          false
+        )
+      : detectFileEditorLightweightCompare(
+        editor.source,
+        editor.oldContent,
+        editor.originalContent,
+        editor.largeFile
+      );
     editor.lightweightCompare = lightweightCompare.enabled;
     editor.lightweightReason = lightweightCompare.reason;
     editor.branchSnapshot = editor.readOnly ? null : currentBranchSnapshotPayload();
@@ -168,8 +180,9 @@ function updateFileEditorModeUi(editor) {
   els.fileEditorForm.classList.toggle("is-readonly", readOnly);
   els.fileEditorForm.classList.toggle("is-large-file", Boolean(editor.largeFile));
   els.fileEditorForm.classList.toggle("is-lightweight-compare", Boolean(editor.lightweightCompare));
+  els.fileEditorForm.classList.toggle("is-conflict-editor", Boolean(editor.conflict));
   els.fileEditorForm.classList.toggle("is-line-aligned", commitView && !lightweightCompare && editor.compareMode === "align");
-  els.fileEditorTitle.textContent = t(commitView ? "历史文件对照" : editor.largeFile ? "大文件只读对照" : "编辑文件");
+  els.fileEditorTitle.textContent = t(commitView ? "历史文件对照" : editor.conflict ? "解决冲突文件" : editor.largeFile ? "大文件只读对照" : "编辑文件");
   els.fileEditorPath.textContent = commitView && editor.previousFile && editor.previousFile !== editor.file
     ? `${editor.previousFile} -> ${editor.file}`
     : editor.file;
@@ -177,9 +190,9 @@ function updateFileEditorModeUi(editor) {
   els.fileEditorToggleSearch.title = t(readOnly ? "查找文件内容" : "查找或替换文件内容");
   els.fileEditorSave.hidden = readOnly;
   els.fileEditorCancel.textContent = t(readOnly ? "关闭" : "取消");
-  els.fileEditorMerge.setAttribute("aria-label", t(commitView ? "父提交与此提交对照编辑器" : "暂存区与工作区对照编辑器"));
-  els.fileEditorOldText.setAttribute("aria-label", t(commitView ? "父提交版本文件内容" : "暂存区文件内容"));
-  els.fileEditorText.setAttribute("aria-label", t(commitView ? "此提交版本文件内容" : "工作区文件内容"));
+  els.fileEditorMerge.setAttribute("aria-label", t(commitView ? "父提交与此提交对照编辑器" : editor.conflict ? "当前版本、合并结果与对方版本冲突编辑器" : "暂存区与工作区对照编辑器"));
+  els.fileEditorOldText.setAttribute("aria-label", t(commitView ? "父提交版本文件内容" : editor.conflict ? "当前版本文件内容" : "暂存区文件内容"));
+  els.fileEditorText.setAttribute("aria-label", t(commitView ? "此提交版本文件内容" : editor.conflict ? "合并结果文件内容" : "工作区文件内容"));
   els.fileEditorText.readOnly = readOnly;
   updateFileEditorCompareModeUi(editor);
 }
@@ -289,9 +302,11 @@ function closeFileEditor(force = false) {
 
 function createFileEditorInstance(editor) {
   els.fileEditorMerge.replaceChildren();
+  editor.conflictFallback = false;
   const canUseCodeMirror = typeof CodeMirror === "function";
   const canUseMergeView = canUseCodeMirror && typeof CodeMirror.MergeView === "function";
   if (!canUseCodeMirror || (!editor.conflict && !editor.largeFile && !editor.lightweightCompare && !canUseMergeView)) {
+    editor.conflictFallback = Boolean(editor.conflict);
     els.fileEditorMerge.hidden = true;
     els.fileEditorFallback.hidden = false;
     els.fileEditorOldText.value = editor.oldContent;
@@ -328,8 +343,25 @@ function createFileEditorInstance(editor) {
       "Cmd-Alt-F": () => openFileEditorSearch(!editor.readOnly),
     },
   };
-  if (editor.conflict) {
-    editor.codeMirror = CodeMirror(els.fileEditorMerge, codeMirrorOptions);
+  if (editor.conflict && (editor.lightweightCompare || !canUseMergeView)) {
+    createConflictFileCompare(editor, codeMirrorOptions);
+  } else if (editor.conflict) {
+    editor.mergeView = CodeMirror.MergeView(els.fileEditorMerge, {
+      ...codeMirrorOptions,
+      origLeft: editor.conflictVersions.ours.content,
+      origRight: editor.conflictVersions.theirs.content,
+      highlightDifferences: true,
+      connect: "align",
+      collapseIdentical: false,
+      chunkClassLocation: ["background", "gutter"],
+      revertButtons: !editor.readOnly,
+      phrases: {
+        "Revert chunk": t("将此侧改动应用到合并结果"),
+        "Toggle locked scrolling": t("切换同步滚动"),
+      },
+    });
+    editor.codeMirror = editor.mergeView.editor();
+    observeFileEditorConflictButtons(editor);
   } else if (editor.largeFile || editor.lightweightCompare) {
     createLargeFileCompare(editor, codeMirrorOptions);
   } else {

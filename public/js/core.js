@@ -286,6 +286,7 @@ const els = {
   fileEditorReplaceAll: $("#fileEditorReplaceAll"),
   fileEditorMatchStatus: $("#fileEditorMatchStatus"),
   fileEditorOldLabel: $("#fileEditorOldLabel"),
+  fileEditorResultLabel: $("#fileEditorResultLabel"),
   fileEditorNewLabel: $("#fileEditorNewLabel"),
   fileEditorMerge: $("#fileEditorMerge"),
   fileEditorFallback: $("#fileEditorFallback"),

@@ -6649,8 +6649,22 @@ body.file-editor-window-resizing * {
   grid-column: 1;
 }
 
+#fileEditorResultLabel {
+  grid-column: 3;
+  text-align: center;
+}
+
 #fileEditorNewLabel {
   grid-column: 3;
+}
+
+.file-editor-compare-labels.is-conflict-three-way {
+  grid-template-columns: calc((100% - 56px) / 3) 28px calc((100% - 56px) / 3) 28px calc((100% - 56px) / 3);
+}
+
+.file-editor-compare-labels.is-conflict-three-way #fileEditorNewLabel {
+  grid-column: 5;
+  text-align: right;
 }
 
 .file-editor-compare-labels.is-single-pane {
@@ -6709,6 +6723,34 @@ body.file-editor-window-resizing * {
   background: var(--line-strong);
 }
 
+.file-editor-conflict-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  background: var(--field);
+}
+
+.file-editor-conflict-pane {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.file-editor-conflict-divider {
+  background: var(--line-strong);
+}
+
+.file-editor-conflict-ours .CodeMirror,
+.file-editor-merge .CodeMirror-merge-left .CodeMirror {
+  background: color-mix(in srgb, var(--blue) 7%, var(--field));
+}
+
+.file-editor-conflict-theirs .CodeMirror,
+.file-editor-merge .CodeMirror-merge-right .CodeMirror {
+  background: color-mix(in srgb, var(--warning) 7%, var(--field));
+}
+
 .file-editor-merge .CodeMirror-merge-pane {
   height: 100%;
 }
@@ -6719,6 +6761,18 @@ body.file-editor-window-resizing * {
 
 .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-gap {
   width: 48px;
+}
+
+.file-editor-merge .CodeMirror-merge-3pane .CodeMirror-merge-pane {
+  width: calc((100% - 56px) / 3);
+}
+
+.file-editor-merge .CodeMirror-merge-3pane .CodeMirror-merge-gap {
+  width: 28px;
+}
+
+.file-editor-dialog.is-conflict-editor.is-lightweight-compare .file-editor-compare-labels.is-conflict-three-way {
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
 }
 
 .file-editor-dialog.is-line-aligned .file-editor-compare-labels {

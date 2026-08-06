@@ -102,10 +102,13 @@ function createFileEditorService(options) {
     const current = editableWorktreeFilePayload(target.file, buffer);
     const largeFile = current.byteLength > FILE_EDITOR_MAX_BYTES;
     const status = await readStatusFileForDiff(target.file, "any", repoPath);
+    const conflictVersions = status?.conflict
+      ? await readConflictEditableWorktreeVersions(target.file, repoPath)
+      : null;
     const old = status?.conflict
       ? { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "冲突文件的暂存区没有单一版本，请先解决冲突。", largeFile: false }
       : await readIndexEditableWorktreeFile(target.file, repoPath);
-    const readOnly = Boolean(largeFile || old.largeFile);
+    const readOnly = Boolean(largeFile || old.largeFile || conflictVersions?.ours.largeFile || conflictVersions?.theirs.largeFile);
     let diffScope = "";
     let diffOutput = "";
     const diffContext = FILE_EDITOR_DIFF_CONTEXT;
@@ -124,6 +127,7 @@ function createFileEditorService(options) {
       oldFile: target.file,
       oldSource: "index",
       conflict: Boolean(status?.conflict),
+      conflictVersions,
       previousFile: previousFilePath ? validateEditableRepoFile(previousFilePath) : status?.previousFile || "",
       diffScope,
       diffContext,
@@ -136,53 +140,70 @@ function createFileEditorService(options) {
   }
 
   async function readIndexEditableWorktreeFile(file, repoPath) {
+    const version = await readEditableIndexVersion(file, `:${file}`, repoPath);
+    return {
+      oldExists: version.exists,
+      oldContent: version.content,
+      oldEncoding: version.encoding,
+      oldLineEnding: version.lineEnding,
+      oldUnavailable: version.tooLarge
+        ? "暂存区版本超过 16 MiB，无法在对照窗口中显示。"
+        : version.unavailable ? `暂存区版本无法显示：${version.unavailable}` : "",
+      largeFile: version.largeFile,
+    };
+  }
+
+  async function readConflictEditableWorktreeVersions(file, repoPath) {
+    const [ours, theirs] = await Promise.all([
+      readEditableIndexVersion(file, `:2:${file}`, repoPath),
+      readEditableIndexVersion(file, `:3:${file}`, repoPath),
+    ]);
+    return { ours, theirs };
+  }
+
+  async function readEditableIndexVersion(file, object, repoPath) {
     let buffer;
     try {
-      buffer = await gitBuffer(repoPath, ["show", `:${file}`], { maxBuffer: FILE_VIEWER_MAX_BYTES + 1024 });
+      buffer = await gitBuffer(repoPath, ["show", object], { maxBuffer: FILE_VIEWER_MAX_BYTES + 1024 });
     } catch {
-      const size = Number((await git(repoPath, ["cat-file", "-s", `:${file}`]).catch(() => "")).trim());
+      const size = Number((await git(repoPath, ["cat-file", "-s", object]).catch(() => "")).trim());
       if (Number.isFinite(size) && size > FILE_VIEWER_MAX_BYTES) {
-        return {
-          oldExists: true,
-          oldContent: "",
-          oldEncoding: "",
-          oldLineEnding: "",
-          oldUnavailable: "暂存区版本超过 16 MiB，无法在对照窗口中显示。",
-          largeFile: true,
-        };
+        return emptyEditableIndexVersion({ exists: true, byteLength: size, tooLarge: true, largeFile: true });
       }
-      return { oldExists: false, oldContent: "", oldEncoding: "", oldLineEnding: "", oldUnavailable: "", largeFile: false };
+      return emptyEditableIndexVersion();
     }
     if (buffer.length > FILE_VIEWER_MAX_BYTES) {
-      return {
-        oldExists: true,
-        oldContent: "",
-        oldEncoding: "",
-        oldLineEnding: "",
-        oldUnavailable: "暂存区版本超过 16 MiB，无法在对照窗口中显示。",
-        largeFile: true,
-      };
+      return emptyEditableIndexVersion({ exists: true, byteLength: buffer.length, tooLarge: true, largeFile: true });
     }
     try {
       const payload = editableWorktreeFilePayload(file, buffer);
       return {
-        oldExists: true,
-        oldContent: payload.content,
-        oldEncoding: payload.encoding,
-        oldLineEnding: payload.lineEnding,
-        oldUnavailable: "",
+        exists: true,
+        content: payload.content,
+        encoding: payload.encoding,
+        lineEnding: payload.lineEnding,
+        byteLength: payload.byteLength,
+        unavailable: "",
+        tooLarge: false,
         largeFile: buffer.length > FILE_EDITOR_MAX_BYTES,
       };
     } catch (error) {
-      return {
-        oldExists: true,
-        oldContent: "",
-        oldEncoding: "",
-        oldLineEnding: "",
-        oldUnavailable: `暂存区版本无法显示：${error.message}`,
-        largeFile: false,
-      };
+      return emptyEditableIndexVersion({ exists: true, byteLength: buffer.length, unavailable: error.message });
     }
+  }
+
+  function emptyEditableIndexVersion(overrides = {}) {
+    return {
+      exists: false,
+      content: "",
+      encoding: "",
+      lineEnding: "",
+      byteLength: 0,
+      unavailable: "",
+      tooLarge: false,
+      largeFile: false,
+      ...overrides,
+    };
   }
 
   function saveEditableWorktreeFile(body, repoPath = getCurrentRepo()) {

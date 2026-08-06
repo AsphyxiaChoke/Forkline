@@ -44,6 +44,64 @@ function createLargeFileCompare(editor, codeMirrorOptions) {
   editor.codeMirror.on("scroll", editor.newScrollHandler);
 }
 
+function createConflictFileCompare(editor, codeMirrorOptions) {
+  const compare = document.createElement("div");
+  compare.className = "file-editor-conflict-compare";
+  const oursHost = document.createElement("div");
+  oursHost.className = "file-editor-conflict-pane file-editor-conflict-ours";
+  const leftDivider = document.createElement("div");
+  leftDivider.className = "file-editor-conflict-divider";
+  const resultHost = document.createElement("div");
+  resultHost.className = "file-editor-conflict-pane file-editor-conflict-result";
+  const rightDivider = document.createElement("div");
+  rightDivider.className = "file-editor-conflict-divider";
+  const theirsHost = document.createElement("div");
+  theirsHost.className = "file-editor-conflict-pane file-editor-conflict-theirs";
+  compare.append(oursHost, leftDivider, resultHost, rightDivider, theirsHost);
+  els.fileEditorMerge.append(compare);
+
+  const referenceOptions = {
+    ...codeMirrorOptions,
+    readOnly: "nocursor",
+    autoCloseBrackets: false,
+    styleActiveLine: false,
+  };
+  editor.oldCodeMirror = CodeMirror(oursHost, {
+    ...referenceOptions,
+    value: editor.conflictVersions.ours.content,
+  });
+  editor.codeMirror = CodeMirror(resultHost, codeMirrorOptions);
+  editor.theirsCodeMirror = CodeMirror(theirsHost, {
+    ...referenceOptions,
+    value: editor.conflictVersions.theirs.content,
+  });
+  bindConflictFileEditorScroll(editor);
+}
+
+function bindConflictFileEditorScroll(editor) {
+  const panes = [editor.oldCodeMirror, editor.codeMirror, editor.theirsCodeMirror].filter(Boolean);
+  let syncing = false;
+  editor.conflictScrollHandlers = panes.map((source) => {
+    const handler = () => {
+      if (syncing) return;
+      const sourceInfo = source.getScrollInfo();
+      const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
+      syncing = true;
+      panes.forEach((target) => {
+        if (target === source) return;
+        const targetInfo = target.getScrollInfo();
+        const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
+        target.scrollTo(sourceInfo.left, targetRange * (sourceInfo.top / sourceRange));
+      });
+      requestAnimationFrame(() => {
+        syncing = false;
+      });
+    };
+    source.on("scroll", handler);
+    return { source, handler };
+  });
+}
+
 function observeFileEditorStageButtons(editor) {
   refreshFileEditorStageButtons(editor);
   if (typeof MutationObserver !== "function") return;
@@ -52,7 +110,7 @@ function observeFileEditorStageButtons(editor) {
 }
 
 function refreshFileEditorStageButtons(editor) {
-  if (state.fileEditor !== editor) return;
+  if (state.fileEditor !== editor || !editor.canStage) return;
   els.fileEditorMerge.querySelectorAll(".CodeMirror-merge-copy").forEach((button) => {
     if (button.textContent !== t("暂存")) button.textContent = t("暂存");
     button.title = t("暂存此改动块");
@@ -62,8 +120,27 @@ function refreshFileEditorStageButtons(editor) {
   });
 }
 
-function fileEditorStageButtonCenter(mergeView, chunk) {
-  const original = mergeView?.leftOriginal?.();
+function observeFileEditorConflictButtons(editor) {
+  refreshFileEditorConflictButtons(editor);
+  if (typeof MutationObserver !== "function") return;
+  editor.buttonObserver = new MutationObserver(() => refreshFileEditorConflictButtons(editor));
+  editor.buttonObserver.observe(els.fileEditorMerge, { childList: true, subtree: true });
+}
+
+function refreshFileEditorConflictButtons(editor) {
+  if (state.fileEditor !== editor || !editor.conflict || !editor.mergeView) return;
+  els.fileEditorMerge.querySelectorAll(".CodeMirror-merge-copy").forEach((button) => {
+    const side = button.parentElement?.classList.contains("CodeMirror-merge-copybuttons-right") ? "right" : "left";
+    if (button.textContent !== t("应用")) button.textContent = t("应用");
+    button.title = t(side === "right" ? "将对方版本改动应用到合并结果" : "将当前版本改动应用到合并结果");
+    button.setAttribute("aria-label", button.title);
+    const center = fileEditorStageButtonCenter(editor.mergeView, button.chunk, side);
+    if (Number.isFinite(center)) button.style.top = `${center}px`;
+  });
+}
+
+function fileEditorStageButtonCenter(mergeView, chunk, side = "left") {
+  const original = side === "right" ? mergeView?.rightOriginal?.() : mergeView?.leftOriginal?.();
   const edited = mergeView?.editor?.();
   const wrap = mergeView?.wrap;
   if (!original || !edited || !wrap || !chunk) return Number.NaN;
