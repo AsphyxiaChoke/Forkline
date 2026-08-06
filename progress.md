@@ -6783,3 +6783,28 @@
 - `README.md`、`docs/CONTINUE.md`：说明一键撤销范围、失效条件和恢复点边界。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html public/js/app/events.js public/js/core.js public/js/features/commit-actions.js public/js/features/git-actions.js public/js/features/repositories.js public/js/features/worktree-changes.js public/js/i18n-catalog.js public/styles.css server/git-history-service.js server/git-operations-service.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath public/js/features/recovery-undo.js,tests/recovery-undo-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-06 - Task: 系统凭据与远端诊断入口
+
+### What was done
+- 同步页认证助手增加 Windows 系统凭据入口，非 Windows 明确显示不支持；入口只打开固定的系统 Credential Manager，不读取、修改或删除凭据。
+- 认证结果增加远端托管平台识别；认证卡片可直接检查每个远端的网络与认证状态，并为 GitHub、GitLab、Bitbucket 提供平台状态页。
+- 补齐中英文响应、窄侧栏换行和固定操作区宽度，避免“提示 / 重新检测”及系统凭据按钮被压缩或溢出。
+
+### Testing
+- `node --check` 通过 `server.js`、认证服务、同步面板、事件绑定、中英文目录和新增 UI 测试。
+- 定向服务、UI 与 i18n 回归运行 13 项，13 项通过、0 项失败；系统凭据启动使用注入替身，没有在自动测试中打开系统窗口。
+- `npm.cmd test` 完整运行 152 项，152 项通过、0 项失败、0 项跳过，耗时约 108.5 秒；真实 Chromium 复杂文件打开约 172.1 ms、最大事件循环延迟约 53.5 ms、监听器保持 `3 -> 4 -> 5 -> 5 -> 4`。
+- 真实页面打开当前 Forkline 仓库验收：约 `1910×1075` 和竖屏覆盖下页面横向溢出均为 0；认证卡内部横向溢出由 5px 修正为 0，系统凭据、检查连接和平台状态入口均可见，控制台无错误。
+- 临时 `5299` 服务和浏览器测试标签已关闭，端口确认无监听；未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `server/repository-auth-service.js`：增加系统凭据平台边界、固定 Windows 启动器、远端托管平台和状态页识别。
+- `server/repository-service.js`、`server.js`：接入受仓库上下文保护的系统凭据 API，并补齐英文响应字段。
+- `public/js/panels/sync.js`、`public/js/app/events.js`：增加系统凭据、远端连接和平台状态入口及交互。
+- `public/styles.css`：增加认证远端紧凑操作布局，并修复窄侧栏操作区压缩。
+- `public/js/i18n-catalog.js`：补充系统凭据和远端平台相关英文文本。
+- `tests/backend-services.test.js`、`tests/git-api.test.js`、`tests/auth-ui.test.js`：覆盖 Windows/非 Windows 边界、平台识别、英文 API 和前端入口。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录使用方式、安全边界、接口结构、验证结果和后续优化顺序。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `a99eabe`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/i18n-catalog.js public/js/panels/sync.js public/styles.css server.js server/repository-auth-service.js server/repository-service.js tests/backend-services.test.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath tests/auth-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

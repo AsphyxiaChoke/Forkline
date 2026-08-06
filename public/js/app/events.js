@@ -319,6 +319,14 @@ els.detailBody.addEventListener("click", (event) => {
   if (authAction) {
     event.preventDefault();
     if (!authAction.disabled && authAction.dataset.authAction === "refresh") loadAuthDiagnostics(true).catch((error) => toast(error.message));
+    if (!authAction.disabled && authAction.dataset.authAction === "openCredentials") {
+      authAction.disabled = true;
+      openSystemCredentialManagerFromSync()
+        .catch((error) => toast(error.message))
+        .finally(() => {
+          if (authAction.isConnected) authAction.disabled = false;
+        });
+    }
     return;
   }
   const syncPrAction = event.target.closest("[data-sync-pr-action]");

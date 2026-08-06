@@ -845,6 +845,7 @@ function syncAuthHtml(authState, remotes = []) {
   const ssh = model.ssh || {};
   const agent = model.agent || {};
   const credential = model.credentialManager || {};
+  const systemCredential = model.systemCredentialManager || {};
   const keys = Array.isArray(ssh.keys) ? ssh.keys : [];
   const commands = Array.isArray(model.commands) ? model.commands.filter(Boolean) : ["git remote -v"];
   return tt`
@@ -883,7 +884,13 @@ function syncAuthHtml(authState, remotes = []) {
           <strong>认证工具</strong>
           <span>${escapeHtml(t(agent.message || "ssh-agent 未检测"))}</span>
           <span>${escapeHtml(t(credential.message || "Git Credential Manager 未检测"))}</span>
+          <span>${escapeHtml(t(systemCredential.message || "系统凭据管理器未检测"))}</span>
           <span>${escapeHtml(t(ssh.configExists ? "存在 SSH config" : "未发现 SSH config"))} · ${escapeHtml(t(ssh.knownHostsExists ? "存在 known_hosts" : "未发现 known_hosts"))}</span>
+          <div class="auth-box-actions">
+            <button class="mini-btn" data-auth-action="openCredentials" type="button" ${systemCredential.canOpen ? "" : "disabled"} title="${escapeAttr(t(systemCredential.canOpen ? "在系统凭据管理器中查看或更新 Git HTTPS 登录信息" : systemCredential.message || "当前系统暂不支持打开系统凭据管理器"))}">
+              <span>打开系统凭据</span><span class="command-hint">${escapeHtml(t(systemCredential.name || "System"))}</span>
+            </button>
+          </div>
         </div>
       </div>
       <div class="remote-diagnosis-commands auth-commands">
@@ -901,8 +908,30 @@ function authLevelLabel(level) {
 
 function authRemotePillHtml(remote) {
   const kind = remote.kind || "missing";
-  const title = [remote.name, remote.url, remote.host].filter(Boolean).join(" · ");
-  return `<span class="auth-pill auth-${escapeAttr(kind)}" title="${escapeAttr(title)}"><strong>${escapeHtml(remote.name || "remote")}</strong><em>${escapeHtml(t(remote.kindLabel || kind))}</em>${remote.host ? `<small>${escapeHtml(remote.host)}</small>` : ""}</span>`;
+  const platform = remote.platformLabel ? t(remote.platformLabel) : "";
+  const detail = [platform, remote.host].filter(Boolean).join(" · ");
+  const title = [remote.name, remote.url, detail].filter(Boolean).join(" · ");
+  return `
+    <div class="auth-remote-entry">
+      <span class="auth-pill auth-${escapeAttr(kind)}" title="${escapeAttr(title)}">
+        <strong>${escapeHtml(remote.name || "remote")}</strong>
+        <em>${escapeHtml(t(remote.kindLabel || kind))}</em>
+        ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+      </span>
+      <button class="auth-inline-action" data-remote-action="test" data-remote-name="${escapeAttr(remote.name)}" type="button" title="${escapeAttr(t("使用 git ls-remote 检查这个远端的网络和认证状态"))}">${t("检查连接")}</button>
+      ${remote.statusUrl ? `<a class="auth-inline-action" href="${escapeAttr(remote.statusUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeAttr(t("打开托管平台状态页"))}">${t("平台状态")}</a>` : ""}
+    </div>
+  `;
+}
+
+async function openSystemCredentialManagerFromSync() {
+  const repoPath = repoPathSnapshot();
+  const response = await api("/api/system-credentials/open", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  if (!isCurrentRepoPath(repoPath)) return;
+  toast(t(response.output || "已打开系统凭据管理器"));
 }
 
 function authKeyHtml(key) {

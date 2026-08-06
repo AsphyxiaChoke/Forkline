@@ -739,8 +739,16 @@ test("authentication diagnostics load on demand and cache by remote configuratio
   assert.match(first.body.summary, /远端/);
   assert.ok(first.body.advice);
   assert.equal(first.body.remotes[0].kind, "https");
+  assert.equal(first.body.remotes[0].platform, "github");
+  assert.equal(first.body.remotes[0].platformLabel, "GitHub");
+  assert.equal(first.body.remotes[0].statusUrl, "https://www.githubstatus.com/");
   assert.ok(first.body.ssh && first.body.agent && first.body.credentialManager);
+  assert.equal(typeof first.body.systemCredentialManager?.canOpen, "boolean");
   assert.ok(Array.isArray(first.body.commands));
+
+  const english = await request("/api/auth-diagnostics", { repoPath: fixture.repo, locale: "en" });
+  assertStatus(english, 200);
+  assert.doesNotMatch(JSON.stringify(english.body.systemCredentialManager), /[\u3400-\u9fff]/);
 
   const second = await request("/api/auth-diagnostics", { repoPath: fixture.repo });
   assertStatus(second, 200);

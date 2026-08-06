@@ -8,7 +8,7 @@ const os = require("os");
 
 const path = require("path");
 
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 
 
 
@@ -39,6 +39,10 @@ function createRepositoryAuthService(options) {
     authDiagnosticsCacheLimit: AUTH_DIAGNOSTICS_CACHE_LIMIT,
 
     authDiagnosticsCache,
+
+    platform = process.platform,
+
+    launchSystemCredentialManager = launchWindowsCredentialManager,
 
   } = options;
 
@@ -101,6 +105,7 @@ function createRepositoryAuthService(options) {
       ssh: { directory: "~/.ssh", exists: false, keys: [], configExists: false, knownHostsExists: false },
       agent: { available: false, loaded: false, keyCount: 0, message: "未检测" },
       credentialManager: { available: false, name: "Git Credential Manager", version: "", message: "未检测" },
+      systemCredentialManager: systemCredentialManagerStatus(),
       commands: ["git remote -v"],
     };
   }
@@ -153,6 +158,7 @@ function createRepositoryAuthService(options) {
       ssh,
       agent,
       credentialManager,
+      systemCredentialManager: systemCredentialManagerStatus(),
       commands,
     };
   }
@@ -161,12 +167,17 @@ function createRepositoryAuthService(options) {
     const url = remote.pushUrl || remote.fetchUrl || "";
     const kind = remoteAuthKind(url);
     const host = extractRemoteHost(url);
+    const webBase = remoteWebBase(url);
+    const remotePlatform = webBase ? remoteWebPlatform(webBase) : kind === "local" ? "local" : "generic";
     return {
       name: remote.name || "",
       url,
       kind,
       kindLabel: remoteAuthKindLabel(kind),
       host,
+      platform: remotePlatform,
+      platformLabel: remoteAuthPlatformLabel(remotePlatform),
+      statusUrl: remotePlatformStatusUrl(host),
     };
   }
 
@@ -281,6 +292,36 @@ function createRepositoryAuthService(options) {
       }
     }
     return { available: false, name: "Git Credential Manager", version: "", message: "没有检测到 Git Credential Manager 命令。" };
+  }
+
+  function systemCredentialManagerStatus() {
+    if (platform === "win32") {
+      return {
+        available: true,
+        canOpen: true,
+        name: "Windows 凭据管理器",
+        message: "可打开 Windows 凭据管理器查看或更新 Git HTTPS 登录信息。",
+      };
+    }
+    return {
+      available: false,
+      canOpen: false,
+      name: "系统凭据管理器",
+      message: "当前系统暂不支持从 Forkline 打开系统凭据管理器。",
+    };
+  }
+
+  async function openSystemCredentialManager() {
+    if (platform !== "win32") throw new Error("当前系统暂不支持从 Forkline 打开系统凭据管理器。");
+    try {
+      await launchSystemCredentialManager();
+    } catch (error) {
+      throw new Error(`无法打开 Windows 凭据管理器：${String(error?.message || error || "未知错误")}`);
+    }
+    return {
+      ok: true,
+      output: "已打开 Windows 凭据管理器。Forkline 不会自动读取、修改或删除其中的凭据。",
+    };
   }
 
   function runProbe(file, args = [], options = {}) {
@@ -453,6 +494,20 @@ function createRepositoryAuthService(options) {
     return "Web";
   }
 
+  function remoteAuthPlatformLabel(platform) {
+    if (platform === "local") return "本地 Git";
+    if (platform === "generic") return "自建 Git 服务";
+    return remotePlatformLabel(platform);
+  }
+
+  function remotePlatformStatusUrl(host) {
+    const normalized = String(host || "").trim().toLowerCase();
+    if (normalized === "github.com") return "https://www.githubstatus.com/";
+    if (normalized === "gitlab.com") return "https://status.gitlab.com/";
+    if (normalized === "bitbucket.org") return "https://bitbucket.status.atlassian.com/";
+    return "";
+  }
+
 
 
   return {
@@ -461,14 +516,41 @@ function createRepositoryAuthService(options) {
 
     buildPullRequestUrl,
 
+    openSystemCredentialManager,
+
     readCachedAuthDiagnostics,
 
     readPullRequestLink,
 
+    remoteAuthSummary,
+
     remoteWebBase,
+
+    systemCredentialManagerStatus,
 
   };
 
+}
+
+function launchWindowsCredentialManager() {
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn("control.exe", ["/name", "Microsoft.CredentialManager"], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
 }
 
 

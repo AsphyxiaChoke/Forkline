@@ -5466,10 +5466,16 @@ button.file-row {
 
 .auth-card-tools {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   min-width: 0;
+}
+
+.auth-card-tools .mini-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .auth-card-head strong,
@@ -5535,6 +5541,41 @@ button.file-row {
   flex-wrap: wrap;
   gap: 5px;
   min-width: 0;
+}
+
+.auth-remote-entry {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.auth-remote-entry .auth-pill {
+  flex: 1 1 130px;
+}
+
+.auth-inline-action {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--quiet);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.auth-inline-action:hover,
+.auth-inline-action:focus-visible {
+  border-color: rgba(92, 169, 255, 0.46);
+  color: var(--blue);
 }
 
 .auth-pill,
@@ -5614,6 +5655,18 @@ button.file-row {
   color: var(--text);
   font-size: 12px;
   font-weight: 950;
+}
+
+.auth-box-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.auth-box-actions .mini-btn {
+  max-width: 100%;
 }
 
 .auth-key code {

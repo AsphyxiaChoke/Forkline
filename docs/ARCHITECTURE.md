@@ -6,7 +6,7 @@
 - `server/git-runtime.js`：Git 可执行文件发现、文本/二进制命令执行、长操作输出捕获、凭据隐藏和进程树终止。
 - `server/repository-service.js`：仓库读取门面，负责打开/切换仓库、引用与远端通用校验，以及下列读取子服务的显式接线。
 - `server/repository-browse-service.js`：目录浏览、快捷路径和仓库内路径边界判断。
-- `server/repository-auth-service.js`：认证环境按需诊断与缓存，以及 PR/MR 网页地址生成。
+- `server/repository-auth-service.js`：认证环境按需诊断与缓存、托管平台识别、Windows 系统凭据入口，以及 PR/MR 网页地址生成。
 - `server/repository-submodule-service.js`：工作树/子模块解析、状态增强和失效工作树快照。
 - `server/repository-worktree-service.js`：工作区状态、文件快照、Diff、储藏和同步详情读取。
 - `server/repository-state-service.js`：示例状态、全量/轻量仓库状态编排和历史分页。
@@ -102,7 +102,8 @@
 - 仓库上下文通过 `X-Forkline-Repo-Path` 传递。浏览器把 Unicode 路径编码为 `v1:` 加 `encodeURIComponent(path)`，服务端只解码带版本前缀的形式，并兼容旧版 ASCII 原始值。
 - 认证环境只在同步面板需要时通过 `GET /api/auth-diagnostics` 加载，并要求正常的仓库上下文请求头。
 - 认证结果按标准化仓库路径和完整远端 fetch/push URL 配置缓存 60 秒，最多保留 12 条；远端 URL 变化会形成新键，`?refresh=1` 会绕过缓存。
-- `public/js/panels/sync.js` 负责认证诊断的懒加载和加载/错误界面；仓库路径、远端签名和请求编号用于丢弃仓库或远端变化后的旧响应。
+- Windows 系统凭据入口使用 `POST /api/system-credentials/open`，只启动固定的 Windows Credential Manager 系统界面，不接受命令或凭据参数，也不读取、修改或删除凭据；非 Windows 平台明确返回不支持。
+- `public/js/panels/sync.js` 负责认证诊断的懒加载和加载/错误界面、远端连接入口、已知托管平台状态页和系统凭据按钮；仓库路径、远端签名和请求编号用于丢弃仓库或远端变化后的旧响应。
 
 ## 长时间 Git 操作
 
@@ -117,7 +118,7 @@
 - 执行 `npm test`，使用 Node 内置测试运行器，并按测试文件串行运行。
 - `tests/git-api.test.js` 在随机本地端口启动真实 Forkline 子进程，并使用临时 Git 仓库驱动 HTTP API。
 - 测试夹具隔离全局/系统 Git 配置，使用仓库级身份和子模块设置，并在测试后清理临时目录。
-- 认证测试覆盖 `/api/state` 不执行本机认证探测、诊断接口要求仓库上下文、缓存命中、手动刷新和远端 URL 变化后的缓存失效。
+- 认证测试覆盖 `/api/state` 不执行本机认证探测、诊断接口要求仓库上下文、缓存命中、手动刷新、远端 URL 变化后的缓存失效、托管平台识别，以及 Windows/非 Windows 系统凭据入口边界。
 - 状态优化测试覆盖 upstream、领先/落后、脏工作树、游离 HEAD、无提交分支、空子模块列表和真实子模块安全流程。
 - Reflog 测试覆盖仓库上下文边界和无提交/有提交响应；`tests/reflog-ui-state.test.js` 验证当前结果写入和旧仓库响应丢弃。
 - `tests/checkout-stash-ui-state.test.js` 验证签出储藏提醒在实际分支或查看引用变化后被丢弃，保留当前分支总览中的正常提示，并验证 Forkline 主动签出后的自动恢复不显示确认框。

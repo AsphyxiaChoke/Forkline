@@ -78,6 +78,47 @@ test("repository auth helpers normalize remote URLs and encode review links", ()
   );
 });
 
+test("repository auth helpers expose hosted platform status and safely open system credentials", async () => {
+  let launchCount = 0;
+  const auth = createRepositoryAuthService({
+    getCurrentRepo: () => "C:\\repo",
+    authDiagnosticsCache: new Map(),
+    extractRemoteHost: () => "github.com",
+    platform: "win32",
+    launchSystemCredentialManager: async () => {
+      launchCount += 1;
+    },
+  });
+
+  const remote = auth.remoteAuthSummary({
+    name: "origin",
+    fetchUrl: "https://github.com/example/forkline.git",
+    pushUrl: "https://github.com/example/forkline.git",
+  });
+  assert.equal(remote.kind, "https");
+  assert.equal(remote.platform, "github");
+  assert.equal(remote.platformLabel, "GitHub");
+  assert.equal(remote.statusUrl, "https://www.githubstatus.com/");
+
+  assert.deepEqual(auth.systemCredentialManagerStatus(), {
+    available: true,
+    canOpen: true,
+    name: "Windows 凭据管理器",
+    message: "可打开 Windows 凭据管理器查看或更新 Git HTTPS 登录信息。",
+  });
+  const opened = await auth.openSystemCredentialManager();
+  assert.equal(opened.ok, true);
+  assert.equal(launchCount, 1);
+
+  const unsupported = createRepositoryAuthService({
+    getCurrentRepo: () => "C:\\repo",
+    authDiagnosticsCache: new Map(),
+    platform: "linux",
+  });
+  assert.equal(unsupported.systemCredentialManagerStatus().canOpen, false);
+  await assert.rejects(() => unsupported.openSystemCredentialManager(), /暂不支持/);
+});
+
 test("recovery retention policy validates limits and selects expired overflow points", () => {
   const recovery = createGitRecoveryService({
     getCurrentRepo: () => "",

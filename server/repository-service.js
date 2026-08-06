@@ -84,7 +84,7 @@ function createRepositoryService(options) {
     authDiagnosticsCacheLimit: AUTH_DIAGNOSTICS_CACHE_LIMIT,
     authDiagnosticsCache,
   });
-  const { readCachedAuthDiagnostics, readPullRequestLink } = authService;
+  const { openSystemCredentialManager, readCachedAuthDiagnostics, readPullRequestLink } = authService;
   const worktreeService = createRepositoryWorktreeService({
     git,
     getCurrentRepo: () => currentRepo,
@@ -982,6 +982,7 @@ function createRepositoryService(options) {
     parseDiff,
     parseLog,
     readCurrentSyncDetails,
+    openSystemCredentialManager,
     readCachedAuthDiagnostics,
     sampleState,
   };

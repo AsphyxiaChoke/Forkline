@@ -331,6 +331,7 @@ const {
   parseDiff,
   parseLog,
   readCurrentSyncDetails,
+  openSystemCredentialManager,
   readCachedAuthDiagnostics,
   sampleState,
 } = repositoryService;
@@ -478,12 +479,13 @@ function shouldLocalizeResponseField(key, pathParts, parent) {
   if (key === "error") return true;
   if (key === "output") return true;
   if (["time", "lastUpdated", "elapsed"].includes(key)) return true;
-  if (["actionLabel", "statusLabel", "deleteBlockedReason", "protectedReason", "pruneReason", "reason", "advice", "categoryLabel", "kindLabel"].includes(key)) return true;
+  if (["actionLabel", "statusLabel", "deleteBlockedReason", "protectedReason", "pruneReason", "reason", "advice", "categoryLabel", "kindLabel", "platformLabel"].includes(key)) return true;
   const pathText = pathParts.join(".");
+  if (key === "name" && pathText.includes("systemCredentialManager")) return true;
   if (key === "label") return /(?:operationLog|runningOperations|\.operation\.)/.test(pathText);
   if (key === "title") return pathText.includes("pullRequest") || pathText.includes("diagnosis") || Array.isArray(parent.steps);
   if (key === "summary") return pathText.includes("operationLog") || pathText.includes("auth") || pathText.includes("diagnosis") || Array.isArray(parent.steps);
-  if (key === "message") return pathText.includes("auth") && !pathText.includes("operationLog");
+  if (key === "message") return (pathText.includes("auth") || pathText.includes("systemCredentialManager")) && !pathText.includes("operationLog");
   return false;
 }
 
@@ -1049,6 +1051,13 @@ const server = http.createServer(async (req, res) => {
       if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再检测认证环境。");
       const refresh = ["1", "true"].includes(String(parsed.searchParams.get("refresh") || "").toLowerCase());
       sendJson(res, 200, await readCachedAuthDiagnostics(currentRepo, { refresh }));
+      return;
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/system-credentials/open") {
+      await readJson(req);
+      ensureRequestRepoMatchesCurrent(req, { requireRepo: true });
+      if (!currentRepo) throw new Error("请先打开一个 Git 仓库，再管理系统凭据。");
+      sendJson(res, 200, await openSystemCredentialManager());
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/reflog") {
