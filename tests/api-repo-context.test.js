@@ -64,3 +64,31 @@ test("API sends the active English locale", async () => {
 
   assert.equal(requestHeaders.get("X-Forkline-Locale"), "en");
 });
+
+test("API blocks repository writes while progressive details are loading", async () => {
+  let fetchCount = 0;
+  const context = vm.createContext({
+    Headers,
+    state: { data: { repo: { path: "D:\\Repo", isSample: false } }, repoHydrating: true },
+    window: { Forkline: {} },
+    currentLocale: () => "zh-CN",
+    t: (value) => value,
+    repoPathSnapshot: () => "D:\\Repo",
+    isCurrentRepoPath: () => true,
+    fetch: async () => {
+      fetchCount += 1;
+      return { ok: true, json: async () => ({}) };
+    },
+  });
+
+  vm.runInContext(source, context);
+  await assert.rejects(
+    context.api("/api/action", { method: "POST", body: "{}" }),
+    /仓库详情正在载入/
+  );
+  assert.equal(fetchCount, 0);
+
+  await context.api("/api/state");
+  await context.api("/api/open", { method: "POST", body: "{}" });
+  assert.equal(fetchCount, 2);
+});

@@ -99,6 +99,7 @@ const state = {
   folderBrowse: null,
   folderBrowseRequestId: 0,
   openRepoRequestId: 0,
+  repoHydrating: false,
 };
 
 function repoPathSnapshot() {

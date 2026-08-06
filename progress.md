@@ -7184,3 +7184,39 @@
 - `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新用户入口、模块顺序、行为边界和验证数据。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `41bdbd5`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md public/index.html public/js/app/events.js public/js/features/file-editor-actions.js public/js/features/file-editor-window.js public/js/features/file-editor.js public/js/i18n-catalog.js public/js/panels/logs.js public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js progress.md && git clean -f -- public/js/app/performance-diagnostics.js tests/ui-diagnostics.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 增加仓库渐进式打开
+
+### What was done
+- 网页主动打开或恢复最近仓库时先读取仓库、分支、同步摘要和当前分支历史，首屏绘制后再补齐工作区、Tag、储藏、工作树、子模块、恢复点和分支整理状态。
+- 全量状态返回时保留载入期间已经切换的查看引用、提交选择和历史分页；工作区使用明确的载入占位，不会把未读取状态误报为没有修改。
+- 详情补齐期间统一拒绝除新打开仓库外的 POST 写请求；补齐失败后继续阻止写入，并提示重新打开仓库。
+- 保留原 `/api/sync-state` 轻量字段契约，渐进首屏只在内部按需携带分支列表，不改变现有 Git 操作语义。
+
+### Testing
+- `node --check server.js`、`node --check server/repository-state-service.js` 和 `node --check public/js/features/repositories.js` 通过；`git diff --check` 通过。
+- 前端与状态专项运行 71 项，71 项通过；真实 Git 渐进打开专项运行 1 项，1 项通过。
+- `npm.cmd run test:browser` 独立真实 Chromium 回归运行 1 项并通过：3012 条提交、4000 个工作区文件仓库首屏约 `164.5 ms`，完整详情约 `793.3 ms`，文件数 `0 -> 4000`；12 次仓库切换约 `7.14 s`。
+- `npm.cmd test` 完整运行 171 项，171 项通过、0 项失败、0 项跳过，耗时约 136.3 秒；同机高负载下渐进首屏约 `619.2 ms`、完整详情约 `1415.6 ms`，仍低于 `1500 / 5000 ms` 回归门限。
+- 连续开关历史文件编辑器 30 次后，`resize` 监听器保持 `4 -> 4`，DOM 保持 `1/2091/149 -> 1/2091/149`，GC 后堆约 `3.7 MiB -> 3.8 MiB`。测试使用随机端口和系统临时仓库；结束后相关 Node / Edge / Chrome 进程和性能临时目录均为 0，未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `server.js`：让打开仓库接口接收显式渐进模式。
+- `server/repository-service.js`：按打开选项选择首屏状态或完整状态。
+- `server/repository-state-service.js`：增加渐进首屏状态并保持轻量同步接口字段兼容。
+- `public/js/api.js`：详情载入或失败期间统一拦截仓库写请求。
+- `public/js/app/init.js`：最近仓库恢复先绘制首屏，再并行补齐完整状态。
+- `public/js/core.js`：记录仓库详情是否仍在载入。
+- `public/js/features/repositories.js`：编排渐进打开、过期响应丢弃、状态合并和失败处理。
+- `public/js/features/worktree-changes.js`：显示工作区载入或失败状态，并禁用依赖完整快照的操作。
+- `public/js/i18n-catalog.js`：补充渐进载入和失败提示的中英文文案。
+- `tests/api-repo-context.test.js`：覆盖载入期间的 POST 写入拦截和允许的新打开请求。
+- `tests/browser-performance.test.js`：覆盖首屏先显示、4000 文件后续补齐和仓库切换性能边界。
+- `tests/git-api.test.js`：用真实临时 Git 仓库验证首屏历史与延后工作区状态。
+- `tests/layout-ui.test.js`：覆盖启动恢复、指定引用和载入期间用户选择保留。
+- `tests/recovery-policy-ui.test.js`：适配启动流程中的渐进状态标记。
+- `README.md`：说明打开仓库时的两阶段载入和写操作边界。
+- `docs/ARCHITECTURE.md`：记录状态分层、合并规则、失败状态和请求保护。
+- `docs/CONTINUE.md`：更新当前能力、回归数量和两种负载下的性能数据。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `4919b1c`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md public/js/api.js public/js/app/init.js public/js/core.js public/js/features/repositories.js public/js/features/worktree-changes.js public/js/i18n-catalog.js server.js server/repository-service.js server/repository-state-service.js tests/api-repo-context.test.js tests/browser-performance.test.js tests/git-api.test.js tests/layout-ui.test.js tests/recovery-policy-ui.test.js progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

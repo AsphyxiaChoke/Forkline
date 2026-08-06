@@ -10,7 +10,13 @@ function encodeRepoPathHeader(repoPath) {
 
 async function api(path, options = {}) {
   const requestRepoPath = repoPathSnapshot();
-  const tracksOperation = path === "/api/action" && String(options.method || "GET").toUpperCase() === "POST";
+  const method = String(options.method || "GET").toUpperCase();
+  if (state.repoHydrating && method !== "GET" && path !== "/api/open") {
+    throw new Error(t(state.data?.progressiveError
+      ? "工作区详情加载失败，请重新打开仓库"
+      : "仓库详情正在载入，完成后再执行操作"));
+  }
+  const tracksOperation = path === "/api/action" && method === "POST";
   if (tracksOperation) {
     pendingActionRequestCount += 1;
     startOperationPolling();

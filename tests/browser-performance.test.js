@@ -717,6 +717,66 @@ test("real Chromium keeps historical file comparison responsive", {
     `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms, warm API ${worktreeMetrics.warmApiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, load-all ${worktreeMetrics.loadAllMs.toFixed(1)} ms/${worktreeMetrics.loadPasses} passes, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, listener adds ${worktreeMetrics.fileTreeListenerAdds}, initial/final rows ${worktreeMetrics.initialRenderedRows}/${worktreeMetrics.loadedAllRows}, initial/final tree nodes ${worktreeMetrics.initialTreeNodes}/${worktreeMetrics.treeNodes}, initial/final page nodes ${worktreeMetrics.initialPageNodes}/${worktreeMetrics.pageNodes}`
   );
 
+  const progressiveOpenMetrics = await evaluate(cdp, `(async () => {
+    await openRepo(${JSON.stringify(alternateRepo)});
+    const originalRenderAll = renderAll;
+    let firstRenderMs = -1;
+    let firstProgressive = false;
+    let firstLoadedFiles = -1;
+    let firstHydrating = false;
+    let firstLoadingText = "";
+    let targetRenderCalls = 0;
+    const started = performance.now();
+    renderAll = function (...args) {
+      const result = originalRenderAll.apply(this, args);
+      if (
+        String(state.data?.repo?.path || "").replaceAll("\\\\", "/").toLowerCase() ===
+        ${JSON.stringify(repo.replaceAll("\\", "/").toLowerCase())}
+      ) {
+        targetRenderCalls += 1;
+        if (firstRenderMs < 0) {
+          firstRenderMs = performance.now() - started;
+          firstProgressive = Boolean(state.data?.progressive);
+          firstLoadedFiles = state.data?.workingFiles?.length || 0;
+          firstHydrating = Boolean(state.repoHydrating);
+          firstLoadingText = document.querySelector("#changeList")?.textContent || "";
+        }
+      }
+      return result;
+    };
+    try {
+      await openRepo(${JSON.stringify(repo)});
+    } finally {
+      renderAll = originalRenderAll;
+    }
+    return {
+      firstRenderMs,
+      firstProgressive,
+      firstLoadedFiles,
+      firstHydrating,
+      firstLoadingText,
+      totalMs: performance.now() - started,
+      targetRenderCalls,
+      finalLoadedFiles: state.data?.workingFiles?.length || 0,
+      finalProgressive: Boolean(state.data?.progressive),
+      finalHydrating: Boolean(state.repoHydrating),
+    };
+  })()`);
+  assert.equal(progressiveOpenMetrics.firstProgressive, true);
+  assert.equal(progressiveOpenMetrics.firstLoadedFiles, 0);
+  assert.equal(progressiveOpenMetrics.firstHydrating, true);
+  assert.match(progressiveOpenMetrics.firstLoadingText, /正在载入工作区和仓库详情/);
+  assert.equal(progressiveOpenMetrics.finalLoadedFiles, largeWorktreeFileCount);
+  assert.equal(progressiveOpenMetrics.finalProgressive, false);
+  assert.equal(progressiveOpenMetrics.finalHydrating, false);
+  assert.equal(progressiveOpenMetrics.targetRenderCalls, 1);
+  assert.ok(progressiveOpenMetrics.firstRenderMs >= 0 && progressiveOpenMetrics.firstRenderMs < 1500, `progressive first render took ${progressiveOpenMetrics.firstRenderMs.toFixed(1)} ms`);
+  assert.ok(progressiveOpenMetrics.firstRenderMs < progressiveOpenMetrics.totalMs, `progressive first render ${progressiveOpenMetrics.firstRenderMs.toFixed(1)} ms should precede full load ${progressiveOpenMetrics.totalMs.toFixed(1)} ms`);
+  assert.ok(progressiveOpenMetrics.totalMs < 5000, `progressive full load took ${progressiveOpenMetrics.totalMs.toFixed(1)} ms`);
+  t.diagnostic(
+    `progressive repository open first render ${progressiveOpenMetrics.firstRenderMs.toFixed(1)} ms, full details ${progressiveOpenMetrics.totalMs.toFixed(1)} ms, files 0 -> ${progressiveOpenMetrics.finalLoadedFiles}`
+  );
+
   const baselineRepoPath = await evaluate(cdp, `(async () => {
     await openRepo(${JSON.stringify(alternateRepo)});
     return state.data?.repo?.path || "";
@@ -750,8 +810,8 @@ test("real Chromium keeps historical file comparison responsive", {
     };
   })()`);
   assert.equal(switchMetrics.openCalls, 12);
-  assert.equal(switchMetrics.stateRefCalls, 0);
-  assert.equal(switchMetrics.lightweightRefCalls, 12);
+  assert.equal(switchMetrics.stateRefCalls, 12);
+  assert.equal(switchMetrics.lightweightRefCalls, 0);
   assert.equal(path.resolve(switchMetrics.finalRepo), path.resolve(alternateRepo));
 
   const editorSoak = await evaluate(cdp, `(async () => {

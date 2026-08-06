@@ -488,12 +488,49 @@ function createRepositoryStateService(options) {
       history: commitPage.history,
     };
   }
-  async function readSyncState() {
+
+  async function readOpenState(rawHistoryLimit = DEFAULT_HISTORY_LIMIT) {
+    const historyLimit = normalizeHistoryLimit(rawHistoryLimit);
+    if (!currentRepo) return readState("", historyLimit);
+    const repoPath = currentRepo;
+    const currentBranch = String(await readBranchDisplayName(repoPath).catch(() => "")).trim();
+    const selectedRef = currentBranch && currentBranch !== "detached HEAD" ? currentBranch : "";
+    const [syncState, logOutput] = await Promise.all([
+      readSyncState({ includeBranches: true }),
+      git(repoPath, logArgs(selectedRef, historyLimit)).catch(() => ""),
+    ]);
+    const commitPage = historyPage(parseLog(logOutput), historyLimit);
+    return {
+      ...syncState,
+      repo: {
+        ...(syncState.repo || {}),
+        selectedRef,
+        operation: detectRepoOperation(repoPath),
+      },
+      branchCleanup: [],
+      worktrees: [],
+      worktreePruneSnapshot: "",
+      submodules: [],
+      workingFiles: [],
+      worktreeSnapshot: "",
+      stashes: [],
+      recoveryPoints: [],
+      tags: [],
+      runningOperations: listRunningOperations(),
+      operationLog,
+      commits: commitPage.commits,
+      history: commitPage.history,
+      progressive: true,
+    };
+  }
+
+  async function readSyncState(options = {}) {
     if (!currentRepo) {
       const sample = sampleState();
       const branch = sample.repo?.branch || "";
       return {
         repo: sample.repo,
+        ...(options.includeBranches ? { branches: sample.branches || [] } : {}),
         branchInfo: branch && sample.branchInfo?.[branch] ? { [branch]: sample.branchInfo[branch] } : {},
         remotes: sample.remotes || [],
         remoteInfo: sample.remoteInfo || {},
@@ -544,6 +581,7 @@ function createRepositoryStateService(options) {
         isSample: false,
         remoteNames,
       },
+      ...(options.includeBranches ? { branches } : {}),
       branchInfo,
       remotes,
       remoteInfo: parseRemoteBranchInfo(remoteMetaOutput, remoteNames),
@@ -650,6 +688,7 @@ function createRepositoryStateService(options) {
     normalizeHistoryLimit,
     readRefState,
     readReflogState,
+    readOpenState,
     readState,
     readSyncState,
     refNamesFromText,

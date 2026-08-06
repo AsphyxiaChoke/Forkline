@@ -168,6 +168,7 @@ function createRepositoryService(options) {
     historyPage,
     logArgs,
     normalizeHistoryLimit,
+    readOpenState,
     readRefState,
     readReflogState,
     readState,
@@ -544,14 +545,14 @@ function createRepositoryService(options) {
     return (row?.[0] || "").toLowerCase();
   }
 
-  async function openRepo(repoPath) {
+  async function openRepo(repoPath, options = {}) {
     if (!repoPath || typeof repoPath !== "string") {
       throw new Error("请输入仓库路径");
     }
     const root = (await git(repoPath, ["rev-parse", "--show-toplevel"])).trim();
     if (!currentRepo || !sameFsPath(currentRepo, root)) worktreeFileSnapshotCache.clear();
     setCurrentRepo(root);
-    return readState();
+    return options.progressive ? readOpenState() : readState();
   }
 
   async function readBranchDisplayName(repoPath) {

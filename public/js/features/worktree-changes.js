@@ -5,7 +5,30 @@ function renderStage(options = {}) {
   const refreshDiff = options.refreshDiff !== false;
   els.changeList.innerHTML = "";
   els.stagedChangeList.innerHTML = "";
-  const files = state.data.workingFiles;
+  const files = state.data.workingFiles || [];
+  const progressiveError = String(state.data.progressiveError || "");
+  if (state.data.progressive || progressiveError) {
+    const message = progressiveError
+      ? t("工作区详情加载失败，请重新打开仓库")
+      : t("正在载入工作区和仓库详情");
+    const loadingRow = `<div class="file-row empty-row"><span></span><span class="file-name">${message}</span><span></span></div>`;
+    els.changeList.innerHTML = loadingRow;
+    els.stagedChangeList.innerHTML = loadingRow;
+    els.changeList.title = progressiveError;
+    els.stagedChangeList.title = progressiveError;
+    state.worktreeSignature = "";
+    updateWorktreeFilterMeta([], 0, 0);
+    if (refreshDiff && state.activeDiff?.source !== "history") renderWorkDiffEmpty(message);
+    els.draftNote.textContent = message;
+    els.refreshChanges.disabled = true;
+    els.stashChanges.disabled = true;
+    els.stashChanges.title = t("仓库详情载入完成后才能创建储藏");
+    if (typeof renderRecoveryUndoButton === "function") renderRecoveryUndoButton();
+    return;
+  }
+  els.changeList.removeAttribute("title");
+  els.stagedChangeList.removeAttribute("title");
+  els.refreshChanges.disabled = Boolean(state.refreshingWorktree);
   const terms = worktreeFilterTerms();
   const visibleFiles = filterWorkingFiles(files, terms);
   state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);

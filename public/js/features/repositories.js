@@ -340,8 +340,9 @@ async function applyOpenedRepoData(data, requestId = 0) {
   if (requestId && requestId !== state.openRepoRequestId) return false;
   clearOpenedRepoState();
   state.data = data;
+  state.repoHydrating = Boolean(data.progressive);
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
-  if (state.selectedRef) {
+  if (state.selectedRef && !data.progressive) {
     const selectedRef = state.selectedRef;
     const refData = await api(`/api/ref-state?ref=${encodeURIComponent(selectedRef)}`);
     if (requestId && requestId !== state.openRepoRequestId) return false;
@@ -357,11 +358,52 @@ async function applyOpenedRepoData(data, requestId = 0) {
   state.selectedSha = state.data.commits[0]?.sha || "";
   els.searchInput.value = "";
   renderAll();
+  const hydrationPromise = data.progressive
+    ? hydrateOpenedRepoData(requestId, state.data.repo.path, state.selectedRef)
+    : null;
   if (state.selectedSha) {
     await loadCommit(state.selectedSha);
-    renderInspector();
   }
+  if (hydrationPromise && !(await hydrationPromise)) return false;
+  renderInspector();
   return true;
+}
+
+async function hydrateOpenedRepoData(requestId, repoPath, openedRef) {
+  try {
+    const data = await api(`/api/state?ref=${encodeURIComponent(openedRef || "")}`);
+    if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
+    const viewedRef = state.selectedRef;
+    const viewedCommits = state.data.commits || [];
+    const viewedHistory = state.data.history || {};
+    const selectedSha = state.selectedSha;
+    state.data = {
+      ...data,
+      repo: { ...(data.repo || {}), selectedRef: viewedRef },
+      commits: viewedCommits,
+      history: viewedHistory,
+      progressive: false,
+      progressiveError: "",
+    };
+    state.selectedRef = viewedRef;
+    state.selectedSha = viewedCommits.some((commit) => commit.sha === selectedSha)
+      ? selectedSha
+      : viewedCommits[0]?.sha || "";
+    state.repoHydrating = false;
+    renderRepo();
+    renderBranches();
+    renderStage();
+    updateAmendMode();
+    return true;
+  } catch (error) {
+    if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
+    state.data.progressive = false;
+    state.data.progressiveError = String(error?.message || error || t("未知错误"));
+    state.repoHydrating = true;
+    renderStage();
+    toast(t("仓库已打开，但工作区详情加载失败：{message}", { message: state.data.progressiveError }));
+    return true;
+  }
 }
 
 function clearOpenedRepoState() {
@@ -436,17 +478,21 @@ async function openRepo(pathOverride = "") {
     return;
   }
   const requestId = ++state.openRepoRequestId;
+  state.repoHydrating = true;
   try {
     els.openRepo.disabled = true;
-    const data = await api("/api/open", { method: "POST", body: JSON.stringify({ path: repoPath }) });
+    const data = await api("/api/open", { method: "POST", body: JSON.stringify({ path: repoPath, progressive: true }) });
     if (requestId !== state.openRepoRequestId) return;
     const opened = await applyOpenedRepoData(data, requestId);
     if (!opened) return;
     saveRecentRepo(state.data.repo);
-    toast(t("已打开 {name}", { name: state.data.repo.name }));
-    await maybeRestoreCheckoutStash(state.data.repo.branch);
+    if (!state.data.progressiveError) {
+      toast(t("已打开 {name}", { name: state.data.repo.name }));
+      await maybeRestoreCheckoutStash(state.data.repo.branch);
+    }
   } catch (error) {
     if (requestId !== state.openRepoRequestId) return;
+    state.repoHydrating = false;
     toast(error.message);
   } finally {
     if (requestId === state.openRepoRequestId) els.openRepo.disabled = false;

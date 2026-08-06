@@ -12,16 +12,21 @@ async function init() {
     if (["details", "files", "fileHistory", "fileBlame", "branches", "worktrees", "submodules", "sync", "compare", "stashes", "tags", "recovery", "logs", "settings"].includes(initialTab)) state.selectedTab = initialTab;
     state.selectedRef = initialRef;
     state.data = await loadInitialRepoState(initialRef);
+    state.repoHydrating = Boolean(state.data.progressive);
     loadRecoveryPolicyForRepo(state.data.repo);
     state.selectedRef = state.data.repo.selectedRef || initialRef;
     state.selectedSha = state.data.commits[0]?.sha || "";
     renderAll();
+    const hydrationPromise = state.data.progressive
+      ? hydrateOpenedRepoData(state.openRepoRequestId, state.data.repo.path, state.selectedRef)
+      : null;
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);
-      renderInspector();
-      if (state.openDiffOnInit) openDiffModal();
     }
-    await maybeRestoreCheckoutStash(state.data.repo.branch);
+    if (hydrationPromise && !(await hydrationPromise)) return;
+    renderInspector();
+    if (state.selectedSha && state.openDiffOnInit) openDiffModal();
+    if (!state.data.progressiveError) await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     toast(error.message);
   }
@@ -42,7 +47,7 @@ async function loadInitialRepoState(initialRef = "") {
   try {
     restoredData = await api("/api/open", {
       method: "POST",
-      body: JSON.stringify({ path: previousRepo.path }),
+      body: JSON.stringify({ path: previousRepo.path, progressive: true }),
     });
   } catch {
     return initialData;
@@ -50,7 +55,13 @@ async function loadInitialRepoState(initialRef = "") {
 
   if (initialRef) {
     try {
-      restoredData = await api(statePath);
+      const refData = await api(`/api/ref-state?ref=${encodeURIComponent(initialRef)}`);
+      restoredData = {
+        ...restoredData,
+        repo: { ...(restoredData.repo || {}), ...(refData.repo || {}), selectedRef: initialRef },
+        commits: refData.commits || [],
+        history: refData.history || restoredData.history,
+      };
     } catch {}
   }
   saveRecentRepo(restoredData.repo);

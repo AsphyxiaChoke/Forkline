@@ -154,6 +154,35 @@ test("commit history loads older pages beyond the default 120 commits", { timeou
   assert.equal(expanded.body.commits.at(-1).message, "history 001");
 });
 
+test("progressive repository open returns history before deferred worktree details", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-progressive-open-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  await initRepository(repo);
+  await fs.writeFile(path.join(repo, "base.txt"), "base\n", "utf8");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await git(repo, ["branch", "feature/test"]);
+  await git(repo, ["tag", "v1.0.0"]);
+  await fs.writeFile(path.join(repo, "draft.txt"), "draft\n", "utf8");
+
+  const progressive = await openRepo(repo, { progressive: true });
+  assert.equal(progressive.progressive, true);
+  assert.equal(progressive.repo.selectedRef, "main");
+  assert.equal(progressive.commits[0].message, "base");
+  assert.ok(progressive.branches.includes("main"));
+  assert.ok(progressive.branches.includes("feature/test"));
+  assert.equal(progressive.sync.branch, "main");
+  assert.deepEqual(progressive.workingFiles, []);
+  assert.deepEqual(progressive.tags, []);
+
+  const full = await readState(repo);
+  assert.equal(full.progressive, undefined);
+  assert.ok(full.workingFiles.some((file) => file.file === "draft.txt"));
+  assert.ok(full.tags.some((tag) => tag.name === "v1.0.0"));
+});
+
 test("worktree file editor reads and saves UTF-8 text with stale-content protection", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-"));
   t.after(() => removeFixture(root));
@@ -1758,10 +1787,10 @@ async function git(repoPath, args) {
   }
 }
 
-async function openRepo(repoPath) {
+async function openRepo(repoPath, options = {}) {
   const response = await request("/api/open", {
     method: "POST",
-    body: { path: repoPath },
+    body: { path: repoPath, ...options },
   });
   assertStatus(response, 200);
   return response.body;

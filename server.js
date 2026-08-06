@@ -1077,7 +1077,7 @@ const server = http.createServer(async (req, res) => {
       ensureCanSwitchRepo();
       repoSwitchInProgress = true;
       try {
-        sendJson(res, 200, await openRepo(body.path));
+        sendJson(res, 200, await openRepo(body.path, { progressive: body.progressive === true }));
       } finally {
         repoSwitchInProgress = false;
       }

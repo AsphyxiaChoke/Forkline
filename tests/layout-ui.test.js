@@ -341,7 +341,7 @@ test("startup restores the latest recent repository", async () => {
   const result = await context.loadInitialRepoState("");
   assert.strictEqual(result, restored);
   assert.deepEqual(calls.map((item) => item.url), ["/api/state?ref=", "/api/open"]);
-  assert.deepEqual(JSON.parse(calls[1].options.body), { path: "D:\\GitTest" });
+  assert.deepEqual(JSON.parse(calls[1].options.body), { path: "D:\\GitTest", progressive: true });
   assert.deepEqual(saved, [restored.repo]);
 });
 
@@ -387,7 +387,11 @@ test("startup reapplies a requested ref after restoring the repository", async (
   const saved = [];
   const sample = { repo: { path: "示例仓库", isSample: true } };
   const restored = { repo: { path: "D:\\GitTest", branch: "main", isSample: false } };
-  const selected = { repo: { path: "D:\\GitTest", branch: "main", selectedRef: "feature/test", isSample: false } };
+  const selected = {
+    repo: { path: "D:\\GitTest", branch: "main", selectedRef: "feature/test", isSample: false },
+    commits: [{ sha: "feature-head" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
   const responses = [sample, restored, selected];
   const context = vm.createContext({
     api: async (url) => {
@@ -400,9 +404,9 @@ test("startup reapplies a requested ref after restoring the repository", async (
   vm.runInContext(initSource, context);
 
   const result = await context.loadInitialRepoState("feature/test");
-  assert.strictEqual(result, selected);
-  assert.deepEqual(calls, ["/api/state?ref=feature%2Ftest", "/api/open", "/api/state?ref=feature%2Ftest"]);
-  assert.deepEqual(saved, [selected.repo]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), selected);
+  assert.deepEqual(calls, ["/api/state?ref=feature%2Ftest", "/api/open", "/api/ref-state?ref=feature%2Ftest"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved)), [selected.repo]);
 });
 
 test("opening a repository refreshes only selected branch history", async () => {
@@ -456,6 +460,102 @@ test("opening a repository refreshes only selected branch history", async () => 
   assert.equal(state.selectedSha, "main-only");
   assert.equal(loadedSha, "main-only");
   assert.equal(context.els.searchInput.value, "");
+});
+
+test("progressive repository open renders history before hydrating deferred details", async () => {
+  const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
+  const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
+  const source = repositoriesSource.slice(start, end);
+  const calls = [];
+  let resolveFullState;
+  const fullStatePromise = new Promise((resolve) => { resolveFullState = resolve; });
+  const progressive = {
+    progressive: true,
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
+    branches: ["main", "feature/test"],
+    branchInfo: { main: {} },
+    remotes: [],
+    remoteInfo: {},
+    sync: { branch: "main", unborn: false, remotes: [] },
+    branchCleanup: [],
+    worktrees: [],
+    submodules: [],
+    workingFiles: [],
+    stashes: [],
+    recoveryPoints: [],
+    tags: [],
+    commits: [{ sha: "core-main" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
+  const full = {
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
+    branches: ["main", "feature/test"],
+    branchInfo: { main: { upstream: "origin/main" }, "feature/test": {} },
+    branchCleanup: [{ branch: "feature/test" }],
+    worktrees: [{ path: "D:\\Repo", branch: "main" }],
+    submodules: [],
+    remotes: ["origin/main"],
+    remoteInfo: {},
+    sync: { branch: "main", unborn: false, remotes: [] },
+    workingFiles: [{ file: "draft.txt", state: "M" }],
+    stashes: [],
+    recoveryPoints: [],
+    tags: [{ name: "v1.0.0" }],
+    commits: [{ sha: "full-main" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
+  const state = { openRepoRequestId: 9, repoHydrating: false };
+  let renderAllCount = 0;
+  let renderStageCount = 0;
+  let loadedSha = "";
+  const context = vm.createContext({
+    state,
+    els: { searchInput: { value: "old search" } },
+    api: async (url) => {
+      calls.push(url);
+      return fullStatePromise;
+    },
+    clearOpenedRepoState: () => {},
+    loadRecoveryPolicyForRepo: () => {},
+    renderAll: () => { renderAllCount += 1; },
+    loadCommit: async (sha) => { loadedSha = sha; },
+    renderInspector: () => {},
+    renderRepo: () => {},
+    renderBranches: () => {},
+    renderStage: () => { renderStageCount += 1; },
+    updateAmendMode: () => {},
+    isCurrentRepoPath: (repoPath) => state.data?.repo?.path === repoPath,
+    toast: () => {},
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+  });
+  vm.runInContext(source, context);
+
+  const applying = context.applyOpenedRepoData(progressive, 9);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(calls, ["/api/state?ref=main"]);
+  assert.equal(renderAllCount, 1);
+  assert.equal(state.repoHydrating, true);
+  assert.equal(state.data.commits[0].sha, "core-main");
+  assert.equal(loadedSha, "core-main");
+
+  state.selectedRef = "feature/test";
+  state.selectedSha = "feature-head";
+  state.data.repo.selectedRef = "feature/test";
+  state.data.commits = [{ sha: "feature-head" }];
+  state.data.history = { limit: 120, loaded: 1, hasMore: true };
+  resolveFullState(full);
+  assert.equal(await applying, true);
+
+  assert.equal(state.repoHydrating, false);
+  assert.equal(state.data.progressive, false);
+  assert.equal(state.data.workingFiles[0].file, "draft.txt");
+  assert.equal(state.data.tags[0].name, "v1.0.0");
+  assert.equal(state.selectedRef, "feature/test");
+  assert.equal(state.selectedSha, "feature-head");
+  assert.equal(state.data.commits[0].sha, "feature-head");
+  assert.equal(renderStageCount, 1);
 });
 
 test("command hint observer starts before the app renders dynamic panels", () => {

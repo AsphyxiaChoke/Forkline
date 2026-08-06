@@ -12,7 +12,7 @@ const initSource = fs.readFileSync(path.join(root, "public", "js", "app", "init.
 const repositoriesSource = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 
 test("startup and repository switching load retention preferences before rendering", () => {
-  assert.match(initSource, /state\.data = await loadInitialRepoState\(initialRef\);\s*loadRecoveryPolicyForRepo\(state\.data\.repo\);[\s\S]*?renderAll\(\);/);
+  assert.match(initSource, /state\.data = await loadInitialRepoState\(initialRef\);[\s\S]*?loadRecoveryPolicyForRepo\(state\.data\.repo\);[\s\S]*?renderAll\(\);/);
   assert.match(repositoriesSource, /loadRecoveryPolicyForRepo\(state\.data\.repo\);\s*state\.selectedSha[\s\S]*?renderAll\(\);/);
   assert.match(source, /data-recovery-policy="autoPrune" type="checkbox"/);
 });
