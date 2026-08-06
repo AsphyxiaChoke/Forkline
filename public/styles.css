@@ -4575,6 +4575,58 @@ button.file-row {
   font-weight: 700;
 }
 
+.ui-diagnostics-section {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ui-diagnostics-section .logs-toolbar {
+  margin-bottom: 0;
+}
+
+.logs-toolbar-actions {
+  display: flex !important;
+  grid-template-columns: none !important;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px !important;
+}
+
+.ui-diagnostic-item .operation-log-head {
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto;
+}
+
+.ui-diagnostic-item .log-status {
+  white-space: nowrap;
+}
+
+.ui-diagnostic-stack summary {
+  color: var(--quiet);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ui-diagnostic-stack pre {
+  max-height: 220px;
+  margin-top: 7px;
+}
+
+@media (max-width: 760px) {
+  .logs-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .logs-toolbar-actions {
+    justify-content: flex-end;
+  }
+}
+
 .operation-log-list {
   display: grid;
   gap: 10px;

@@ -690,7 +690,7 @@ test("file editor stages from the center and restores selected changes from a co
   assert.match(editor, /action: "stageHunk", hunkIndex, diffContext: editor\.diffContext/);
   assert.match(editor, /stageFileEditorSelectedLines/);
   assert.match(editor, /discardFileEditorSelectedHunk/);
-  assert.match(editor, /createFileEditorInstance\(editor\);\s*setFileEditorControlsDisabled\(false\);/);
+  assert.match(editor, /createFileEditorWithPerformanceGuard\(editor\);\s*setFileEditorControlsDisabled\(false\);/);
   assert.match(editor, /currentBranchSnapshotPayload\(\)/);
   assert.match(editor, /fileSnapshotPayload\(editor\.file, editor\.diffScope\)/);
   assert.match(editor, /button\.textContent = t\("暂存"\)/);

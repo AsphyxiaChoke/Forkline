@@ -7160,3 +7160,27 @@
 - `docs/CONTINUE.md`：更新当前实现说明并记录真实浏览器性能数据。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `15078cd`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md public/index.html public/js/core.js public/js/features/file-editor-actions.js public/js/features/file-editor-utils.js public/js/features/file-editor-window.js public/js/features/file-editor.js public/js/i18n-catalog.js public/styles.css server/file-editor-service.js tests/browser-performance.test.js tests/file-editor-ui.test.js tests/git-api.test.js progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 增加界面诊断与慢编辑器自动降级
+
+### What was done
+- 浏览器在本地记录超过 200 ms 的主线程阻塞、未处理界面错误和异步错误，最多保留最近 40 条；刷新页面后仍可查看、复制或清空。
+- 普通 MergeView 创建超过 250 ms 时立即释放并重建为轻量双栏或三栏，同一浏览器会话再次打开相同仓库、版本和文件快照时直接使用轻量模式。
+- 自动降级保留普通工作区右栏编辑和保存能力；诊断数据只保存在当前浏览器，不上传服务器，不触发 Git 操作。
+- 操作日志页增加界面诊断列表、复制和清空入口，并补齐中英文状态提示。
+
+### Testing
+- 新增界面诊断单元测试运行 3 项，3 项通过；编辑器、布局和国际化专项运行 74 项，74 项通过。
+- `npm.cmd run test:browser` 运行 1 项真实 Chromium 回归并通过：人为增加约 300 ms MergeView 构建后首次约 308.5 ms 完成自动降级，同一文件再次打开约 84.1 ms，两次均为两个 CodeMirror、零个 MergeView。
+- `npm.cmd test` 完整运行 168 项，168 项通过、0 项失败、0 项跳过；小冲突文件约 101.3 ms，25,000 行冲突约 179.1 ms，DOM、监听器和堆浸泡边界保持稳定。
+- 语法检查全部通过；测试只使用随机端口和系统临时仓库，未使用或修改 `D:\桌面\GitTest`。测试结束后相关 Node/Chromium 进程与 `forkline-browser-performance-*` 临时目录均为 0。
+
+### Notes
+- `public/js/app/performance-diagnostics.js`：增加本地界面错误、Long Task 和慢文件降级记忆。
+- `public/index.html`、`public/js/app/events.js`、`public/js/panels/logs.js`、`public/styles.css`：加载诊断模块，并增加操作日志查看、复制和清空交互。
+- `public/js/features/file-editor.js`、`public/js/features/file-editor-actions.js`、`public/js/features/file-editor-window.js`：测量 MergeView 构建时间，执行自动降级并保留工作区编辑能力。
+- `public/js/i18n-catalog.js`：增加界面诊断和慢响应降级的中英文文案。
+- `tests/ui-diagnostics.test.js`、`tests/browser-performance.test.js`、`tests/file-editor-ui.test.js`：覆盖诊断持久化、复制报告、真实浏览器降级和资源释放。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新用户入口、模块顺序、行为边界和验证数据。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `41bdbd5`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md public/index.html public/js/app/events.js public/js/features/file-editor-actions.js public/js/features/file-editor-window.js public/js/features/file-editor.js public/js/i18n-catalog.js public/js/panels/logs.js public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js progress.md && git clean -f -- public/js/app/performance-diagnostics.js tests/ui-diagnostics.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

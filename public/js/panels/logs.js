@@ -2,15 +2,20 @@
 function renderLogsTab() {
   const logs = state.data?.operationLog || [];
   const running = state.data?.runningOperations || [];
+  const diagnostics = getUiDiagnostics();
   els.detailTitle.textContent = t("操作日志");
-  els.detailSub.textContent = running.length
+  const operationSummary = running.length
     ? t("{count} 个 Git 操作正在执行", { count: running.length })
     : logs.length
       ? t("最近 {count} 条 Git 操作", { count: logs.length })
       : t("还没有执行过 Git 操作");
-  els.detailNode.style.borderColor = running.length || logs.some((item) => item.status === "error") ? "var(--amber)" : "var(--teal)";
+  els.detailSub.textContent = diagnostics.length
+    ? `${operationSummary} · ${t("{count} 条界面诊断", { count: diagnostics.length })}`
+    : operationSummary;
+  els.detailNode.style.borderColor = running.length || logs.some((item) => item.status === "error") || diagnostics.length ? "var(--amber)" : "var(--teal)";
   setActiveDiff(null);
   els.detailBody.innerHTML = tt`
+    ${renderUiDiagnosticsSection(diagnostics)}
     <div class="logs-toolbar">
       <div>
         <strong>最近操作</strong>
@@ -65,6 +70,62 @@ function renderRunningOperationItem(item) {
         ${item.cancelSupported ? `<button class="mini-btn danger" data-operation-cancel="${escapeAttr(item.id)}" type="button" ${item.cancellable ? "" : "disabled"}>${escapeHtml(item.cancelRequested ? t("取消中") : t("取消操作"))}</button>` : ""}
       </div>
       <pre>${escapeHtml(output)}</pre>
+    </article>
+  `;
+}
+
+function renderUiDiagnosticsSection(diagnostics = getUiDiagnostics()) {
+  return tt`
+    <section class="ui-diagnostics-section">
+      <div class="logs-toolbar">
+        <div>
+          <strong>界面诊断</strong>
+          <span>记录超过 200ms 的主线程阻塞和未处理错误，刷新页面后仍保留</span>
+        </div>
+        <div class="logs-toolbar-actions">
+          <button class="mini-btn" data-ui-diagnostics-copy type="button">复制诊断</button>
+          <button class="mini-btn" data-ui-diagnostics-clear type="button" ${diagnostics.length ? "" : "disabled"}>清空</button>
+        </div>
+      </div>
+      <div class="operation-log-list ui-diagnostics-list">
+        ${diagnostics.length
+          ? diagnostics.map(renderUiDiagnosticItem).join("")
+          : `<div class="log-empty">${t("没有记录到界面卡顿或前端错误。")}</div>`}
+      </div>
+    </section>
+  `;
+}
+
+function renderUiDiagnosticItem(item) {
+  const typeLabels = {
+    error: "界面错误",
+    rejection: "异步错误",
+    longtask: "主线程阻塞",
+    "editor-slow": "编辑器降级",
+  };
+  const context = item.context || {};
+  const editor = context.editor || null;
+  const file = editor?.file || context.selectedFile || "";
+  const ref = context.branch || context.selectedRef || "";
+  const contextText = [file, ref, editor?.lightweight ? t("轻量模式") : ""].filter(Boolean).join(" · ");
+  const message = item.type === "longtask"
+    ? t("浏览器主线程出现长时间阻塞。")
+    : item.type === "editor-slow"
+      ? t("文件对照创建过慢，已自动切换为轻量模式。")
+      : String(item.message || t("没有错误说明"));
+  const time = String(item.time || "").replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+  return tt`
+    <article class="operation-log-item ui-diagnostic-item ${item.type === "error" || item.type === "rejection" ? "error" : "running"}">
+      <div class="operation-log-head">
+        <span class="log-status">${escapeHtml(t(typeLabels[item.type] || "诊断"))}</span>
+        <strong title="${escapeAttr(message)}">${escapeHtml(message)}</strong>
+        <em>${escapeHtml(item.durationMs ? formatDurationText(item.durationMs) : "")}</em>
+      </div>
+      <div class="operation-log-meta">
+        <span>${escapeHtml(time)}</span>
+        <code title="${escapeAttr(contextText)}">${escapeHtml(contextText)}</code>
+      </div>
+      ${item.stack ? `<details class="ui-diagnostic-stack"><summary>${t("错误堆栈")}</summary><pre>${escapeHtml(item.stack)}</pre></details>` : ""}
     </article>
   `;
 }

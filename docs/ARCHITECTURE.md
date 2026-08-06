@@ -28,7 +28,7 @@
 - `public/js/i18n-catalog.js`：中英文文案目录、语言标准化、模板插值和已知服务端文本翻译；同时支持浏览器和 CommonJS 测试/服务端引用。
 - `public/js/i18n.js`：浏览器语言状态、静态页面文案捕获、语言切换和本地持久化。
 - `public/js/api.js`：共享 API 请求封装，对外暴露 `Forkline.api`，并携带仓库上下文和当前语言请求头。
-- `public/js/app/`：启动附近的界面编排、事件绑定、布局工具和首轮渲染辅助。
+- `public/js/app/`：启动附近的界面编排、界面性能诊断、事件绑定、布局工具和首轮渲染辅助。
 - `public/js/features/`：分支、工作区更改、历史列表、图谱渲染、仓库操作、Git 操作、右键菜单和 Diff 工作台等业务流程。
 - `public/js/panels/inspector.js`：按当前标签页分派右侧面板渲染。
 - `public/js/panels/workspaces.js`：工作树和子模块面板。
@@ -49,43 +49,44 @@
 2. `js/i18n-catalog.js`
 3. `js/i18n.js`
 4. `js/api.js`
-5. `js/app/init.js`
-6. `js/features/branches.js`
-7. `js/features/worktree-changes.js`
-8. `js/features/history-list.js`
-9. `js/features/folder-command.js`
-10. `js/features/context-menus.js`
-11. `js/features/commit-actions.js`
-12. `js/features/graph.js`
-13. `js/panels/inspector.js`
-14. `js/panels/workspaces.js`
-15. `js/panels/stashes.js`
-16. `js/panels/auth.js`
-17. `js/panels/sync.js`
-18. `js/panels/compare.js`
-19. `js/panels/tags.js`
-20. `js/panels/recovery.js`
-21. `js/panels/logs.js`
-22. `js/panels/settings.js`
-23. `js/features/recovery-undo.js`
-24. `js/features/file-tree.js`
-25. `js/features/diff-renderer.js`
-26. `js/features/diff-workbench.js`
-27. `js/features/diff-selection.js`
-28. `js/features/worktree-refresh.js`
-29. `js/features/file-editor-utils.js`
-30. `js/features/file-editor-actions.js`
-31. `js/features/file-editor-window.js`
-32. `js/features/file-editor-search.js`
-33. `js/features/file-editor.js`
-34. `js/features/repositories.js`
-35. `js/features/git-actions.js`
-36. `js/app/layout-utils.js`
-37. `js/app/events.js`
-38. `app.js`
-39. `js/bootstrap.js`
+5. `js/app/performance-diagnostics.js`
+6. `js/app/init.js`
+7. `js/features/branches.js`
+8. `js/features/worktree-changes.js`
+9. `js/features/history-list.js`
+10. `js/features/folder-command.js`
+11. `js/features/context-menus.js`
+12. `js/features/commit-actions.js`
+13. `js/features/graph.js`
+14. `js/panels/inspector.js`
+15. `js/panels/workspaces.js`
+16. `js/panels/stashes.js`
+17. `js/panels/auth.js`
+18. `js/panels/sync.js`
+19. `js/panels/compare.js`
+20. `js/panels/tags.js`
+21. `js/panels/recovery.js`
+22. `js/panels/logs.js`
+23. `js/panels/settings.js`
+24. `js/features/recovery-undo.js`
+25. `js/features/file-tree.js`
+26. `js/features/diff-renderer.js`
+27. `js/features/diff-workbench.js`
+28. `js/features/diff-selection.js`
+29. `js/features/worktree-refresh.js`
+30. `js/features/file-editor-utils.js`
+31. `js/features/file-editor-actions.js`
+32. `js/features/file-editor-window.js`
+33. `js/features/file-editor-search.js`
+34. `js/features/file-editor.js`
+35. `js/features/repositories.js`
+36. `js/features/git-actions.js`
+37. `js/app/layout-utils.js`
+38. `js/app/events.js`
+39. `app.js`
+40. `js/bootstrap.js`
 
-前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`i18n-catalog.js` 和 `i18n.js` 必须先于 API、功能和面板脚本加载；右侧面板模块、恢复点撤销、五个 Diff 工作台模块和五个文件编辑器模块必须先于 `js/app/events.js`；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
+前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`performance-diagnostics.js` 必须在后续功能脚本之前安装全局错误和长任务监听；`i18n-catalog.js` 和 `i18n.js` 必须先于功能和面板脚本加载；右侧面板模块、恢复点撤销、五个 Diff 工作台模块和五个文件编辑器模块必须先于 `js/app/events.js`；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
 
 恢复点策略保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。
 
@@ -119,10 +120,12 @@
 - 普通冲突创建“当前版本 / 合并结果 / 对方版本”三栏 MergeView，左右差异块按钮只把对应内容应用到中间；按钮观察器只能在文案或定位真实变化时更新 DOM，避免观察器回调再次触发自身。
 - 任一侧达到复杂度阈值时创建三个独立 CodeMirror，并按滚动比例同步。关闭、切换文件或切换仓库时必须解除三栏滚动监听、销毁 MergeView，并清空编辑器 DOM。
 - 保存接口只写工作区并保持编码、换行和快照保护，不自动执行 `git add`；用户仍需在冲突解决后显式暂存文件，再继续合并、变基、挑选或还原。
+- 普通 MergeView 同步测量构建耗时；超过 `250 ms` 时立即销毁并按当前文件类型重建为轻量双栏或三栏，同时把仓库、版本和文件快照键保存在 `sessionStorage`。同一浏览器会话再次打开相同版本时跳过 MergeView，普通工作区文件的轻量右栏仍可编辑和保存。
 
 ## 状态与诊断
 
 - `/api/state` 只负责仓库核心状态；本机工具探测、远端连通性检查和其他可选诊断不能在每次历史或工作区刷新时执行。
+- `public/js/app/performance-diagnostics.js` 记录超过 `200 ms` 的 Long Tasks、`error` 和 `unhandledrejection`，最多保存最近 40 条到 `localStorage`；记录包含当前仓库、引用、页签和编辑器模式，但不发送到服务器。操作日志页负责查看、复制和清空这些记录。
 - 全量状态读取会同时启动独立 Git 读取，再复用分支、HEAD、tracking、远端和工作区快照生成同步/工作树数据；基础快照完成后，工作树增强、子模块增强、工作区文件快照和同步详情可并行执行。
 - 工作区索引快照不查询未跟踪路径；已跟踪路径按不超过 24 KiB 的参数批次读取，最多并行 4 个只读 `ls-files`，避免 Windows 命令行过长。文件元数据和内容 SHA-256 最多并发读取 32 个，缓存上限为 8192 项，保证 4000 文件压力仓库重复刷新不反复读取全部内容。
 - 五秒一次的 `/api/worktree` 轮询只在页面可见且浏览器有焦点时运行；重新获得焦点或可见状态时立即静默刷新。工作区签名包含文件内容快照以及索引/工作区标记，同一 porcelain 状态下继续编辑仍会刷新列表和当前 Diff。

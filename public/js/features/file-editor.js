@@ -149,12 +149,16 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
       );
     editor.lightweightCompare = lightweightCompare.enabled;
     editor.lightweightReason = lightweightCompare.reason;
+    if (!editor.largeFile && !editor.lightweightCompare && shouldUseRememberedFileEditorLightweight(editor)) {
+      editor.lightweightCompare = true;
+      editor.lightweightReason = "slow";
+    }
     editor.branchSnapshot = editor.readOnly ? null : currentBranchSnapshotPayload();
     editor.fileSnapshot = editor.readOnly ? null : fileSnapshotPayload(editor.file, editor.diffScope);
     editor.mode = fileEditorMode(file);
     editor.loading = false;
     updateFileEditorModeUi(editor);
-    createFileEditorInstance(editor);
+    createFileEditorWithPerformanceGuard(editor);
     setFileEditorControlsDisabled(false);
     updateFileEditorCompareLabels(editor);
     updateFileEditorStatus();
@@ -230,7 +234,7 @@ function setFileEditorCompareMode(mode) {
   editor.restoreView = restoreView;
   state.commitFileCompareMode = nextMode;
   updateFileEditorModeUi(editor);
-  createFileEditorInstance(editor);
+  createFileEditorWithPerformanceGuard(editor);
   setFileEditorControlsDisabled(false);
   updateFileEditorCompareLabels(editor);
   updateFileEditorStatus();
@@ -298,6 +302,30 @@ function closeFileEditor(force = false) {
   setFileEditorControlsDisabled(false);
   hideFileEditorContextMenu();
   return true;
+}
+
+function createFileEditorWithPerformanceGuard(editor) {
+  const started = typeof performance === "object" && typeof performance.now === "function" ? performance.now() : Date.now();
+  createFileEditorInstance(editor);
+  const finished = typeof performance === "object" && typeof performance.now === "function" ? performance.now() : Date.now();
+  const renderMs = Math.max(0, finished - started);
+  if (
+    !editor.mergeView ||
+    editor.largeFile ||
+    editor.lightweightCompare ||
+    renderMs < FILE_EDITOR_SLOW_RENDER_LIMIT_MS
+  ) {
+    return;
+  }
+
+  const restoreView = captureFileEditorView(editor);
+  destroyFileEditorInstance();
+  editor.lightweightCompare = true;
+  editor.lightweightReason = "slow";
+  editor.restoreView = restoreView;
+  rememberSlowFileEditor(editor, renderMs);
+  updateFileEditorModeUi(editor);
+  createFileEditorInstance(editor);
 }
 
 function createFileEditorInstance(editor) {

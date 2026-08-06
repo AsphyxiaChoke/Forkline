@@ -242,6 +242,78 @@ test("real Chromium keeps historical file comparison responsive", {
     `small open ${smallOpened.openMs.toFixed(1)} ms, eight switches ${switches.elapsed.toFixed(1)} ms, resize listeners ${baselineResizeListeners} -> ${warmedResizeListeners} -> ${smallResizeListeners} -> ${switchedResizeListeners} -> ${finalResizeListeners}`
   );
 
+  const slowEditorFallback = await evaluate(cdp, `(async () => {
+    const originalMergeView = CodeMirror.MergeView;
+    CodeMirror.MergeView = function (node, options) {
+      const deadline = performance.now() + 300;
+      while (performance.now() < deadline) {}
+      return originalMergeView(node, options);
+    };
+    let firstOpened = false;
+    try {
+      firstOpened = await openCommitFileViewer("small.c", "", ${JSON.stringify(head)});
+    } finally {
+      CodeMirror.MergeView = originalMergeView;
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const slowEntry = getUiDiagnostics().find((item) => item.type === "editor-slow" && item.context?.editor?.file === "small.c");
+    renderLogsTab();
+    const first = {
+      opened: firstOpened,
+      lightweight: state.fileEditor?.lightweightCompare,
+      reason: state.fileEditor?.lightweightReason,
+      mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+      codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      status: document.querySelector("#fileEditorStatus")?.textContent || "",
+      slowDuration: slowEntry?.durationMs || 0,
+      diagnosticRows: document.querySelectorAll(".ui-diagnostic-item").length,
+      copyButton: Boolean(document.querySelector("[data-ui-diagnostics-copy]")),
+      clearButton: Boolean(document.querySelector("[data-ui-diagnostics-clear]")),
+    };
+    closeFileEditor(true);
+
+    const reopenStarted = performance.now();
+    const reopened = await openCommitFileViewer("small.c", "", ${JSON.stringify(head)});
+    const reopenMs = performance.now() - reopenStarted;
+    const second = {
+      opened: reopened,
+      reopenMs,
+      lightweight: state.fileEditor?.lightweightCompare,
+      reason: state.fileEditor?.lightweightReason,
+      mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+      codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+    };
+    closeFileEditor(true);
+    return {
+      first,
+      second,
+      remainingCodeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      remainingMergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+    };
+  })()`);
+  assert.equal(slowEditorFallback.first.opened, true);
+  assert.equal(slowEditorFallback.first.lightweight, true);
+  assert.equal(slowEditorFallback.first.reason, "slow");
+  assert.equal(slowEditorFallback.first.mergeViews, 0);
+  assert.equal(slowEditorFallback.first.codeMirrors, 2);
+  assert.match(slowEditorFallback.first.status, /复杂文件轻量模式 · 响应较慢，已自动切换/);
+  assert.ok(slowEditorFallback.first.slowDuration >= 250);
+  assert.ok(slowEditorFallback.first.diagnosticRows >= 1);
+  assert.equal(slowEditorFallback.first.copyButton, true);
+  assert.equal(slowEditorFallback.first.clearButton, true);
+  assert.equal(slowEditorFallback.second.opened, true);
+  assert.equal(slowEditorFallback.second.lightweight, true);
+  assert.equal(slowEditorFallback.second.reason, "slow");
+  assert.equal(slowEditorFallback.second.mergeViews, 0);
+  assert.equal(slowEditorFallback.second.codeMirrors, 2);
+  assert.ok(slowEditorFallback.second.reopenMs < 2000, `remembered slow comparison reopened in ${slowEditorFallback.second.reopenMs.toFixed(1)} ms`);
+  assert.equal(slowEditorFallback.remainingCodeMirrors, 0);
+  assert.equal(slowEditorFallback.remainingMergeViews, 0);
+  assert.equal(await countWindowListeners(cdp, "resize"), warmedResizeListeners);
+  t.diagnostic(
+    `slow editor fallback ${slowEditorFallback.first.slowDuration.toFixed(1)} ms, remembered reopen ${slowEditorFallback.second.reopenMs.toFixed(1)} ms`
+  );
+
   const conflictMetrics = await evaluate(cdp, `(async () => {
     await openRepo(${JSON.stringify(conflictRepo)});
     let maxDelay = 0;

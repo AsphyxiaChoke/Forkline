@@ -449,6 +449,20 @@ els.detailBody.addEventListener("click", (event) => {
     if (!operationCancel.disabled) cancelRunningOperation(operationCancel.dataset.operationCancel || "", { button: operationCancel }).catch((error) => toast(error.message));
     return;
   }
+  const uiDiagnosticsCopy = event.target.closest("[data-ui-diagnostics-copy]");
+  if (uiDiagnosticsCopy) {
+    event.preventDefault();
+    copyUiDiagnosticReport().then(() => toast(t("界面诊断已复制"))).catch((error) => toast(error.message));
+    return;
+  }
+  const uiDiagnosticsClear = event.target.closest("[data-ui-diagnostics-clear]");
+  if (uiDiagnosticsClear) {
+    event.preventDefault();
+    clearUiDiagnostics();
+    renderLogsTab();
+    toast(t("界面诊断已清空"));
+    return;
+  }
   const logRefresh = event.target.closest("[data-log-refresh]");
   if (logRefresh) {
     event.preventDefault();

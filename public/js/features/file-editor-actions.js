@@ -20,7 +20,7 @@ function createLargeFileCompare(editor, codeMirrorOptions) {
   });
   editor.codeMirror = CodeMirror(newHost, {
     ...codeMirrorOptions,
-    readOnly: true,
+    readOnly: editor.readOnly,
     autoCloseBrackets: false,
   });
   let syncing = false;
