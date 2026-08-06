@@ -3054,6 +3054,53 @@ button.file-row {
   max-width: 100%;
 }
 
+.settings-update-progress {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--teal) 38%, var(--line-soft));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-2) 90%, var(--teal) 10%);
+}
+
+.settings-update-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-update-progress-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-update-progress-head span {
+  flex: 0 0 auto;
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.settings-update-progress-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--line-soft);
+}
+
+.settings-update-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  transition: width 180ms ease;
+}
+
 .settings-update-note {
   overflow-wrap: anywhere;
   color: var(--muted);
@@ -3061,13 +3108,43 @@ button.file-row {
   line-height: 1.5;
 }
 
+.settings-update-recovery {
+  overflow-wrap: anywhere;
+  padding: 8px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-update-recovery.ok {
+  border-color: rgba(var(--teal-rgb), 0.4);
+  background: rgba(var(--teal-rgb), 0.08);
+  color: var(--teal);
+}
+
+.settings-update-recovery.danger {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line-soft));
+  background: color-mix(in srgb, var(--panel-2) 90%, var(--danger) 10%);
+  color: var(--danger);
+}
+
 .settings-update-error {
+  display: grid;
+  gap: 3px;
   overflow-wrap: anywhere;
   padding-top: 8px;
   border-top: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line-soft));
   color: var(--danger);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.settings-update-error strong,
+.settings-update-error span {
+  display: block;
 }
 
 .settings-choice-row,

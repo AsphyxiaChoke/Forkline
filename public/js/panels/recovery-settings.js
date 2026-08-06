@@ -626,13 +626,27 @@ function renderSettingsTab() {
         </div>
         ${
           appUpdate.showInstallAction
-            ? `<div class="settings-update-actions">
-                <button class="mini-btn primary" data-settings-action="installUpdate" type="button" ${appUpdate.installing ? "disabled" : ""}>${escapeHtml(appUpdate.installing ? t("正在更新并重启") : t("立即更新并重启"))}</button>
+          ? `<div class="settings-update-actions">
+                <button class="mini-btn primary" data-settings-action="installUpdate" type="button" ${appUpdate.installing ? "disabled" : ""}>${escapeHtml(appUpdate.installing ? t("更新进行中") : t("立即更新并重启"))}</button>
+              </div>`
+            : ""
+        }
+        ${
+          appUpdate.installing
+            ? `<div class="settings-update-progress" role="status">
+                <div class="settings-update-progress-head">
+                  <strong>${escapeHtml(appUpdate.statusText)}</strong>
+                  <span>${escapeHtml(`${appUpdate.installStep}/${appUpdate.installTotal}`)}</span>
+                </div>
+                <div class="settings-update-progress-track" role="progressbar" aria-label="${escapeAttr(t("Forkline 更新进度"))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${appUpdate.installProgress}">
+                  <i style="width:${appUpdate.installProgress}%"></i>
+                </div>
               </div>`
             : ""
         }
         ${appUpdate.installNote ? `<div class="settings-update-note">${escapeHtml(appUpdate.installNote)}</div>` : ""}
-        ${appUpdate.installError ? `<div class="settings-update-error">${escapeHtml(appUpdate.installError)}</div>` : ""}
+        ${appUpdate.recoveryText ? `<div class="settings-update-recovery ${escapeAttr(appUpdate.recoveryClass)}">${escapeHtml(appUpdate.recoveryText)}</div>` : ""}
+        ${appUpdate.installError ? `<div class="settings-update-error"><strong>${escapeHtml(appUpdate.failureTitle)}</strong><span>${escapeHtml(appUpdate.installError)}</span></div>` : ""}
       </section>
 
       <section class="settings-card">
@@ -727,7 +741,20 @@ function settingsAppUpdateView() {
   const update = state.appUpdate || {};
   const status = update.status || "loading";
   const installing = Boolean(update.installing);
-  const installError = String(update.installError || "");
+  const lastResult = update.lastResult?.state === "error" ? update.lastResult : null;
+  const installErrorSource = String(update.installError || lastResult?.error || lastResult?.message || "");
+  const installError = installErrorSource ? t(installErrorSource) : "";
+  const installTotal = Math.max(1, Number(update.installTotal) || 6);
+  const installStep = Math.min(installTotal, Math.max(0, Number(update.installStep) || 0));
+  const installProgress = Math.round((installStep / installTotal) * 100);
+  const rollbackState = String(lastResult?.rollbackState || "");
+  const recoveryText = lastResult ? selfUpdateRecoveryText(lastResult) : "";
+  const recoveryClass = ["complete", "not-needed"].includes(rollbackState)
+    ? "ok"
+    : ["failed", "blocked", "unknown"].includes(rollbackState)
+      ? "danger"
+      : "";
+  const failureTitle = lastResult?.failedStage === "preflight" ? t("更新前检查未通过") : t("更新失败");
   const displayVersion = (value) => {
     const version = String(value || "").trim();
     return version ? (version.startsWith("v") ? version : `v${version}`) : "";
@@ -739,16 +766,22 @@ function settingsAppUpdateView() {
     latestVersion,
     installing,
     installError,
+    installStep,
+    installTotal,
+    installProgress,
+    recoveryText,
+    recoveryClass,
+    failureTitle,
     showInstallAction: status === "available" && Boolean(update.installSupported),
     installNote: status === "available" && !update.installSupported
       ? t("当前安装方式不支持一键更新，请点击左上角更新图标打开 Release。")
       : "",
   };
   if (installing) {
-    return { ...shared, statusClass: "loading", statusText: t("正在更新并重启") };
+    return { ...shared, statusClass: "loading", statusText: t(update.installMessage || "正在更新并重启") };
   }
   if (installError) {
-    return { ...shared, statusClass: "unavailable", statusText: t("更新失败") };
+    return { ...shared, statusClass: "unavailable", statusText: failureTitle };
   }
   if (status === "available") {
     return {
@@ -781,6 +814,11 @@ async function installAppUpdate() {
 
   state.appUpdate.installing = true;
   state.appUpdate.installError = "";
+  state.appUpdate.installState = "preparing";
+  state.appUpdate.installMessage = t("正在检查版本和本地更新条件");
+  state.appUpdate.installStep = 1;
+  state.appUpdate.installTotal = 6;
+  state.appUpdate.lastResult = null;
   renderInspector();
   try {
     await api("/api/app-update/install", {
@@ -789,10 +827,24 @@ async function installAppUpdate() {
     });
     await waitForSelfUpdateRestart(update.latestVersion);
   } catch (error) {
-    state.appUpdate.installing = false;
-    state.appUpdate.installError = error.message;
+    const result = error.updateResult
+      || (error.data?.updateStatus ? { ...error.data.updateStatus, error: error.message } : null)
+      || {
+        state: "error",
+        phase: "failed",
+        failedStage: "request",
+        rollbackState: "unknown",
+        serviceState: "unknown",
+        error: error.message,
+      };
+    state.appUpdate = {
+      ...state.appUpdate,
+      installing: false,
+      installError: String(result.error || error.message),
+      lastResult: result,
+    };
     if (state.selectedTab === "settings") renderInspector();
-    toast(error.message);
+    toast(selfUpdateFailureMessage(result));
   }
 }
 

@@ -1,6 +1,6 @@
 "use strict";
 
-const { runSelfUpdatePlan, writeSelfUpdateStatus } = require("./app-self-update");
+const { SELF_UPDATE_TOTAL_STEPS, runSelfUpdatePlan, writeSelfUpdateStatus } = require("./app-self-update");
 
 async function main() {
   const encodedPlan = String(process.argv[2] || "");
@@ -16,11 +16,18 @@ main().catch((error) => {
     if (plan?.statusFile) {
       writeSelfUpdateStatus(plan.statusFile, {
         state: "error",
+        phase: "failed",
+        step: 0,
+        totalSteps: SELF_UPDATE_TOTAL_STEPS,
         currentVersion: plan.currentVersion || "",
         targetVersion: plan.targetVersion || "",
         repoPath: plan.managedRepo || "",
         error: error.message,
+        failedStage: "runner",
+        rollbackState: "unknown",
+        serviceState: "unknown",
         rolledBack: false,
+        recoveryMessage: "更新器意外退出，无法确认自动回退和服务状态。",
         message: `更新器启动失败：${error.message}`,
       });
     }

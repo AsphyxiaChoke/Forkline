@@ -102,6 +102,7 @@ test("settings makes the current update state explicit", () => {
     state,
     t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
   });
+  vm.runInContext(initSource, context);
   vm.runInContext(settingsSource, context);
 
   let view = vm.runInContext("settingsAppUpdateView()", context);
@@ -121,9 +122,32 @@ test("settings makes the current update state explicit", () => {
   assert.match(view.installNote, /不支持一键更新/);
 
   state.appUpdate.installing = true;
+  state.appUpdate.installState = "verifying";
+  state.appUpdate.installMessage = "正在重新校验更新条件";
+  state.appUpdate.installStep = 3;
+  state.appUpdate.installTotal = 6;
   view = vm.runInContext("settingsAppUpdateView()", context);
-  assert.equal(view.statusText, "正在更新并重启");
+  assert.equal(view.statusText, "正在重新校验更新条件");
   assert.equal(view.installing, true);
+  assert.equal(view.installProgress, 50);
+
+  state.appUpdate = {
+    status: "available",
+    currentVersion: "0.2.0",
+    latestVersion: "0.3.0",
+    installSupported: true,
+    lastResult: {
+      state: "error",
+      failedStage: "preflight",
+      rollbackState: "not-needed",
+      serviceState: "unchanged",
+      error: "Forkline 自身目录有未提交修改",
+    },
+  };
+  view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.statusText, "更新前检查未通过");
+  assert.match(view.installError, /未提交修改/);
+  assert.match(view.recoveryText, /没有修改|原版本仍在运行/);
 
   state.appUpdate = { status: "unavailable", currentVersion: "0.2.0", latestVersion: "", url: "" };
   view = vm.runInContext("settingsAppUpdateView()", context);
@@ -133,10 +157,14 @@ test("settings makes the current update state explicit", () => {
 
   assert.match(settingsSource, /关于 Forkline/);
   assert.match(settingsSource, /settings-version-grid/);
+  assert.match(settingsSource, /settings-update-progress-track/);
+  assert.match(settingsSource, /settings-update-recovery/);
   assert.match(settingsSource, /data-settings-action="installUpdate"/);
   assert.match(eventsSource, /action === "installUpdate"[\s\S]*?installAppUpdate\(\)/);
   assert.match(styles, /\.settings-update-status\.current/);
   assert.match(styles, /\.settings-update-status\.available/);
+  assert.match(styles, /\.settings-update-progress\s*\{/);
+  assert.match(styles, /\.settings-update-recovery\.danger/);
 });
 
 test("operation log shows live Git output and exposes real cancellation", () => {
@@ -186,17 +214,40 @@ test("operation log shows live Git output and exposes real cancellation", () => 
 
 test("self update results restore the previous repository and distinguish rollback failures", async () => {
   const calls = [];
+  const state = { appUpdate: {}, data: {}, selectedTab: "details" };
   const context = vm.createContext({
+    state,
     api: async (url, options) => {
       calls.push({ url, options });
       return {};
     },
+    renderInspector: () => {},
     t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
   });
   vm.runInContext(initSource, context);
 
   const message = context.selfUpdateFailureMessage({ error: "更新后的 Forkline 服务没有正常启动。", rolledBack: true });
   assert.match(message, /已恢复到更新前版本/);
+  const preflight = context.selfUpdateFailureMessage({
+    error: "Forkline 自身目录有未提交修改",
+    failedStage: "preflight",
+    rollbackState: "not-needed",
+    serviceState: "unchanged",
+  });
+  assert.match(preflight, /更新前检查未通过/);
+  assert.match(preflight, /没有修改|原版本仍在运行/);
+  const rollbackFailed = context.selfUpdateFailureMessage({
+    error: "更新后的 Forkline 服务没有正常启动。",
+    failedStage: "checking",
+    rollbackState: "failed",
+    serviceState: "unavailable",
+  });
+  assert.match(rollbackFailed, /自动回退未完成/);
+  assert.match(rollbackFailed, /服务没有恢复/);
+  context.applySelfUpdateProgress({ phase: "checking", step: 6, totalSteps: 6 });
+  assert.equal(state.appUpdate.installState, "checking");
+  assert.equal(state.appUpdate.installMessage, "正在确认新版本可以正常使用");
+  assert.equal(state.appUpdate.installStep, 6);
   await context.restoreSelfUpdateRepo({ repoPath: "D:\\GitTest" });
   assert.equal(calls[0].url, "/api/open");
   assert.deepEqual(JSON.parse(calls[0].options.body), { path: "D:\\GitTest" });

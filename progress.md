@@ -6885,3 +6885,29 @@
 - `docs/CONTINUE.md`：记录接口边界、性能实测、稳定性指标和当前测试基线。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `23cf952`；提交前可执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/repositories.js tests/browser-performance.test.js tests/layout-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 完善在线更新进度与失败恢复状态
+
+### What was done
+- 将一键更新过程拆成准备、停止旧服务、重新校验、写入版本、重启和健康检查 6 个可见阶段；浏览器在服务重启断线期间显示重新连接，并在新服务恢复后继续读取状态。
+- 为失败结果增加失败阶段、文件回退状态和服务恢复状态；预检失败明确说明文件未修改，写入后失败会区分完成回退、回退失败、额外 HEAD 变化阻止回退和服务未恢复。
+- 恢复过程保持非终态，等待回退和备用服务健康检查完成后再发布最终结果；保留原有布尔回退接口兼容性，并让最后一次失败结果跨服务重启继续显示。
+- 设置页增加六阶段进度条、阶段计数、失败标题和独立恢复结论，补齐中英文文案与窄屏布局。
+
+### Testing
+- `node --test --test-concurrency=1 tests/i18n.test.js tests/layout-ui.test.js tests/app-self-update.test.js` 运行 47 项，47 项通过、0 项失败。
+- `npm.cmd test` 完整运行 158 项，158 项通过、0 项失败、0 项跳过，耗时约 132.9 秒；真实 Chromium 复杂历史文件打开约 186.7 ms、最大事件循环延迟约 44.3 ms，12 次仓库切换约 10.8 秒，编辑器连续开关后监听器、DOM 和堆边界保持稳定。
+- `node --check` 通过全部修改的 JavaScript 文件；`git diff --check` 通过，仅显示仓库现有 LF / CRLF 转换提示。
+- 真实 Edge 已验证约 `1029x742` 与 `760x900` 视口下更新卡片、进度条、错误框和恢复框无横向溢出，预检失败会显示具体原因和“更新文件没有修改，原版本仍在运行”。
+- 最终资源检查确认相关 Node / Edge / Chrome 进程为 0、`forkline-browser-performance-*` 临时目录为 0；未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `app-self-update.js`、`self-update-runner.js`：增加六阶段状态、结构化恢复结果、非终态恢复过程和更新器异常状态。
+- `server/update-service.js`、`server.js`：记录预检失败状态，并随 API 错误返回结构化更新结果。
+- `public/js/core.js`、`public/js/app/init.js`：保存安装阶段、轮询重连、最终失败结果和恢复文案。
+- `public/js/panels/recovery-settings.js`、`public/styles.css`：增加设置页进度、失败与恢复结果布局。
+- `public/js/i18n-catalog.js`：补齐在线更新阶段和恢复状态英文文案。
+- `tests/app-self-update.test.js`、`tests/layout-ui.test.js`：覆盖预检未写入、六阶段完成、回退/服务状态和设置页展示。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录使用方式、状态契约、安全边界、验证基线和后续优化顺序。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `c99a641`；提交前可执行 `git restore -- README.md app-self-update.js self-update-runner.js server.js server/update-service.js public/js/core.js public/js/app/init.js public/js/panels/recovery-settings.js public/js/i18n-catalog.js public/styles.css tests/app-self-update.test.js tests/layout-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

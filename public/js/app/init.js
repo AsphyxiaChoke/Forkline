@@ -66,6 +66,7 @@ async function checkForAppUpdate() {
   }
   try {
     const update = await api("/api/app-update");
+    const lastResult = state.appUpdate?.lastResult || null;
     state.appUpdate = {
       status: update?.available ? "available" : update?.latestVersion ? "current" : "unavailable",
       currentVersion: String(update?.currentVersion || ""),
@@ -74,6 +75,11 @@ async function checkForAppUpdate() {
       installSupported: Boolean(update?.installSupported),
       installing: false,
       installError: "",
+      installState: "",
+      installMessage: "",
+      installStep: 0,
+      installTotal: 6,
+      lastResult,
     };
     if (!indicator || !update?.available || !update.url) return;
     const label = t("发现 Forkline 新版本 {version}，点击查看", { version: update.latestVersion });
@@ -102,8 +108,14 @@ async function checkForSelfUpdateResult() {
   try {
     const result = await readSelfUpdateResult(true);
     if (result?.state === "success") {
+      state.appUpdate = { ...state.appUpdate, lastResult: null, installError: "" };
       toast(t("Forkline 已更新到 {version}", { version: `v${String(result.targetVersion || "").replace(/^v/i, "")}` }));
     } else if (result?.state === "error") {
+      state.appUpdate = {
+        ...state.appUpdate,
+        lastResult: result,
+        installError: String(result.error || result.message || ""),
+      };
       toast(selfUpdateFailureMessage(result));
     }
     return result;
@@ -114,11 +126,83 @@ async function checkForSelfUpdateResult() {
 
 function selfUpdateFailureMessage(result) {
   const detail = t(result?.error || result?.message || "未知原因");
-  if (!result?.error) return t("Forkline 更新失败：{message}", { message: detail });
-  const template = result.rolledBack
-    ? "更新失败，已恢复到更新前版本：{message}"
-    : "更新失败：{message}";
-  return t(template, { message: detail });
+  const failedStage = String(result?.failedStage || "");
+  let message = "";
+  if (failedStage === "preflight") {
+    message = t("更新前检查未通过：{message}", { message: detail });
+  } else if (!result?.rollbackState && result?.rolledBack) {
+    message = t("更新失败，已恢复到更新前版本：{message}", { message: detail });
+  } else {
+    message = t(result?.error ? "更新失败：{message}" : "Forkline 更新失败：{message}", { message: detail });
+  }
+  const recovery = selfUpdateRecoveryText(result);
+  return [message, recovery].filter(Boolean).join("\n");
+}
+
+function selfUpdateRecoveryText(result = {}) {
+  const rollbackState = String(result.rollbackState || (result.rolledBack ? "complete" : ""));
+  const serviceState = String(result.serviceState || "");
+  if (rollbackState === "not-needed") {
+    if (serviceState === "unchanged") return t("更新文件没有修改，原版本仍在运行。");
+    if (serviceState === "restored") return t("更新文件没有修改，原版本已重新启动。");
+    return t("更新文件没有修改，不需要回退。");
+  }
+  if (rollbackState === "complete") {
+    if (serviceState === "restored") return t("已恢复到更新前版本，原版本服务已重新启动。");
+    if (serviceState === "unavailable") return t("已恢复到更新前版本，但 Forkline 服务没有恢复。");
+    return t("已恢复到更新前版本。");
+  }
+  if (rollbackState === "failed") {
+    return [
+      t("自动回退未完成，当前 Forkline 文件状态需要人工检查。"),
+      serviceState === "unavailable" ? t("Forkline 服务没有恢复，请重新运行 start.cmd。") : "",
+    ].filter(Boolean).join(" ");
+  }
+  if (rollbackState === "blocked") {
+    return [
+      t("检测到 Forkline 自身提交位置发生额外变化，为避免覆盖修改，未自动回退。"),
+      serviceState === "unavailable" ? t("Forkline 服务没有恢复，请重新运行 start.cmd。") : "",
+    ].filter(Boolean).join(" ");
+  }
+  if (rollbackState === "unknown") {
+    return [
+      t("无法确认自动回退结果，请检查 Forkline 自身仓库。"),
+      serviceState === "unavailable" ? t("Forkline 服务没有恢复，请重新运行 start.cmd。") : "",
+    ].filter(Boolean).join(" ");
+  }
+  return result.recoveryMessage ? t(result.recoveryMessage) : "";
+}
+
+function selfUpdateStageMessage(result = {}) {
+  const phase = String(result.phase || result.state || "");
+  const messages = {
+    preparing: "正在检查版本和本地更新条件",
+    starting: "更新前检查已通过，正在启动更新器",
+    stopping: "正在关闭旧版本服务",
+    verifying: "正在重新校验更新条件",
+    updating: "正在写入新版本",
+    restarting: "正在启动新版本",
+    checking: "正在确认新版本可以正常使用",
+    recovering: "更新失败，正在恢复更新前版本",
+    reconnecting: "服务正在重启，正在重新连接",
+    complete: "更新完成",
+    success: "更新完成",
+  };
+  return t(messages[phase] || result.message || "正在更新并重启");
+}
+
+function applySelfUpdateProgress(result = {}) {
+  const installState = String(result.phase || result.state || "");
+  const installStep = Math.max(0, Number(result.step) || 0);
+  const installTotal = Math.max(1, Number(result.totalSteps) || 6);
+  const installMessage = selfUpdateStageMessage(result);
+  const update = state.appUpdate || {};
+  const changed = update.installState !== installState
+    || update.installStep !== installStep
+    || update.installTotal !== installTotal
+    || update.installMessage !== installMessage;
+  state.appUpdate = { ...update, installState, installStep, installTotal, installMessage };
+  if (changed && state.data && state.selectedTab === "settings") renderInspector();
 }
 
 async function restoreSelfUpdateRepo(result) {
@@ -132,11 +216,19 @@ async function restoreSelfUpdateRepo(result) {
 async function waitForSelfUpdateRestart(targetVersion) {
   const normalizedTarget = String(targetVersion || "").replace(/^v/i, "");
   const deadline = Date.now() + 120000;
+  let reconnecting = false;
   while (Date.now() < deadline) {
     let result = null;
     try {
       result = await readSelfUpdateResult(false);
-    } catch {}
+      reconnecting = false;
+      if (result?.state && result.state !== "idle") applySelfUpdateProgress(result);
+    } catch {
+      if (!reconnecting) {
+        reconnecting = true;
+        applySelfUpdateProgress({ phase: "reconnecting", step: 5, totalSteps: 6 });
+      }
+    }
     if (result?.state === "success" && String(result.targetVersion || "").replace(/^v/i, "") === normalizedTarget) {
       window.location.reload();
       return;
@@ -146,11 +238,23 @@ async function waitForSelfUpdateRestart(targetVersion) {
       try {
         await readSelfUpdateResult(true);
       } catch {}
-      throw new Error(selfUpdateFailureMessage(result));
+      const failure = new Error(selfUpdateFailureMessage(result));
+      failure.updateResult = result;
+      throw failure;
     }
     await new Promise((resolve) => setTimeout(resolve, 700));
   }
-  throw new Error(t("更新服务重启超时，请手动重新打开 Forkline。"));
+  const timeoutResult = {
+    state: "error",
+    phase: "failed",
+    failedStage: "reconnecting",
+    rollbackState: "unknown",
+    serviceState: "unknown",
+    error: t("更新服务重启超时，请手动重新打开 Forkline。"),
+  };
+  const failure = new Error(selfUpdateFailureMessage(timeoutResult));
+  failure.updateResult = timeoutResult;
+  throw failure;
 }
 
 function renderAll() {

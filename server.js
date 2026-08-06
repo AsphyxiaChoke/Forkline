@@ -581,6 +581,7 @@ function translateServerError(locale, text) {
 function sendError(res, error, context = {}) {
   const extra = {};
   if (error?.remoteCheck) extra.remoteCheck = error.remoteCheck;
+  if (error?.updateStatus) extra.updateStatus = error.updateStatus;
   sendJson(res, 400, { error: friendlyErrorMessage(error, context), ...extra, operationLog, runningOperations: listRunningOperations(context.operation?.id) });
 }
 

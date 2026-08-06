@@ -10,6 +10,16 @@ const { normalizeVersion } = require("./app-update");
 
 const OFFICIAL_REPOSITORY = "github.com/asphyxiachoke/forkline";
 const UPDATE_REF_PREFIX = "refs/forkline/self-update";
+const SELF_UPDATE_TOTAL_STEPS = 6;
+const SELF_UPDATE_STEPS = {
+  preparing: 1,
+  stopping: 2,
+  verifying: 3,
+  updating: 4,
+  restarting: 5,
+  checking: 6,
+  complete: 6,
+};
 const INCOMPLETE_OPERATIONS = [
   ["MERGE_HEAD", "合并"],
   ["CHERRY_PICK_HEAD", "挑选"],
@@ -46,6 +56,23 @@ function selfUpdateStatusFile(repoDir) {
 
 function writeSelfUpdateStatus(statusFile, value) {
   fs.writeFileSync(statusFile, JSON.stringify({ ...value, updatedAt: new Date().toISOString() }), "utf8");
+}
+
+function writeSelfUpdateProgress(plan, phase, message, extra = {}) {
+  const state = phase === "complete" ? "success" : phase === "failed" ? "error" : phase;
+  const value = {
+    state,
+    phase,
+    step: SELF_UPDATE_STEPS[phase] || 0,
+    totalSteps: SELF_UPDATE_TOTAL_STEPS,
+    currentVersion: plan.currentVersion,
+    targetVersion: plan.targetVersion,
+    repoPath: plan.managedRepo,
+    message,
+    ...extra,
+  };
+  writeSelfUpdateStatus(plan.statusFile, value);
+  return value;
 }
 
 function readSelfUpdateStatus(statusFile, options = {}) {
@@ -273,6 +300,7 @@ async function verifySelfUpdatePlan(plan, options = {}) {
 
 async function updateWorkingTree(plan, options = {}) {
   await verifySelfUpdatePlan(plan, options);
+  if (typeof options.onVerified === "function") await options.onVerified();
   const result = await runGitCommand(
     plan.repoDir,
     ["merge", "--ff-only", plan.targetSha],
@@ -284,15 +312,30 @@ async function updateWorkingTree(plan, options = {}) {
   return head;
 }
 
-async function rollbackWorkingTree(plan, options = {}) {
+async function recoverWorkingTree(plan, options = {}) {
   const currentHead = await requireGitOutput(plan.repoDir, ["rev-parse", "HEAD"], { gitBin: options.gitBin || plan.gitBin });
-  if (currentHead !== plan.targetSha) return false;
+  if (currentHead === plan.expectedHead) {
+    return { state: "not-needed", message: "更新尚未写入，Forkline 文件没有修改，无需回退。" };
+  }
+  if (currentHead !== plan.targetSha) {
+    return {
+      state: "blocked",
+      message: "Forkline 当前提交已发生额外变化，为避免覆盖这些变化，未自动回退。",
+    };
+  }
   const result = await runGitCommand(
     plan.repoDir,
     ["reset", "--keep", plan.expectedHead],
     { gitBin: options.gitBin || plan.gitBin, timeout: 30000 }
   );
-  return result.code === 0;
+  if (result.code !== 0) {
+    return { state: "failed", message: gitFailure(result, "自动回退失败。").message };
+  }
+  return { state: "complete", message: "已恢复到更新前版本。" };
+}
+
+async function rollbackWorkingTree(plan, options = {}) {
+  return (await recoverWorkingTree(plan, options)).state === "complete";
 }
 
 function wait(ms) {
@@ -366,65 +409,94 @@ async function stopServerProcess(child) {
 async function runSelfUpdatePlan(plan, options = {}) {
   let parentExited = false;
   let startedServer = null;
+  let currentStage = "stopping";
   try {
-    await waitForProcessExit(plan.parentPid);
+    writeSelfUpdateProgress(plan, "stopping", "正在关闭旧版本服务");
+    await waitForProcessExit(plan.parentPid, options.processExitTimeoutMs || 20000);
     parentExited = true;
-    writeSelfUpdateStatus(plan.statusFile, {
-      state: "updating",
-      currentVersion: plan.currentVersion,
-      targetVersion: plan.targetVersion,
-      repoPath: plan.managedRepo,
-      message: `正在更新到 v${plan.targetVersion}`,
+    currentStage = "verifying";
+    writeSelfUpdateProgress(plan, "verifying", "正在重新校验更新条件");
+    await updateWorkingTree(plan, {
+      ...options,
+      onVerified: async () => {
+        currentStage = "updating";
+        writeSelfUpdateProgress(plan, "updating", `正在写入 v${plan.targetVersion}`);
+        if (typeof options.onVerified === "function") await options.onVerified();
+      },
     });
-    await updateWorkingTree(plan, options);
-    writeSelfUpdateStatus(plan.statusFile, {
-      state: "restarting",
-      currentVersion: plan.currentVersion,
-      targetVersion: plan.targetVersion,
-      repoPath: plan.managedRepo,
-      message: "正在启动新版本",
-    });
+    currentStage = "restarting";
+    writeSelfUpdateProgress(plan, "restarting", "正在启动新版本");
     startedServer = await startServerProcess(plan);
+    currentStage = "checking";
+    writeSelfUpdateProgress(plan, "checking", "正在确认新版本可以正常使用", { serverPid: startedServer.pid });
     await waitForServer(plan.port, options.serverTimeoutMs || 20000);
     await cleanupCandidateRef(plan, options);
-    writeSelfUpdateStatus(plan.statusFile, {
-      state: "success",
-      currentVersion: plan.currentVersion,
-      targetVersion: plan.targetVersion,
-      repoPath: plan.managedRepo,
+    writeSelfUpdateProgress(plan, "complete", `Forkline 已更新到 v${plan.targetVersion}`, {
       serverPid: startedServer.pid,
-      message: `Forkline 已更新到 v${plan.targetVersion}`,
     });
     startedServer.unref();
     return { ok: true };
   } catch (error) {
     if (startedServer) await stopServerProcess(startedServer);
-    let rolledBack = false;
+    let recovery = parentExited
+      ? { state: "unknown", message: "无法确认自动回退结果。" }
+      : { state: "not-needed", message: "旧版本服务未退出，更新文件没有修改，原版本仍在运行。" };
     let fallbackServerPid = 0;
+    let serviceState = parentExited ? "unavailable" : "unchanged";
+    let serviceMessage = parentExited ? "Forkline 服务尚未恢复。" : "旧版本服务仍在运行。";
     if (parentExited) {
+      writeSelfUpdateProgress(plan, "recovering", "更新失败，正在恢复更新前版本", {
+        step: SELF_UPDATE_STEPS[currentStage] || 0,
+        failedStage: currentStage,
+        rollbackState: "pending",
+        serviceState: "recovering",
+      });
       try {
-        rolledBack = await rollbackWorkingTree(plan, options);
-      } catch {}
+        recovery = await recoverWorkingTree(plan, options);
+      } catch (recoveryError) {
+        recovery = { state: "failed", message: `自动回退检查失败：${recoveryError.message}` };
+      }
       try {
         const fallbackServer = await startServerProcess(plan);
         await waitForServer(plan.port, options.serverTimeoutMs || 20000);
         fallbackServerPid = fallbackServer.pid;
         fallbackServer.unref();
-      } catch {}
+        serviceState = "restored";
+        serviceMessage = recovery.state === "complete" ? "更新前版本服务已重新启动。" : "Forkline 服务已重新启动。";
+      } catch {
+        serviceState = "unavailable";
+        serviceMessage = "Forkline 服务没有恢复，请重新运行 start.cmd。";
+      }
     }
     await cleanupCandidateRef(plan, options);
-    const rollbackText = rolledBack ? "，已恢复到更新前版本" : "";
-    writeSelfUpdateStatus(plan.statusFile, {
-      state: "error",
-      currentVersion: plan.currentVersion,
-      targetVersion: plan.targetVersion,
-      repoPath: plan.managedRepo,
+    const rolledBack = recovery.state === "complete";
+    const outcomeText = recovery.state === "complete"
+      ? "，已恢复到更新前版本"
+      : recovery.state === "not-needed"
+        ? "，更新文件没有修改"
+        : ["failed", "blocked"].includes(recovery.state)
+          ? "，自动回退未完成"
+          : "，回退状态未知";
+    const recoveryMessage = [recovery.message, serviceMessage].filter(Boolean).join(" ");
+    writeSelfUpdateProgress(plan, "failed", `更新失败${outcomeText}：${error.message}`, {
+      step: SELF_UPDATE_STEPS[currentStage] || 0,
+      failedStage: currentStage,
       serverPid: fallbackServerPid,
       error: error.message,
       rolledBack,
-      message: `更新失败${rollbackText}：${error.message}`,
+      rollbackState: recovery.state,
+      recoveryMessage,
+      serviceState,
+      serviceMessage,
     });
-    return { ok: false, error: error.message, rolledBack };
+    return {
+      ok: false,
+      error: error.message,
+      rolledBack,
+      failedStage: currentStage,
+      rollbackState: recovery.state,
+      serviceState,
+    };
   }
 }
 
@@ -449,6 +521,7 @@ function launchSelfUpdateRunner(plan, options = {}) {
 
 module.exports = {
   OFFICIAL_REPOSITORY,
+  SELF_UPDATE_TOTAL_STEPS,
   assertLocalUpdateSafety,
   cleanupCandidateRef,
   clearSelfUpdateStatus,
@@ -457,6 +530,7 @@ module.exports = {
   normalizeRepositoryRemote,
   prepareSelfUpdate,
   readSelfUpdateStatus,
+  recoverWorkingTree,
   rollbackWorkingTree,
   runGitCommand,
   runSelfUpdatePlan,

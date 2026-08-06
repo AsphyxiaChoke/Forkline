@@ -115,6 +115,12 @@
 - `POST /api/operations/cancel` 只允许取消白名单中的长时间动作。Windows 使用 `taskkill /PID <pid> /T /F` 终止 Git 及其 SSH/凭据等子进程，其他平台发送 `SIGTERM`。请求被标记取消后，原 `/api/action` 响应返回 `cancelled`，日志状态为“已取消”，不按普通错误记录。
 - 取消是进程级停止，不是事务回滚：远端已经接收的数据不会撤回，克隆目标目录也可能保留部分内容。新的长时间动作只有在确实能安全终止并有回归测试时才加入可取消白名单。
 
+## 应用自更新
+
+- `server/update-service.js` 负责 Release 与本地安全预检；预检失败会写入结构化结果，但不会关闭服务或修改 Forkline 文件。
+- `app-self-update.js` 和 `self-update-runner.js` 按准备、停止旧服务、重新校验、写入版本、重启和健康检查 6 个阶段更新状态。浏览器断开时进入本地“重新连接”状态，新服务启动后继续读取同一状态文件。
+- 失败结果同时记录 `failedStage`、`rollbackState` 和 `serviceState`。自动恢复只在 HEAD 仍等于更新目标时执行 `git reset --keep`；如果提交位置出现额外变化则拒绝覆盖，并把文件回退与服务恢复结果分开显示。
+
 ## 集成测试
 
 - 执行 `npm test`，使用 Node 内置测试运行器，并按测试文件串行运行。

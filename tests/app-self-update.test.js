@@ -8,12 +8,14 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync, spawn } = require("node:child_process");
+const { createUpdateService } = require("../server/update-service");
 const {
   cleanupCandidateRef,
   isOfficialForklineRemote,
   normalizeRepositoryRemote,
   prepareSelfUpdate,
   readSelfUpdateStatus,
+  recoverWorkingTree,
   rollbackWorkingTree,
   runSelfUpdatePlan,
   selfUpdateStatusFile,
@@ -50,6 +52,9 @@ test("self update fast-forwards to the release commit and can roll back with res
 
   assert.equal(plan.expectedHead, fixture.oldSha);
   assert.equal(plan.targetSha, fixture.targetSha);
+  const untouchedRecovery = await recoverWorkingTree(plan);
+  assert.equal(untouchedRecovery.state, "not-needed");
+  assert.match(untouchedRecovery.message, /尚未写入|无需回退/);
   await updateWorkingTree(plan, { allowRemote });
   assert.equal(git(repoDir, ["rev-parse", "HEAD"]), fixture.targetSha);
   assert.equal(JSON.parse(fs.readFileSync(path.join(repoDir, "package.json"), "utf8")).version, "0.3.0");
@@ -109,12 +114,51 @@ test("self update status survives restart and terminal results can be consumed",
   assert.equal(readSelfUpdateStatus(statusFile), null);
 });
 
+test("self update preflight failures report that files were not changed", async (t) => {
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "forkline-update-preflight-"));
+  const statusFile = selfUpdateStatusFile(appDir);
+  const previousVersion = process.env.FORKLINE_APP_VERSION;
+  process.env.FORKLINE_APP_VERSION = "0.2.0";
+  t.after(() => {
+    if (previousVersion === undefined) delete process.env.FORKLINE_APP_VERSION;
+    else process.env.FORKLINE_APP_VERSION = previousVersion;
+    fs.rmSync(statusFile, { force: true });
+    fs.rmSync(appDir, { recursive: true, force: true });
+  });
+  const service = createUpdateService({
+    appDir,
+    port: 5177,
+    gitBin: "git",
+    getManagedRepo: () => "D:\\ManagedRepo",
+    hasBusyOperations: () => false,
+    readJson: async () => ({ version: "0.3.0" }),
+    sendJson: () => assert.fail("预检失败不应发送成功响应"),
+    scheduleShutdown: () => assert.fail("预检失败不应关闭服务"),
+  });
+
+  await assert.rejects(
+    service.handleRequest({ method: "POST" }, {}, { pathname: "/api/app-update/install" }),
+    (error) => {
+      assert.equal(error.updateStatus?.failedStage, "preflight");
+      assert.equal(error.updateStatus?.rollbackState, "not-needed");
+      assert.equal(error.updateStatus?.serviceState, "unchanged");
+      return true;
+    }
+  );
+  const status = readSelfUpdateStatus(statusFile);
+  assert.equal(status?.state, "error");
+  assert.equal(status?.failedStage, "preflight");
+  assert.match(status?.recoveryMessage || "", /原版本仍在运行/);
+});
+
 test("self update API keeps JSON confirmation and avoids destructive reset modes", () => {
   assert.match(serverSource, /createUpdateService\([\s\S]*?getManagedRepo: \(\) => currentRepo[\s\S]*?scheduleShutdown: scheduleSelfUpdateShutdown/);
   assert.match(serverSource, /await updateService\.handleRequest\(req, res, parsed\)/);
   assert.match(updateServiceSource, /req\.method === "POST" && parsed\.pathname === "\/api\/app-update\/install"/);
   assert.match(updateServiceSource, /const body = await readJson\(req\);[\s\S]*?prepareLaunch\(body\)/);
   assert.match(updateServiceSource, /managedRepo: getManagedRepo\(\) \|\| ""/);
+  assert.match(updateServiceSource, /failedStage: "preflight"/);
+  assert.match(serverSource, /error\?\.updateStatus/);
   assert.match(updateServiceSource, /scheduleShutdown\(\)/);
   assert.match(updaterSource, /\["merge", "--ff-only", plan\.targetSha\]/);
   assert.match(updaterSource, /\["reset", "--keep", plan\.expectedHead\]/);
@@ -151,6 +195,9 @@ test("self update runner exits the old process, starts the new service, and repo
     serverPid = Number(status?.serverPid || 0);
     assert.equal(result.ok, true);
     assert.equal(status?.state, "success");
+    assert.equal(status?.step, 6);
+    assert.equal(status?.totalSteps, 6);
+    assert.equal(status?.phase, "complete");
     assert.equal(status?.targetVersion, "0.3.0");
     assert.equal(status?.repoPath, repoDir);
     assert.ok(serverPid > 0);
@@ -202,6 +249,10 @@ test("self update runner rolls back and restarts the old service when the new se
     assert.equal(result.ok, false);
     assert.equal(result.rolledBack, true);
     assert.equal(status?.state, "error");
+    assert.equal(status?.failedStage, "checking");
+    assert.equal(status?.rollbackState, "complete");
+    assert.equal(status?.serviceState, "restored");
+    assert.match(status?.recoveryMessage || "", /恢复到更新前版本/);
     assert.match(status?.message || "", /已恢复到更新前版本/);
     assert.equal(status?.repoPath, repoDir);
     assert.equal(status?.rolledBack, true);

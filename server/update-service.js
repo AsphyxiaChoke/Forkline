@@ -5,6 +5,7 @@ const path = require("path");
 const packageInfo = require("../package.json");
 const { createAppUpdateChecker, normalizeVersion } = require("../app-update");
 const {
+  SELF_UPDATE_TOTAL_STEPS,
   cleanupCandidateRef,
   clearSelfUpdateStatus,
   launchSelfUpdateRunner,
@@ -79,10 +80,13 @@ function createUpdateService(options) {
       clearSelfUpdateStatus(statusFile);
       writeSelfUpdateStatus(statusFile, {
         state: "starting",
+        phase: "preparing",
+        step: 1,
+        totalSteps: SELF_UPDATE_TOTAL_STEPS,
         currentVersion: plan.currentVersion,
         targetVersion: plan.targetVersion,
         repoPath: plan.managedRepo,
-        message: `正在准备更新到 v${plan.targetVersion}`,
+        message: `更新前检查已通过，正在准备更新到 v${plan.targetVersion}`,
       });
       const runnerPid = await launchSelfUpdateRunner(plan);
       sendJson(res, 200, { ok: true, restarting: true, targetVersion: plan.targetVersion, runnerPid });
@@ -90,6 +94,26 @@ function createUpdateService(options) {
     } catch (error) {
       updateInProgress = false;
       if (plan) await cleanupCandidateRef(plan);
+      const failureStatus = {
+        state: "error",
+        phase: "failed",
+        step: 1,
+        totalSteps: SELF_UPDATE_TOTAL_STEPS,
+        currentVersion: plan?.currentVersion || normalizeVersion(packageInfo.version),
+        targetVersion: plan?.targetVersion || "",
+        repoPath: plan?.managedRepo || getManagedRepo() || "",
+        failedStage: "preflight",
+        rollbackState: "not-needed",
+        serviceState: "unchanged",
+        rolledBack: false,
+        error: error.message,
+        recoveryMessage: "更新文件没有修改，原版本仍在运行。",
+        message: `更新前检查未通过：${error.message}`,
+      };
+      try {
+        writeSelfUpdateStatus(statusFile, failureStatus);
+      } catch {}
+      error.updateStatus = failureStatus;
       throw error;
     }
   }
