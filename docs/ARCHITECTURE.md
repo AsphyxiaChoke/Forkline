@@ -31,7 +31,8 @@
 - `public/js/app/`：启动附近的界面编排、事件绑定、布局工具和首轮渲染辅助。
 - `public/js/features/`：分支、工作区更改、历史列表、图谱渲染、仓库操作、Git 操作、右键菜单和 Diff 工作台等业务流程。
 - `public/js/panels/inspector.js`：按当前标签页分派右侧面板渲染。
-- `public/js/panels/workspaces.js`、`sync.js`：工作树/子模块，以及储藏、同步、比较和认证面板。
+- `public/js/panels/workspaces.js`：工作树和子模块面板。
+- `public/js/panels/stashes.js`、`auth.js`、`sync.js`、`compare.js`：分别负责储藏、认证诊断、轻量同步状态和分支/引用比较面板。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、Git 操作日志、应用设置与在线更新面板。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
@@ -56,20 +57,23 @@
 12. `js/features/graph.js`
 13. `js/panels/inspector.js`
 14. `js/panels/workspaces.js`
-15. `js/panels/sync.js`
-16. `js/panels/tags.js`
-17. `js/panels/recovery.js`
-18. `js/panels/logs.js`
-19. `js/panels/settings.js`
-20. `js/features/recovery-undo.js`
-21. `js/features/diff-workbench.js`
-22. `js/features/file-editor.js`
-23. `js/features/repositories.js`
-24. `js/features/git-actions.js`
-25. `js/app/layout-utils.js`
-26. `js/app/events.js`
-27. `app.js`
-28. `js/bootstrap.js`
+15. `js/panels/stashes.js`
+16. `js/panels/auth.js`
+17. `js/panels/sync.js`
+18. `js/panels/compare.js`
+19. `js/panels/tags.js`
+20. `js/panels/recovery.js`
+21. `js/panels/logs.js`
+22. `js/panels/settings.js`
+23. `js/features/recovery-undo.js`
+24. `js/features/diff-workbench.js`
+25. `js/features/file-editor.js`
+26. `js/features/repositories.js`
+27. `js/features/git-actions.js`
+28. `js/app/layout-utils.js`
+29. `js/app/events.js`
+30. `app.js`
+31. `js/bootstrap.js`
 
 前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`i18n-catalog.js` 和 `i18n.js` 必须先于 API、功能和面板脚本加载；四个右侧面板模块和 `recovery-undo.js` 必须先于 `js/app/events.js`；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
 
@@ -112,7 +116,7 @@
 - 认证环境只在同步面板需要时通过 `GET /api/auth-diagnostics` 加载，并要求正常的仓库上下文请求头。
 - 认证结果按标准化仓库路径和完整远端 fetch/push URL 配置缓存 60 秒，最多保留 12 条；远端 URL 变化会形成新键，`?refresh=1` 会绕过缓存。
 - Windows 系统凭据入口使用 `POST /api/system-credentials/open`，只启动固定的 Windows Credential Manager 系统界面，不接受命令或凭据参数，也不读取、修改或删除凭据；非 Windows 平台明确返回不支持。
-- `public/js/panels/sync.js` 负责认证诊断的懒加载和加载/错误界面、远端连接入口、已知托管平台状态页和系统凭据按钮；仓库路径、远端签名和请求编号用于丢弃仓库或远端变化后的旧响应。
+- `public/js/panels/auth.js` 负责认证诊断的懒加载和加载/错误界面、远端连接入口、已知托管平台状态页和系统凭据按钮；仓库路径、远端签名和请求编号用于丢弃仓库或远端变化后的旧响应。
 
 ## 长时间 Git 操作
 

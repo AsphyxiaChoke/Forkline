@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
 const coreSource = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8");
 const gitActionsSource = fs.readFileSync(path.join(root, "public", "js", "features", "git-actions.js"), "utf8");
-const syncSource = fs.readFileSync(path.join(root, "public", "js", "panels", "sync.js"), "utf8");
+const stashesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "stashes.js"), "utf8");
 const repositoryWorktreeSource = fs.readFileSync(path.join(root, "server", "repository-worktree-service.js"), "utf8");
 
 test("worktree signatures include file snapshots", () => {
@@ -161,9 +161,9 @@ test("stage-all and stash actions use lightweight worktree refreshes", () => {
     gitActionsSource.indexOf("async function createStashFromSelection"),
     gitActionsSource.indexOf("async function ignoreWorktreePath")
   );
-  const runStashSource = syncSource.slice(
-    syncSource.indexOf("async function runStashAction"),
-    syncSource.indexOf("async function branchFromStash")
+  const runStashSource = stashesSource.slice(
+    stashesSource.indexOf("async function runStashAction"),
+    stashesSource.indexOf("async function branchFromStash")
   );
 
   assert.match(runActionSource, /const worktreeOnly = action === "stageAll" \|\| action === "discardAll"/);

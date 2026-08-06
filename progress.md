@@ -6936,3 +6936,27 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新面板职责、权威加载顺序、测试基线和后续拆分顺序。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `dedd433`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/panels/recovery-settings.js tests/layout-ui.test.js tests/recovery-policy-ui.test.js tests/reflog-ui-state.test.js tests/themes.test.js`，再执行 `Remove-Item -LiteralPath public/js/panels/tags.js,public/js/panels/recovery.js,public/js/panels/logs.js,public/js/panels/settings.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 拆分储藏、同步、比较和认证面板模块
+
+### What was done
+- 保留轻量同步刷新、同步摘要、upstream 控制和提交预览在 `sync.js`，将储藏、分支/引用比较、远端与认证诊断分别移动到独立脚本。
+- 保持全部函数内容、全局入口、状态结构、API 路径和 Git 操作不变；`refreshSyncState()` 继续由原文件提供，调用方不需要适配。
+- 更新经典脚本加载顺序，并扩充右侧面板边界回归，固定四个模块必须先于统一事件绑定加载。
+
+### Testing
+- `node --check` 通过四个同步相关面板脚本和四个受影响测试文件；专项回归运行 46 项，46 项通过、0 项失败。
+- `npm.cmd test` 完整运行 159 项，159 项通过、0 项失败、0 项跳过，耗时约 126.9 秒；真实 Chromium 成功加载新脚本，复杂历史文件打开约 196.4 ms、最大事件循环延迟约 55.8 ms。
+- 大历史保持 17 行和 105 个图谱元素；12 次仓库切换约 9.5 秒，编辑器连续开关后监听器、DOM 和堆边界保持稳定。
+- `git diff --check` 通过，仅显示仓库现有 LF / CRLF 转换提示。最终资源检查确认相关 Node / Edge / Chrome 进程为 0、性能测试临时目录为 0、机械拆分脚本已删除；未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/panels/stashes.js`：承接储藏列表、详情、应用、弹出、删除和从储藏创建分支。
+- `public/js/panels/auth.js`：承接远端列表、认证诊断、连接入口、平台状态页和系统凭据入口。
+- `public/js/panels/sync.js`：只保留轻量同步状态、同步建议、upstream 和提交预览。
+- `public/js/panels/compare.js`：承接引用选择、交换、比较结果和提交列表。
+- `public/index.html`：按新同步模块边界更新经典脚本加载顺序。
+- `tests/layout-ui.test.js`、`tests/auth-ui.test.js`、`tests/worktree-refresh.test.js`：固定模块职责、认证入口和储藏轻量刷新；`tests/sync-state-performance.test.js` 继续直接覆盖核心同步模块。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新面板职责、权威加载顺序、验证结果和下一项优化。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `2668902`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/panels/sync.js tests/auth-ui.test.js tests/layout-ui.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath public/js/panels/stashes.js,public/js/panels/auth.js,public/js/panels/compare.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

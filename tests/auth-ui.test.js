@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
-const syncSource = fs.readFileSync(path.join(root, "public", "js", "panels", "sync.js"), "utf8");
+const authSource = fs.readFileSync(path.join(root, "public", "js", "panels", "auth.js"), "utf8");
 const eventSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -28,7 +28,7 @@ function createContext() {
     },
     toast: (message) => calls.toast.push(message),
   });
-  vm.runInContext(syncSource, context);
+  vm.runInContext(authSource, context);
   return { calls, context };
 }
 

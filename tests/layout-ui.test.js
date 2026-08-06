@@ -17,6 +17,10 @@ const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
 const repositoriesSource = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
+const stashesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "stashes.js"), "utf8");
+const authSource = fs.readFileSync(path.join(root, "public", "js", "panels", "auth.js"), "utf8");
+const syncSource = fs.readFileSync(path.join(root, "public", "js", "panels", "sync.js"), "utf8");
+const compareSource = fs.readFileSync(path.join(root, "public", "js", "panels", "compare.js"), "utf8");
 const tagsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "tags.js"), "utf8");
 const recoverySource = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery.js"), "utf8");
 const logsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "logs.js"), "utf8");
@@ -26,6 +30,10 @@ const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 test("right inspector panels keep separate modules before event binding", () => {
   const scripts = [
+    "./js/panels/stashes.js",
+    "./js/panels/auth.js",
+    "./js/panels/sync.js",
+    "./js/panels/compare.js",
     "./js/panels/tags.js",
     "./js/panels/recovery.js",
     "./js/panels/logs.js",
@@ -40,6 +48,11 @@ test("right inspector panels keep separate modules before event binding", () => 
     previous = position;
   }
   assert.doesNotMatch(indexHtml, /recovery-settings\.js/);
+  assert.match(stashesSource, /function renderStashesTab\(\)/);
+  assert.match(authSource, /async function loadAuthDiagnostics\(/);
+  assert.match(syncSource, /function renderSyncTab\(\)/);
+  assert.match(compareSource, /function renderCompareTab\(\)/);
+  assert.doesNotMatch(syncSource, /renderStashesTab|renderCompareTab|loadAuthDiagnostics/);
   assert.match(tagsSource, /function renderTagsTab\(\)/);
   assert.match(recoverySource, /function renderRecoveryTab\(\)/);
   assert.match(logsSource, /function renderLogsTab\(\)/);
