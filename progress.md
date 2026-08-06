@@ -6750,3 +6750,36 @@
 - `docs/CONTINUE.md`：记录回归边界、实测结果和 147/147 当前基线。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md package.json progress.md`，再执行 `Remove-Item -LiteralPath tests/browser-performance.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-06 - Task: 危险历史操作一键撤销
+
+### What was done
+- 对已经返回自动恢复点的追加提交、修改提交信息、变基拉取、分支变基、历史编辑和重置操作增加顶栏“撤销”入口，直接恢复到操作前的提交位置。
+- 一键撤销状态绑定仓库路径、当前分支和操作后 HEAD；上下文变化时自动失效，工作区有未提交改动或仓库有未完成操作时禁用并保留恢复点提示。
+- 继续复用受保护的恢复点恢复接口和子模块边界，不把没有恢复点的工作区丢弃、合并、挑选或还原伪装成可撤销。
+- 修改提交信息结果补充结构化恢复点，供前端与其他历史操作使用同一撤销流程。
+
+### Testing
+- `node --check` 通过新增恢复模块、Git 动作、历史动作、中英文目录、后端历史服务、操作门面和新增测试文件。
+- `node --test --test-concurrency=1 tests/recovery-undo-ui.test.js` 运行 2 项，2 项通过、0 项失败；覆盖仓库 / 分支 / HEAD 绑定、脏工作区禁用和受保护恢复请求。
+- `node --test --test-concurrency=1 tests/git-api.test.js` 运行 26 项，26 项通过、0 项失败；真实临时 Git 仓库验证 hard reset 返回恢复点、一键恢复后 HEAD 和文件内容回到操作前，以及修改提交信息返回结构化恢复点。
+- `node --test --test-concurrency=1 tests/i18n.test.js tests/layout-ui.test.js tests/recovery-undo-ui.test.js` 运行 40 项，40 项通过、0 项失败。
+- `npm.cmd test` 完整运行 149 项，149 项通过、0 项失败、0 项跳过，耗时约 106.8 秒；真实 Chromium 复杂文件打开约 187.7 ms、最大事件循环延迟约 71.6 ms、同步滚动约 8.0 ms、关闭约 0.5 ms，监听器保持 `3 -> 4 -> 5 -> 5 -> 4`。
+- 临时 `5298` 服务已关闭，端口确认无监听；测试浏览器和临时仓库已关闭或自动清理，`D:\桌面\GitTest` 未参与本轮修改或测试。
+
+### Notes
+- `public/index.html`：在顶栏工具组增加默认隐藏的撤销按钮，并加载独立恢复撤销模块。
+- `public/js/core.js`：增加最近恢复撤销状态和按钮 DOM 引用。
+- `public/js/features/recovery-undo.js`：实现恢复点登记、上下文校验、按钮状态和一键恢复。
+- `public/js/features/git-actions.js`：追加、变基拉取、分支变基和修改提交信息完成后登记恢复点。
+- `public/js/features/commit-actions.js`：历史编辑、历史编辑队列和重置完成后登记恢复点。
+- `public/js/features/repositories.js`：切换仓库时清除旧仓库的一键撤销状态。
+- `public/js/features/worktree-changes.js`：工作区刷新后同步撤销按钮禁用状态。
+- `public/js/app/events.js`：绑定顶栏撤销入口。
+- `public/styles.css`：增加紧凑撤销按钮的正常、悬停、禁用和隐藏样式。
+- `public/js/i18n-catalog.js`：补充撤销状态、阻塞原因和恢复动作英文提示。
+- `server/git-history-service.js`、`server/git-operations-service.js`：让修改提交信息返回结构化恢复点结果。
+- `tests/recovery-undo-ui.test.js`、`tests/git-api.test.js`：增加前端状态和真实 Git 恢复流程回归。
+- `README.md`、`docs/CONTINUE.md`：说明一键撤销范围、失效条件和恢复点边界。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/index.html public/js/app/events.js public/js/core.js public/js/features/commit-actions.js public/js/features/git-actions.js public/js/features/repositories.js public/js/features/worktree-changes.js public/js/i18n-catalog.js public/styles.css server/git-history-service.js server/git-operations-service.js tests/git-api.test.js`，再执行 `Remove-Item -LiteralPath public/js/features/recovery-undo.js,tests/recovery-undo-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

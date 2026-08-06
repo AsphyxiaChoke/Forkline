@@ -1126,9 +1126,21 @@ test("common history flow covers branches, merge, cherry-pick, revert, tags, and
     mode: "hard",
   });
   assertStatus(hardReset, 200);
+  assert.equal(hardReset.body.recovery.sha, resetLatest);
+  assert.match(hardReset.body.recovery.ref, /^refs\/forkline\/recovery\//);
   assert.equal(await git(repo, ["rev-parse", "HEAD"]), resetBase);
   assert.equal(await fs.readFile(path.join(repo, "reset.txt"), "utf8"), "one\n");
   assert.equal(await git(repo, ["status", "--short"]), "");
+
+  state = await readState(repo);
+  const restored = await action(repo, state, {
+    action: "restoreRecoveryPoint",
+    ref: hardReset.body.recovery.ref,
+    sha: hardReset.body.recovery.sha,
+  });
+  assertStatus(restored, 200);
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), resetLatest);
+  assert.equal(await fs.readFile(path.join(repo, "reset.txt"), "utf8"), "one\ntwo\n");
 });
 
 test("history editing rewords, fixups, squashes, and drops linear commits", { timeout: 120000 }, async (t) => {
@@ -1156,6 +1168,9 @@ test("history editing rewords, fixups, squashes, and drops linear commits", { ti
     body: "rewritten body",
   });
   assertStatus(reworded, 200);
+  assert.match(reworded.body.recovery.sha, /^[0-9a-f]{40}$/);
+  assert.equal(reworded.body.recovery.action, "reword");
+  assert.match(reworded.body.recovery.ref, /^refs\/forkline\/recovery\//);
   let subjects = (await git(repo, ["log", "--format=%s"])).split(/\r?\n/);
   assert.deepEqual(subjects, ["second", "first rewritten", "base"]);
   assert.equal(await fs.readFile(path.join(repo, "first.txt"), "utf8"), "first\n");

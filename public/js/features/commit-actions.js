@@ -389,6 +389,7 @@ async function runHistoryRewriteQueue(action, button) {
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
     toast(result.output || t("历史编辑队列已执行"));
     await reloadAfterHistoryAction(repoPath);
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -463,6 +464,7 @@ async function runHistoryRewritePlan(action, button) {
     state.historyQueue = { items: [], loading: false, preview: null, error: "" };
     toast(result.output || t("已{action} {sha}", { action: t(preview.title || "编辑历史"), sha: preview.target?.short || "" }));
     await reloadAfterHistoryAction(repoPath);
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -510,6 +512,7 @@ async function rewriteHistoryCommit(commit, mode) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || t("已{action} {sha}", { action: config.title, sha: commit.short }));
     await reloadAfterHistoryAction(repoPath);
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -653,6 +656,7 @@ async function resetToCommit(commit, mode) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(result.output || t("已{mode}到 {sha}", { mode: modeText, sha: commit.short }));
     await reloadAfterHistoryAction(repoPath);
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);

@@ -85,6 +85,7 @@ els.commitGraph.addEventListener("contextmenu", async (event) => {
   }
 });
 els.themeToggle.addEventListener("click", toggleTheme);
+els.undoRecovery.addEventListener("click", () => runRecoveryUndo(els.undoRecovery));
 els.newBranch.addEventListener("click", openBranchModal);
 els.branchForm.addEventListener("submit", submitBranchForm);
 els.branchCancel.addEventListener("click", closeBranchModal);

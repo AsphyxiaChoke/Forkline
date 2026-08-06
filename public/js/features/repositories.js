@@ -360,6 +360,7 @@ async function applyOpenedRepoData(data, requestId = 0) {
 
 function clearOpenedRepoState() {
   clearRepoScopedActionState();
+  if (typeof clearRecoveryUndo === "function") clearRecoveryUndo();
   state.selectedFile = "";
   state.workDiffScope = "unstaged";
   state.selectedCommitFile = "";

@@ -169,6 +169,7 @@ async function rebaseOntoRef(ref) {
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
     renderAll();
     await renderSelectedCommitForRepoPath(repoPath);
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -336,6 +337,7 @@ async function runAction(action) {
       await loadCommit(state.selectedSha);
       renderInspector();
     }
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -974,6 +976,7 @@ async function rewordSelectedCommit(form) {
     state.selectedSha = sameCommit?.sha || state.data.commits[Math.max(previousIndex, 0)]?.sha || state.data.commits[0]?.sha || "";
     renderAll();
     await renderSelectedCommitForRepoPath(repoPath);
+    if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);

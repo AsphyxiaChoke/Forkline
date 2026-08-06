@@ -72,6 +72,7 @@ function renderStage() {
   const unborn = Boolean(state.data?.sync?.unborn);
   els.stashChanges.disabled = unborn;
   els.stashChanges.title = unborn ? t("当前分支还没有首个提交，不能创建储藏") : t("储藏全部未提交更改");
+  if (typeof renderRecoveryUndoButton === "function") renderRecoveryUndoButton();
 }
 
 function worktreeDraftSummary(groups, counts, filterText = "") {

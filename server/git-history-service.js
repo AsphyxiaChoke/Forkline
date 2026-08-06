@@ -46,7 +46,7 @@ function createGitHistoryService(options) {
 
   } = options;
 
-  const { appendRecoveryLine, createRecoveryPoint, recoveryPointLine } = recoveryService;
+  const { appendRecoveryLine, createRecoveryPoint } = recoveryService;
 
   let currentRepo = getCurrentRepo();
 
@@ -374,7 +374,7 @@ function createGitHistoryService(options) {
     } finally {
       removeQuietly(messageFile);
     }
-    return ["提交信息已修改，历史 SHA 已重写", recoveryPointLine(recovery)].filter(Boolean).join("\n");
+    return appendRecoveryLine({ ok: true, output: "提交信息已修改，历史 SHA 已重写" }, recovery);
   }
 
   async function rewriteHistoryCommit(body) {

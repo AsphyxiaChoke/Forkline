@@ -760,6 +760,27 @@ button {
   color: var(--danger);
 }
 
+.topbar-action-group .recovery-undo-btn {
+  border-color: rgba(var(--teal-rgb), 0.2);
+  background: rgba(var(--teal-rgb), 0.1);
+  color: var(--teal);
+}
+
+.topbar-action-group .recovery-undo-btn:hover:not(:disabled) {
+  background: rgba(var(--teal-rgb), 0.2);
+  color: var(--text);
+}
+
+.topbar-action-group .recovery-undo-btn:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted-2);
+}
+
+.recovery-undo-btn[hidden] {
+  display: none;
+}
+
 .topbar-sync-actions {
   background: color-mix(in srgb, var(--field) 82%, var(--blue) 18%);
 }

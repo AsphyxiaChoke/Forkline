@@ -67,6 +67,7 @@ const state = {
   selectedStash: "",
   selectedTag: "",
   selectedRecoveryRef: "",
+  recoveryUndo: null,
   selectedReflogSelector: "",
   recoveryFilter: { query: "", branch: "", action: "" },
   recoveryPolicy: { keepDays: "90", maxPerBranch: "50" },
@@ -289,6 +290,7 @@ const els = {
   fileEditorClose: $("#fileEditorClose"),
   fileEditorResizeHandle: $("#fileEditorResizeHandle"),
   toast: $("#toast"),
+  undoRecovery: $("#undoRecovery"),
   themeToggle: $("#themeToggle"),
   graphModeLabel: $("#graphModeLabel"),
 };

@@ -522,7 +522,7 @@ function createGitOperationsService(options) {
       return appendRecoveryLine(commandResult(await git(currentRepo, args, { timeout: 120000 })), recovery);
     }
     if (action === "rewordCommit") {
-      return commandResult(await rewordCommit(body));
+      return rewordCommit(body);
     }
     if (action === "rewriteHistoryCommit") {
       return rewriteHistoryCommit(body);
