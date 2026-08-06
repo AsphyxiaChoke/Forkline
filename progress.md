@@ -6701,3 +6701,29 @@
 - `docs/CONTINUE.md`：记录卡死原因、释放边界和 145/145 当前回归基线。
 - `progress.md`：追加本轮实现、性能证据、验证和清理记录。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js public/vendor/codemirror/addon/merge/merge.js tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-06 - Task: 复杂历史文件自适应轻量对照
+
+### What was done
+- 历史提交只读文件在行数很多、不同位置行数过多或差异段过于分散时，会自动从 MergeView 切换为两个独立 CodeMirror，避免小体积但高复杂度文件触发昂贵差异计算。
+- 轻量模式状态栏会明确显示“行数较多”或“差异较复杂”，并隐藏不适用的“连线 / 行对齐”；普通历史小差异继续保留完整对照方式。
+- 工作区可编辑文件不参与复杂度分流，原有大文件判断、暂存、编辑和 Git 行为保持不变。
+
+### Testing
+- `node --check public/js/features/file-editor.js` 和 `node --check public/js/i18n-catalog.js` 通过。
+- `node --test tests/file-editor-ui.test.js` 运行 29 项，29 项通过、0 项失败；覆盖 60,000 行、40 个分散差异段、普通小改动、单行插入位移和工作区不触发。
+- `npm.cmd test` 完整运行 146 项，146 项通过、0 项失败、退出码为 0，耗时约 105.8 秒。
+- 真实 Edge 在独立临时仓库验证：约 399 KiB、60,000 行文件创建 0 个 MergeView 和 2 个 CodeMirror，状态栏显示“复杂文件轻量模式 · 行数较多”，同步大幅滚动事件约 6.2 ms；40 个分散改动显示“差异较复杂”；普通小文件仍创建 1 个 MergeView，并可切换到“行对齐”。关闭复杂文件后 CodeMirror 节点为 0。
+- 浏览器唯一控制台错误为既有 `favicon.ico` 404；临时浏览器会话、`5297` 服务、`C:\tmp\forkline-complex-history`、夹具脚本和日志均已关闭或删除，端口确认无监听。
+- 既有 `127.0.0.1:5177` 服务保持运行并仍打开 `D:/桌面/GitTest` 的 `123` 分支；GitTest 继续只保留原有 `测试.txt` 修改和 3 个未跟踪编辑器演示文件。
+- `git diff --check` 通过，仅输出仓库现有的 LF / CRLF 工作区转换提示。
+
+### Notes
+- `public/js/features/file-editor.js`：增加历史文件复杂度判定、轻量模式状态与界面分流。
+- `public/styles.css`：让复杂轻量双栏使用与大文件一致的 1px 中线布局。
+- `public/js/i18n-catalog.js`：补充复杂轻量模式及原因的英文提示。
+- `tests/file-editor-ui.test.js`：增加复杂度阈值、位移保护、工作区边界和英文提示回归。
+- `README.md`：用简化说明介绍历史文件自动轻量模式。
+- `docs/CONTINUE.md`：记录判定阈值、浏览器实测和 146/146 当前基线。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js public/js/i18n-catalog.js public/styles.css tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。

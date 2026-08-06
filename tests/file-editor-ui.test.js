@@ -359,13 +359,48 @@ test("replaced MergeView instances release global resize tracking immediately", 
 });
 
 test("large historical files keep the lightweight comparison path", () => {
-  assert.match(editor, /const showCompareMode = commitView && !editor\.largeFile && !editor\.conflict/);
-  assert.match(editor, /if \(!editor \|\| editor\.source !== "commit" \|\| editor\.largeFile \|\| editor\.conflict/);
+  assert.match(editor, /const showCompareMode = commitView && !editor\.largeFile && !editor\.lightweightCompare && !editor\.conflict/);
+  assert.match(editor, /if \(!editor \|\| editor\.source !== "commit" \|\| editor\.largeFile \|\| editor\.lightweightCompare \|\| editor\.conflict/);
+});
+
+test("historical comparison switches complex files to the lightweight path", () => {
+  const sandbox = {};
+  vm.runInNewContext(editor, sandbox);
+
+  const manyLines = Array.from({ length: 60000 }, (_, index) => `line-${index}`).join("\n");
+  const lineResult = sandbox.detectFileEditorLightweightCompare("commit", manyLines, manyLines, false);
+  assert.equal(lineResult.enabled, true);
+  assert.equal(lineResult.reason, "lines");
+
+  const oldLines = Array.from({ length: 240 }, (_, index) => `line-${index}`);
+  const newLines = oldLines.slice();
+  for (let index = 0; index < 40; index += 1) {
+    const lineIndex = index * 5 + 1;
+    newLines[lineIndex] = `changed-${lineIndex}`;
+  }
+  const diffResult = sandbox.detectFileEditorLightweightCompare("commit", oldLines.join("\n"), newLines.join("\n"), false);
+  assert.equal(diffResult.enabled, true);
+  assert.equal(diffResult.reason, "diff");
+
+  const smallResult = sandbox.detectFileEditorLightweightCompare("commit", "one\ntwo\nthree", "one\nchanged\nthree", false);
+  assert.equal(smallResult.enabled, false);
+  assert.equal(smallResult.reason, "");
+
+  const shiftedLines = Array.from({ length: 3000 }, (_, index) => `line-${index}`);
+  const insertedLines = shiftedLines.slice();
+  insertedLines.splice(1500, 0, "inserted-line");
+  const shiftedResult = sandbox.detectFileEditorLightweightCompare("commit", shiftedLines.join("\n"), insertedLines.join("\n"), false);
+  assert.equal(shiftedResult.enabled, false);
+  assert.equal(shiftedResult.reason, "");
+
+  const worktreeResult = sandbox.detectFileEditorLightweightCompare("worktree", manyLines, manyLines, false);
+  assert.equal(worktreeResult.enabled, false);
+  assert.equal(worktreeResult.reason, "");
 });
 
 test("large files use two lightweight CodeMirror panes instead of MergeView", () => {
   const largeCompare = editor.match(/function createLargeFileCompare[\s\S]*?\n}\n\nfunction observeFileEditorStageButtons/)?.[0] || "";
-  assert.match(editor, /else if \(editor\.largeFile\) \{\s*createLargeFileCompare\(editor, codeMirrorOptions\);/s);
+  assert.match(editor, /else if \(editor\.largeFile \|\| editor\.lightweightCompare\) \{\s*createLargeFileCompare\(editor, codeMirrorOptions\);/s);
   assert.match(largeCompare, /editor\.oldCodeMirror = CodeMirror\(oldHost/);
   assert.match(largeCompare, /editor\.codeMirror = CodeMirror\(newHost/);
   assert.doesNotMatch(largeCompare, /MergeView/);
@@ -611,6 +646,9 @@ test("file editor exposes Chinese encoding and comparison messages in English mo
   assert.equal(catalog.translate("en", "还原所选改动块"), "Restore the selected change block");
   assert.equal(catalog.translate("en", "切换同步滚动"), "Toggle synchronized scrolling");
   assert.equal(catalog.translate("en", "大文件模式"), "Large file mode");
+  assert.equal(catalog.translate("en", "复杂文件轻量模式"), "Complex file lightweight mode");
+  assert.equal(catalog.translate("en", "行数较多"), "Many lines");
+  assert.equal(catalog.translate("en", "差异较复杂"), "Complex differences");
   assert.equal(catalog.translate("en", "已暂存改动块"), "Change block staged");
   assert.equal(catalog.translate("en", "找到 {count} 个匹配", { count: 3 }), "Found 3 matches");
   assert.equal(catalog.translate("en", "已替换 {count} 处", { count: 2 }), "Replaced 2 matches");

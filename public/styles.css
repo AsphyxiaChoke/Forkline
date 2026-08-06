@@ -6440,7 +6440,8 @@ body.file-editor-window-resizing * {
   grid-column: 1;
 }
 
-.file-editor-dialog.is-large-file .file-editor-compare-labels {
+.file-editor-dialog.is-large-file .file-editor-compare-labels,
+.file-editor-dialog.is-lightweight-compare .file-editor-compare-labels {
   grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
 }
 

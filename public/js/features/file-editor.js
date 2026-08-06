@@ -4,6 +4,9 @@ const FILE_EDITOR_COMPACT_MEDIA = "(max-width: 720px)";
 const FILE_EDITOR_WINDOW_MARGIN = 12;
 const FILE_EDITOR_WINDOW_MIN_WIDTH = 640;
 const FILE_EDITOR_WINDOW_MIN_HEIGHT = 360;
+const FILE_EDITOR_LIGHTWEIGHT_LINE_LIMIT = 20000;
+const FILE_EDITOR_LIGHTWEIGHT_CHANGED_LINE_LIMIT = 2000;
+const FILE_EDITOR_LIGHTWEIGHT_CHANGE_SEGMENT_LIMIT = 32;
 let fileEditorDragState = null;
 let fileEditorResizeState = null;
 
@@ -59,6 +62,8 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     parent: "",
     readOnly: source === "commit",
     largeFile: false,
+    lightweightCompare: false,
+    lightweightReason: "",
     file,
     previousFile,
     repoPath,
@@ -135,6 +140,14 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.diff = Array.isArray(data.diff) ? data.diff : [];
     editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
     editor.conflict = Boolean(data.conflict);
+    const lightweightCompare = detectFileEditorLightweightCompare(
+      editor.source,
+      editor.oldContent,
+      editor.originalContent,
+      editor.largeFile
+    );
+    editor.lightweightCompare = lightweightCompare.enabled;
+    editor.lightweightReason = lightweightCompare.reason;
     editor.branchSnapshot = editor.readOnly ? null : currentBranchSnapshotPayload();
     editor.fileSnapshot = editor.readOnly ? null : fileSnapshotPayload(editor.file, editor.diffScope);
     editor.mode = fileEditorMode(file);
@@ -162,9 +175,11 @@ async function switchOpenFileEditor(filePath, previousFilePath = "") {
 function updateFileEditorModeUi(editor) {
   const readOnly = Boolean(editor.readOnly);
   const commitView = editor.source === "commit";
+  const lightweightCompare = Boolean(editor.largeFile || editor.lightweightCompare);
   els.fileEditorForm.classList.toggle("is-readonly", readOnly);
   els.fileEditorForm.classList.toggle("is-large-file", Boolean(editor.largeFile));
-  els.fileEditorForm.classList.toggle("is-line-aligned", commitView && editor.compareMode === "align");
+  els.fileEditorForm.classList.toggle("is-lightweight-compare", Boolean(editor.lightweightCompare));
+  els.fileEditorForm.classList.toggle("is-line-aligned", commitView && !lightweightCompare && editor.compareMode === "align");
   els.fileEditorTitle.textContent = t(commitView ? "历史文件对照" : editor.largeFile ? "大文件只读对照" : "编辑文件");
   els.fileEditorPath.textContent = commitView && editor.previousFile && editor.previousFile !== editor.file
     ? `${editor.previousFile} -> ${editor.file}`
@@ -186,7 +201,7 @@ function normalizeFileEditorCompareMode(mode) {
 
 function updateFileEditorCompareModeUi(editor, forceDisabled = false) {
   const commitView = editor.source === "commit";
-  const showCompareMode = commitView && !editor.largeFile && !editor.conflict;
+  const showCompareMode = commitView && !editor.largeFile && !editor.lightweightCompare && !editor.conflict;
   const hasMergeView = typeof CodeMirror === "function" && typeof CodeMirror.MergeView === "function";
   els.fileEditorCompareMode.hidden = !showCompareMode || !hasMergeView;
   els.fileEditorCompareMode.setAttribute("aria-label", t("历史对照方式"));
@@ -203,7 +218,7 @@ function updateFileEditorCompareModeUi(editor, forceDisabled = false) {
 
 function setFileEditorCompareMode(mode) {
   const editor = state.fileEditor;
-  if (!editor || editor.source !== "commit" || editor.largeFile || editor.conflict || editor.loading || editor.saving || editor.operating) return false;
+  if (!editor || editor.source !== "commit" || editor.largeFile || editor.lightweightCompare || editor.conflict || editor.loading || editor.saving || editor.operating) return false;
   const nextMode = normalizeFileEditorCompareMode(mode);
   if (editor.compareMode === nextMode) return true;
 
@@ -287,7 +302,7 @@ function createFileEditorInstance(editor) {
   els.fileEditorMerge.replaceChildren();
   const canUseCodeMirror = typeof CodeMirror === "function";
   const canUseMergeView = canUseCodeMirror && typeof CodeMirror.MergeView === "function";
-  if (!canUseCodeMirror || (!editor.conflict && !editor.largeFile && !canUseMergeView)) {
+  if (!canUseCodeMirror || (!editor.conflict && !editor.largeFile && !editor.lightweightCompare && !canUseMergeView)) {
     els.fileEditorMerge.hidden = true;
     els.fileEditorFallback.hidden = false;
     els.fileEditorOldText.value = editor.oldContent;
@@ -326,7 +341,7 @@ function createFileEditorInstance(editor) {
   };
   if (editor.conflict) {
     editor.codeMirror = CodeMirror(els.fileEditorMerge, codeMirrorOptions);
-  } else if (editor.largeFile) {
+  } else if (editor.largeFile || editor.lightweightCompare) {
     createLargeFileCompare(editor, codeMirrorOptions);
   } else {
     editor.mergeView = CodeMirror.MergeView(els.fileEditorMerge, {
@@ -945,6 +960,7 @@ function destroyFileEditorInstance() {
   els.fileEditorForm.classList.remove("is-operating");
   els.fileEditorForm.classList.remove("is-readonly");
   els.fileEditorForm.classList.remove("is-large-file");
+  els.fileEditorForm.classList.remove("is-lightweight-compare");
   els.fileEditorForm.classList.remove("is-line-aligned");
   els.fileEditorText.readOnly = false;
   els.fileEditorSave.hidden = false;
@@ -972,6 +988,10 @@ function updateFileEditorStatus(message = "") {
   if (!editor.loading) {
     if (editor.readOnly) metadataParts.push(t("只读"));
     if (editor.largeFile) metadataParts.push(t("大文件模式"));
+    else if (editor.lightweightCompare) {
+      metadataParts.push(t("复杂文件轻量模式"));
+      metadataParts.push(t(editor.lightweightReason === "lines" ? "行数较多" : "差异较复杂"));
+    }
     if (editor.exists !== false) {
       metadataParts.push(String(editor.encoding || "utf-8").toUpperCase());
       metadataParts.push(fileEditorLineEndingLabel(editor.lineEnding));
@@ -1302,6 +1322,59 @@ function handleFileEditorSearchKeydown(event) {
 
 function normalizeFileEditorContent(value) {
   return String(value || "").replace(/\r\n|\r/g, "\n");
+}
+
+function detectFileEditorLightweightCompare(source, oldContent, content, largeFile = false) {
+  if (source !== "commit" || largeFile) return { enabled: false, reason: "" };
+  const oldText = String(oldContent || "");
+  const newText = String(content || "");
+  if (Math.max(fileEditorLineCount(oldText), fileEditorLineCount(newText)) >= FILE_EDITOR_LIGHTWEIGHT_LINE_LIMIT) {
+    return { enabled: true, reason: "lines" };
+  }
+
+  const oldLines = oldText.split("\n");
+  const newLines = newText.split("\n");
+  const sharedLength = Math.min(oldLines.length, newLines.length);
+  let prefixLength = 0;
+  while (prefixLength < sharedLength && oldLines[prefixLength] === newLines[prefixLength]) prefixLength += 1;
+
+  let suffixLength = 0;
+  while (
+    suffixLength < sharedLength - prefixLength &&
+    oldLines[oldLines.length - suffixLength - 1] === newLines[newLines.length - suffixLength - 1]
+  ) {
+    suffixLength += 1;
+  }
+
+  const oldChangedLength = oldLines.length - prefixLength - suffixLength;
+  const newChangedLength = newLines.length - prefixLength - suffixLength;
+  const compareLength = Math.max(oldChangedLength, newChangedLength);
+  let changedLines = 0;
+  let changeSegments = 0;
+  let insideChange = false;
+  for (let index = 0; index < compareLength; index += 1) {
+    const changed = oldLines[prefixLength + index] !== newLines[prefixLength + index];
+    if (changed) {
+      changedLines += 1;
+      if (!insideChange) changeSegments += 1;
+    }
+    insideChange = changed;
+    if (
+      changedLines >= FILE_EDITOR_LIGHTWEIGHT_CHANGED_LINE_LIMIT ||
+      changeSegments >= FILE_EDITOR_LIGHTWEIGHT_CHANGE_SEGMENT_LIMIT
+    ) {
+      return { enabled: true, reason: "diff" };
+    }
+  }
+  return { enabled: false, reason: "" };
+}
+
+function fileEditorLineCount(content) {
+  let lines = 1;
+  for (let index = 0; index < content.length; index += 1) {
+    if (content.charCodeAt(index) === 10) lines += 1;
+  }
+  return lines;
 }
 
 function fileEditorMode(filePath) {
