@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
-const source = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
+const source = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-refresh.js"), "utf8");
 const coreSource = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8");
 const gitActionsSource = fs.readFileSync(path.join(root, "public", "js", "features", "git-actions.js"), "utf8");
 const stashesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "stashes.js"), "utf8");

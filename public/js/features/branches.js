@@ -1,4 +1,24 @@
 // Branch lists, branch filters, and branch modal actions.
+function remoteCheckoutBranch(remoteRef) {
+  return splitRemoteBranchRef(remoteRef).branch;
+}
+
+function splitRemoteBranchRef(remoteRef) {
+  const ref = String(remoteRef || "").trim();
+  const remoteNames = [...(state.data?.repo?.remoteNames || [])]
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  for (const remote of remoteNames) {
+    const prefix = `${remote}/`;
+    if (ref.startsWith(prefix) && ref.length > prefix.length) {
+      return { remote, branch: ref.slice(prefix.length) };
+    }
+  }
+  const parts = ref.split("/").filter(Boolean);
+  if (parts.length < 2) return { remote: "", branch: "" };
+  return { remote: parts[0], branch: parts.slice(1).join("/") };
+}
+
 function renderBranches() {
   els.branchList.innerHTML = "";
   els.remoteList.innerHTML = "";

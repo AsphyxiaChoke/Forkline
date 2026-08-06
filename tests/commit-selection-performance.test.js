@@ -12,7 +12,7 @@ const gitActionsSource = fs.readFileSync(path.join(root, "public", "js", "featur
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
-const diffWorkbenchSource = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
+const diffWorkbenchSource = fs.readFileSync(path.join(root, "public", "js", "features", "file-tree.js"), "utf8");
 
 test("commit rows use container event delegation instead of per-row listeners", () => {
   assert.doesNotMatch(historySource, /row\.addEventListener\("(?:click|contextmenu)"/);

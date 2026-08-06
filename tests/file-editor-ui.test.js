@@ -10,8 +10,14 @@ const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const core = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8");
 const events = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
+const branches = fs.readFileSync(path.join(root, "public", "js", "features", "branches.js"), "utf8");
 const contextMenus = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
-const diffWorkbench = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
+const fileTree = fs.readFileSync(path.join(root, "public", "js", "features", "file-tree.js"), "utf8");
+const diffCore = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
+const diffRenderer = fs.readFileSync(path.join(root, "public", "js", "features", "diff-renderer.js"), "utf8");
+const diffSelection = fs.readFileSync(path.join(root, "public", "js", "features", "diff-selection.js"), "utf8");
+const worktreeRefresh = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-refresh.js"), "utf8");
+const diffWorkbench = [fileTree, diffCore, diffRenderer, diffSelection, worktreeRefresh].join("\n");
 const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 const editorUtils = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-utils.js"), "utf8");
@@ -30,6 +36,30 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(html, /id="fileEditorModal"/);
   assert.match(html, /id="fileEditorText"[^>]*wrap="off"/);
   assert.match(html, /js\/features\/file-editor\.js/);
+  const diffScripts = [
+    "./js/features/file-tree.js",
+    "./js/features/diff-renderer.js",
+    "./js/features/diff-workbench.js",
+    "./js/features/diff-selection.js",
+    "./js/features/worktree-refresh.js",
+    "./js/features/file-editor-utils.js",
+  ];
+  let previousDiffScript = -1;
+  for (const script of diffScripts) {
+    const position = html.indexOf(`<script src="${script}"></script>`);
+    assert.ok(position > previousDiffScript, `${script} should load after the previous diff module`);
+    previousDiffScript = position;
+  }
+  assert.match(fileTree, /function fileTreeHtml\(/);
+  assert.match(fileTree, /function shortFileName\(/);
+  assert.match(diffCore, /async function runWorkDiffHunkAction\(/);
+  assert.match(diffRenderer, /function renderSideDiff\(/);
+  assert.match(diffRenderer, /function trimDiffPrefix\(/);
+  assert.match(diffSelection, /async function runWorkDiffLineAction\(/);
+  assert.match(worktreeRefresh, /function initWorktreeAutoRefresh\(/);
+  assert.match(branches, /function remoteCheckoutBranch\(/);
+  assert.match(branches, /function splitRemoteBranchRef\(/);
+  assert.doesNotMatch(diffCore, /function renderSideDiff|function resetDiffLineSelection|function refreshWorktree/);
   const editorScripts = [
     "./js/features/file-editor-utils.js",
     "./js/features/file-editor-actions.js",

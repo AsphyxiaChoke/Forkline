@@ -6984,3 +6984,28 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新编辑器职责、权威加载顺序、验证结果和下一项优化。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `f9f6f6f`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/features/file-editor.js tests/file-editor-ui.test.js`，再执行 `Remove-Item -LiteralPath public/js/features/file-editor-utils.js,public/js/features/file-editor-actions.js,public/js/features/file-editor-window.js,public/js/features/file-editor-search.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 拆分 Diff 工作台文件树、渲染、行操作和工作区刷新模块
+
+### What was done
+- 将工作区/暂存区/提交文件树及原地选择移动到 `file-tree.js`，将双栏 Diff、分批渲染和块级按钮移动到 `diff-renderer.js`，核心 `diff-workbench.js` 只保留数据加载、视图切换和最大化弹窗编排。
+- 将按行选择、暂存/取消暂存和滚动恢复移动到 `diff-selection.js`，将工作区签名、轻量刷新和页面焦点/可见性轮询移动到 `worktree-refresh.js`。
+- 把远端分支解析与签出入口归回分支模块，保持全局函数名、状态结构、API 请求、Git hunk/行映射和操作行为不变，并用回归固定五个模块的加载顺序与职责边界。
+
+### Testing
+- `node --check` 通过五个 Diff 工作台模块、分支模块和四个受影响测试文件；专项回归运行 44 项，44 项通过、0 项失败。
+- `npm.cmd test` 完整运行 159 项，159 项通过、0 项失败、0 项跳过，耗时约 130.5 秒；真实 Chromium 复杂历史文件打开约 206.5 ms、最大事件循环延迟约 64.9 ms。
+- 4000 文件工作区 API 约 552.8 ms、前端树渲染约 43.1 ms；连续开关编辑器 30 次约 3.1 秒，`resize` 监听器保持 `4 -> 4`，DOM、监听器和 GC 后堆边界稳定。
+- `git diff --check` 通过，仅显示仓库现有 LF / CRLF 转换提示。最终资源检查确认相关 Node / Edge / Chrome 进程为 0、性能测试临时目录为 0、机械拆分脚本已删除；未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/features/file-tree.js`：承接工作区、暂存区和提交文件树、原地选择及文件名工具。
+- `public/js/features/diff-renderer.js`：承接双栏 Diff、分批渲染、块级按钮及 Diff 路径工具。
+- `public/js/features/diff-workbench.js`：只保留 Diff 数据加载、视图切换、最大化弹窗和工作台编排。
+- `public/js/features/diff-selection.js`：承接按行选择、暂存/取消暂存和刷新后的滚动恢复。
+- `public/js/features/worktree-refresh.js`：承接工作区签名、轻量刷新和焦点/可见性轮询。
+- `public/js/features/branches.js`：承接远端分支引用拆分与签出入口。
+- `public/index.html`、`tests/commit-selection-performance.test.js`、`tests/diff-preview.test.js`、`tests/file-editor-ui.test.js`、`tests/worktree-refresh.test.js`：更新运行时加载顺序和模块职责回归。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录五个模块职责、权威加载顺序、验证结果和下一项性能测量方向。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `4f9547b`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/features/branches.js public/js/features/diff-workbench.js tests/commit-selection-performance.test.js tests/diff-preview.test.js tests/file-editor-ui.test.js tests/worktree-refresh.test.js`，再执行 `Remove-Item -LiteralPath public/js/features/file-tree.js,public/js/features/diff-renderer.js,public/js/features/diff-selection.js,public/js/features/worktree-refresh.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
