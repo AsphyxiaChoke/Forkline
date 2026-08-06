@@ -343,9 +343,14 @@ async function applyOpenedRepoData(data, requestId = 0) {
   state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
   if (state.selectedRef) {
     const selectedRef = state.selectedRef;
-    const refData = await api(`/api/state?ref=${encodeURIComponent(selectedRef)}`);
+    const refData = await api(`/api/ref-state?ref=${encodeURIComponent(selectedRef)}`);
     if (requestId && requestId !== state.openRepoRequestId) return false;
-    state.data = refData;
+    state.data = {
+      ...state.data,
+      repo: { ...state.data.repo, ...(refData.repo || {}), selectedRef: refData.repo?.selectedRef || selectedRef },
+      commits: refData.commits || [],
+      history: refData.history || state.data.history,
+    };
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
   }
   loadRecoveryPolicyForRepo(state.data.repo);

@@ -305,6 +305,59 @@ test("startup reapplies a requested ref after restoring the repository", async (
   assert.deepEqual(saved, [selected.repo]);
 });
 
+test("opening a repository refreshes only selected branch history", async () => {
+  const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
+  const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
+  const applyOpenedRepoDataSource = repositoriesSource.slice(start, end);
+  const calls = [];
+  const openedState = {
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "", isSample: false },
+    branches: ["main", "feature/test"],
+    remotes: ["origin/main"],
+    tags: [{ name: "v1.0.0" }],
+    workingFiles: [{ path: "src/main.c", status: "M" }],
+    commits: [{ sha: "all-branches" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
+  const selectedHistory = {
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
+    commits: [{ sha: "main-only" }],
+    history: { limit: 120, loaded: 1, hasMore: true },
+  };
+  const state = { openRepoRequestId: 7 };
+  let loadedSha = "";
+  const context = vm.createContext({
+    state,
+    els: { searchInput: { value: "old search" } },
+    api: async (url) => {
+      calls.push(url);
+      return selectedHistory;
+    },
+    clearOpenedRepoState: () => {},
+    loadRecoveryPolicyForRepo: () => {},
+    renderAll: () => {},
+    loadCommit: async (sha) => { loadedSha = sha; },
+    renderInspector: () => {},
+  });
+  vm.runInContext(applyOpenedRepoDataSource, context);
+
+  const applied = await context.applyOpenedRepoData(openedState, 7);
+
+  assert.equal(applied, true);
+  assert.deepEqual(calls, ["/api/ref-state?ref=main"]);
+  assert.strictEqual(state.data.branches, openedState.branches);
+  assert.strictEqual(state.data.remotes, openedState.remotes);
+  assert.strictEqual(state.data.tags, openedState.tags);
+  assert.strictEqual(state.data.workingFiles, openedState.workingFiles);
+  assert.strictEqual(state.data.commits, selectedHistory.commits);
+  assert.strictEqual(state.data.history, selectedHistory.history);
+  assert.equal(state.data.repo.selectedRef, "main");
+  assert.equal(state.selectedRef, "main");
+  assert.equal(state.selectedSha, "main-only");
+  assert.equal(loadedSha, "main-only");
+  assert.equal(context.els.searchInput.value, "");
+});
+
 test("command hint observer starts before the app renders dynamic panels", () => {
   assert.match(bootstrapSource, /initCommandHints\(\);[\s\S]*?init\(\);/);
 });

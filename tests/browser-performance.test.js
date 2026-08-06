@@ -53,6 +53,8 @@ test("real Chromium keeps historical file comparison responsive", {
   });
 
   const head = await createComparisonFixture(repo);
+  const alternateRepo = path.join(root, "alternate-repo");
+  const alternateHead = await createComparisonFixture(alternateRepo);
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, [serverPath], {
@@ -457,6 +459,75 @@ test("real Chromium keeps historical file comparison responsive", {
   t.diagnostic(
     `large worktree ${worktreeMetrics.loadedFiles} files: API ${worktreeMetrics.apiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
   );
+
+  const baselineRepoPath = await evaluate(cdp, `(async () => {
+    await openRepo(${JSON.stringify(alternateRepo)});
+    return state.data?.repo?.path || "";
+  })()`);
+  assert.equal(path.resolve(baselineRepoPath), path.resolve(alternateRepo));
+  const soakResizeListenersBefore = await countWindowListeners(cdp, "resize");
+  const soakMemoryBefore = await browserMemorySnapshot(cdp);
+  const switchMetrics = await evaluate(cdp, `(async () => {
+    const originalApi = api;
+    const calls = [];
+    api = async (...args) => {
+      calls.push(String(args[0] || ""));
+      return originalApi(...args);
+    };
+    const started = performance.now();
+    try {
+      for (let index = 0; index < 12; index += 1) {
+        await openRepo(index % 2 === 0 ? ${JSON.stringify(repo)} : ${JSON.stringify(alternateRepo)});
+      }
+    } finally {
+      api = originalApi;
+    }
+    return {
+      elapsed: performance.now() - started,
+      openCalls: calls.filter((url) => url === "/api/open").length,
+      stateRefCalls: calls.filter((url) => url.startsWith("/api/state?ref=")).length,
+      lightweightRefCalls: calls.filter((url) => url.startsWith("/api/ref-state?ref=")).length,
+      commitCalls: calls.filter((url) => url.startsWith("/api/commit?sha=")).length,
+      finalRepo: state.data?.repo?.path || "",
+      pageNodes: document.querySelectorAll("body *").length,
+    };
+  })()`);
+  assert.equal(switchMetrics.openCalls, 12);
+  assert.equal(switchMetrics.stateRefCalls, 0);
+  assert.equal(switchMetrics.lightweightRefCalls, 12);
+  assert.equal(path.resolve(switchMetrics.finalRepo), path.resolve(alternateRepo));
+
+  const editorSoak = await evaluate(cdp, `(async () => {
+    let failures = 0;
+    const started = performance.now();
+    for (let index = 0; index < 30; index += 1) {
+      const opened = await openCommitFileViewer("small.c", "", ${JSON.stringify(alternateHead)});
+      if (!opened) failures += 1;
+      if (opened && index % 2 === 0) setFileEditorCompareMode("align");
+      closeFileEditor(true);
+    }
+    return {
+      elapsed: performance.now() - started,
+      failures,
+      remainingCodeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      remainingMergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+      pageNodes: document.querySelectorAll("body *").length,
+    };
+  })()`);
+  assert.equal(editorSoak.failures, 0);
+  assert.equal(editorSoak.remainingCodeMirrors, 0);
+  assert.equal(editorSoak.remainingMergeViews, 0);
+  await delay(250);
+  const soakMemoryAfter = await browserMemorySnapshot(cdp);
+  const soakResizeListenersAfter = await countWindowListeners(cdp, "resize");
+  assert.equal(soakResizeListenersAfter, soakResizeListenersBefore);
+  assert.equal(soakMemoryAfter.documents, soakMemoryBefore.documents);
+  assert.ok(soakMemoryAfter.nodes <= soakMemoryBefore.nodes + 250);
+  assert.ok(soakMemoryAfter.jsEventListeners <= soakMemoryBefore.jsEventListeners + 10);
+  assert.ok(soakMemoryAfter.heapUsed <= soakMemoryBefore.heapUsed + (4 * 1024 * 1024));
+  t.diagnostic(
+    `soak switches: ${switchMetrics.elapsed.toFixed(1)} ms, API open/state-ref/ref-state/commit ${switchMetrics.openCalls}/${switchMetrics.stateRefCalls}/${switchMetrics.lightweightRefCalls}/${switchMetrics.commitCalls}; editor open-close 30x ${editorSoak.elapsed.toFixed(1)} ms; resize listeners ${soakResizeListenersBefore} -> ${soakResizeListenersAfter}; DOM documents/nodes/listeners ${soakMemoryBefore.documents}/${soakMemoryBefore.nodes}/${soakMemoryBefore.jsEventListeners} -> ${soakMemoryAfter.documents}/${soakMemoryAfter.nodes}/${soakMemoryAfter.jsEventListeners}; heap ${(soakMemoryBefore.heapUsed / 1024 / 1024).toFixed(1)} MiB -> ${(soakMemoryAfter.heapUsed / 1024 / 1024).toFixed(1)} MiB`
+  );
 });
 
 class CdpClient {
@@ -773,6 +844,21 @@ async function countWindowListeners(cdp, type) {
   } finally {
     await cdp.send("Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
+}
+
+async function browserMemorySnapshot(cdp) {
+  await cdp.send("HeapProfiler.enable");
+  await cdp.send("HeapProfiler.collectGarbage");
+  const [heap, dom] = await Promise.all([
+    cdp.send("Runtime.getHeapUsage"),
+    cdp.send("Memory.getDOMCounters"),
+  ]);
+  return {
+    heapUsed: heap.usedSize || 0,
+    documents: dom.documents || 0,
+    nodes: dom.nodes || 0,
+    jsEventListeners: dom.jsEventListeners || 0,
+  };
 }
 
 async function freePort() {

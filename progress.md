@@ -6863,3 +6863,25 @@
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `76d5cba`；提交前可执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/app/layout-utils.js public/js/features/graph.js public/js/features/history-list.js public/styles.css tests/browser-performance.test.js tests/layout-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
 - 最终补充提交行交替底色回归后，`npm.cmd run test:browser` 仍为 1/1；当前代码完整 `npm.cmd test` 为 156/156，耗时约 117.8 秒，大历史渲染约 5.2 ms、搜索约 5.7 ms、恢复约 5.1 ms，连续滚动最大延迟约 6.9 ms。本条结果取代上方施工过程中记录的 113.3 秒完整回归数据；最终资源检查仍为临时目录 0、相关进程 0。
+
+## 2026-08-06 - Task: 仓库反复切换与编辑器长时间稳定性
+
+### What was done
+- 在真实 Chromium 性能回归中增加第二个独立仓库，连续切换仓库 12 次，并连续开关历史文件编辑器 30 次；通过 CDP 记录 API 调用、窗口监听器、DOM 计数和强制 GC 后的 JS 堆。
+- 打开仓库后继续保留 `/api/open` 返回的完整仓库状态，只用轻量 `/api/ref-state` 刷新当前分支的提交图谱和分页信息，避免再次读取工作区、分支、远端、Tag、储藏、同步、工作树和子模块。
+- 保留仓库打开请求序号保护；旧仓库的轻量响应不能覆盖后来打开的仓库，并增加局部合并回归确保完整工作区状态不会丢失。
+
+### Testing
+- 修改实现前，新增的定向回归稳定失败，实际请求为 `/api/state?ref=main`；修改后同一回归通过，请求变为 `/api/ref-state?ref=main`，完整仓库字段保持原对象。
+- `npm.cmd run test:browser` 运行 1 项，1 项通过：12 次仓库切换约从 `20389.4 ms` 降到 `11448.6 ms`，API 计数为 `open/state-ref/ref-state/commit = 12/0/12/12`；编辑器开关 30 次约 `3132.8 ms`，`resize` 监听器保持 `4 -> 4`，DOM `documents/nodes/listeners` 保持 `1/2051/139 -> 1/2051/139`，GC 后堆约 `3.2 MiB -> 3.5 MiB`。
+- `node --check` 通过仓库切换脚本、浏览器压力测试和布局测试；最终 `npm.cmd test` 完整运行 157 项，157 项通过、0 项失败、0 项跳过，耗时约 130.4 秒。完整回归中的 12 次切换约 `11393.8 ms`，稳定性计数与定向压力测试一致。
+- 浏览器测试使用随机端口和系统临时目录；测试结束后服务、浏览器进程和临时仓库由回归清理逻辑关闭或删除，没有使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/features/repositories.js`：仓库打开后使用轻量引用状态并局部合并提交图数据。
+- `tests/browser-performance.test.js`：增加双仓库切换、编辑器长时间开关、API 计数、DOM、监听器和堆边界回归。
+- `tests/layout-ui.test.js`：验证轻量请求和完整仓库状态保留。
+- `README.md`：简要说明切换仓库不会重复读取完整状态。
+- `docs/CONTINUE.md`：记录接口边界、性能实测、稳定性指标和当前测试基线。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `23cf952`；提交前可执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/repositories.js tests/browser-performance.test.js tests/layout-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
