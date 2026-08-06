@@ -4,7 +4,22 @@ const fileTreeBindings = new WeakMap();
 function fileTreeHtml(files, options = {}) {
   const root = { dirs: new Map(), files: [] };
   files.forEach((file) => addFileToTree(root, file));
-  return `<div class="file-tree">${treeNodeHtml(root, 0, options)}</div>`;
+  const directoryCounts = Array.isArray(options.totalFiles) ? fileTreeDirectoryCounts(options.totalFiles) : null;
+  return `<div class="file-tree">${treeNodeHtml(root, 0, { ...options, directoryCounts })}</div>`;
+}
+
+function fileTreeDirectoryCounts(files) {
+  const counts = new Map();
+  files.forEach((file) => {
+    const parts = String(file.file || "").replaceAll("\\", "/").split("/").filter(Boolean);
+    parts.pop();
+    let current = "";
+    parts.forEach((part) => {
+      current = current ? `${current}/${part}` : part;
+      counts.set(current, (counts.get(current) || 0) + 1);
+    });
+  });
+  return counts;
 }
 
 function addFileToTree(root, file) {
@@ -20,20 +35,22 @@ function addFileToTree(root, file) {
   node.files.push({ ...file, raw, leaf });
 }
 
-function treeNodeHtml(node, depth, options = {}) {
+function treeNodeHtml(node, depth, options = {}, parentPath = "") {
   const dirs = [...node.dirs.values()]
-    .map(
-      (dir) => `
-        <div class="tree-group" style="--depth:${depth}">
+    .map((dir) => {
+      const directoryPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
+      const count = options.directoryCounts?.get(directoryPath) || treeFileCount(dir);
+      return `
+        <div class="tree-group" data-tree-path="${escapeAttr(directoryPath)}" style="--depth:${depth}">
           <button class="tree-head" type="button">
             <span class="tree-caret"></span>
             <span class="tree-folder" title="${escapeAttr(dir.name)}">${escapeHtml(dir.name)}</span>
-            <span class="tree-count">${treeFileCount(dir)}</span>
+            <span class="tree-count">${count}</span>
           </button>
-          <div class="tree-children">${treeNodeHtml(dir, depth + 1, options)}</div>
+          <div class="tree-children">${treeNodeHtml(dir, depth + 1, options, directoryPath)}</div>
         </div>
-      `
-    )
+      `;
+    })
     .join("");
   const rows = node.files.map((file) => fileLeafRowHtml(file, depth, options)).join("");
   return `${dirs}${rows}`;
@@ -41,6 +58,33 @@ function treeNodeHtml(node, depth, options = {}) {
 
 function treeFileCount(node) {
   return [...node.dirs.values()].reduce((total, dir) => total + treeFileCount(dir), node.files.length);
+}
+
+function appendFileTreeBatch(targetTree, html) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  const sourceTree = container.querySelector(".file-tree");
+  if (!sourceTree) return;
+  mergeFileTreeChildren(targetTree, sourceTree);
+}
+
+function mergeFileTreeChildren(target, source) {
+  [...source.children].forEach((child) => {
+    if (!child.classList.contains("tree-group")) {
+      target.append(child);
+      return;
+    }
+    const path = child.dataset.treePath || "";
+    const existing = [...target.children].find((item) => item.classList.contains("tree-group") && item.dataset.treePath === path);
+    if (!existing) {
+      const firstFile = [...target.children].find((item) => !item.classList.contains("tree-group"));
+      target.insertBefore(child, firstFile || null);
+      return;
+    }
+    const targetChildren = [...existing.children].find((item) => item.classList.contains("tree-children"));
+    const sourceChildren = [...child.children].find((item) => item.classList.contains("tree-children"));
+    if (targetChildren && sourceChildren) mergeFileTreeChildren(targetChildren, sourceChildren);
+  });
 }
 
 function fileLeafRowHtml(file, depth, options = {}) {
@@ -84,6 +128,7 @@ function bindFileTree(root, options = {}) {
     root.addEventListener("click", (event) => handleFileTreeClick(root, binding, event));
     root.addEventListener("dblclick", (event) => handleFileTreeDoubleClick(root, binding, event));
     root.addEventListener("contextmenu", (event) => handleFileTreeContextMenu(root, binding, event));
+    root.addEventListener("scroll", () => handleFileTreeScroll(root, binding), { passive: true });
     fileTreeBindings.set(root, binding);
   }
   binding.options = { ...options };
@@ -97,6 +142,13 @@ function bindFileTree(root, options = {}) {
 }
 
 async function handleFileTreeClick(root, binding, event) {
+  const options = binding.options || {};
+  const loadMore = fileTreeEventTarget(root, event, "[data-file-tree-more]");
+  if (loadMore) {
+    event.preventDefault();
+    expandWorktreeFileTree(loadMore.dataset.fileTreeMore || options.loadMoreScope || "");
+    return;
+  }
   const head = fileTreeEventTarget(root, event, ".tree-head");
   if (head) {
     head.closest(".tree-group")?.classList.toggle("collapsed");
@@ -104,7 +156,6 @@ async function handleFileTreeClick(root, binding, event) {
   }
   const row = fileTreeEventTarget(root, event, "[data-select-file]");
   if (!row) return;
-  const options = binding.options || {};
   const filePath = row.dataset.file || "";
   if (options.mode === "worktree" || options.selectable) {
     const previousFile = row.dataset.previousFile || "";
@@ -150,6 +201,13 @@ function handleFileTreeContextMenu(root, binding, event) {
   event.preventDefault();
   event.stopPropagation();
   showFileContextMenu(event, row.dataset.file || "", row.dataset.scope || "");
+}
+
+function handleFileTreeScroll(root, binding) {
+  const scope = binding.options?.loadMoreScope || "";
+  if (!scope || root.scrollHeight <= root.clientHeight) return;
+  if (root.scrollHeight - root.scrollTop - root.clientHeight > 120) return;
+  expandWorktreeFileTree(scope);
 }
 
 function fileTreeEventTarget(root, event, selector) {

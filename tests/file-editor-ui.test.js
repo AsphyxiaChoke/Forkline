@@ -115,7 +115,7 @@ test("file trees reuse delegated root listeners and apply the latest mode", asyn
   sandbox.bindFileTree(rootElement, { mode: "commit", commitSha: "abc123" });
   sandbox.bindFileTree(rootElement, { mode: "sync" });
 
-  assert.deepEqual(Object.fromEntries(listenerAdds), { click: 1, dblclick: 1, contextmenu: 1 });
+  assert.deepEqual(Object.fromEntries(listenerAdds), { click: 1, dblclick: 1, contextmenu: 1, scroll: 1 });
   const row = { dataset: { file: "src/main.c", previousFile: "" } };
   await listeners.get("click")({
     target: {

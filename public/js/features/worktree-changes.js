@@ -1,5 +1,8 @@
 // Worktree and staging area rendering.
-function renderStage() {
+const WORKTREE_FILE_BATCH_SIZE = 800;
+
+function renderStage(options = {}) {
+  const refreshDiff = options.refreshDiff !== false;
   els.changeList.innerHTML = "";
   els.stagedChangeList.innerHTML = "";
   const files = state.data.workingFiles;
@@ -13,7 +16,7 @@ function renderStage() {
     state.selectedChanges.clear();
     els.changeList.innerHTML = `${operationBanner}<div class="file-row"><span></span><span class="file-name">${t("工作区没有未暂存的更改")}</span><span></span></div>`;
     els.stagedChangeList.innerHTML = `<div class="file-row"><span></span><span class="file-name">${t("没有已暂存的更改")}</span><span></span></div>`;
-    if (state.activeDiff?.source !== "history") renderWorkDiffEmpty("没有未提交的更改");
+    if (refreshDiff && state.activeDiff?.source !== "history") renderWorkDiffEmpty("没有未提交的更改");
   } else {
     const groups = changeGroups(visibleFiles);
     pruneSelectedChanges(groups);
@@ -23,7 +26,7 @@ function renderStage() {
       state.selectedChanges.clear();
       els.changeList.innerHTML = `${operationBanner}<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? t("没有匹配的更改") : t("没有未提交的更改")}</span><span></span></div>`;
       els.stagedChangeList.innerHTML = `<div class="file-row empty-row"><span></span><span class="file-name">${terms.length ? t("没有匹配的更改") : t("没有已暂存的更改")}</span><span></span></div>`;
-      if (state.activeDiff?.source !== "history") renderWorkDiffEmpty(terms.length ? "没有匹配的更改" : "没有未提交的更改");
+      if (refreshDiff && state.activeDiff?.source !== "history") renderWorkDiffEmpty(terms.length ? "没有匹配的更改" : "没有未提交的更改");
     } else {
       const previousFile = state.selectedFile;
       if (!visibleChangeFiles.some((file) => file.file === state.selectedFile)) {
@@ -48,10 +51,10 @@ function renderStage() {
           { action: "discardStagedFile", label: "丢弃", bulkLabel: "丢弃所选", danger: true },
         ])}
       `;
-      bindFileTree(els.changeList, { selectable: true });
-      bindFileTree(els.stagedChangeList, { selectable: true });
+      bindFileTree(els.changeList, { selectable: true, loadMoreScope: "unstaged" });
+      bindFileTree(els.stagedChangeList, { selectable: true, loadMoreScope: "staged" });
       markSelectedFile();
-      if (state.activeDiff?.source !== "history") {
+      if (refreshDiff && state.activeDiff?.source !== "history") {
         if (state.selectedFile) loadWorkingDiff(state.selectedFile);
         else renderWorkDiffEmpty("未选择文件");
       }
@@ -258,6 +261,8 @@ function renderChangeSection(scope, title, files, actions) {
   const emptyText = scope === "unstaged" ? t("工作区没有未暂存的更改") : t("没有已暂存的更改");
   const localizedTitle = t(title);
   const selectedCount = selectedFilesInScope(scope, files).length;
+  const renderLimit = worktreeFileRenderLimit(scope, files);
+  const renderedFiles = files.slice(0, renderLimit);
   return `
     <section class="change-section">
       <div class="change-section-title">
@@ -280,11 +285,59 @@ function renderChangeSection(scope, title, files, actions) {
       </div>
       ${
         files.length
-          ? fileTreeHtml(files, { selectionScope: scope })
+          ? `${fileTreeHtml(renderedFiles, { selectionScope: scope, totalFiles: files })}${renderWorktreeFileTreeMore(scope, renderedFiles.length, files.length)}`
           : `<div class="file-row empty-row"><span></span><span class="file-name">${emptyText}</span><span></span></div>`
       }
     </section>
   `;
+}
+
+function worktreeFileRenderLimit(scope, files) {
+  if (!state.worktreeRenderLimits) state.worktreeRenderLimits = { unstaged: WORKTREE_FILE_BATCH_SIZE, staged: WORKTREE_FILE_BATCH_SIZE };
+  const current = Math.max(WORKTREE_FILE_BATCH_SIZE, Number(state.worktreeRenderLimits[scope]) || 0);
+  let selectedLimit = 0;
+  files.forEach((file, index) => {
+    if (state.selectedChanges.has(changeKey(scope, file.file))) selectedLimit = index + 1;
+  });
+  state.worktreeRenderLimits[scope] = Math.max(current, selectedLimit);
+  return Math.min(files.length, state.worktreeRenderLimits[scope]);
+}
+
+function renderWorktreeFileTreeMore(scope, shown, total) {
+  if (shown >= total) return "";
+  return `
+    <button class="mini-btn file-tree-more" type="button" data-file-tree-more="${escapeAttr(scope)}" title="${escapeAttr(t("继续显示更多文件"))}">
+      <span>${t("继续显示")}</span>
+      <span class="file-tree-more-count">${t("已显示 {shown}/{total}", { shown, total })}</span>
+    </button>
+  `;
+}
+
+function expandWorktreeFileTree(scope) {
+  if (scope !== "unstaged" && scope !== "staged") return false;
+  const groups = changeGroups(filterWorkingFiles(state.data?.workingFiles || []));
+  const files = groups[scope] || [];
+  const current = worktreeFileRenderLimit(scope, files);
+  if (current >= files.length) return false;
+  const root = scope === "staged" ? els.stagedChangeList : els.changeList;
+  const next = Math.min(files.length, current + WORKTREE_FILE_BATCH_SIZE);
+  const tree = root.querySelector(".change-section .file-tree");
+  if (!tree) {
+    state.worktreeRenderLimits[scope] = next;
+    renderStage({ refreshDiff: false });
+    return true;
+  }
+  const batch = files.slice(current, next);
+  appendFileTreeBatch(tree, fileTreeHtml(batch, { selectionScope: scope, totalFiles: files }));
+  state.worktreeRenderLimits[scope] = next;
+  const more = root.querySelector(`[data-file-tree-more="${scope}"]`);
+  if (next >= files.length) {
+    more?.remove();
+  } else {
+    const count = more?.querySelector(".file-tree-more-count");
+    if (count) count.textContent = t("已显示 {shown}/{total}", { shown: next, total: files.length });
+  }
+  return true;
 }
 
 function changeKey(scope, filePath) {

@@ -7099,3 +7099,28 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录事件委托边界、前后性能数据和下一项分批渲染方向。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `818e729`；提交前可执行 `git restore -- public/js/features/file-tree.js public/js/features/worktree-changes.js public/js/app/init.js public/js/features/git-actions.js public/js/features/worktree-refresh.js public/js/panels/stashes.js tests/file-editor-ui.test.js tests/worktree-refresh.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 分批渲染大工作区文件树
+
+### What was done
+- 工作区与暂存区超过 800 个文件时只渲染首批，接近滚动底部或点击“继续显示”后按 800 个继续加载；两个区域分别保存显示上限，切换仓库时重置。
+- 新批次按目录路径增量合并到现有文件树，不重建已显示节点；目录数量继续按完整文件集合计算，筛选和远处已选文件仍可直接显示。
+- 保留目录折叠、多选、双击编辑、右键菜单、当前 Diff 和现有 Git 操作语义；文件树根节点增加一个被动 scroll 委托监听。
+- 真实 Chromium 性能回归增加首批行数/节点数、筛选末尾文件、滚动加载完整列表、批次数和监听器边界。
+
+### Testing
+- `node --check public/js/features/file-tree.js` 与 `node --check public/js/features/worktree-changes.js` 通过。
+- 文件编辑器、工作区刷新、布局和国际化专项运行 78 项，78 项通过、0 项失败。
+- `npm.cmd run test:browser` 运行 1 项，1 项通过：4000 文件初始/最终行数 `800/4000`，初始/最终树节点 `3338/16615`，首批渲染约 `10.7 ms`、筛选约 `9.1 ms`、恢复约 `13.1 ms`，加载全部约 `484.7 ms / 4` 批，最大停顿约 `124.2 ms`，新增根监听 8 个；DOM document、节点和监听器保持 `1/2079/147 -> 1/2079/147`。
+- `npm.cmd test` 完整运行 165 项，165 项通过、0 项失败、0 项跳过，耗时约 114.4 秒；其中 4000 文件首批渲染约 `10.2 ms`、筛选约 `6.8 ms`、恢复约 `9.2 ms`、加载全部约 `482.9 ms / 4` 批，最大停顿约 `128.7 ms`。
+- 测试只使用随机端口和临时仓库；完成后未发现命令行包含 `forkline-upload` 或 `server.js` 的 Node 进程，未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/core.js`、`public/js/features/repositories.js`：保存并在切换仓库时重置工作区/暂存区显示上限。
+- `public/js/features/file-tree.js`：增加完整目录计数、批次目录合并、继续显示按钮委托和底部滚动加载。
+- `public/js/features/worktree-changes.js`：按区域切片渲染、维护批次上限并在增量加载时保留当前 Diff。
+- `public/js/i18n-catalog.js`、`public/styles.css`：增加中英文加载文案和紧凑的继续显示按钮布局。
+- `tests/browser-performance.test.js`、`tests/file-editor-ui.test.js`：覆盖批次规模、完整加载、末尾筛选和第四个根监听。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录分批渲染边界、性能数据和当前大仓库结论。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `2ab21be`；提交前可执行 `git restore -- public/js/core.js public/js/features/file-tree.js public/js/features/repositories.js public/js/features/worktree-changes.js public/js/i18n-catalog.js public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

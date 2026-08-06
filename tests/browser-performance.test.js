@@ -448,20 +448,45 @@ test("real Chromium keeps historical file comparison responsive", {
     let renderMs;
     let filterMs;
     let restoreMs;
+    let initialRenderedRows;
+    let initialTreeNodes;
+    let initialPageNodes;
+    let filteredRows;
+    let filteredFile;
+    let restoredRows;
+    let loadPasses = 0;
+    let loadAllMs = 0;
+    let loadedAllRows;
     try {
       renderStage();
       renderMs = performance.now() - renderStarted;
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      initialRenderedRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
+      initialTreeNodes = document.querySelectorAll("#changeList *").length;
+      initialPageNodes = document.querySelectorAll("body *").length;
       const filterStarted = performance.now();
       state.worktreeFilter = "file-03999";
       els.worktreeFilterInput.value = state.worktreeFilter;
       renderStage();
       filterMs = performance.now() - filterStarted;
+      filteredRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
+      filteredFile = document.querySelector("#changeList .file-row[data-file]")?.dataset.file || "";
       state.worktreeFilter = "";
       els.worktreeFilterInput.value = "";
       const restoreStarted = performance.now();
       renderStage();
       restoreMs = performance.now() - restoreStarted;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      restoredRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
+      const loadAllStarted = performance.now();
+      while (document.querySelectorAll("#changeList .file-row[data-file]").length < state.data.workingFiles.length && loadPasses < 10) {
+        els.changeList.scrollTop = els.changeList.scrollHeight;
+        els.changeList.dispatchEvent(new Event("scroll"));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        loadPasses += 1;
+      }
+      loadAllMs = performance.now() - loadAllStarted;
+      loadedAllRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
     } finally {
       EventTarget.prototype.addEventListener = originalAddEventListener;
     }
@@ -475,6 +500,15 @@ test("real Chromium keeps historical file comparison responsive", {
       renderMs,
       filterMs,
       restoreMs,
+      initialRenderedRows,
+      initialTreeNodes,
+      initialPageNodes,
+      filteredRows,
+      filteredFile,
+      restoredRows,
+      loadPasses,
+      loadAllMs,
+      loadedAllRows,
       maxDelay,
       loadedFiles: state.data.workingFiles.length,
       renderedRows: document.querySelectorAll("#changeList .file-row[data-file]").length,
@@ -485,9 +519,16 @@ test("real Chromium keeps historical file comparison responsive", {
   })()`);
   assert.equal(worktreeMetrics.warmLoadedFiles, worktreeMetrics.loadedFiles);
   assert.equal(worktreeMetrics.sameSnapshot, true);
-  assert.ok(worktreeMetrics.fileTreeListenerAdds <= 6, `large worktree added ${worktreeMetrics.fileTreeListenerAdds} file-tree listeners while rendering`);
+  assert.ok(worktreeMetrics.initialRenderedRows <= 1000, `large worktree initially rendered ${worktreeMetrics.initialRenderedRows} rows`);
+  assert.ok(worktreeMetrics.initialTreeNodes <= 6000, `large worktree initially kept ${worktreeMetrics.initialTreeNodes} tree nodes`);
+  assert.equal(worktreeMetrics.filteredRows, 1);
+  assert.match(worktreeMetrics.filteredFile, /file-03999\.txt$/);
+  assert.ok(worktreeMetrics.restoredRows <= 1000, `large worktree restored ${worktreeMetrics.restoredRows} rows before scrolling`);
+  assert.ok(worktreeMetrics.loadPasses > 0 && worktreeMetrics.loadPasses <= 10, `large worktree used ${worktreeMetrics.loadPasses} load passes`);
+  assert.equal(worktreeMetrics.loadedAllRows, worktreeMetrics.loadedFiles);
+  assert.ok(worktreeMetrics.fileTreeListenerAdds <= 8, `large worktree added ${worktreeMetrics.fileTreeListenerAdds} file-tree listeners while rendering`);
   t.diagnostic(
-    `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms, warm API ${worktreeMetrics.warmApiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, listener adds ${worktreeMetrics.fileTreeListenerAdds}, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
+    `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms, warm API ${worktreeMetrics.warmApiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, load-all ${worktreeMetrics.loadAllMs.toFixed(1)} ms/${worktreeMetrics.loadPasses} passes, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, listener adds ${worktreeMetrics.fileTreeListenerAdds}, initial/final rows ${worktreeMetrics.initialRenderedRows}/${worktreeMetrics.loadedAllRows}, initial/final tree nodes ${worktreeMetrics.initialTreeNodes}/${worktreeMetrics.treeNodes}, initial/final page nodes ${worktreeMetrics.initialPageNodes}/${worktreeMetrics.pageNodes}`
   );
 
   const baselineRepoPath = await evaluate(cdp, `(async () => {

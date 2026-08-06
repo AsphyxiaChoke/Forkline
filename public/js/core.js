@@ -91,6 +91,7 @@ const state = {
   lastDiffLineKey: "",
   branchFilter: "",
   worktreeFilter: "",
+  worktreeRenderLimits: { unstaged: 800, staged: 800 },
   commitSearchRenderTimer: 0,
   cloneTargetAuto: false,
   cloneOperationPending: false,

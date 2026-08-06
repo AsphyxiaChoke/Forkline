@@ -377,6 +377,7 @@ function clearOpenedRepoState() {
   state.selectedChanges.clear();
   state.selectedDiffLines.clear();
   state.lastChangeSelection = null;
+  state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
   state.lastDiffLineKey = "";
   state.workDiffFeedback = null;
   setActiveDiff(null);
