@@ -175,6 +175,10 @@ function selfUpdateRecoveryText(result = {}) {
 
 function selfUpdateStageMessage(result = {}) {
   const phase = String(result.phase || result.state || "");
+  if (phase === "preparing") {
+    const preparationMessage = selfUpdatePreparationMessage(result);
+    if (preparationMessage) return preparationMessage;
+  }
   const messages = {
     preparing: "正在检查版本和本地更新条件",
     starting: "更新前检查已通过，正在启动更新器",
@@ -189,6 +193,36 @@ function selfUpdateStageMessage(result = {}) {
     success: "更新完成",
   };
   return t(messages[phase] || result.message || "正在更新并重启");
+}
+
+function selfUpdatePreparationMessage(result = {}) {
+  const stage = String(result.downloadStage || "");
+  const percent = Math.min(100, Math.max(0, Number(result.downloadPercent) || 0));
+  const attempt = Math.max(1, Number(result.fetchAttempt) || 1);
+  const attempts = Math.max(attempt, Number(result.fetchAttempts) || attempt);
+  if (stage === "retrying") return t("下载连接中断，正在重试（{attempt}/{attempts}）", { attempt, attempts });
+  if (stage === "connecting") return t("正在连接 GitHub 下载正式版本（{attempt}/{attempts}）", { attempt, attempts });
+  if (["counting", "compressing"].includes(stage)) return t("正在准备下载正式版本：{percent}%", { percent });
+  if (stage === "receiving") {
+    const size = formatSelfUpdateBytes(result.downloadBytes);
+    if (size) return t("正在下载正式版本：{percent}%（已接收 {size}）", { percent, size });
+    const objects = Math.max(0, Number(result.downloadObjects) || 0);
+    const total = Math.max(0, Number(result.downloadTotalObjects) || 0);
+    if (total) return t("正在下载正式版本：{percent}%（{objects}/{total} 个对象）", { percent, objects, total });
+    return t("正在下载正式版本：{percent}%", { percent });
+  }
+  if (stage === "resolving") return t("正在处理下载内容：{percent}%", { percent });
+  if (stage === "complete") return t("正式版本下载完成，正在校验");
+  return "";
+}
+
+function formatSelfUpdateBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (!bytes) return "";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KiB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MiB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GiB`;
 }
 
 function applySelfUpdateProgress(result = {}) {

@@ -286,6 +286,17 @@ test("self update results restore the previous repository and distinguish rollba
   assert.equal(state.appUpdate.installState, "checking");
   assert.equal(state.appUpdate.installMessage, "正在确认新版本可以正常使用");
   assert.equal(state.appUpdate.installStep, 6);
+  context.applySelfUpdateProgress({
+    phase: "preparing",
+    step: 1,
+    totalSteps: 6,
+    downloadStage: "receiving",
+    downloadPercent: 42,
+    downloadBytes: 1572864,
+  });
+  assert.match(state.appUpdate.installMessage, /42%/);
+  assert.match(state.appUpdate.installMessage, /1\.5 MiB/);
+  assert.match(settingsSource, /watchSelfUpdatePreparation[\s\S]*?api\("\/api\/app-update\/install"/);
   await context.restoreSelfUpdateRepo({ repoPath: "D:\\GitTest" });
   assert.equal(calls[0].url, "/api/open");
   assert.deepEqual(JSON.parse(calls[0].options.body), { path: "D:\\GitTest" });

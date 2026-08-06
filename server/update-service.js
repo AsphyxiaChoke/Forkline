@@ -44,7 +44,7 @@ function createUpdateService(options) {
     return { ...update, installSupported: runtimeSupported() };
   }
 
-  async function prepareLaunch(body) {
+  async function prepareLaunch(body, onFetchProgress) {
     if (process.env.FORKLINE_APP_VERSION || process.env.FORKLINE_RELEASE_API_URL) {
       throw new Error("当前处于版本检查测试模式，不能执行一键更新。");
     }
@@ -58,6 +58,7 @@ function createUpdateService(options) {
     if (!requestedVersion || requestedVersion !== update.latestVersion) {
       throw new Error("页面中的目标版本已经过期，请刷新后重新检查更新。");
     }
+    const managedRepo = getManagedRepo() || "";
     return prepareSelfUpdate({
       repoDir: appDir,
       gitBin,
@@ -66,7 +67,13 @@ function createUpdateService(options) {
       tagName: update.tagName,
       port,
       parentPid: process.pid,
-      managedRepo: getManagedRepo() || "",
+      managedRepo,
+      onFetchProgress: (progress) => onFetchProgress?.({
+        ...progress,
+        currentVersion: update.currentVersion,
+        targetVersion: update.latestVersion,
+        repoPath: managedRepo,
+      }),
     });
   }
 
@@ -76,11 +83,32 @@ function createUpdateService(options) {
     let plan = null;
     try {
       const body = await readJson(req);
-      plan = await prepareLaunch(body);
       clearSelfUpdateStatus(statusFile);
       writeSelfUpdateStatus(statusFile, {
-        state: "starting",
+        state: "preparing",
         phase: "preparing",
+        step: 1,
+        totalSteps: SELF_UPDATE_TOTAL_STEPS,
+        currentVersion: normalizeVersion(packageInfo.version),
+        targetVersion: normalizeVersion(body?.version),
+        repoPath: getManagedRepo() || "",
+        downloadStage: "checking",
+        downloadPercent: 0,
+        message: "正在检查版本和本地更新条件",
+      });
+      plan = await prepareLaunch(body, (progress) => {
+        writeSelfUpdateStatus(statusFile, {
+          state: "preparing",
+          phase: "preparing",
+          step: 1,
+          totalSteps: SELF_UPDATE_TOTAL_STEPS,
+          ...progress,
+          message: preparationProgressMessage(progress),
+        });
+      });
+      writeSelfUpdateStatus(statusFile, {
+        state: "starting",
+        phase: "starting",
         step: 1,
         totalSteps: SELF_UPDATE_TOTAL_STEPS,
         currentVersion: plan.currentVersion,
@@ -116,6 +144,18 @@ function createUpdateService(options) {
       error.updateStatus = failureStatus;
       throw error;
     }
+  }
+
+  function preparationProgressMessage(progress = {}) {
+    if (progress.downloadStage === "retrying") {
+      return `下载连接中断，正在进行第 ${progress.fetchAttempt || 1}/${progress.fetchAttempts || 1} 次尝试`;
+    }
+    if (progress.downloadStage === "receiving" && Number.isFinite(Number(progress.downloadPercent))) {
+      return `正在下载正式版本：${Number(progress.downloadPercent)}%`;
+    }
+    if (progress.downloadStage === "resolving") return `正在处理下载内容：${Number(progress.downloadPercent) || 0}%`;
+    if (progress.downloadStage === "complete") return "正式版本下载完成，正在校验";
+    return "正在连接 GitHub 下载正式版本";
   }
 
   async function handleRequest(req, res, parsed) {

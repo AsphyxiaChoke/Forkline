@@ -13,10 +13,12 @@ const {
   cleanupCandidateRef,
   isOfficialForklineRemote,
   normalizeRepositoryRemote,
+  parseGitFetchProgress,
   prepareSelfUpdate,
   readSelfUpdateStatus,
   recoverWorkingTree,
   rollbackWorkingTree,
+  runGitCommand,
   runSelfUpdatePlan,
   selfUpdateStatusFile,
   updateWorkingTree,
@@ -32,6 +34,59 @@ test("self update only accepts the official Forkline repository", () => {
   assert.equal(normalizeRepositoryRemote("git@github.com:AsphyxiaChoke/Forkline.git"), "github.com/asphyxiachoke/forkline");
   assert.equal(isOfficialForklineRemote("ssh://git@github.com/AsphyxiaChoke/Forkline.git"), true);
   assert.equal(isOfficialForklineRemote("https://github.com/example/Forkline.git"), false);
+});
+
+test("self update parses Git fetch object and byte progress", () => {
+  assert.deepEqual(
+    parseGitFetchProgress("Receiving objects: 42% (42/100), 1.50 MiB | 2.00 MiB/s"),
+    {
+      downloadStage: "receiving",
+      downloadPercent: 42,
+      downloadObjects: 42,
+      downloadTotalObjects: 100,
+      downloadBytes: 1572864,
+    }
+  );
+  assert.deepEqual(
+    parseGitFetchProgress("Resolving deltas: 75% (30/40)"),
+    {
+      downloadStage: "resolving",
+      downloadPercent: 75,
+      downloadObjects: 30,
+      downloadTotalObjects: 40,
+    }
+  );
+});
+
+test("self update retries a transient Release fetch and reports preparation progress", async (t) => {
+  const fixture = createUpdateFixture(1);
+  t.after(() => fixture.cleanup());
+  const repoDir = fixture.clones[0];
+  const progress = [];
+  let attempts = 0;
+  const plan = await prepareSelfUpdate({
+    repoDir,
+    currentVersion: "0.2.0",
+    targetVersion: "0.3.0",
+    tagName: "v0.3.0",
+    gitBin: "git",
+    port: 5177,
+    parentPid: process.pid,
+    allowRemote: localRemoteGuard(fixture.remote),
+    fetchRetryDelayMs: 1,
+    onFetchProgress: (value) => progress.push(value),
+    fetchCommand: async (...args) => {
+      attempts += 1;
+      if (attempts === 1) return { code: 128, stdout: "", stderr: "Recv failure: Connection was reset" };
+      return runGitCommand(...args);
+    },
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(plan.targetSha, fixture.targetSha);
+  assert.ok(progress.some((value) => value.downloadStage === "retrying" && value.fetchAttempt === 2));
+  assert.ok(progress.some((value) => value.downloadStage === "complete" && value.downloadPercent === 100));
+  await cleanupCandidateRef(plan);
 });
 
 test("self update fast-forwards to the release commit and can roll back with reset --keep", async (t) => {
@@ -155,8 +210,8 @@ test("self update API keeps JSON confirmation and avoids destructive reset modes
   assert.match(serverSource, /createUpdateService\([\s\S]*?getManagedRepo: \(\) => currentRepo[\s\S]*?scheduleShutdown: scheduleSelfUpdateShutdown/);
   assert.match(serverSource, /await updateService\.handleRequest\(req, res, parsed\)/);
   assert.match(updateServiceSource, /req\.method === "POST" && parsed\.pathname === "\/api\/app-update\/install"/);
-  assert.match(updateServiceSource, /const body = await readJson\(req\);[\s\S]*?prepareLaunch\(body\)/);
-  assert.match(updateServiceSource, /managedRepo: getManagedRepo\(\) \|\| ""/);
+  assert.match(updateServiceSource, /const body = await readJson\(req\);[\s\S]*?writeSelfUpdateStatus\(statusFile[\s\S]*?prepareLaunch\(body,/);
+  assert.match(updateServiceSource, /const managedRepo = getManagedRepo\(\) \|\| "";[\s\S]*?managedRepo,/);
   assert.match(updateServiceSource, /failedStage: "preflight"/);
   assert.match(serverSource, /error\?\.updateStatus/);
   assert.match(updateServiceSource, /scheduleShutdown\(\)/);

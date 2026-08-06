@@ -217,11 +217,15 @@ async function installAppUpdate() {
   state.appUpdate.installTotal = 6;
   state.appUpdate.lastResult = null;
   renderInspector();
+  let stopPreparationPolling = false;
+  const preparationPoll = watchSelfUpdatePreparation(() => stopPreparationPolling);
   try {
     await api("/api/app-update/install", {
       method: "POST",
       body: JSON.stringify({ version: update.latestVersion }),
     });
+    stopPreparationPolling = true;
+    await preparationPoll;
     await waitForSelfUpdateRestart(update.latestVersion);
   } catch (error) {
     const result = error.updateResult
@@ -242,6 +246,20 @@ async function installAppUpdate() {
     };
     if (state.selectedTab === "settings") renderInspector();
     toast(selfUpdateFailureMessage(result));
+  } finally {
+    stopPreparationPolling = true;
+    await preparationPoll;
+  }
+}
+
+async function watchSelfUpdatePreparation(shouldStop) {
+  while (!shouldStop()) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (shouldStop()) break;
+    try {
+      const result = await readSelfUpdateResult(false);
+      if (result?.state && result.state !== "idle") applySelfUpdateProgress(result);
+    } catch {}
   }
 }
 

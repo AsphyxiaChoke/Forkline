@@ -140,6 +140,7 @@
 ## 应用自更新
 
 - `server/update-service.js` 负责 Release 与本地安全预检；预检失败会写入结构化结果，但不会关闭服务或修改 Forkline 文件。
+- 安装 POST 等待预检和 Release fetch 时，服务会先写入准备状态；前端每 `250 ms` 读取该状态。Git fetch 强制输出稳定英文进度，状态记录对象百分比、已接收字节和当前尝试次数；连接重置、超时、DNS/TLS、RPC/early EOF 等瞬时错误最多重试 3 次，非瞬时错误不重试。
 - `app-self-update.js` 和 `self-update-runner.js` 按准备、停止旧服务、重新校验、写入版本、重启和健康检查 6 个阶段更新状态。浏览器断开时进入本地“重新连接”状态，新服务启动后继续读取同一状态文件。
 - 失败结果同时记录 `failedStage`、`rollbackState` 和 `serviceState`。自动恢复只在 HEAD 仍等于更新目标时执行 `git reset --keep`；如果提交位置出现额外变化则拒绝覆盖，并把文件回退与服务恢复结果分开显示。
 
@@ -147,6 +148,7 @@
 
 - 执行 `npm test`，使用 Node 内置测试运行器，并按测试文件串行运行。
 - `tests/git-api.test.js` 在随机本地端口启动真实 Forkline 子进程，并使用临时 Git 仓库驱动 HTTP API。
+- `tests/app-self-update.test.js` 使用真实本地 Git 远端验证快进、回退和服务重启，并覆盖 Release fetch 字节进度解析、瞬时网络错误重试和准备状态契约；`tests/layout-ui.test.js` 固定准备阶段轮询与中文进度显示。
 - 测试夹具隔离全局/系统 Git 配置，使用仓库级身份和子模块设置，并在测试后清理临时目录。
 - 认证测试覆盖 `/api/state` 不执行本机认证探测、诊断接口要求仓库上下文、缓存命中、手动刷新、远端 URL 变化后的缓存失效、托管平台识别，以及 Windows/非 Windows 系统凭据入口边界。
 - 状态优化测试覆盖 upstream、领先/落后、脏工作树、游离 HEAD、无提交分支、空子模块列表和真实子模块安全流程。

@@ -7033,3 +7033,45 @@
 - `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录性能边界、实现约束、实测结果和后续优化顺序。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `70848e1`；提交前可执行 `git restore -- server.js server/repository-worktree-service.js tests/worktree-refresh.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 验证真实 Release 升级并增加下载字节进度与瞬时重试
+
+### What was done
+- 在独立浅层官方仓库中，从带应用内 updater 的 `0.2.0` 历史提交真实更新到 GitHub Release `v0.2.1`，验证旧服务退出、新服务恢复、HEAD/版本/分支/工作区和候选引用清理。
+- 根据真实 fetch 约 18.8 秒的瓶颈，在准备阶段解析 Git 对象百分比与已接收字节，并在安装 POST 等待期间向设置页持续提供状态。
+- 对连接重置、超时、DNS/TLS、RPC/early EOF 等瞬时 fetch 失败增加最多 3 次有限重试；重试前清理候选引用，非瞬时错误和所有写入步骤保持原来的一次执行与安全停止规则。
+- 前端每 250 ms 轮询准备状态，显示百分比、KiB/MiB、对象数量或重试次数；补齐英文文案，服务重启后的六阶段进度与失败恢复状态保持不变。
+
+### Testing
+- 真实官方升级：`c05f57c` / `0.2.0` 成功更新到 `v0.2.1` / `37a5b7c`；Release 检查约 0.7 秒、准备 fetch 约 18.8 秒、安装请求到新服务成功约 20.6 秒。
+- 升级后 HEAD 与 Release Tag 一致、`package.json` 为 `0.2.1`、分支仍为 `main`、工作区干净、候选更新引用为空；新服务报告当前版本 `0.2.1` 且没有可用更新。测试 PID、状态文件和临时目录均已清理。
+- 更新与布局专项回归运行 46 项，46 项通过；国际化回归运行 4 项，4 项通过。新增回归覆盖 Git fetch 百分比/字节解析、一次连接重置后成功重试、准备状态先于预检写入和前端等待期间轮询。
+- `npm.cmd test` 完整运行 163 项，163 项通过、0 项失败、0 项跳过，耗时约 144.2 秒；真实 Chromium 复杂历史文件打开约 288.3 ms、最大事件循环延迟约 71.8 ms。
+- 4000 文件冷/热 API 约 454.7/259.0 ms，前端树渲染约 45.7 ms；仓库浸泡切换约 10.5 秒，编辑器连续开关 30 次约 3.2 秒，`resize` 监听器保持 `4 -> 4`，DOM 和 GC 后堆边界稳定。
+
+### Notes
+- `app-self-update.js`：流式解析 Git fetch 进度、记录已接收字节，并为瞬时网络错误增加候选引用清理和有限重试。
+- `server/update-service.js`：在预检/fetch 开始前写入准备状态，并持续保存结构化下载进度。
+- `public/js/app/init.js`、`public/js/panels/settings.js`：格式化下载大小、生成中文进度文案，并在安装请求等待期间轮询状态。
+- `public/js/i18n-catalog.js`：补齐下载、对象进度和重试英文文案。
+- `tests/app-self-update.test.js`、`tests/layout-ui.test.js`：覆盖解析、重试、状态 API、安全边界和前端进度。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录使用方式、实现边界、真实 Release 证据和当前验证限制。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `0b26135`；提交前可执行 `git restore -- README.md app-self-update.js server/update-service.js public/js/app/init.js public/js/panels/settings.js public/js/i18n-catalog.js tests/app-self-update.test.js tests/layout-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 收尾验证 Release 下载进度流
+
+### What was done
+- Git stderr 进度流只解析已经收到完整 CR/LF 结尾的行，进程结束时再处理最后一段，避免网络分块恰好落在百分比或字节数字中间时产生短暂错误进度。
+
+### Testing
+- `node --check app-self-update.js` 通过。
+- 更新、布局、便携运行时和国际化专项合并运行 55 项，55 项通过。
+- `npm.cmd test` 完整运行 163 项，163 项通过、0 项失败、0 项跳过，耗时约 144.8 秒；真实 Chromium 复杂历史文件打开约 320.1 ms、最大事件循环延迟约 111.7 ms。
+- 4000 文件冷/热 API 约 613.4/353.7 ms，前端树渲染约 63.7 ms；测试结束后未发现命令行包含 `forkline-upload` 或 `server.js` 的 Node 进程。
+- `git diff --check` 通过，仅显示仓库既有的 LF/CRLF 转换提醒。
+
+### Notes
+- `app-self-update.js`：保留不完整 stderr 分块并仅在完整进度行到达后解析。
+- `progress.md`：追加最终回归和测试服务清理证据。
+- 回滚点为 `0b26135`；提交前可执行 `git restore -- app-self-update.js progress.md`（只回滚本条收尾改动会同时丢失此前尚未提交的同文件改动，不建议拆分执行）；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

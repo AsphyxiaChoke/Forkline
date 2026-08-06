@@ -11,6 +11,7 @@ const { normalizeVersion } = require("./app-update");
 const OFFICIAL_REPOSITORY = "github.com/asphyxiachoke/forkline";
 const UPDATE_REF_PREFIX = "refs/forkline/self-update";
 const SELF_UPDATE_TOTAL_STEPS = 6;
+const SELF_UPDATE_FETCH_ATTEMPTS = 3;
 const SELF_UPDATE_STEPS = {
   preparing: 1,
   stopping: 2,
@@ -99,7 +100,7 @@ function clearSelfUpdateStatus(statusFile) {
 function runGitCommand(repoDir, args, options = {}) {
   const gitBin = options.gitBin || "git";
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       gitBin,
       ["-C", repoDir, "-c", "core.quotepath=false", ...args],
       {
@@ -107,6 +108,7 @@ function runGitCommand(repoDir, args, options = {}) {
         timeout: options.timeout || 20000,
         maxBuffer: options.maxBuffer || 8 * 1024 * 1024,
         encoding: "utf8",
+        env: options.env ? { ...process.env, ...options.env } : process.env,
       },
       (error, stdout, stderr) => {
         if (error && typeof error.code !== "number") {
@@ -116,7 +118,57 @@ function runGitCommand(repoDir, args, options = {}) {
         resolve({ code: error ? Number(error.code) : 0, stdout: stdout || "", stderr: stderr || "" });
       }
     );
+    if (typeof options.onProgress === "function" && child.stderr) {
+      let pending = "";
+      let lastKey = "";
+      child.stderr.on("data", (chunk) => {
+        const parts = `${pending}${String(chunk || "")}`.split(/[\r\n]+/);
+        pending = parts.pop() || "";
+        for (const part of parts) emit(part);
+      });
+      child.stderr.on("end", () => emit(pending));
+      function emit(value) {
+        const progress = parseGitFetchProgress(value);
+        if (!progress) return;
+        const key = JSON.stringify(progress);
+        if (key === lastKey) return;
+        lastKey = key;
+        try {
+          options.onProgress(progress);
+        } catch {}
+      }
+    }
   });
+}
+
+function parseGitFetchProgress(value) {
+  const line = String(value || "").replace(/^remote:\s*/i, "").trim();
+  const match = line.match(/(Counting objects|Compressing objects|Receiving objects|Resolving deltas):\s*(\d+)%\s*\((\d+)\/(\d+)\)(?:,\s*([0-9]+(?:\.[0-9]+)?)\s*(bytes|KiB|MiB|GiB))?/i);
+  if (!match) return null;
+  const stages = {
+    "counting objects": "counting",
+    "compressing objects": "compressing",
+    "receiving objects": "receiving",
+    "resolving deltas": "resolving",
+  };
+  const progress = {
+    downloadStage: stages[match[1].toLowerCase()] || "receiving",
+    downloadPercent: Math.min(100, Math.max(0, Number(match[2]) || 0)),
+    downloadObjects: Math.max(0, Number(match[3]) || 0),
+    downloadTotalObjects: Math.max(0, Number(match[4]) || 0),
+  };
+  const downloadBytes = parseGitProgressBytes(match[5], match[6]);
+  if (downloadBytes > 0) progress.downloadBytes = downloadBytes;
+  return progress;
+}
+
+function parseGitProgressBytes(value, unit) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const powers = { bytes: 0, kib: 1, mib: 2, gib: 3 };
+  const power = powers[String(unit || "").toLowerCase()];
+  if (power === undefined) return 0;
+  return Math.round(amount * (1024 ** power));
 }
 
 function gitFailure(result, fallback) {
@@ -196,6 +248,65 @@ async function cleanupCandidateRef(plan, options = {}) {
   } catch {}
 }
 
+async function fetchReleaseCandidate(plan, options = {}) {
+  const fetchCommand = options.fetchCommand || runGitCommand;
+  const attempts = Math.max(1, Number(options.fetchAttempts) || SELF_UPDATE_FETCH_ATTEMPTS);
+  let lastResult = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    emitFetchProgress(options, {
+      downloadStage: "connecting",
+      downloadPercent: 0,
+      fetchAttempt: attempt,
+      fetchAttempts: attempts,
+    });
+    try {
+      lastResult = await fetchCommand(
+        plan.repoDir,
+        ["fetch", "--progress", "--no-write-fetch-head", "origin", `refs/tags/${plan.tagName}:${plan.candidateRef}`],
+        {
+          gitBin: plan.gitBin,
+          timeout: options.fetchTimeout || 60000,
+          env: { LC_ALL: "C", LANG: "C" },
+          onProgress: (progress) => emitFetchProgress(options, { ...progress, fetchAttempt: attempt, fetchAttempts: attempts }),
+        }
+      );
+    } catch (error) {
+      lastResult = { code: -1, stdout: "", stderr: error.message || String(error) };
+    }
+    if (lastResult.code === 0) {
+      emitFetchProgress(options, {
+        downloadStage: "complete",
+        downloadPercent: 100,
+        fetchAttempt: attempt,
+        fetchAttempts: attempts,
+      });
+      return lastResult;
+    }
+    if (attempt >= attempts || !isTransientGitFetchFailure(lastResult)) return lastResult;
+    await cleanupCandidateRef(plan, { gitBin: plan.gitBin });
+    emitFetchProgress(options, {
+      downloadStage: "retrying",
+      downloadPercent: 0,
+      fetchAttempt: attempt + 1,
+      fetchAttempts: attempts,
+    });
+    await wait(Math.max(0, Number(options.fetchRetryDelayMs) || attempt * 1000));
+  }
+  return lastResult || { code: -1, stdout: "", stderr: "Release fetch failed" };
+}
+
+function emitFetchProgress(options, progress) {
+  if (typeof options.onFetchProgress !== "function") return;
+  try {
+    options.onFetchProgress(progress);
+  } catch {}
+}
+
+function isTransientGitFetchFailure(result) {
+  const detail = [result?.stdout, result?.stderr].filter(Boolean).join("\n");
+  return /connection (?:was )?reset|recv failure|timed? out|timeout|temporary failure|could not resolve host|connection (?:closed|aborted)|tls|http\/2 stream|rpc failed|early eof|remote end hung up/i.test(detail);
+}
+
 async function prepareSelfUpdate(options) {
   const targetVersion = normalizeVersion(options.targetVersion);
   const tagName = String(options.tagName || "").trim();
@@ -231,11 +342,7 @@ async function prepareSelfUpdate(options) {
   };
 
   try {
-    const fetchResult = await runGitCommand(
-      local.repoDir,
-      ["fetch", "--no-write-fetch-head", "origin", `refs/tags/${tagName}:${candidateRef}`],
-      { gitBin: plan.gitBin, timeout: options.fetchTimeout || 60000 }
-    );
+    const fetchResult = await fetchReleaseCandidate(plan, options);
     if (fetchResult.code !== 0) throw gitFailure(fetchResult, `无法从 origin 获取正式版本 ${tagName}。`);
 
     plan.targetSha = await requireGitOutput(
@@ -528,6 +635,7 @@ module.exports = {
   isOfficialForklineRemote,
   launchSelfUpdateRunner,
   normalizeRepositoryRemote,
+  parseGitFetchProgress,
   prepareSelfUpdate,
   readSelfUpdateStatus,
   recoverWorkingTree,

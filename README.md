@@ -152,6 +152,7 @@ http://127.0.0.1:5177
 
 - 使用 Git 克隆的官方仓库：位于 `main` 分支且工作区干净时，可在设置页执行“立即更新并重启”。
 - 更新页会显示准备、停止旧服务、重新校验、写入版本、重启和健康检查 6 个阶段；服务重启期间会自动重新连接。
+- 准备阶段会显示 GitHub Release 的对象百分比和已接收 KiB/MiB；连接重置、超时、DNS/TLS 或 early EOF 等瞬时下载错误会有限重试，仍失败时不会写入新版本。
 - 更新失败时会分别说明文件是否已回退、旧服务是否恢复。更新前检查失败不会修改 Forkline 文件，原版本会继续运行。
 - 也可以双击 `pull-latest.cmd` 拉取 `origin/main`。脚本遇到本地修改、冲突、网络或认证问题时会停止，不会强制覆盖。
 - 使用源码 ZIP：不能一键更新，请到 [GitHub Releases](https://github.com/AsphyxiaChoke/Forkline/releases) 下载新版本。
