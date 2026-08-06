@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.resolve(__dirname, "..", "public", "js", "panels", "recovery-settings.js"), "utf8");
+const source = fs.readFileSync(path.resolve(__dirname, "..", "public", "js", "panels", "recovery.js"), "utf8");
 
 test("lazy reflog loading discards a response after the repository changes", async () => {
   let resolveRequest;

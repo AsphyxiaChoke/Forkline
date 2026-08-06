@@ -8,7 +8,7 @@ const vm = require("node:vm");
 
 const projectRoot = path.resolve(__dirname, "..");
 const layoutSource = fs.readFileSync(path.join(projectRoot, "public", "js", "app", "layout-utils.js"), "utf8");
-const settingsSource = fs.readFileSync(path.join(projectRoot, "public", "js", "panels", "recovery-settings.js"), "utf8");
+const settingsSource = fs.readFileSync(path.join(projectRoot, "public", "js", "panels", "settings.js"), "utf8");
 const styles = fs.readFileSync(path.join(projectRoot, "public", "styles.css"), "utf8");
 const catalog = require("../public/js/i18n-catalog.js");
 

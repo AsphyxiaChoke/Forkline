@@ -17,9 +17,34 @@ const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
 const repositoriesSource = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
-const settingsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery-settings.js"), "utf8");
+const tagsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "tags.js"), "utf8");
+const recoverySource = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery.js"), "utf8");
+const logsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "logs.js"), "utf8");
+const settingsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "settings.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+
+test("right inspector panels keep separate modules before event binding", () => {
+  const scripts = [
+    "./js/panels/tags.js",
+    "./js/panels/recovery.js",
+    "./js/panels/logs.js",
+    "./js/panels/settings.js",
+    "./js/features/recovery-undo.js",
+    "./js/app/events.js",
+  ];
+  let previous = -1;
+  for (const script of scripts) {
+    const position = indexHtml.indexOf(`<script src="${script}"></script>`);
+    assert.ok(position > previous, `${script} should load after the previous inspector module`);
+    previous = position;
+  }
+  assert.doesNotMatch(indexHtml, /recovery-settings\.js/);
+  assert.match(tagsSource, /function renderTagsTab\(\)/);
+  assert.match(recoverySource, /function renderRecoveryTab\(\)/);
+  assert.match(logsSource, /function renderLogsTab\(\)/);
+  assert.match(settingsSource, /function renderSettingsTab\(\)/);
+});
 
 test("ordinary command hints become hover titles without duplicate text", () => {
   const context = vm.createContext({});
@@ -175,7 +200,7 @@ test("operation log shows live Git output and exposes real cancellation", () => 
     escapeHtml: (value) => String(value),
     escapeAttr: (value) => String(value),
   });
-  vm.runInContext(settingsSource, context);
+  vm.runInContext(logsSource, context);
 
   const runningMarkup = context.renderRunningOperationItem({
     id: "7",

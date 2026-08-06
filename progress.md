@@ -6911,3 +6911,28 @@
 - `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录使用方式、状态契约、安全边界、验证基线和后续优化顺序。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `c99a641`；提交前可执行 `git restore -- README.md app-self-update.js self-update-runner.js server.js server/update-service.js public/js/core.js public/js/app/init.js public/js/panels/recovery-settings.js public/js/i18n-catalog.js public/styles.css tests/app-self-update.test.js tests/layout-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 拆分 Tag、恢复点、日志和设置面板模块
+
+### What was done
+- 将原本同时承载 Tag、恢复点、reflog、操作日志、设置和在线更新的 `recovery-settings.js` 按现有标签页拆成四个独立脚本，不改函数内容、全局入口、状态结构或 Git 请求。
+- `tags.js` 负责 Tag 列表、详情和远端操作；`recovery.js` 负责恢复点、reflog、保留策略和相关动作；`logs.js` 负责运行中与历史 Git 操作；`settings.js` 负责主题、语言、最近仓库、布局和在线更新。
+- 更新浏览器脚本加载顺序，四个面板模块和恢复点撤销模块继续在统一事件绑定之前加载；新增回归固定该顺序并拒绝旧合并脚本重新进入运行时清单。
+
+### Testing
+- `node --check` 通过四个新面板脚本和四个受影响测试文件；受影响专项回归运行 45 项，45 项通过、0 项失败。
+- `npm.cmd test` 完整运行 159 项，159 项通过、0 项失败、0 项跳过，耗时约 131.1 秒；真实 Chromium 成功加载新脚本，复杂历史文件打开约 186.3 ms、最大事件循环延迟约 43.3 ms，监听器保持 `3 -> 4 -> 5 -> 5 -> 4` 回落。
+- 大历史仍只渲染 17 行和 105 个图谱元素；12 次仓库切换约 12.5 秒，编辑器连续开关后 DOM、监听器和堆边界保持稳定。
+- `git diff --check` 通过，仅显示仓库现有 LF / CRLF 转换提示。最终资源检查确认相关 Node / Edge / Chrome 进程为 0、性能测试临时目录为 0、机械拆分脚本已删除；未使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/panels/tags.js`：承接 Tag 面板、选择、确认和远端操作。
+- `public/js/panels/recovery.js`：承接恢复点、reflog、保留策略和恢复动作。
+- `public/js/panels/logs.js`：承接运行中操作、历史日志、取消和刷新。
+- `public/js/panels/settings.js`：承接设置页、主题/语言/最近仓库和在线更新。
+- `public/js/panels/recovery-settings.js`：删除已拆分的旧合并模块。
+- `public/index.html`：按新模块边界更新经典脚本加载顺序。
+- `tests/layout-ui.test.js`、`tests/recovery-policy-ui.test.js`、`tests/reflog-ui-state.test.js`、`tests/themes.test.js`：读取对应模块并固定加载顺序、恢复策略、reflog、日志、设置和主题行为。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：更新面板职责、权威加载顺序、测试基线和后续拆分顺序。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `dedd433`；提交前可执行 `git restore -- docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/index.html public/js/panels/recovery-settings.js tests/layout-ui.test.js tests/recovery-policy-ui.test.js tests/reflog-ui-state.test.js tests/themes.test.js`，再执行 `Remove-Item -LiteralPath public/js/panels/tags.js,public/js/panels/recovery.js,public/js/panels/logs.js,public/js/panels/settings.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
