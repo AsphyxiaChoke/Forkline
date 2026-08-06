@@ -1,9 +1,19 @@
 // Commit list rendering and commit search.
+const COMMIT_VIRTUALIZATION_THRESHOLD = 240;
+const COMMIT_VIEWPORT_OVERSCAN_ROWS = 12;
 let commitGraphResizeFrame = 0;
+let commitViewportFrame = 0;
+let commitVirtualized = false;
+let commitViewportStart = -1;
+let commitViewportEnd = -1;
+let commitLayoutCache = [];
+let commitHighlightPattern = null;
+let commitRenderedGraphWidth = 0;
 
 function renderCommits(options = {}) {
   cancelScheduledCommitRender();
   cancelScheduledCommitGraphResize();
+  cancelScheduledCommitViewportRender();
   const previousSelectedSha = state.selectedSha;
   const inspectorMode = options.inspector || "always";
   const terms = commitSearchTerms();
@@ -27,51 +37,131 @@ function renderCommits(options = {}) {
   els.commitGraph.classList.toggle("all-scope", !isBranchScope);
   els.graphModeLabel.textContent = isBranchScope ? state.selectedRef : t("全部分支");
   els.graphModeLabel.title = isBranchScope ? t("当前只显示 {branch}", { branch: state.selectedRef }) : t("当前显示所有分支");
-  const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
-  const renderedGraphWidth = graphRenderWidth(graphCommits, state.selectedRef);
-  els.commitGraph.innerHTML = renderGraphSvg(graphCommits, graphHeight, state.selectedRef, renderedGraphWidth);
+  commitLayoutCache = layoutGraphCommits(state.filtered, state.selectedRef);
+  commitRenderedGraphWidth = graphRenderWidth(commitLayoutCache, state.selectedRef);
+  commitHighlightPattern = highlightPattern;
+  commitVirtualized = state.filtered.length > COMMIT_VIRTUALIZATION_THRESHOLD;
+  commitViewportStart = -1;
+  commitViewportEnd = -1;
+  els.commitGraph.classList.toggle("virtualized", commitVirtualized);
 
   if (!state.filtered.length) {
+    commitVirtualized = false;
+    commitLayoutCache = [];
+    els.commitGraph.classList.remove("virtualized");
+    els.commitGraph.innerHTML = "";
     const emptyTitle = terms.length ? t("没有匹配的提交") : t("还没有提交");
     const emptySub = terms.length ? t("换一个关键词试试") : t("暂存文件后创建第一次提交");
     els.commitGraph.insertAdjacentHTML(
       "beforeend",
       `<div class="commit-row" style="grid-template-columns:1fr;min-width:0"><div class="message"><strong>${emptyTitle}</strong><span>${emptySub}</span></div></div>`
     );
-    appendHistoryLoadMore();
+    appendHistoryLoadMore(graphHeight);
     renderCommitInspector(inspectorMode, previousSelectedSha);
     return;
   }
 
+  if (commitVirtualized) {
+    els.commitGraph.innerHTML = '<div class="commit-window"></div>';
+    renderCommitViewport(true);
+  } else {
+    els.commitGraph.innerHTML = renderGraphSvg(commitLayoutCache, graphHeight, state.selectedRef, commitRenderedGraphWidth);
+    els.commitGraph.appendChild(createCommitRows(0, state.filtered.length));
+  }
+  appendHistoryLoadMore(graphHeight);
+  renderCommitInspector(inspectorMode, previousSelectedSha);
+}
+
+function createCommitRows(start, end) {
   const rows = document.createDocumentFragment();
-  state.filtered.forEach((commit) => {
+  state.filtered.slice(start, end).forEach((commit, offset) => {
+    const index = start + offset;
     const headCommit = isHeadCommit(commit);
     const row = document.createElement("button");
-    row.className = `commit-row ${commit.sha === state.selectedSha ? "selected" : ""} ${headCommit ? "current-head" : ""}`;
+    row.className = `commit-row ${index % 2 === 1 ? "row-alt" : ""} ${commit.sha === state.selectedSha ? "selected" : ""} ${headCommit ? "current-head" : ""}`;
     row.type = "button";
     row.dataset.sha = commit.sha;
+    row.dataset.rowIndex = String(index);
     row.innerHTML = `
       <div class="graph-cell">
       </div>
       <div class="message">
-        <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, highlightPattern)}</strong>
-        <span class="commit-ref-line" title="${escapeAttr(commit.refs || t("提交历史"))}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || t("提交历史"), highlightPattern)}</span></span>
+        <strong title="${escapeAttr(commit.message)}">${highlightSearchText(commit.message, commitHighlightPattern)}</strong>
+        <span class="commit-ref-line" title="${escapeAttr(commit.refs || t("提交历史"))}">${headCommit ? '<b class="head-badge">HEAD</b>' : ""}<span class="commit-ref-text">${highlightSearchText(commit.refs || t("提交历史"), commitHighlightPattern)}</span></span>
       </div>
       <div class="author">
         <span class="author-badge" style="--avatar:${commit.color}">${initials(commit.author)}</span>
-        <span title="${escapeAttr(commit.author)}">${highlightSearchText(commit.author, highlightPattern)}</span>
+        <span title="${escapeAttr(commit.author)}">${highlightSearchText(commit.author, commitHighlightPattern)}</span>
       </div>
       <div class="time">${escapeHtml(commit.time)}</div>
-      <div class="sha" title="${escapeAttr(commit.sha)}">${highlightSearchText(commit.short, highlightPattern)}</div>
+      <div class="sha" title="${escapeAttr(commit.sha)}">${highlightSearchText(commit.short, commitHighlightPattern)}</div>
     `;
     rows.appendChild(row);
   });
-  els.commitGraph.appendChild(rows);
-  appendHistoryLoadMore();
-  renderCommitInspector(inspectorMode, previousSelectedSha);
+  return rows;
 }
 
-function appendHistoryLoadMore() {
+function renderCommitViewport(force = false) {
+  if (!commitVirtualized || !state.filtered?.length || !els.historyScroll) return;
+  const range = commitViewportRange();
+  if (!force && range.start === commitViewportStart && range.end === commitViewportEnd) return;
+  commitViewportStart = range.start;
+  commitViewportEnd = range.end;
+  const graphHeight = Math.max(rowH, state.filtered.length * rowH);
+  const graphMarkup = renderGraphSvg(commitLayoutCache, graphHeight, state.selectedRef, commitRenderedGraphWidth, range);
+  const currentGraph = els.commitGraph.querySelector(".graph-lines");
+  if (currentGraph) currentGraph.outerHTML = graphMarkup;
+  else els.commitGraph.insertAdjacentHTML("afterbegin", graphMarkup);
+  let commitWindow = els.commitGraph.querySelector(".commit-window");
+  if (!commitWindow) {
+    commitWindow = document.createElement("div");
+    commitWindow.className = "commit-window";
+    els.commitGraph.appendChild(commitWindow);
+  }
+  commitWindow.style.top = `${range.start * rowH}px`;
+  commitWindow.replaceChildren(createCommitRows(range.start, range.end));
+}
+
+function commitViewportRange() {
+  const total = state.filtered?.length || 0;
+  const viewportHeight = Math.max(rowH, els.historyScroll?.clientHeight || rowH * 12);
+  const maxScrollTop = Math.max(0, total * rowH - viewportHeight);
+  const currentScrollTop = Math.max(0, els.historyScroll?.scrollTop || 0);
+  const scrollTop = Math.min(currentScrollTop, maxScrollTop);
+  if (scrollTop !== currentScrollTop) els.historyScroll.scrollTop = scrollTop;
+  const start = Math.max(0, Math.floor(scrollTop / rowH) - COMMIT_VIEWPORT_OVERSCAN_ROWS);
+  const end = Math.min(total, Math.ceil((scrollTop + viewportHeight) / rowH) + COMMIT_VIEWPORT_OVERSCAN_ROWS);
+  return { start, end: Math.max(start + 1, end) };
+}
+
+function scheduleCommitViewportRender() {
+  if (!commitVirtualized || commitViewportFrame) return;
+  commitViewportFrame = window.requestAnimationFrame(() => {
+    commitViewportFrame = 0;
+    renderCommitViewport();
+  });
+}
+
+function cancelScheduledCommitViewportRender() {
+  if (!commitViewportFrame) return;
+  window.cancelAnimationFrame(commitViewportFrame);
+  commitViewportFrame = 0;
+}
+
+function revealCommitIndex(index) {
+  if (!commitVirtualized || !els.historyScroll || index < 0) return;
+  const viewportHeight = Math.max(rowH, els.historyScroll.clientHeight || rowH * 12);
+  const rowTop = index * rowH;
+  const rowBottom = rowTop + rowH;
+  const viewTop = els.historyScroll.scrollTop;
+  const viewBottom = viewTop + viewportHeight;
+  if (rowTop < viewTop || rowBottom > viewBottom) {
+    els.historyScroll.scrollTop = Math.max(0, rowTop - Math.max(0, (viewportHeight - rowH) / 2));
+  }
+  renderCommitViewport(true);
+}
+
+function appendHistoryLoadMore(graphHeight = Math.max(rowH, (state.filtered?.length || 0) * rowH)) {
   const history = state.data?.history || {};
   if (!state.historyHasMore && !state.historyLoading) return;
   const loaded = state.data?.commits?.length || 0;
@@ -84,7 +174,7 @@ function appendHistoryLoadMore() {
       : t("加载更早提交");
   els.commitGraph.insertAdjacentHTML(
     "beforeend",
-    `<div class="history-load-more"><button class="mini-btn" data-load-more-commits type="button" ${state.historyLoading || reachedLimit ? "disabled" : ""}>${escapeHtml(label)}</button><span>${escapeHtml(t("已载入 {count} 条", { count: loaded }))}</span></div>`
+    `<div class="history-load-more" style="top:${graphHeight}px"><button class="mini-btn" data-load-more-commits type="button" ${state.historyLoading || reachedLimit ? "disabled" : ""}>${escapeHtml(label)}</button><span>${escapeHtml(t("已载入 {count} 条", { count: loaded }))}</span></div>`
   );
 }
 
@@ -146,10 +236,14 @@ function cancelScheduledCommitGraphResize() {
 function refreshCommitGraphForColumnWidth() {
   const currentGraph = els.commitGraph.querySelector(".graph-lines");
   if (!currentGraph || !Array.isArray(state.filtered)) return;
+  commitLayoutCache = layoutGraphCommits(state.filtered, state.selectedRef);
+  commitRenderedGraphWidth = graphRenderWidth(commitLayoutCache, state.selectedRef);
+  if (commitVirtualized) {
+    renderCommitViewport(true);
+    return;
+  }
   const minHeight = Math.max(rowH, state.filtered.length * rowH);
-  const graphCommits = layoutGraphCommits(state.filtered, state.selectedRef);
-  const renderedGraphWidth = graphRenderWidth(graphCommits, state.selectedRef);
-  currentGraph.outerHTML = renderGraphSvg(graphCommits, minHeight, state.selectedRef, renderedGraphWidth);
+  currentGraph.outerHTML = renderGraphSvg(commitLayoutCache, minHeight, state.selectedRef, commitRenderedGraphWidth);
 }
 
 function renderCommitInspector(mode, previousSelectedSha) {
@@ -159,7 +253,14 @@ function renderCommitInspector(mode, previousSelectedSha) {
 }
 
 function updateCommitSelection(nextSha) {
-  const nextRow = els.commitGraph.querySelector(`.commit-row[data-sha="${nextSha}"]`);
+  let nextRow = els.commitGraph.querySelector(`.commit-row[data-sha="${nextSha}"]`);
+  if (!nextRow && commitVirtualized && Array.isArray(state.filtered)) {
+    const index = state.filtered.findIndex((commit) => commit.sha === nextSha);
+    if (index >= 0) {
+      revealCommitIndex(index);
+      nextRow = els.commitGraph.querySelector(`.commit-row[data-sha="${nextSha}"]`);
+    }
+  }
   if (!nextRow) return false;
   const selectedRow = els.commitGraph.querySelector(".commit-row.selected");
   if (selectedRow !== nextRow) selectedRow?.classList.remove("selected");

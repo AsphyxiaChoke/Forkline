@@ -6833,3 +6833,33 @@
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `eb9f39b`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/app/init.js public/js/core.js public/js/features/recovery-undo.js public/js/features/repositories.js public/js/i18n-catalog.js public/js/panels/recovery-settings.js public/styles.css tests/recovery-undo-ui.test.js`，再执行 `Remove-Item -LiteralPath tests/recovery-policy-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
 - 最终补充启动/切换仓库接线回归后，定向测试为 6/6，完整 `npm.cmd test` 为 156/156，耗时约 102.4 秒；真实 Chromium 复杂文件打开约 170.2 ms、最大事件循环延迟约 52.0 ms，本条结果取代上方施工过程中记录的 5/5 与 155/155 中间值。
+
+## 2026-08-06 - Task: 大仓库提交图可视区域渲染
+
+### What was done
+- 使用独立真实 Git 压力夹具测量大仓库瓶颈：通过 `git fast-import` 创建 3012 条包含侧分支和 merge 的提交，并创建 4000 个分层工作区文件，分别记录 API、前端渲染、DOM 和事件循环指标。
+- 确认提交图完整重建是主要瓶颈后，对超过 240 条的提交历史启用可视区域渲染，只保留当前窗口及上下各 12 行缓冲，同时保留完整滚动高度、搜索数据和加载上限。
+- SVG 图谱只生成与当前窗口相交的分支线、merge 回线、节点和标签；滚动、窗口变化、底部工作台拉伸和图谱列宽调整会按帧刷新当前窗口。
+- 保留点击、右键、搜索、跳转视口外提交和“加载更早提交”行为；跳转到未渲染提交时会滚动并立即生成目标行，加载更多后继续保持原滚动位置。
+- 4000 文件树前端渲染实测不是主要瓶颈，本轮未引入没有数据依据的文件树虚拟化，也未改变工作区 Git 语义。
+
+### Testing
+- `node --check` 通过 `public/js/features/history-list.js`、`public/js/features/graph.js`、`public/js/app/events.js`、`public/js/app/layout-utils.js` 和 `tests/browser-performance.test.js`；`git diff --check` 通过，仅有现有 LF / CRLF 转换提示。
+- `node --test --test-concurrency=1 tests/commit-selection-performance.test.js tests/layout-ui.test.js` 运行 41 项，41 项通过、0 项失败。
+- `npm.cmd run test:browser` 运行 1 项，1 项通过：3012 条提交只保留 17 行、105 个图谱元素和约 954 个页面节点；渲染约 5.2 ms、搜索约 5.2 ms、恢复约 4.1 ms。中段窗口最多 29 行，连续 80 次深度滚动约 1335.1 ms、最大延迟约 11.7 ms；360 条加载到 480 条时滚动位置保持 `7200 -> 7200`。
+- 最终 `npm.cmd test` 完整运行 156 项，156 项通过、0 项失败、0 项跳过，耗时约 113.3 秒；真实 Chromium 中大历史渲染约 5.1 ms、搜索约 6.2 ms、恢复约 5.5 ms，连续滚动最大延迟约 5.2 ms。普通文件对照监听器保持 `3 -> 4 -> 5 -> 5 -> 4` 回落。
+- 最终资源检查确认 `forkline-browser-performance-*` 临时目录为 0，相关 Node / Edge / Chrome 进程为 0；测试使用随机端口并自动关闭，没有使用或修改 `D:\桌面\GitTest`。
+
+### Notes
+- `public/js/features/history-list.js`：增加提交窗口范围、缓冲行、滚动调度、视口外提交定位和加载更多位置保持。
+- `public/js/features/graph.js`：增加窗口化 SVG、跨窗口路径相交裁剪和局部节点/标签生成。
+- `public/js/app/events.js`：绑定提交历史滚动和窗口尺寸变化刷新。
+- `public/js/app/layout-utils.js`：底部工作台高度变化时同步刷新提交窗口。
+- `public/styles.css`：增加提交窗口定位、稳定的全局奇偶行样式和绝对定位加载更多区。
+- `tests/browser-performance.test.js`：增加真实大历史、大文件树、深度滚动、节点对齐、视口外选择和加载更多性能回归。
+- `tests/layout-ui.test.js`：兼容窗口化 SVG 的位置与高度样式，同时继续校验图谱列宽。
+- `README.md`：说明大历史自动使用可视区域渲染。
+- `docs/CONTINUE.md`：记录压力基线、优化结果、文件树不改的依据和后续边界。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `76d5cba`；提交前可执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/app/events.js public/js/app/layout-utils.js public/js/features/graph.js public/js/features/history-list.js public/styles.css tests/browser-performance.test.js tests/layout-ui.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+- 最终补充提交行交替底色回归后，`npm.cmd run test:browser` 仍为 1/1；当前代码完整 `npm.cmd test` 为 156/156，耗时约 117.8 秒，大历史渲染约 5.2 ms、搜索约 5.7 ms、恢复约 5.1 ms，连续滚动最大延迟约 6.9 ms。本条结果取代上方施工过程中记录的 113.3 秒完整回归数据；最终资源检查仍为临时目录 0、相关进程 0。

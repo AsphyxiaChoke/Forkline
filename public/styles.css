@@ -1611,6 +1611,13 @@ body.resizing .workspace-resizer::before {
   background: var(--graph-focus-bg);
 }
 
+.commit-window {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 1;
+}
+
 .graph-lines {
   position: absolute;
   left: 0;
@@ -1632,7 +1639,7 @@ body.resizing .workspace-resizer::before {
   transition: background 0.14s ease, box-shadow 0.14s ease;
 }
 
-.commit-row:nth-child(odd) {
+.commit-row.row-alt {
   background: var(--row-alt);
 }
 
@@ -1651,7 +1658,7 @@ body.resizing .workspace-resizer::before {
   box-shadow: inset 4px 0 0 var(--blue);
 }
 
-.commit-row.current-head:nth-child(odd) {
+.commit-row.current-head.row-alt {
   background: linear-gradient(90deg, rgba(var(--blue-rgb), 0.18), rgba(var(--blue-rgb), 0.04) 42%, transparent), var(--row-alt);
 }
 
@@ -1661,10 +1668,12 @@ body.resizing .workspace-resizer::before {
 }
 
 .history-load-more {
-  position: relative;
+  position: absolute;
+  right: 0;
+  left: 0;
   z-index: 3;
   display: flex;
-  min-height: 48px;
+  height: 48px;
   align-items: center;
   justify-content: center;
   gap: 10px;

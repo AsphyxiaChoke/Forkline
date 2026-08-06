@@ -61,6 +61,7 @@ els.worktreeFilterInput.addEventListener("input", () => updateWorktreeFilter(els
 els.clearWorktreeFilter.addEventListener("click", clearWorktreeFilter);
 els.searchInput.addEventListener("input", () => scheduleCommitRender());
 els.clearSearch.addEventListener("click", clearCommitSearch);
+els.historyScroll.addEventListener("scroll", scheduleCommitViewportRender, { passive: true });
 els.commitGraph.addEventListener("click", (event) => {
   const loadMore = event.target.closest("[data-load-more-commits]");
   if (loadMore) {
@@ -788,6 +789,7 @@ document.addEventListener("scroll", (event) => {
   hideReflogContextMenu();
 }, true);
 window.addEventListener("resize", () => {
+  scheduleCommitViewportRender();
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();

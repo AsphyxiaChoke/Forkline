@@ -100,6 +100,7 @@ function resetLayoutPreferences() {
   }
   historyColumnPreferences = {};
   Object.values(historyColumnVariables).forEach((variable) => document.documentElement.style.removeProperty(variable));
+  if (typeof scheduleCommitViewportRender === "function") scheduleCommitViewportRender();
   toast(t("布局已恢复默认"));
   renderInspector();
 }
@@ -124,6 +125,7 @@ function initLayoutResizers() {
         const point = config.axis === "x" ? moveEvent.clientX : moveEvent.clientY;
         const next = clamp(startSize + (point - startPoint) * config.sign, config.min, configMax(config));
         root.style.setProperty(config.varName, `${next}px`);
+        if (config.axis === "y" && typeof scheduleCommitViewportRender === "function") scheduleCommitViewportRender();
       };
       const onUp = () => {
         const current = numericCssVar(config.varName);

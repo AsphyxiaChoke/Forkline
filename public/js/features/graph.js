@@ -2,14 +2,17 @@
 const GRAPH_LABEL_FALLBACK_WIDTH = 360;
 const GRAPH_LABEL_MIN_WIDTH = 42;
 const GRAPH_LABEL_PADDING = 16;
-function renderGraphSvg(commits, height, selectedRef, width = graphRenderWidth(commits, selectedRef)) {
-  return selectedRef ? renderBranchGraphSvg(commits, height, selectedRef, width) : renderOverviewGraphSvg(commits, height, width);
+function renderGraphSvg(commits, height, selectedRef, width = graphRenderWidth(commits, selectedRef), options = {}) {
+  return selectedRef
+    ? renderBranchGraphSvg(commits, height, selectedRef, width, options)
+    : renderOverviewGraphSvg(commits, height, width, options);
 }
 
-function renderOverviewGraphSvg(commits, height, width) {
+function renderOverviewGraphSvg(commits, height, width, options = {}) {
+  const window = graphRenderWindow(commits, height, options);
   const bySha = new Map(commits.map((commit, index) => [commit.sha, { commit, index }]));
   const byShort = new Map(commits.map((commit, index) => [commit.short, { commit, index }]));
-  const guides = overviewLaneGuides(commits, height);
+  const guides = overviewLaneGuides(commits, window.top, window.bottom);
   let paths = "";
   let nodes = "";
   let labels = "";
@@ -20,26 +23,37 @@ function renderOverviewGraphSvg(commits, height, width) {
     const isPrimaryNode = commit.lane === 0;
     const parents = commit.parents || [];
     const isMerge = parents.length > 1;
-    nodes += graphNode(x1, y1, color, { primary: isPrimaryNode, merge: isMerge });
-    const label = tipLabel(commit.refs);
-    if (label) labels += graphLabel(x1, y1, label, color, width);
+    if (index >= window.start && index < window.end) {
+      nodes += graphNode(x1, y1, color, { primary: isPrimaryNode, merge: isMerge });
+      const label = tipLabel(commit.refs);
+      if (label) labels += graphLabel(x1, y1, label, color, width);
+    }
     if (!parents.length && index < commits.length - 1) {
       const next = commits[index + 1];
-      paths += overviewCurve(x1, y1, laneX[next.lane] || laneX[0], (index + 1) * rowH + rowH / 2, color, { primary: isPrimaryNode && next.lane === 0 });
+      const nextY = (index + 1) * rowH + rowH / 2;
+      if (graphSegmentIntersects(y1, nextY, window)) {
+        paths += overviewCurve(x1, y1, laneX[next.lane] || laneX[0], nextY, color, { primary: isPrimaryNode && next.lane === 0 });
+      }
     }
     parents.forEach((parentSha, parentIndex) => {
       const parent = bySha.get(parentSha) || byShort.get(parentSha.slice(0, 7));
       if (!parent) {
-        paths += overviewCurve(x1, y1, x1, Math.min(y1 + rowH, height), color, { primary: isPrimaryNode, secondary: parentIndex > 0 });
+        const parentY = Math.min(y1 + rowH, height);
+        if (graphSegmentIntersects(y1, parentY, window)) {
+          paths += overviewCurve(x1, y1, x1, parentY, color, { primary: isPrimaryNode, secondary: parentIndex > 0 });
+        }
         return;
       }
       if (parent.index <= index) return;
       const parentColor = parent.commit.color || laneColor(parent.commit.lane);
-      paths += overviewCurve(x1, y1, laneX[parent.commit.lane] || laneX[0], parent.index * rowH + rowH / 2, parentIndex > 0 ? parentColor : color, { primary: isPrimaryNode && parent.commit.lane === 0, secondary: parentIndex > 0 });
+      const parentY = parent.index * rowH + rowH / 2;
+      if (graphSegmentIntersects(y1, parentY, window)) {
+        paths += overviewCurve(x1, y1, laneX[parent.commit.lane] || laneX[0], parentY, parentIndex > 0 ? parentColor : color, { primary: isPrimaryNode && parent.commit.lane === 0, secondary: parentIndex > 0 });
+      }
     });
   });
   return `
-    <svg class="graph-lines overview" height="${height}" viewBox="0 0 ${width} ${height}" style="width:${width}px" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="graph-lines overview" height="${window.height}" viewBox="0 ${window.top} ${width} ${window.height}" style="width:${width}px;top:${window.top}px;height:${window.height}px" preserveAspectRatio="none" aria-hidden="true">
       <g class="lane-guides" fill="none" stroke-linecap="round">${guides}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
@@ -48,35 +62,52 @@ function renderOverviewGraphSvg(commits, height, width) {
   `;
 }
 
-function renderBranchGraphSvg(commits, height, selectedRef, width) {
+function renderBranchGraphSvg(commits, height, selectedRef, width, options = {}) {
+  const window = graphRenderWindow(commits, height, options);
   const color = refColor(selectedRef);
   const x = laneX[0];
   let paths = "";
   let nodes = "";
   let labels = "";
-  commits.forEach((commit, index) => {
+  for (let index = Math.max(0, window.start - 1); index < Math.min(commits.length, window.end + 1); index += 1) {
+    const commit = commits[index];
     const y = index * rowH + rowH / 2;
     const parents = commit.parents || [];
     const isMerge = parents.length > 1;
     if (index < commits.length - 1) {
       const nextY = (index + 1) * rowH + rowH / 2;
-      paths += branchMainLine(x, y, nextY, color);
+      if (graphSegmentIntersects(y, nextY, window)) paths += branchMainLine(x, y, nextY, color);
     }
-    if (isMerge) {
-      const mergeX = laneX[2];
-      paths += branchMergeHint(x, y, mergeX, color);
+    if (index >= window.start && index < window.end) {
+      if (isMerge) {
+        const mergeX = laneX[2];
+        paths += branchMergeHint(x, y, mergeX, color);
+      }
+      nodes += graphNode(x, y, color, { focused: true, merge: isMerge });
+      if (index === 0) labels += graphLabel(x, y, selectedRef, color, width);
     }
-    nodes += graphNode(x, y, color, { focused: true, merge: isMerge });
-    if (index === 0) labels += graphLabel(x, y, selectedRef, color, width);
-  });
+  }
   return `
-    <svg class="graph-lines focus" height="${height}" viewBox="0 0 ${width} ${height}" style="width:${width}px" preserveAspectRatio="none" aria-hidden="true">
-      <g class="lane-guides" fill="none" stroke-linecap="round">${branchLaneGuide(x, height, color)}</g>
+    <svg class="graph-lines focus" height="${window.height}" viewBox="0 ${window.top} ${width} ${window.height}" style="width:${width}px;top:${window.top}px;height:${window.height}px" preserveAspectRatio="none" aria-hidden="true">
+      <g class="lane-guides" fill="none" stroke-linecap="round">${branchLaneGuide(x, window.top, window.bottom, color)}</g>
       <g fill="none" stroke-linecap="round" stroke-linejoin="round">${paths}</g>
       <g>${labels}</g>
       <g>${nodes}</g>
     </svg>
   `;
+}
+
+function graphRenderWindow(commits, height, options = {}) {
+  const total = commits.length;
+  const start = Math.max(0, Math.min(total, Number.isInteger(options.start) ? options.start : 0));
+  const end = Math.max(start, Math.min(total, Number.isInteger(options.end) ? options.end : total));
+  const top = start * rowH;
+  const bottom = Math.max(top + rowH, Math.min(height, end * rowH));
+  return { start, end, top, bottom, height: bottom - top };
+}
+
+function graphSegmentIntersects(y1, y2, window) {
+  return Math.max(y1, y2) >= window.top && Math.min(y1, y2) <= window.bottom;
 }
 
 function layoutGraphCommits(visibleCommits, selectedRef) {
@@ -222,7 +253,7 @@ function branchMergeHint(x, y, mergeX, color) {
   `;
 }
 
-function overviewLaneGuides(commits, height) {
+function overviewLaneGuides(commits, top, bottom) {
   const lanes = [...new Set(commits.map((commit) => Number(commit.lane) || 0))].sort((a, b) => a - b);
   const colorByLane = new Map();
   commits.forEach((commit) => {
@@ -233,16 +264,19 @@ function overviewLaneGuides(commits, height) {
     .map((lane) => {
       const x = laneX[lane] || laneX[0];
       const color = colorByLane.get(lane) || laneColor(lane);
+      const y1 = top + 8;
+      const y2 = Math.max(y1, bottom - 8);
       if (lane === 0) {
-        return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${color}" stroke-width="18" opacity="0.13" />`;
+        return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${color}" stroke-width="18" opacity="0.13" />`;
       }
-      return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${color}" stroke-width="1.6" opacity="${lane < 4 ? 0.3 : 0.18}" stroke-dasharray="2 8" />`;
+      return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${color}" stroke-width="1.6" opacity="${lane < 4 ? 0.3 : 0.18}" stroke-dasharray="2 8" />`;
     })
     .join("");
 }
 
-function branchLaneGuide(x, height, color) {
-  return `<line x1="${x}" y1="8" x2="${x}" y2="${Math.max(8, height - 8)}" stroke="${color}" stroke-width="22" opacity="0.13" />`;
+function branchLaneGuide(x, top, bottom, color) {
+  const y1 = top + 8;
+  return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${Math.max(y1, bottom - 8)}" stroke="${color}" stroke-width="22" opacity="0.13" />`;
 }
 
 function graphNode(x, y, color, options = {}) {

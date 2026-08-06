@@ -17,6 +17,10 @@ const serverPath = path.join(projectRoot, "server.js");
 const nullConfig = process.platform === "win32" ? "NUL" : "/dev/null";
 const browserExecutable = findChromiumExecutable();
 const browserRequired = process.env.FORKLINE_REQUIRE_BROWSER === "1" || process.env.npm_lifecycle_event === "test:browser";
+const largeHistoryMainCommits = 2500;
+const largeHistoryFeatureGroups = 10;
+const largeHistoryFeatureCommits = 50;
+const largeWorktreeFileCount = 4000;
 const gitEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: nullConfig,
@@ -233,6 +237,226 @@ test("real Chromium keeps historical file comparison responsive", {
   t.diagnostic(
     `small open ${smallOpened.openMs.toFixed(1)} ms, eight switches ${switches.elapsed.toFixed(1)} ms, resize listeners ${baselineResizeListeners} -> ${warmedResizeListeners} -> ${smallResizeListeners} -> ${switchedResizeListeners} -> ${finalResizeListeners}`
   );
+
+  const largeHistory = await appendLargeHistoryFixture(repo);
+  const historyMetrics = await evaluate(cdp, `(async () => {
+    let maxDelay = 0;
+    let lastTick = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      maxDelay = Math.max(maxDelay, now - lastTick - 25);
+      lastTick = now;
+    }, 25);
+    const requestStarted = performance.now();
+    const data = await api("/api/ref-state?ref=&limit=${largeHistory.commitCount + 20}");
+    const apiMs = performance.now() - requestStarted;
+    state.data.repo = { ...state.data.repo, ...(data.repo || {}) };
+    state.data.commits = data.commits || [];
+    state.data.history = data.history || {};
+    applyHistoryState(state.data);
+    state.selectedRef = "";
+    state.selectedSha = state.data.commits[0]?.sha || "";
+    const renderStarted = performance.now();
+    renderCommits({ inspector: "never" });
+    const renderMs = performance.now() - renderStarted;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const searchStarted = performance.now();
+    els.searchInput.value = "large-history";
+    renderCommits({ inspector: "never" });
+    const searchMs = performance.now() - searchStarted;
+    els.searchInput.value = "";
+    const restoreStarted = performance.now();
+    renderCommits({ inspector: "never" });
+    const restoreMs = performance.now() - restoreStarted;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    clearInterval(timer);
+    return {
+      apiMs,
+      renderMs,
+      searchMs,
+      restoreMs,
+      maxDelay,
+      loadedCommits: state.data.commits.length,
+      renderedRows: document.querySelectorAll("#commitGraph .commit-row[data-sha]").length,
+      rowParity: Array.from(document.querySelectorAll("#commitGraph .commit-row[data-row-index]"))
+        .every((row) => row.classList.contains("row-alt") === (Number(row.dataset.rowIndex) % 2 === 1)),
+      graphElements: document.querySelectorAll("#commitGraph .graph-lines *").length,
+      graphNodes: document.querySelectorAll("#commitGraph *").length,
+      pageNodes: document.querySelectorAll("body *").length,
+    };
+  })()`);
+  assert.equal(historyMetrics.loadedCommits, largeHistory.commitCount);
+  assert.equal(historyMetrics.rowParity, true);
+  assert.ok(historyMetrics.renderedRows <= 160, `large history kept ${historyMetrics.renderedRows} commit rows in the DOM`);
+  assert.ok(historyMetrics.graphElements <= 1000, `large history kept ${historyMetrics.graphElements} SVG elements in the DOM`);
+  assert.ok(historyMetrics.pageNodes <= 12000, `large history kept ${historyMetrics.pageNodes} page nodes in the DOM`);
+  assert.ok(historyMetrics.restoreMs < 500, `large history restore render took ${historyMetrics.restoreMs.toFixed(1)} ms`);
+  assert.ok(historyMetrics.maxDelay < 750, `large history blocked the event loop for ${historyMetrics.maxDelay.toFixed(1)} ms`);
+  t.diagnostic(
+    `large history ${historyMetrics.loadedCommits} commits: API ${historyMetrics.apiMs.toFixed(1)} ms, render ${historyMetrics.renderMs.toFixed(1)} ms, search ${historyMetrics.searchMs.toFixed(1)} ms, restore ${historyMetrics.restoreMs.toFixed(1)} ms, max delay ${historyMetrics.maxDelay.toFixed(1)} ms, rows ${historyMetrics.renderedRows}, graph elements ${historyMetrics.graphElements}, page nodes ${historyMetrics.pageNodes}`
+  );
+
+  const viewportMetrics = await evaluate(cdp, `(async () => {
+    const total = state.filtered.length;
+    const middleIndex = Math.floor(total / 2);
+    els.historyScroll.scrollTop = middleIndex * rowH;
+    els.historyScroll.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const middleRows = Array.from(document.querySelectorAll("#commitGraph .commit-row[data-row-index]"));
+    const middleFirst = Number(middleRows[0]?.dataset.rowIndex || -1);
+    const middleLast = Number(middleRows[middleRows.length - 1]?.dataset.rowIndex || -1);
+    const middleGraph = document.querySelector("#commitGraph .graph-lines");
+    const nodeCircles = Array.from(middleGraph?.querySelectorAll("circle") || []);
+    const alignedRow = middleRows.find((row) => {
+      const rowIndex = Number(row.dataset.rowIndex || -1);
+      return nodeCircles.some((circle) => Number(circle.getAttribute("cy")) === rowIndex * rowH + rowH / 2);
+    });
+    const alignedIndex = Number(alignedRow?.dataset.rowIndex || -1);
+    const alignedNode = nodeCircles.find((circle) => Number(circle.getAttribute("cy")) === alignedIndex * rowH + rowH / 2);
+    const alignedRowCenter = alignedRow ? alignedRow.getBoundingClientRect().top + alignedRow.getBoundingClientRect().height / 2 : -1;
+    const alignedNodeCenter = alignedNode ? alignedNode.getBoundingClientRect().top + alignedNode.getBoundingClientRect().height / 2 : -1;
+
+    let maxDelay = 0;
+    let lastTick = performance.now();
+    let maxRows = middleRows.length;
+    const timer = setInterval(() => {
+      const now = performance.now();
+      maxDelay = Math.max(maxDelay, now - lastTick - 25);
+      lastTick = now;
+    }, 25);
+    const cycleStarted = performance.now();
+    for (let index = 0; index < 80; index += 1) {
+      const ratio = (index % 10) / 9;
+      els.historyScroll.scrollTop = Math.floor((total - 1) * ratio) * rowH;
+      els.historyScroll.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      maxRows = Math.max(maxRows, document.querySelectorAll("#commitGraph .commit-row[data-sha]").length);
+    }
+    const cycleMs = performance.now() - cycleStarted;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    clearInterval(timer);
+
+    const targetIndex = Math.floor(total * 0.73);
+    const targetSha = state.filtered[targetIndex].sha;
+    state.selectedSha = targetSha;
+    const selected = updateCommitSelection(targetSha);
+    const selectedRow = document.querySelector('#commitGraph .commit-row[data-sha="' + targetSha + '"]');
+    return {
+      middleIndex,
+      middleFirst,
+      middleLast,
+      middleGraphTop: Number.parseFloat(middleGraph?.style.top || "-1"),
+      middleGraphPaths: middleGraph?.querySelectorAll("path").length || 0,
+      alignedIndex,
+      alignmentOffset: alignedRow && alignedNode ? Math.abs(alignedRowCenter - alignedNodeCenter) : -1,
+      cycleMs,
+      maxDelay,
+      maxRows,
+      selected,
+      selectedVisible: Boolean(selectedRow?.classList.contains("selected")),
+      selectedIndex: Number(selectedRow?.dataset.rowIndex || -1),
+      selectedScrollTop: els.historyScroll.scrollTop,
+    };
+  })()`);
+  assert.ok(viewportMetrics.middleFirst <= viewportMetrics.middleIndex && viewportMetrics.middleLast >= viewportMetrics.middleIndex);
+  assert.ok(viewportMetrics.middleGraphTop >= 0);
+  assert.ok(viewportMetrics.middleGraphPaths > 0);
+  assert.ok(viewportMetrics.alignedIndex >= viewportMetrics.middleFirst && viewportMetrics.alignedIndex <= viewportMetrics.middleLast);
+  assert.ok(viewportMetrics.alignmentOffset >= 0 && viewportMetrics.alignmentOffset < 1.5, `graph node missed its commit row center by ${viewportMetrics.alignmentOffset.toFixed(2)} px`);
+  assert.ok(viewportMetrics.maxRows <= 160, `large history reached ${viewportMetrics.maxRows} rendered rows while scrolling`);
+  assert.ok(viewportMetrics.cycleMs < 5000, `80 large-history scroll updates took ${viewportMetrics.cycleMs.toFixed(1)} ms`);
+  assert.ok(viewportMetrics.maxDelay < 250, `large-history scrolling blocked the event loop for ${viewportMetrics.maxDelay.toFixed(1)} ms`);
+  assert.equal(viewportMetrics.selected, true);
+  assert.equal(viewportMetrics.selectedVisible, true);
+  assert.equal(viewportMetrics.selectedIndex, Math.floor(historyMetrics.loadedCommits * 0.73));
+
+  const loadMoreMetrics = await evaluate(cdp, `(async () => {
+    const data = await api("/api/ref-state?ref=&limit=360");
+    state.data.repo = { ...state.data.repo, ...(data.repo || {}) };
+    state.data.commits = data.commits || [];
+    state.data.history = data.history || {};
+    applyHistoryState(state.data);
+    state.selectedRef = "";
+    state.selectedSha = state.data.commits[0]?.sha || "";
+    renderCommits({ inspector: "never" });
+    els.historyScroll.scrollTop = 7200;
+    els.historyScroll.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const beforeScrollTop = els.historyScroll.scrollTop;
+    const beforeLoaded = state.data.commits.length;
+    const beforeFooterTop = Number.parseFloat(document.querySelector("#commitGraph .history-load-more")?.style.top || "-1");
+    await loadMoreCommits(document.querySelector("#commitGraph [data-load-more-commits]"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return {
+      beforeLoaded,
+      afterLoaded: state.data.commits.length,
+      beforeScrollTop,
+      afterScrollTop: els.historyScroll.scrollTop,
+      beforeFooterTop,
+      afterFooterTop: Number.parseFloat(document.querySelector("#commitGraph .history-load-more")?.style.top || "-1"),
+      renderedRows: document.querySelectorAll("#commitGraph .commit-row[data-sha]").length,
+    };
+  })()`);
+  assert.equal(loadMoreMetrics.beforeLoaded, 360);
+  assert.equal(loadMoreMetrics.afterLoaded, 480);
+  assert.ok(Math.abs(loadMoreMetrics.afterScrollTop - loadMoreMetrics.beforeScrollTop) < 1);
+  assert.equal(loadMoreMetrics.beforeFooterTop, 360 * 62);
+  assert.equal(loadMoreMetrics.afterFooterTop, 480 * 62);
+  assert.ok(loadMoreMetrics.renderedRows <= 160);
+  t.diagnostic(
+    `large history viewport: middle ${viewportMetrics.middleFirst}-${viewportMetrics.middleLast}, 80 scroll updates ${viewportMetrics.cycleMs.toFixed(1)} ms, max delay ${viewportMetrics.maxDelay.toFixed(1)} ms, max rows ${viewportMetrics.maxRows}; load-more ${loadMoreMetrics.beforeLoaded} -> ${loadMoreMetrics.afterLoaded} with scroll ${loadMoreMetrics.beforeScrollTop.toFixed(1)} -> ${loadMoreMetrics.afterScrollTop.toFixed(1)}`
+  );
+
+  await createLargeWorktreeFixture(repo);
+  const worktreeMetrics = await evaluate(cdp, `(async () => {
+    let maxDelay = 0;
+    let lastTick = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      maxDelay = Math.max(maxDelay, now - lastTick - 25);
+      lastTick = now;
+    }, 25);
+    const requestStarted = performance.now();
+    const data = await api("/api/worktree");
+    const apiMs = performance.now() - requestStarted;
+    state.data.workingFiles = data.workingFiles || [];
+    state.data.worktreeSnapshot = data.worktreeSnapshot || "";
+    state.data.repo = { ...state.data.repo, operation: data.operation || null };
+    state.selectedFile = "";
+    state.selectedChanges.clear();
+    state.worktreeFilter = "";
+    els.worktreeFilterInput.value = "";
+    const renderStarted = performance.now();
+    renderStage();
+    const renderMs = performance.now() - renderStarted;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const filterStarted = performance.now();
+    state.worktreeFilter = "file-03999";
+    els.worktreeFilterInput.value = state.worktreeFilter;
+    renderStage();
+    const filterMs = performance.now() - filterStarted;
+    state.worktreeFilter = "";
+    els.worktreeFilterInput.value = "";
+    const restoreStarted = performance.now();
+    renderStage();
+    const restoreMs = performance.now() - restoreStarted;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    clearInterval(timer);
+    return {
+      apiMs,
+      renderMs,
+      filterMs,
+      restoreMs,
+      maxDelay,
+      loadedFiles: state.data.workingFiles.length,
+      renderedRows: document.querySelectorAll("#changeList .file-row[data-file]").length,
+      treeNodes: document.querySelectorAll("#changeList *").length,
+      pageNodes: document.querySelectorAll("body *").length,
+    };
+  })()`);
+  t.diagnostic(
+    `large worktree ${worktreeMetrics.loadedFiles} files: API ${worktreeMetrics.apiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
+  );
 });
 
 class CdpClient {
@@ -320,6 +544,108 @@ async function createComparisonFixture(repo) {
   await git(repo, ["add", "."]);
   await git(repo, ["commit", "-m", "change browser performance fixtures"]);
   return git(repo, ["rev-parse", "HEAD"]);
+}
+
+async function appendLargeHistoryFixture(repo) {
+  const initialHead = await git(repo, ["rev-parse", "HEAD"]);
+  const stream = [];
+  let nextMark = 1;
+  let mainParent = initialHead;
+  let mainMark = 0;
+  let commitCount = 0;
+  let timestamp = 1700000000;
+
+  const appendCommit = (ref, parent, message, file, content, merge = "") => {
+    const mark = nextMark;
+    nextMark += 1;
+    timestamp += 1;
+    stream.push(`commit ${ref}\n`);
+    stream.push(`mark :${mark}\n`);
+    stream.push(`author Forkline Browser Test <forkline-browser@example.invalid> ${timestamp} +0000\n`);
+    stream.push(`committer Forkline Browser Test <forkline-browser@example.invalid> ${timestamp} +0000\n`);
+    stream.push(`data ${Buffer.byteLength(message)}\n${message}\n`);
+    stream.push(`from ${parent}\n`);
+    if (merge) stream.push(`merge ${merge}\n`);
+    stream.push(`M 100644 inline ${file}\n`);
+    stream.push(`data ${Buffer.byteLength(content)}\n${content}\n`);
+    commitCount += 1;
+    return mark;
+  };
+
+  for (let group = 0; group < largeHistoryFeatureGroups; group += 1) {
+    const branchBase = mainMark ? `:${mainMark}` : mainParent;
+    for (let index = 0; index < largeHistoryMainCommits / largeHistoryFeatureGroups; index += 1) {
+      const sequence = group * (largeHistoryMainCommits / largeHistoryFeatureGroups) + index + 1;
+      const parent = mainMark ? `:${mainMark}` : mainParent;
+      mainMark = appendCommit(
+        "refs/heads/main",
+        parent,
+        `large-history main ${String(sequence).padStart(4, "0")}`,
+        "history/main.txt",
+        `main ${sequence}\n`
+      );
+    }
+
+    let featureMark = 0;
+    const featureRef = `refs/heads/perf-feature-${String(group + 1).padStart(2, "0")}`;
+    for (let index = 0; index < largeHistoryFeatureCommits; index += 1) {
+      const parent = featureMark ? `:${featureMark}` : branchBase;
+      featureMark = appendCommit(
+        featureRef,
+        parent,
+        `large-history feature ${group + 1}-${String(index + 1).padStart(2, "0")}`,
+        `history/feature-${String(group + 1).padStart(2, "0")}.txt`,
+        `feature ${group + 1} ${index + 1}\n`
+      );
+    }
+
+    mainMark = appendCommit(
+      "refs/heads/main",
+      `:${mainMark}`,
+      `large-history merge feature ${String(group + 1).padStart(2, "0")}`,
+      "history/main.txt",
+      `main merge ${group + 1}\n`,
+      `:${featureMark}`
+    );
+    mainParent = `:${mainMark}`;
+  }
+
+  stream.push("done\n");
+  await fastImport(repo, stream.join(""));
+  await git(repo, ["reset", "--hard", "HEAD"]);
+  return {
+    commitCount: commitCount + 2,
+    head: await git(repo, ["rev-parse", "HEAD"]),
+  };
+}
+
+async function createLargeWorktreeFixture(repo) {
+  const batchSize = 200;
+  for (let start = 0; start < largeWorktreeFileCount; start += batchSize) {
+    const writes = [];
+    const end = Math.min(largeWorktreeFileCount, start + batchSize);
+    for (let index = start; index < end; index += 1) {
+      const directory = path.join(repo, "worktree", `group-${String(Math.floor(index / 40)).padStart(3, "0")}`);
+      const file = path.join(directory, `file-${String(index).padStart(5, "0")}.txt`);
+      writes.push(fs.mkdir(directory, { recursive: true }).then(() => fs.writeFile(file, `worktree ${index}\n`, "utf8")));
+    }
+    await Promise.all(writes);
+  }
+}
+
+async function fastImport(repo, stream) {
+  const child = spawn("git", ["-C", repo, "fast-import", "--quiet"], {
+    env: gitEnv,
+    stdio: ["pipe", "ignore", "pipe"],
+    windowsHide: true,
+  });
+  let errorOutput = "";
+  child.stderr.on("data", (chunk) => {
+    errorOutput = appendLog(errorOutput, chunk);
+  });
+  child.stdin.end(stream);
+  const [code] = await once(child, "exit");
+  if (code !== 0) throw new Error(`git fast-import failed (${code}):\n${errorOutput}`);
 }
 
 async function writeFixtureFiles(repo, complex, scattered, small) {

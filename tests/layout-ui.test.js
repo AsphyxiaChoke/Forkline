@@ -601,7 +601,7 @@ test("graph labels expand with the resized graph column and stay inside it", () 
   assert.equal(wideWidth, 360);
   assert.equal(wideText, branch);
   assert.ok(wideRect <= wideWidth - 6 - (80 + 12));
-  assert.match(svgMarkup, /style="width:360px"/);
+  assert.match(svgMarkup, /style="width:360px(?:;[^"]*)?"/);
   assert.equal(expandedText, veryLongBranch);
 });
 
