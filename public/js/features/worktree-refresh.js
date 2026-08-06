@@ -34,7 +34,6 @@ async function refreshWorktree(silent = false) {
     const nextSignature = worktreeStateSignature(nextFiles, nextOperation);
     if (nextSignature !== state.worktreeSignature) {
       mergeWorktreeState(data);
-      renderWorkingFiles();
       renderStage();
       if (!silent) toast(t("未提交修改已刷新"));
     } else if (!silent) {

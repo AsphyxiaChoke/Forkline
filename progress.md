@@ -7075,3 +7075,27 @@
 - `app-self-update.js`：保留不完整 stderr 分块并仅在完整进度行到达后解析。
 - `progress.md`：追加最终回归和测试服务清理证据。
 - 回滚点为 `0b26135`；提交前可执行 `git restore -- app-self-update.js progress.md`（只回滚本条收尾改动会同时丢失此前尚未提交的同文件改动，不建议拆分执行）；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-06 - Task: 优化大工作区文件树监听与重复渲染
+
+### What was done
+- 将工作区、暂存区和右侧详情文件树改为根级 click/dblclick/contextmenu 事件委托；每个长期容器只绑定一次，容器重用时更新当前模式配置。
+- 保留目录折叠、多选、双击编辑、历史文件双击对照和工作区右键菜单行为，并把工作区选中标记限制在两个变更容器内查询。
+- 删除重复的 `renderWorkingFiles()` 计算和全部成对调用，工作区签名、筛选、计数与树渲染统一由一次 `renderStage()` 完成。
+- 真实 Chromium 性能回归增加文件树新增监听器计数，锁定三次大列表重绘最多只补齐两个容器的 6 个根监听。
+
+### Testing
+- 修改前 4000 文件基线：冷/热 API 约 399.5/241.7 ms，树渲染约 35.4 ms、筛选约 16.9 ms、恢复约 38.9 ms、最大事件循环停顿约 329.8 ms，文件树约 16615 个节点。
+- 修改后独立真实 Chromium 回归：冷/热 API 约 392.6/247.3 ms，树渲染约 31.7 ms、筛选约 17.4 ms、恢复约 33.4 ms、最大停顿约 317.9 ms，新增根监听 6 个。
+- 文件树/工作区/布局专项运行 73 项，73 项通过；新增动态回归覆盖容器重复绑定、最新模式切换、工作区选择、双击编辑、右键菜单和目录折叠。
+- `npm.cmd test` 完整运行 165 项，165 项通过、0 项失败、0 项跳过，耗时约 117.3 秒；其中 4000 文件完整回归冷/热 API 约 443.9/262.0 ms、树渲染约 32.3 ms、筛选约 16.1 ms、恢复约 32.8 ms、最大停顿约 310.7 ms、新增根监听 6 个。
+- 完整回归中的复杂历史文件打开约 158.7 ms、最大事件循环延迟约 41.2 ms；仓库切换、编辑器监听器、DOM 和堆边界稳定。测试结束后未发现命令行包含 `forkline-upload` 或 `server.js` 的 Node 进程。
+
+### Notes
+- `public/js/features/file-tree.js`：增加容器级事件委托、最新模式配置和工作区范围内选中标记。
+- `public/js/features/worktree-changes.js`、`public/js/app/init.js`、`public/js/features/git-actions.js`、`public/js/features/worktree-refresh.js`、`public/js/panels/stashes.js`：删除重复工作区渲染调用，只保留 `renderStage()`。
+- `tests/file-editor-ui.test.js`、`tests/worktree-refresh.test.js`：覆盖委托监听复用、工作区/提交交互和单次渲染契约。
+- `tests/browser-performance.test.js`：记录并限制大文件树重绘新增监听器数量。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录事件委托边界、前后性能数据和下一项分批渲染方向。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `818e729`；提交前可执行 `git restore -- public/js/features/file-tree.js public/js/features/worktree-changes.js public/js/app/init.js public/js/features/git-actions.js public/js/features/worktree-refresh.js public/js/panels/stashes.js tests/file-editor-ui.test.js tests/worktree-refresh.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

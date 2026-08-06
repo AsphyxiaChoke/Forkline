@@ -223,7 +223,8 @@ test("stage-all and stash actions use lightweight worktree refreshes", () => {
   );
 
   assert.match(runActionSource, /const worktreeOnly = action === "stageAll" \|\| action === "discardAll"/);
-  assert.match(runActionSource, /if \(worktreeOnly\) \{[\s\S]*?api\("\/api\/worktree"\)[\s\S]*?renderWorkingFiles\(\);[\s\S]*?renderStage\(\);[\s\S]*?return;/);
+  assert.match(runActionSource, /if \(worktreeOnly\) \{[\s\S]*?api\("\/api\/worktree"\)[\s\S]*?renderStage\(\);[\s\S]*?return;/);
+  assert.doesNotMatch(runActionSource, /renderWorkingFiles\(\)/);
   assert.match(createStashSource, /api\("\/api\/worktree\?stashes=1"\)/);
   assert.doesNotMatch(createStashSource, /loadStateForRepoPath/);
   assert.match(runStashSource, /api\("\/api\/worktree\?stashes=1"\)/);

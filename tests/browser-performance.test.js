@@ -431,20 +431,40 @@ test("real Chromium keeps historical file comparison responsive", {
     state.selectedChanges.clear();
     state.worktreeFilter = "";
     els.worktreeFilterInput.value = "";
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    let fileTreeListenerAdds = 0;
+    EventTarget.prototype.addEventListener = function (...args) {
+      if (
+        this === els.changeList ||
+        this === els.stagedChangeList ||
+        els.changeList.contains(this) ||
+        els.stagedChangeList.contains(this)
+      ) {
+        fileTreeListenerAdds += 1;
+      }
+      return originalAddEventListener.apply(this, args);
+    };
     const renderStarted = performance.now();
-    renderStage();
-    const renderMs = performance.now() - renderStarted;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const filterStarted = performance.now();
-    state.worktreeFilter = "file-03999";
-    els.worktreeFilterInput.value = state.worktreeFilter;
-    renderStage();
-    const filterMs = performance.now() - filterStarted;
-    state.worktreeFilter = "";
-    els.worktreeFilterInput.value = "";
-    const restoreStarted = performance.now();
-    renderStage();
-    const restoreMs = performance.now() - restoreStarted;
+    let renderMs;
+    let filterMs;
+    let restoreMs;
+    try {
+      renderStage();
+      renderMs = performance.now() - renderStarted;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const filterStarted = performance.now();
+      state.worktreeFilter = "file-03999";
+      els.worktreeFilterInput.value = state.worktreeFilter;
+      renderStage();
+      filterMs = performance.now() - filterStarted;
+      state.worktreeFilter = "";
+      els.worktreeFilterInput.value = "";
+      const restoreStarted = performance.now();
+      renderStage();
+      restoreMs = performance.now() - restoreStarted;
+    } finally {
+      EventTarget.prototype.addEventListener = originalAddEventListener;
+    }
     await new Promise((resolve) => setTimeout(resolve, 75));
     clearInterval(timer);
     return {
@@ -460,12 +480,14 @@ test("real Chromium keeps historical file comparison responsive", {
       renderedRows: document.querySelectorAll("#changeList .file-row[data-file]").length,
       treeNodes: document.querySelectorAll("#changeList *").length,
       pageNodes: document.querySelectorAll("body *").length,
+      fileTreeListenerAdds,
     };
   })()`);
   assert.equal(worktreeMetrics.warmLoadedFiles, worktreeMetrics.loadedFiles);
   assert.equal(worktreeMetrics.sameSnapshot, true);
+  assert.ok(worktreeMetrics.fileTreeListenerAdds <= 6, `large worktree added ${worktreeMetrics.fileTreeListenerAdds} file-tree listeners while rendering`);
   t.diagnostic(
-    `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms, warm API ${worktreeMetrics.warmApiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
+    `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms, warm API ${worktreeMetrics.warmApiMs.toFixed(1)} ms, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, listener adds ${worktreeMetrics.fileTreeListenerAdds}, rows ${worktreeMetrics.renderedRows}, tree nodes ${worktreeMetrics.treeNodes}, page nodes ${worktreeMetrics.pageNodes}`
   );
 
   const baselineRepoPath = await evaluate(cdp, `(async () => {

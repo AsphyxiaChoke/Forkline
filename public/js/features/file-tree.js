@@ -1,4 +1,6 @@
 // Hierarchical file trees and file selection state.
+const fileTreeBindings = new WeakMap();
+
 function fileTreeHtml(files, options = {}) {
   const root = { dirs: new Map(), files: [] };
   files.forEach((file) => addFileToTree(root, file));
@@ -76,67 +78,83 @@ function scopedFileStatus(file, scope = "") {
 }
 
 function bindFileTree(root, options = {}) {
-  root.querySelectorAll(".tree-head").forEach((head) => {
-    head.addEventListener("click", () => head.closest(".tree-group")?.classList.toggle("collapsed"));
-  });
+  let binding = fileTreeBindings.get(root);
+  if (!binding) {
+    binding = { options: {} };
+    root.addEventListener("click", (event) => handleFileTreeClick(root, binding, event));
+    root.addEventListener("dblclick", (event) => handleFileTreeDoubleClick(root, binding, event));
+    root.addEventListener("contextmenu", (event) => handleFileTreeContextMenu(root, binding, event));
+    fileTreeBindings.set(root, binding);
+  }
+  binding.options = { ...options };
+
   if (options.mode === "worktree" || options.selectable) {
-    root.querySelectorAll("[data-select-file]").forEach((row) => {
-      row.addEventListener("click", async (event) => {
-        const filePath = row.dataset.file || "";
-        const previousFile = row.dataset.previousFile || "";
-        const scope = row.dataset.scope || "";
-        try {
-          if (!await switchOpenFileEditor(filePath, previousFile)) return;
-        } catch (error) {
-          toast(error.message);
-          return;
-        }
-        if (scope) {
-          selectChangeFile(filePath, scope, event);
-        } else {
-          selectWorkingFile(filePath);
-        }
-      });
-      row.addEventListener("dblclick", (event) => {
-        event.preventDefault();
-        if (els.fileEditorModal.classList.contains("show")) return;
-        const filePath = row.dataset.file || "";
-        const previousFile = row.dataset.previousFile || "";
-        openFileEditor(filePath, previousFile).catch((error) => toast(error.message));
-      });
-      row.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        showFileContextMenu(event, row.dataset.file || "", row.dataset.scope || "");
-      });
-    });
-    markSelectedFile();
+    return;
+  }
+  if (options.mode === "commit") markCommitFile();
+  if (options.mode === "sync") markSyncPreviewFile();
+  if (options.mode === "compare") markCompareFile();
+}
+
+async function handleFileTreeClick(root, binding, event) {
+  const head = fileTreeEventTarget(root, event, ".tree-head");
+  if (head) {
+    head.closest(".tree-group")?.classList.toggle("collapsed");
+    return;
+  }
+  const row = fileTreeEventTarget(root, event, "[data-select-file]");
+  if (!row) return;
+  const options = binding.options || {};
+  const filePath = row.dataset.file || "";
+  if (options.mode === "worktree" || options.selectable) {
+    const previousFile = row.dataset.previousFile || "";
+    const scope = row.dataset.scope || "";
+    try {
+      if (!await switchOpenFileEditor(filePath, previousFile)) return;
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+    if (scope) selectChangeFile(filePath, scope, event);
+    else selectWorkingFile(filePath);
+    return;
+  }
+  if (options.mode === "commit") selectCommitFile(filePath);
+  if (options.mode === "sync") selectSyncPreviewFile(filePath);
+  if (options.mode === "compare") selectCompareFile(filePath);
+}
+
+function handleFileTreeDoubleClick(root, binding, event) {
+  const row = fileTreeEventTarget(root, event, "[data-select-file]");
+  if (!row) return;
+  const options = binding.options || {};
+  const filePath = row.dataset.file || "";
+  const previousFile = row.dataset.previousFile || "";
+  if (options.mode === "worktree" || options.selectable) {
+    event.preventDefault();
+    if (els.fileEditorModal.classList.contains("show")) return;
+    openFileEditor(filePath, previousFile).catch((error) => toast(error.message));
     return;
   }
   if (options.mode === "commit") {
-    root.querySelectorAll("[data-select-file]").forEach((row) => {
-      row.addEventListener("click", () => selectCommitFile(row.dataset.file || ""));
-      row.addEventListener("dblclick", (event) => {
-        event.preventDefault();
-        const filePath = row.dataset.file || "";
-        const previousFile = row.dataset.previousFile || "";
-        openCommitFileViewer(filePath, previousFile, options.commitSha).catch((error) => toast(error.message));
-      });
-    });
-    markCommitFile();
+    event.preventDefault();
+    openCommitFileViewer(filePath, previousFile, options.commitSha).catch((error) => toast(error.message));
   }
-  if (options.mode === "sync") {
-    root.querySelectorAll("[data-select-file]").forEach((row) => {
-      row.addEventListener("click", () => selectSyncPreviewFile(row.dataset.file || ""));
-    });
-    markSyncPreviewFile();
-  }
-  if (options.mode === "compare") {
-    root.querySelectorAll("[data-select-file]").forEach((row) => {
-      row.addEventListener("click", () => selectCompareFile(row.dataset.file || ""));
-    });
-    markCompareFile();
-  }
+}
+
+function handleFileTreeContextMenu(root, binding, event) {
+  const options = binding.options || {};
+  if (options.mode !== "worktree" && !options.selectable) return;
+  const row = fileTreeEventTarget(root, event, "[data-select-file]");
+  if (!row) return;
+  event.preventDefault();
+  event.stopPropagation();
+  showFileContextMenu(event, row.dataset.file || "", row.dataset.scope || "");
+}
+
+function fileTreeEventTarget(root, event, selector) {
+  const target = event.target?.closest?.(selector);
+  return target && root.contains(target) ? target : null;
 }
 
 function selectChangeFile(filePath, scope, event) {
@@ -212,10 +230,12 @@ function openSelectedFileInspector(filePath) {
 }
 
 function markSelectedFile() {
-  document.querySelectorAll("[data-select-file]").forEach((row) => {
-    const scope = row.dataset.scope || "";
-    const selected = row.dataset.file === state.selectedFile && (!scope || state.selectedChanges.has(changeKey(scope, row.dataset.file || "")));
-    row.classList.toggle("selected", selected);
+  [els.changeList, els.stagedChangeList].forEach((root) => {
+    root.querySelectorAll("[data-select-file]").forEach((row) => {
+      const scope = row.dataset.scope || "";
+      const selected = row.dataset.file === state.selectedFile && (!scope || state.selectedChanges.has(changeKey(scope, row.dataset.file || "")));
+      row.classList.toggle("selected", selected);
+    });
   });
 }
 

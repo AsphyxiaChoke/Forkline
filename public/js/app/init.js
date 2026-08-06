@@ -296,7 +296,6 @@ function renderAll() {
   applyHistoryState();
   renderRepo();
   renderBranches();
-  renderWorkingFiles();
   renderStage();
   updateAmendMode();
   renderCommits({ inspector: "never" });

@@ -84,10 +84,104 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(contextMenus, /action === "edit"/);
   assert.match(contextMenus, /previousFile: fileInfo\.previousFile/);
   assert.match(contextMenus, /openFileEditor\(context\.file, context\.previousFile/);
-  assert.match(diffWorkbench, /row\.addEventListener\("dblclick"/);
+  assert.match(diffWorkbench, /root\.addEventListener\("dblclick"/);
   assert.match(diffWorkbench, /openFileEditor\(filePath, previousFile/);
   assert.match(diffWorkbench, /switchOpenFileEditor\(filePath, previousFile/);
   assert.match(editor, /文件还有未保存的修改，确认切换到/);
+});
+
+test("file trees reuse delegated root listeners and apply the latest mode", async () => {
+  const listeners = new Map();
+  const listenerAdds = new Map();
+  const state = { selectedSyncFile: "" };
+  let inspectorRenders = 0;
+  const sandbox = {
+    state,
+    els: { detailBody: { querySelectorAll: () => [] } },
+    renderInspector: () => {
+      inspectorRenders += 1;
+    },
+  };
+  vm.runInNewContext(fileTree, sandbox);
+  const rootElement = {
+    addEventListener: (type, listener) => {
+      listenerAdds.set(type, (listenerAdds.get(type) || 0) + 1);
+      listeners.set(type, listener);
+    },
+    querySelectorAll: () => [],
+    contains: () => true,
+  };
+
+  sandbox.bindFileTree(rootElement, { mode: "commit", commitSha: "abc123" });
+  sandbox.bindFileTree(rootElement, { mode: "sync" });
+
+  assert.deepEqual(Object.fromEntries(listenerAdds), { click: 1, dblclick: 1, contextmenu: 1 });
+  const row = { dataset: { file: "src/main.c", previousFile: "" } };
+  await listeners.get("click")({
+    target: {
+      closest: (selector) => selector === "[data-select-file]" ? row : null,
+    },
+  });
+  assert.equal(state.selectedSyncFile, "src/main.c");
+  assert.equal(inspectorRenders, 1);
+});
+
+test("delegated worktree file events preserve selection, editing, context menus, and folder folding", async () => {
+  const listeners = new Map();
+  const calls = [];
+  const sandbox = {
+    els: { fileEditorModal: { classList: { contains: () => false } } },
+    toast: (message) => calls.push(["toast", message]),
+  };
+  vm.runInNewContext(fileTree, sandbox);
+  sandbox.switchOpenFileEditor = async (...args) => {
+    calls.push(["switch", ...args]);
+    return true;
+  };
+  sandbox.selectChangeFile = (...args) => calls.push(["select", ...args]);
+  sandbox.openFileEditor = async (...args) => {
+    calls.push(["open", ...args]);
+    return true;
+  };
+  sandbox.showFileContextMenu = (...args) => calls.push(["menu", ...args.slice(1)]);
+  const rootElement = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    contains: () => true,
+  };
+  sandbox.bindFileTree(rootElement, { selectable: true });
+  const row = { dataset: { file: "src/main.c", previousFile: "src/old-main.c", scope: "unstaged" } };
+  const rowTarget = { closest: (selector) => selector === "[data-select-file]" ? row : null };
+  const clickEvent = { target: rowTarget, ctrlKey: true };
+
+  await listeners.get("click")(clickEvent);
+  let prevented = false;
+  listeners.get("dblclick")({ target: rowTarget, preventDefault: () => { prevented = true; } });
+  let contextPrevented = false;
+  let contextStopped = false;
+  const contextEvent = {
+    target: rowTarget,
+    preventDefault: () => { contextPrevented = true; },
+    stopPropagation: () => { contextStopped = true; },
+  };
+  listeners.get("contextmenu")(contextEvent);
+
+  let folded = "";
+  const head = { closest: () => ({ classList: { toggle: (name) => { folded = name; } } }) };
+  await listeners.get("click")({
+    target: { closest: (selector) => selector === ".tree-head" ? head : null },
+  });
+
+  assert.deepEqual(calls[0], ["switch", "src/main.c", "src/old-main.c"]);
+  assert.equal(calls[1][0], "select");
+  assert.equal(calls[1][1], "src/main.c");
+  assert.equal(calls[1][2], "unstaged");
+  assert.equal(calls[1][3], clickEvent);
+  assert.deepEqual(calls[2], ["open", "src/main.c", "src/old-main.c"]);
+  assert.deepEqual(calls[3], ["menu", "src/main.c", "unstaged"]);
+  assert.equal(prevented, true);
+  assert.equal(contextPrevented, true);
+  assert.equal(contextStopped, true);
+  assert.equal(folded, "collapsed");
 });
 
 test("worktree selection updates in place so the same row can receive a double-click", () => {
@@ -104,7 +198,7 @@ test("worktree selection updates in place so the same row can receive a double-c
 
 test("commit file double-click opens the shared comparison window in read-only mode", () => {
   assert.match(inspector, /bindFileTree\(els\.detailBody, \{ mode: "commit", commitSha: commit\.sha \}\)/);
-  assert.match(diffWorkbench, /options\.mode === "commit"[\s\S]*row\.addEventListener\("dblclick"/);
+  assert.match(diffWorkbench, /function handleFileTreeDoubleClick[\s\S]*options\.mode === "commit"/);
   assert.match(diffWorkbench, /openCommitFileViewer\(filePath, previousFile, options\.commitSha\)/);
   assert.match(editor, /async function openCommitFileViewer/);
   assert.match(editor, /"\/api\/commit-file"/);

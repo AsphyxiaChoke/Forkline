@@ -322,7 +322,6 @@ async function runAction(action) {
         state.selectedFile = "";
         state.workDiffScope = "unstaged";
       }
-      renderWorkingFiles();
       renderStage();
       return;
     }
@@ -759,7 +758,6 @@ async function createStashFromSelection(files = null) {
     mergeWorktreeState(data, { stashes: true });
     state.selectedStash = state.data.stashes?.[0]?.ref || state.selectedStash;
     state.selectedTab = "stashes";
-    renderWorkingFiles();
     renderStage();
     renderInspector();
   } catch (error) {
@@ -792,7 +790,6 @@ async function ignoreWorktreePath(action, file) {
     const data = await api("/api/worktree");
     if (!isCurrentRepoPath(repoPath)) return;
     mergeWorktreeState(data);
-    renderWorkingFiles();
     renderStage();
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -829,7 +826,6 @@ async function runSingleFileAction(action, file) {
     if (!isCurrentRepoPath(repoPath)) return;
     mergeWorktreeState(data);
     syncFileSelectionAfterAction(action, [file], state.data.workingFiles);
-    renderWorkingFiles();
     renderStage();
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
@@ -918,7 +914,6 @@ async function runFileBatchAction(action, scope, button) {
     if (!isCurrentRepoPath(repoPath)) return;
     mergeWorktreeState(data);
     syncFileSelectionAfterAction(action, files, state.data.workingFiles);
-    renderWorkingFiles();
     renderStage();
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;

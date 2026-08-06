@@ -34,7 +34,7 @@
 - `public/js/panels/workspaces.js`：工作树和子模块面板。
 - `public/js/panels/stashes.js`、`auth.js`、`sync.js`、`compare.js`：分别负责储藏、认证诊断、轻量同步状态和分支/引用比较面板。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、Git 操作日志、应用设置与在线更新面板。
-- `public/js/features/file-tree.js`、`diff-renderer.js`、`diff-workbench.js`、`diff-selection.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、双栏 Diff 渲染、Diff 数据加载与弹窗编排、按行操作与滚动恢复，以及工作区签名和焦点轮询。
+- `public/js/features/file-tree.js`、`diff-renderer.js`、`diff-workbench.js`、`diff-selection.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、双栏 Diff 渲染、Diff 数据加载与弹窗编排、按行操作与滚动恢复，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。
 - `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：分别负责文件类型与轻量对照判断、暂存/还原动作、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
@@ -155,7 +155,7 @@
 - Reflog 测试覆盖仓库上下文边界和无提交/有提交响应；`tests/reflog-ui-state.test.js` 验证当前结果写入和旧仓库响应丢弃。
 - `tests/checkout-stash-ui-state.test.js` 验证签出储藏提醒在实际分支或查看引用变化后被丢弃，保留当前分支总览中的正常提示，并验证 Forkline 主动签出后的自动恢复不显示确认框。
 - `tests/worktree-refresh.test.js` 验证文件快照影响刷新签名、未跟踪路径不进入索引查询、大路径列表按 Windows 安全长度分批，以及页面隐藏或失焦时不执行周期读取。
-- `tests/browser-performance.test.js` 对 4000 文件工作区分别记录冷 API 与紧接着的热 API，确认两次文件数和工作区快照一致，并继续测量前端渲染、筛选、恢复与事件循环边界。
+- `tests/browser-performance.test.js` 对 4000 文件工作区分别记录冷 API 与紧接着的热 API，确认两次文件数和工作区快照一致，并继续测量前端渲染、筛选、恢复、事件循环边界与文件树重绘新增监听器数量；三次重绘最多只能为两个长期容器补齐 6 个委托监听。
 - `tests/backend-modules.test.js` 固定入口、门面与二级服务边界，防止实现重新回流到 `server.js` 或两个门面文件。
 - `tests/backend-services.test.js` 直接覆盖补丁裁剪、路径边界、远端网页 URL、恢复点保留策略、受保护分支和历史分页等纯服务逻辑。
 - `tests/recovery-policy-ui.test.js` 覆盖旧策略迁移、按仓库隔离、操作后整理确认和示例仓库边界；`tests/recovery-undo-ui.test.js` 验证危险操作返回恢复点后会登记一键撤销并触发策略检查。

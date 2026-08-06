@@ -134,7 +134,6 @@ async function runStashAction(action, ref, button) {
     if (!state.data.stashes?.some((stash) => stash.ref === state.selectedStash)) {
       state.selectedStash = state.data.stashes?.[0]?.ref || "";
     }
-    renderWorkingFiles();
     renderStage();
     renderInspector();
     if (state.selectedSha && state.selectedTab !== "stashes") {

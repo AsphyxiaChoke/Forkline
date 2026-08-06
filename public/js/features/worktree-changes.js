@@ -1,12 +1,4 @@
 // Worktree and staging area rendering.
-function renderWorkingFiles() {
-  const files = state.data.workingFiles;
-  const terms = worktreeFilterTerms();
-  const visibleFiles = filterWorkingFiles(files, terms);
-  state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
-  updateWorktreeFilterMeta(terms, visibleFiles.length, files.length);
-}
-
 function renderStage() {
   els.changeList.innerHTML = "";
   els.stagedChangeList.innerHTML = "";
@@ -174,7 +166,6 @@ function updateWorktreeFilterMeta(terms, visibleCount, totalCount) {
 
 function updateWorktreeFilter(value) {
   state.worktreeFilter = String(value || "");
-  renderWorkingFiles();
   renderStage();
 }
 
@@ -182,7 +173,6 @@ function clearWorktreeFilter() {
   if (!state.worktreeFilter && !els.worktreeFilterInput.value) return;
   state.worktreeFilter = "";
   els.worktreeFilterInput.value = "";
-  renderWorkingFiles();
   renderStage();
   els.worktreeFilterInput.focus();
 }
