@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "private": true,
   "scripts": {
-    "test": "node --test --test-concurrency=1 tests/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:browser": "node --test --test-concurrency=1 tests/browser-performance.test.js"
   }
 }

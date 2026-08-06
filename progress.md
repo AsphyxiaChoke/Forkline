@@ -6727,3 +6727,26 @@
 - `docs/CONTINUE.md`：记录判定阈值、浏览器实测和 146/146 当前基线。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/js/features/file-editor.js public/js/i18n-catalog.js public/styles.css tests/file-editor-ui.test.js`；提交后执行 `git revert <本任务提交哈希>`。
+
+## 2026-08-06 - Task: 真实浏览器性能自动回归
+
+### What was done
+- 默认 `npm test` 会在系统存在 Edge、Chrome 或 Chromium 时自动启动真实无头浏览器、随机端口 Forkline 服务和独立临时 Git 仓库，验证历史文件对照的实际页面性能。
+- 回归覆盖复杂文件轻量结构、打开耗时、事件循环最大延迟、双栏同步滚动、关闭释放、分散差异提示，以及普通 MergeView 连续切换 8 次后的实例数量和全局 `resize` 监听器回落。
+- 新增 `npm run test:browser` 独立入口；普通完整测试在缺少浏览器时标记跳过，主动运行独立入口或设置 `FORKLINE_REQUIRE_BROWSER=1` 时缺少浏览器会失败，并支持 `FORKLINE_BROWSER_PATH` 指定路径。
+- 测试直接使用 Chromium DevTools Protocol 和 Node.js 内置 WebSocket，不增加 npm 测试依赖或联网下载步骤。
+
+### Testing
+- `node --check tests/browser-performance.test.js` 通过。
+- `npm.cmd run test:browser` 最终运行 1 项，1 项通过、0 项失败；复杂文件打开约 222.1 ms、最大事件循环延迟约 58.8 ms、同步滚动约 7.8 ms、关闭约 0.6 ms；普通小文件打开约 121.8 ms，连续切换 8 次约 89.8 ms。
+- 监听器验证稳定为 `3 -> 4 -> 5 -> 5 -> 4`：首次 CodeMirror 预热只增加 1 个共享监听器，当前 MergeView 增加 1 个，连续切换不继续增长，关闭后回到预热基线。
+- 纳入默认测试后，`npm.cmd test` 完整运行 147 项，147 项通过、0 项失败、0 项跳过、退出码为 0，耗时约 99.4 秒；其中真实浏览器复杂文件打开约 177.6 ms、最大延迟约 60.0 ms。
+- 每轮测试结束后均确认没有 `forkline-browser-performance-*` 临时目录，也没有命令行包含该路径的残留 Edge 进程；既有 `127.0.0.1:5177` 服务未停止并仍打开 `D:/桌面/GitTest` 的 `123` 分支，GitTest 原有 1 个修改文件和 3 个未跟踪演示文件保持不变。
+
+### Notes
+- `tests/browser-performance.test.js`：新增零依赖 Chromium 启动、CDP 控制、真实性能断言、监听器检查和自动清理。
+- `package.json`：增加 `test:browser`，默认 `npm test` 通过测试文件通配符自动包含浏览器回归。
+- `README.md`：说明浏览器测试入口、浏览器缺失行为和自定义路径。
+- `docs/CONTINUE.md`：记录回归边界、实测结果和 147/147 当前基线。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚方式：提交前执行 `git restore -- README.md docs/CONTINUE.md package.json progress.md`，再执行 `Remove-Item -LiteralPath tests/browser-performance.test.js`；提交后执行 `git revert <本任务提交哈希>`。
