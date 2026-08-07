@@ -7247,3 +7247,23 @@
 - `docs/CONTINUE.md`：同步设计系统基线、测试可移植性和完整验证结果。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `e6e8537`；提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/styles.css tests/file-editor-ui.test.js`，再执行 `Remove-Item -LiteralPath docs/DESIGN_SYSTEM.md,tests/design-system.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-07 - Task: 发布 Forkline v0.3.0
+
+### What was done
+- 将正式版本从 `0.2.1` 更新为 `0.3.0`，并以当前 `main` 作为 `v0.3.0` Tag 和 GitHub Release 的发布目标。
+- 发布说明归纳 `v0.2.1` 之后的长任务进度与取消、精细 Diff、三栏冲突编辑、大仓库性能、恢复保护、认证诊断、在线更新恢复、渐进打开、自动降级诊断和设计系统基线。
+- 按本次要求不构建或上传安装包、EXE 或便携附件；Release 仅使用 GitHub 自动生成的源码压缩包。
+
+### Testing
+- `npm.cmd test` 完整运行 175 项，175 项通过、0 项失败、0 项跳过，耗时约 136.5 秒。
+- 真实 Chromium 回归中复杂文件打开约 `231.5 ms`，最大事件循环延迟约 `70.5 ms`；3012 条提交首屏为 17 行和 105 个图谱元素。
+- 4000 文件工作区冷/热 API 约 `442.6/259.8 ms`，首批渲染约 `11.6 ms`，滚动加载全部约 `750.9 ms / 4` 批；渐进打开首屏约 `182.8 ms`，完整详情约 `861.4 ms`。
+- 仓库切换 12 次约 `7.83 s`，编辑器开关 30 次后 `resize` 监听器保持 `4 -> 4`，DOM 保持 `1/2091/149 -> 1/2091/149`，GC 后堆约 `3.7 MiB -> 3.8 MiB`。
+- 测试结束后相关 Node / Edge / Chrome 进程和 `forkline-browser-performance-*`、`forkline-progressive-open-*` 临时目录均为 0。
+
+### Notes
+- `package.json`：将 Forkline 正式版本更新为 `0.3.0`。
+- `docs/CONTINUE.md`：更新当前回归数量并记录 v0.3.0 发布范围、附件边界和性能验证。
+- `progress.md`：追加本轮版本发布、验证和回滚方式。
+- 回滚点为 `0c9b152`；创建 Tag 前可执行 `git restore -- package.json docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`，已经发布后不得移动或强制覆盖 `v0.3.0`，应发布更高修订版本修正。
