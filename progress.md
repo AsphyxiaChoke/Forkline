@@ -7220,3 +7220,30 @@
 - `docs/CONTINUE.md`：更新当前能力、回归数量和两种负载下的性能数据。
 - `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
 - 回滚点为 `4919b1c`；提交前可执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md public/js/api.js public/js/app/init.js public/js/core.js public/js/features/repositories.js public/js/features/worktree-changes.js public/js/i18n-catalog.js server.js server/repository-service.js server/repository-state-service.js tests/api-repo-context.test.js tests/browser-performance.test.js tests/git-api.test.js tests/layout-ui.test.js tests/recovery-policy-ui.test.js progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-07 - Task: 建立代码即真源的界面设计系统基线
+
+### What was done
+- 基于现有六套主题、CSS Token 和组件类建立 `docs/DESIGN_SYSTEM.md`，明确唯一可信来源、Token 分层、组件目录、AI 修改流程和最大化/竖屏/窄屏/高 DPI 验收矩阵；不引入 Figma、前端框架或整体样式拆分。
+- 将主按钮文字、重命名状态和警告图标的四处固定十六进制语义色无损收口为 CSS Token，实际颜色和交互保持不变。
+- 增加设计系统自动守卫，检查文档入口、六主题 Token 契约、共享组件选择器和普通 CSS 规则中的十六进制语义色。
+- 新正式工作区使用 CRLF 后暴露两处文件编辑器测试函数截取失败；正则改为同时兼容 CRLF/LF，只修正测试可移植性，没有修改编辑器实现。
+
+### Testing
+- `node --check tests/design-system.test.js` 通过；`git diff --check` 通过，仅输出工作区现有 LF/CRLF 转换提示。
+- `node --test --test-concurrency=1 tests/file-editor-ui.test.js tests/design-system.test.js tests/themes.test.js tests/layout-ui.test.js` 运行 75 项，75 项通过、0 项失败。
+- `npm.cmd test` 完整运行 175 项，175 项通过、0 项失败、0 项跳过，耗时约 121.7 秒。
+- 真实 Chromium 回归中复杂文件打开约 `172.1 ms`，3012 条提交渲染 17 行和 105 个图谱元素；4000 文件分批载入约 `600.5 ms / 4` 批，最大事件循环延迟约 `163.2 ms`；渐进打开首屏约 `178.7 ms`、完整详情约 `799.6 ms`。
+- 大/小仓库切换 12 次后连续开关历史编辑器 30 次，`resize` 监听器保持 `4 -> 4`，DOM 保持 `1/2091/149 -> 1/2091/149`，GC 后堆约 `3.7 MiB -> 3.8 MiB`。
+- 本轮临时 `5299` 服务 PID `38224` 已停止，端口确认无监听。内置浏览器控制连接中断，因此没有单独完成截图人工复核；本轮四处样式替换使用完全相同的颜色值，自动真实 Chromium 回归已通过。
+- 系统临时目录仍有一个 `2026-08-04` 的旧 `forkline-operation-cancel-tpGSA5` 目录，本轮未创建也未删除。
+
+### Notes
+- `public/styles.css`：增加四个语义色 Token，并替换对应固定颜色引用。
+- `docs/DESIGN_SYSTEM.md`：新增 Forkline 界面设计系统、编码约束、AI 流程和视觉验收矩阵。
+- `tests/design-system.test.js`：新增主题、组件和颜色 Token 自动守卫。
+- `tests/file-editor-ui.test.js`：让两处函数截取正则兼容 Windows CRLF 和 LF。
+- `README.md`：在开发文档入口中加入界面设计系统。
+- `docs/CONTINUE.md`：同步设计系统基线、测试可移植性和完整验证结果。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚方式。
+- 回滚点为 `e6e8537`；提交前执行 `git restore -- README.md docs/CONTINUE.md progress.md public/styles.css tests/file-editor-ui.test.js`，再执行 `Remove-Item -LiteralPath docs/DESIGN_SYSTEM.md,tests/design-system.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

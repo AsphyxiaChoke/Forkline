@@ -549,7 +549,7 @@ test("historical comparison switches complex files to the lightweight path", () 
 });
 
 test("large files use two lightweight CodeMirror panes instead of MergeView", () => {
-  const largeCompare = editor.match(/function createLargeFileCompare[\s\S]*?\n}\n\nfunction observeFileEditorStageButtons/)?.[0] || "";
+  const largeCompare = editor.match(/function createLargeFileCompare[\s\S]*?\r?\n}\r?\n\r?\nfunction observeFileEditorStageButtons/)?.[0] || "";
   assert.match(editor, /else if \(editor\.largeFile \|\| editor\.lightweightCompare\) \{\s*createLargeFileCompare\(editor, codeMirrorOptions\);/s);
   assert.match(largeCompare, /editor\.oldCodeMirror = CodeMirror\(oldHost/);
   assert.match(largeCompare, /editor\.codeMirror = CodeMirror\(newHost/);
@@ -759,7 +759,7 @@ test("file editor maps working-tree selections to the matching Git hunk and line
 });
 
 test("saving keeps the floating editor open and reloads its comparison", () => {
-  const submitEditor = editor.match(/async function submitFileEditor[\s\S]*?\n}\n\nfunction closeFileEditor/)?.[0] || "";
+  const submitEditor = editor.match(/async function submitFileEditor[\s\S]*?\r?\n}\r?\n\r?\nfunction closeFileEditor/)?.[0] || "";
   assert.match(editor, /await refreshWorktree\(true\)/);
   assert.match(submitEditor, /const restoreView = captureFileEditorView\(editor\)/);
   assert.match(submitEditor, /await openFileEditor\(file, previousFile, \{ force: true, reload: true, restoreView, feedbackMessage: "文件已保存" \}\)/);

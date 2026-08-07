@@ -182,6 +182,7 @@ npm run test:browser
 
 - [继续开发说明](docs/CONTINUE.md)
 - [项目架构](docs/ARCHITECTURE.md)
+- [界面设计系统](docs/DESIGN_SYSTEM.md)
 - [开发进度记录](progress.md)
 
 项目地址：[AsphyxiaChoke/Forkline](https://github.com/AsphyxiaChoke/Forkline)

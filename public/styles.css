@@ -18,6 +18,10 @@
   --blue-rgb: 103, 183, 255;
   --violet: #b18cff;
   --danger: #ff6b74;
+  --on-primary: #f4fffd;
+  --on-amber: #2a2614;
+  --warning-strong: #ffc928;
+  --on-warning-strong: #20232a;
   --topbar: #0b0f15;
   --field: #111722;
   --surface: #141a25;
@@ -875,7 +879,7 @@ html[data-theme="rose"] .topbar-more select {
 .btn.primary {
   border-color: rgba(var(--teal-rgb), 0.78);
   background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 84%, var(--teal)), var(--primary));
-  color: #f4fffd;
+  color: var(--on-primary);
   box-shadow: 0 8px 18px rgba(16, 153, 143, 0.18);
 }
 
@@ -4367,7 +4371,7 @@ button.file-row {
 
 .state-pill.renamed {
   background: var(--amber);
-  color: #2a2614;
+  color: var(--on-amber);
 }
 
 .file-history-main {
@@ -7363,8 +7367,8 @@ body.file-editor-window-resizing * {
   width: 56px;
   height: 50px;
   clip-path: polygon(50% 3%, 98% 94%, 2% 94%);
-  background: #ffc928;
-  color: #20232a;
+  background: var(--warning-strong);
+  color: var(--on-warning-strong);
   font-size: 34px;
   font-weight: 900;
   line-height: 1;
