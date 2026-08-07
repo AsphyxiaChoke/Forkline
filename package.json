@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "scripts": {
+    "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "test:browser": "node --test --test-concurrency=1 tests/browser-performance.test.js"
   }

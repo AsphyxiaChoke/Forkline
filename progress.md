@@ -7267,3 +7267,32 @@
 - `docs/CONTINUE.md`：更新当前回归数量并记录 v0.3.0 发布范围、附件边界和性能验证。
 - `progress.md`：追加本轮版本发布、验证和回滚方式。
 - 回滚点为 `0c9b152`；创建 Tag 前可执行 `git restore -- package.json docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`，已经发布后不得移动或强制覆盖 `v0.3.0`，应发布更高修订版本修正。
+
+## 2026-08-07 - Task: 增加 Windows 便携包并补充 v0.3.0 Release 附件
+
+### What was done
+- 增加 Windows 便携构建脚本，从正式 Tag 创建 `main` 浅层仓库，保留官方 `origin`，下载并校验固定 Node.js Windows x64 运行时，再生成包含隐藏 `.git` 的 ZIP 和 SHA256 文件。
+- 便携启动器和运行时只写入包内 `.git/info/exclude`，不修改发布 Tag 的跟踪文件，也不让 Forkline 自身工作区变脏；系统 Git 继续负责仓库操作、凭据和 SSH。
+- 增加 GitHub Release 自动构建工作流；正式 Release 发布或手动指定已有 Tag 时，构建并上传 ZIP、SHA256 和 workflow artifact。
+- 为现有 `v0.3.0` Release 构建、验证并上传 Windows x64 便携 ZIP 和 SHA256 附件。
+
+### Testing
+- PowerShell Parser 检查 `scripts/build-portable.ps1` 通过；便携专项运行 2 项，2 项通过。
+- `npm.cmd test` 完整运行 176 项，176 项通过、0 项失败、0 项跳过，耗时约 131.9 秒。
+- 实际 ZIP 为 `35,872,015` 字节，SHA256 为 `ef88c0a29bedfb1a0142ff92883bf813bcbced0c8cf993ec837779fc861ce702`；本地 `.sha256` 内容与重新计算结果一致。
+- 解压后的仓库为 `main`，HEAD 为 `074fae641f3a0e659aa648e882be8e5853b3902b`，`origin` 为官方地址，`--is-shallow-repository = true` 且 `git status` 为空。
+- 内置 Node.js `v24.13.0` 在随机端口 `57468` 启动 Forkline 并返回 HTTP 200；对 PID `20104` 使用 `taskkill /T /F` 后端口确认关闭，临时解压目录已删除。
+- GitHub Release 中 ZIP 为 uploaded 状态、大小 `35,872,015` 字节，asset digest 与本地 SHA256 完全一致；SHA256 附件同时上传成功。
+
+### Notes
+- `.gitignore`：忽略本机构建输出目录 `dist/`。
+- `.github/workflows/release-portable.yml`：新增正式 Release 和手动 Tag 的 Windows 便携构建、artifact 保存与附件上传。
+- `build-portable.cmd`：新增可双击的本地构建入口。
+- `scripts/build-portable.ps1`：实现 Tag/版本校验、浅层仓库、官方 Node 校验、便携运行时、干净工作区检查、ZIP 和 SHA256 生成。
+- `package.json`：增加 `build:portable` 脚本入口，正式版本仍为 `0.3.0`。
+- `tests/portable-runtime.test.js`：固定构建脚本、工作流、Git 更新兼容和 Node SHA 校验契约。
+- `README.md`：区分便携包与源码仓库的 Node 要求、启动方式和更新能力。
+- `docs/PACKAGING.md`：新增便携包结构、构建流程、更新边界、验证规则和 v0.3.0 实际产物。
+- `docs/CONTINUE.md`：更新完整回归数量并记录便携构建、运行验证和 Release 附件。
+- `progress.md`：追加本轮实现、验证、发布附件和回滚方式。
+- 回滚点为 `074fae6`；提交前可执行 `git restore -- .gitignore README.md package.json tests/portable-runtime.test.js docs/CONTINUE.md progress.md`，并删除 `.github/workflows/release-portable.yml`、`build-portable.cmd`、`docs/PACKAGING.md`、`scripts/build-portable.ps1`；提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。Release 附件需另行执行 `gh release delete-asset v0.3.0 Forkline-v0.3.0-windows-x64.zip -y` 和对应 SHA256 附件删除命令，不得移动 `v0.3.0` Tag。

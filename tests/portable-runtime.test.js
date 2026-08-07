@@ -52,3 +52,29 @@ test("portable checkout includes iconv-lite's safer-buffer dependency", () => {
   assert.equal(runtimeProbe.status, 0, runtimeProbe.stderr);
   assert.equal(runtimeProbe.stdout, "中文");
 });
+
+test("portable release build preserves Git updates and verifies bundled Node", () => {
+  const ignoreRules = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const buildScript = fs.readFileSync(path.join(root, "scripts", "build-portable.ps1"), "utf8");
+  const buildCommand = fs.readFileSync(path.join(root, "build-portable.cmd"), "utf8");
+  const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "release-portable.yml"), "utf8");
+  const packagingDoc = fs.readFileSync(path.join(root, "docs", "PACKAGING.md"), "utf8");
+
+  assert.match(ignoreRules, /^\/dist\/$/m);
+  assert.match(packageJson.scripts["build:portable"], /scripts\/build-portable\.ps1/);
+  assert.match(buildCommand, /scripts\\build-portable\.ps1/);
+  assert.match(buildScript, /SHASUMS256\.txt/);
+  assert.match(buildScript, /Get-FileHash[^\n]+SHA256/);
+  assert.match(buildScript, /"init", "-b", "main"/);
+  assert.match(buildScript, /refs\/tags\/\$\{ReleaseTag\}:refs\/tags\/\$\{ReleaseTag\}/);
+  assert.match(buildScript, /\.git\\info\\exclude/);
+  assert.match(buildScript, /\/runtime\//);
+  assert.match(buildScript, /Forkline\.cmd/);
+  assert.match(buildScript, /tar\.exe -a -c -f/);
+  assert.match(buildScript, /\$packageName\/\.git\/HEAD/);
+  assert.match(workflow, /release:\s*\n\s*types: \[published\]/);
+  assert.match(workflow, /gh release upload \$tag dist\/\*\.zip dist\/\*\.sha256 --clobber/);
+  assert.match(packagingDoc, /应用内更新/);
+  assert.match(packagingDoc, /强制终止/);
+});

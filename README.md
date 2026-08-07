@@ -10,13 +10,13 @@ Forkline 是一个中文 Git 可视化管理工具，界面和操作方式参考
 
 - Windows 电脑。
 - 已安装 Git，并可在命令行执行 `git`。
-- 已安装 Node.js，并可在命令行执行 `node`。
+- 使用 Release 便携包时不需要安装 Node.js；使用 Git 源码仓库时需安装 Node.js，并可在命令行执行 `node`。
 
 运行所需文件已经放在仓库中，不需要执行 `npm install`。
 
 ### 启动 Forkline
 
-1. 双击根目录的 `start.cmd`。
+1. Release 便携包双击 `Forkline.cmd`；Git 源码仓库双击 `start.cmd`。
 2. 浏览器会自动打开 Forkline。
 3. 第一次使用时，在顶部输入或选择本机 Git 仓库路径。
 4. 点击“打开”；以后再次启动会自动恢复上次成功打开的仓库。
@@ -154,11 +154,12 @@ http://127.0.0.1:5177
 左上角只在发现新版本时显示更新图标；设置页“关于 Forkline”会显示当前版本和检查结果。
 
 - 使用 Git 克隆的官方仓库：位于 `main` 分支且工作区干净时，可在设置页执行“立即更新并重启”。
+- 使用 Windows 便携包：包内保留浅层 Git 仓库和官方 `origin`，同样支持“立即更新并重启”，并使用内置 Node.js 启动。
 - 更新页会显示准备、停止旧服务、重新校验、写入版本、重启和健康检查 6 个阶段；服务重启期间会自动重新连接。
 - 准备阶段会显示 GitHub Release 的对象百分比和已接收 KiB/MiB；连接重置、超时、DNS/TLS 或 early EOF 等瞬时下载错误会有限重试，仍失败时不会写入新版本。
 - 更新失败时会分别说明文件是否已回退、旧服务是否恢复。更新前检查失败不会修改 Forkline 文件，原版本会继续运行。
 - 也可以双击 `pull-latest.cmd` 拉取 `origin/main`。脚本遇到本地修改、冲突、网络或认证问题时会停止，不会强制覆盖。
-- 使用源码 ZIP：不能一键更新，请到 [GitHub Releases](https://github.com/AsphyxiaChoke/Forkline/releases) 下载新版本。
+- GitHub 自动生成的源码 ZIP：不包含 `.git`，不能一键更新；需要免安装版本请下载 Release 中的 `Forkline-v*-windows-x64.zip` 附件。
 
 ## 开发与测试
 
@@ -183,6 +184,7 @@ npm run test:browser
 - [继续开发说明](docs/CONTINUE.md)
 - [项目架构](docs/ARCHITECTURE.md)
 - [界面设计系统](docs/DESIGN_SYSTEM.md)
+- [Windows 便携包](docs/PACKAGING.md)
 - [开发进度记录](progress.md)
 
 项目地址：[AsphyxiaChoke/Forkline](https://github.com/AsphyxiaChoke/Forkline)
