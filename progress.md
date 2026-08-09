@@ -7342,3 +7342,25 @@
 - `progress.md`：追加本轮实现、验证和回滚方式。
 - 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
 - 回滚点为 `56c1c70`；提交前可执行 `git restore -- server.js server/repository-history.js server/repository-service.js server/repository-state-service.js tests/git-api.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-09 - Task: 将文件编辑器保存改为原子替换
+
+### What was done
+- 工作区文件先写入目标同目录的独占临时文件并刷盘，再通过原子重命名替换目标，避免进程或磁盘写入中断后目标文件只剩部分内容。
+- 替换前再次核对目标文件 SHA-256，外部程序在临时文件准备期间修改目标时停止保存并保留外部内容。
+- 失败路径统一关闭并删除临时文件；正常保存继续保留 UTF-8、GBK/GB18030、BOM、换行和 1 MiB 编辑边界，不自动执行暂存。
+
+### Testing
+- `node --check server/file-editor-service.js` 和 `node --check tests/file-editor-atomic-save.test.js` 通过。
+- 原子保存故障注入 `2/2` 通过，覆盖临时文件部分写入后失败、替换前目标被外部修改，并确认原文件与临时文件清理结果。
+- 现有 UTF-8、GBK/GB18030 和冲突文件保存真实 API 回归 `3/3` 通过。
+- 完整非浏览器测试 `184/184` 通过，0 项失败、0 项跳过，耗时约 180.1 秒。本轮未运行真实 Chromium，因为没有前端、样式或布局改动。
+
+### Notes
+- `server/file-editor-service.js`：增加同目录临时文件、刷盘、二次快照校验、原子替换和失败清理。
+- `tests/file-editor-atomic-save.test.js`：新增写入中断与保存过程外部修改的故障注入测试。
+- `docs/ARCHITECTURE.md`：记录文件编辑器原子保存和失败边界。
+- `docs/CONTINUE.md`：更新当前回归数量、完成项和下一项计划。
+- `progress.md`：追加本轮实现、验证和回滚方式。
+- 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
+- 回滚点为 `3ac8b94`；提交前可执行 `git restore -- server/file-editor-service.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md` 并删除 `tests/file-editor-atomic-save.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

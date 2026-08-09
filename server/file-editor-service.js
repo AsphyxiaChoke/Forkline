@@ -229,11 +229,40 @@ function createFileEditorService(options) {
       throw new Error("文件保存后超过 1 MiB，当前编辑器暂不支持这么大的文件。");
     }
 
-    fs.writeFileSync(target.fullPath, nextBuffer);
+    writeEditableFileAtomically(target.fullPath, nextBuffer, expectedSnapshot);
     return {
       ...editableWorktreeFilePayload(target.file, nextBuffer),
       output: "文件已保存",
     };
+  }
+
+  function writeEditableFileAtomically(fullPath, buffer, expectedSnapshot) {
+    const tempPath = path.join(path.dirname(fullPath), `.forkline-save-${process.pid}-${crypto.randomBytes(8).toString("hex")}.tmp`);
+    let fileDescriptor;
+    try {
+      fileDescriptor = fs.openSync(tempPath, "wx", fs.statSync(fullPath).mode);
+      fs.writeFileSync(fileDescriptor, buffer);
+      fs.fsyncSync(fileDescriptor);
+      fs.closeSync(fileDescriptor);
+      fileDescriptor = undefined;
+
+      const latestBuffer = fs.readFileSync(fullPath);
+      if (fileBufferSnapshot(latestBuffer) !== expectedSnapshot) {
+        throw new Error("文件已被其他程序修改，本次内容尚未保存。请重新打开文件，确认最新内容后再编辑。");
+      }
+      fs.renameSync(tempPath, fullPath);
+    } finally {
+      if (fileDescriptor !== undefined) {
+        try {
+          fs.closeSync(fileDescriptor);
+        } catch {
+        }
+      }
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+      }
+    }
   }
 
   function resolveEditableWorktreeFile(filePath, repoPath = getCurrentRepo()) {
@@ -278,8 +307,12 @@ function createFileEditorService(options) {
       bom: decoded.bom,
       lineEnding: editableLineEnding(decoded.content),
       byteLength: buffer.length,
-      snapshot: crypto.createHash("sha256").update(buffer).digest("hex"),
+      snapshot: fileBufferSnapshot(buffer),
     };
+  }
+
+  function fileBufferSnapshot(buffer) {
+    return crypto.createHash("sha256").update(buffer).digest("hex");
   }
 
   function decodeEditableBuffer(buffer) {
