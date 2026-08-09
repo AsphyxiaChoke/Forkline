@@ -11,7 +11,6 @@ function createRepositoryHistoryService(options) {
     normalizeRepoFile,
     normalizeSha,
     normalizeRefName,
-    ensureLiveRemoteBranchRef,
     readBranchDisplayName,
     hasHeadCommit,
     parseStatus,
@@ -117,7 +116,6 @@ function createRepositoryHistoryService(options) {
     }
     const repoPath = currentRepo;
     const ref = refInput ? normalizeCompareRef(refInput, "文件历史引用") : "HEAD";
-    await ensureLiveRemoteBranchRef(ref, repoPath);
     const [, historyFile] = await Promise.all([
       resolveFileReadRef(
         ref,
@@ -180,7 +178,6 @@ function createRepositoryHistoryService(options) {
     }
     const repoPath = currentRepo;
     const ref = refInput ? normalizeCompareRef(refInput, "逐行追踪引用") : "HEAD";
-    await ensureLiveRemoteBranchRef(ref, repoPath);
     const [, blameFile] = await Promise.all([
       resolveFileReadRef(
         ref,
@@ -271,7 +268,6 @@ function createRepositoryHistoryService(options) {
     if (unborn && (base === currentBranch || base === "HEAD" || head === currentBranch || head === "HEAD")) {
       throw new Error("当前分支还没有任何提交，不能参与分支比较。请先创建首个提交，或选择两个已有提交的引用。");
     }
-    await Promise.all([ensureLiveRemoteBranchRef(base, repoPath), ensureLiveRemoteBranchRef(head, repoPath)]);
     const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准", repoPath), resolveCommitRef(head, "比较目标", repoPath)]);
     const mergeBase = (await git(repoPath, ["merge-base", base, head]).catch(() => "")).trim();
     const counts = (await git(repoPath, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);

@@ -422,6 +422,55 @@ test("file history and blame keep valid refs fast while preserving unborn branch
   assert.match(unbornBlame.body.error, /还没有任何提交.*逐行追踪/);
 });
 
+test("remote-tracking refs remain readable while the remote is offline", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-offline-remote-ref-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const remote = path.join(root, "origin.git");
+  const notePath = path.join(repo, "note.txt");
+  await initRepository(repo);
+  await fs.writeFile(notePath, "main line\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "main commit"]);
+  await git("", ["init", "--bare", "--initial-branch=main", remote]);
+  await git(repo, ["remote", "add", "origin", remote]);
+  await git(repo, ["push", "-u", "origin", "main"]);
+
+  await git(repo, ["switch", "-c", "feature"]);
+  await fs.appendFile(notePath, "feature line\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "feature commit"]);
+  await git(repo, ["push", "-u", "origin", "feature"]);
+  await git(repo, ["switch", "main"]);
+  await git(repo, ["fetch", "origin"]);
+  await fs.rm(remote, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  await openRepo(repo);
+
+  const refState = await request("/api/ref-state?ref=origin/feature", { repoPath: repo });
+  assertStatus(refState, 200);
+  assert.equal(refState.body.repo.selectedRef, "origin/feature");
+  assert.equal(refState.body.commits[0]?.message, "feature commit");
+
+  const state = await request("/api/state?ref=origin/feature", { repoPath: repo });
+  assertStatus(state, 200);
+  assert.equal(state.body.repo.selectedRef, "origin/feature");
+  assert.equal(state.body.commits[0]?.message, "feature commit");
+
+  const history = await request("/api/file-history?file=note.txt&ref=origin/feature", { repoPath: repo });
+  assertStatus(history, 200);
+  assert.equal(history.body.commits[0]?.message, "feature commit");
+
+  const blame = await request("/api/file-blame?file=note.txt&ref=origin/feature", { repoPath: repo });
+  assertStatus(blame, 200);
+  assert.equal(blame.body.lines.length, 2);
+
+  const comparison = await request("/api/compare?base=main&head=origin/feature", { repoPath: repo });
+  assertStatus(comparison, 200);
+  assert.equal(comparison.body.headSha, await git(repo, ["rev-parse", "origin/feature"]));
+  assert.ok(comparison.body.files.some((file) => file.file === "note.txt"));
+});
+
 test("file editor stages only the selected visual chunk when nearby changes share the normal diff context", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-file-editor-chunk-"));
   t.after(() => removeFixture(root));

@@ -141,7 +141,6 @@ function createRepositoryService(options) {
     submoduleService,
     worktreeService,
     readBranchDisplayName: (...args) => readBranchDisplayName(...args),
-    ensureLiveRemoteBranchRef: (...args) => ensureLiveRemoteBranchRef(...args),
     parseRemoteNames,
     parseRemoteDetails,
     isKnownRemoteBranch,

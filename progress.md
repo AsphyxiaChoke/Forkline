@@ -7318,3 +7318,27 @@
 - `progress.md`：追加本轮实现、验证和回滚方式。
 - 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
 - 回滚点为 `767cf48`；提交前可执行 `git restore -- server/git-operations-service.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md` 并删除 `tests/git-snapshot-guards.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-09 - Task: 移除远端分支只读浏览的同步网络检查
+
+### What was done
+- `/api/state`、`/api/ref-state`、文件历史、逐行追踪和分支比较改为直接解析本地 remote-tracking ref，不再因查看 `origin/<branch>` 同步等待 `git ls-remote` 或隐式抓取。
+- 写操作和主动连接诊断继续保留远端存在性检查，远端分支的签出、合并、变基、创建、upstream 与删除安全边界不变。
+- 增加远端离线回归，验证已抓取的远端分支在远端不可访问时仍能读取提交、文件历史、逐行结果和比较结果。
+
+### Testing
+- 新增定向回归 `1/1` 通过：真实创建并删除临时裸远端后，五个只读 API 均返回 HTTP 200。
+- 完整非浏览器测试 `182/182` 通过，0 项失败、0 项跳过，耗时约 169.7 秒。
+- `git diff --check` 对本轮文件无新增空白错误；唯一提示来自保留不动的用户文件 `pull-latest.cmd` 原有尾随空格。本轮未运行真实 Chromium，因为没有前端、样式或布局改动。
+
+### Notes
+- `server/repository-state-service.js`：移除全量状态和轻量引用状态读取前的远端网络校验。
+- `server/repository-history.js`：移除文件历史、逐行追踪和分支比较前的远端网络校验。
+- `server/repository-service.js`：删除状态读取服务不再需要的远端校验依赖接线。
+- `server.js`：删除历史读取服务不再需要的远端校验依赖接线。
+- `tests/git-api.test.js`：新增远端离线后读取本地 remote-tracking ref 的真实 API 回归。
+- `docs/ARCHITECTURE.md`：记录只读接口与写操作的远端检查边界。
+- `docs/CONTINUE.md`：更新当前回归数量、完成项和下一项计划。
+- `progress.md`：追加本轮实现、验证和回滚方式。
+- 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
+- 回滚点为 `56c1c70`；提交前可执行 `git restore -- server.js server/repository-history.js server/repository-service.js server/repository-state-service.js tests/git-api.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

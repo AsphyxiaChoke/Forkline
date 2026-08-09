@@ -9,7 +9,6 @@ function createRepositoryStateService(options) {
     submoduleService,
     worktreeService,
     readBranchDisplayName,
-    ensureLiveRemoteBranchRef,
     parseRemoteNames,
     parseRemoteDetails,
     isKnownRemoteBranch,
@@ -401,7 +400,6 @@ function createRepositoryStateService(options) {
     const repoPath = currentRepo;
     const selectedRef = String(ref || "").trim();
     const hasSubmoduleConfig = repoHasSubmoduleConfig(repoPath);
-    await ensureLiveRemoteBranchRef(selectedRef, repoPath);
     const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, remoteMetaOutput, mergedBranchOutput, remoteOutput, remoteVerboseOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
       readBranchDisplayName(repoPath),
       git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
@@ -603,7 +601,6 @@ function createRepositoryStateService(options) {
     }
     const repoPath = currentRepo;
     const selectedRef = String(ref || "").trim();
-    await ensureLiveRemoteBranchRef(selectedRef, repoPath);
     const [branch, headShaOutput, logOutput] = await Promise.all([
       readBranchDisplayName(repoPath),
       git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),

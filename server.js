@@ -362,7 +362,6 @@ const repositoryHistoryService = createRepositoryHistoryService({
   normalizeRepoFile,
   normalizeSha,
   normalizeRefName,
-  ensureLiveRemoteBranchRef,
   readBranchDisplayName,
   hasHeadCommit,
   parseStatus: repositoryService.parseStatus,
