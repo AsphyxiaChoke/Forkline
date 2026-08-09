@@ -100,6 +100,8 @@ const state = {
   folderBrowseRequestId: 0,
   openRepoRequestId: 0,
   repoHydrating: false,
+  repoDetailRequestId: 0,
+  repoDetailLoads: {},
 };
 
 function repoPathSnapshot() {

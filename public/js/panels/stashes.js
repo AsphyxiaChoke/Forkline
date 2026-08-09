@@ -1,5 +1,6 @@
 // Stash panel and actions.
 function renderStashesTab() {
+  if (renderRepoDetailPlaceholder("stashes", "储藏列表", "var(--amber)")) return;
   const stashes = state.data?.stashes || [];
   if (state.selectedStash && !stashes.some((stash) => stash.ref === state.selectedStash)) {
     state.selectedStash = "";

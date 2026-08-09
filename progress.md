@@ -7386,3 +7386,41 @@
 - `progress.md`：追加本轮实现、验证和回滚方式。
 - 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
 - 回滚点为 `5919af8`；提交前可执行 `git restore -- server.js public/js/i18n-catalog.js tests/git-api.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-09 - Task: 将仓库重状态改为按页签加载
+
+### What was done
+- 保留 `/api/state` 默认全量响应，同时增加核心模式；仓库启动与渐进打开的第二阶段只读取工作区、Tag、历史、分支和同步数据，跳过当前页面未使用的分支整理、完整 worktree、子模块、储藏和恢复点读取。
+- 增加五个仓库详情区块接口，分支整理、工作树、子模块、储藏和恢复点仅在对应右侧页签首次打开或手动刷新时读取；各面板显示读取中、失败和重试状态。
+- 前端按仓库路径和请求编号丢弃被后发请求替代或切仓后返回的旧详情，手动刷新只合并当前区块；核心状态继续携带失效 worktree 清理快照，保留左侧分支操作的安全校验。
+
+### Testing
+- 所有改动脚本通过 `node --check`；核心状态命令守卫专项 `8/8` 通过，确认不会执行 stash、子模块、`branch --merged`、恢复点读取或 worktree/submodule 增强。
+- 真实临时 Git 仓库专项验证核心响应、五个详情区块、默认全量兼容、英文错误和失效 worktree 安全快照；渐进打开定向回归 `1/1` 通过。
+- 前端渐进合并与旧响应竞争专项 `2/2` 通过；国际化、布局与安全快照组合专项 `48/48` 通过。
+- 完整非浏览器回归 `187/187` 通过，0 项失败、0 项跳过。本轮未运行真实 Chromium，避免重复使用已知会影响 Codex 稳定性的浏览器验证方式。
+- `git diff --check` 对本轮文件无新增空白错误；全仓唯一提示仍来自保留不动的用户文件 `pull-latest.cmd` 原有尾随空格。
+
+### Notes
+- `server/repository-state-service.js`：增加核心状态分支、五个详情区块读取，并保留 worktree 清理安全快照。
+- `server/repository-service.js`：向仓库服务外观暴露详情区块读取能力。
+- `server.js`：接入 `details=core` 和 `/api/state-details` 路由。
+- `public/js/core.js`：增加仓库详情请求编号和加载状态。
+- `public/js/app/init.js`：启动时改用核心状态响应。
+- `public/js/features/repositories.js`：编排详情懒加载、区块合并、加载占位、失败重试和旧响应丢弃。
+- `public/js/features/folder-command.js`：切换右侧页签时触发对应详情读取。
+- `public/js/features/context-menus.js`：分支右键入口复用统一页签切换和加载逻辑。
+- `public/js/app/events.js`：接入详情区块失败后的重试按钮。
+- `public/js/panels/workspaces.js`：让分支整理、工作树和子模块面板按需读取并局部刷新。
+- `public/js/panels/stashes.js`：让储藏面板在首次打开时读取列表。
+- `public/js/panels/recovery.js`：让恢复点列表先按需读取，再沿用独立 reflog 懒加载。
+- `public/js/i18n-catalog.js`：补充详情区块参数错误的英文文案。
+- `tests/backend-services.test.js`：固定核心模式不执行延后 Git 读取和增强步骤。
+- `tests/git-api.test.js`：用真实仓库覆盖核心响应、五个详情区块、默认全量兼容和英文错误。
+- `tests/layout-ui.test.js`：更新核心状态请求契约并覆盖重复请求与切仓旧响应丢弃。
+- `README.md`：更新仓库打开和右侧工具页的加载方式。
+- `docs/ARCHITECTURE.md`：记录三层状态模型、接口契约、请求保护和安全快照边界。
+- `docs/CONTINUE.md`：更新当前能力、回归数量和下一项优化顺序。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
+- 回滚点为 `016bb96`；提交前可执行 `git restore -- README.md server.js server/repository-service.js server/repository-state-service.js public/js/core.js public/js/app/init.js public/js/app/events.js public/js/features/context-menus.js public/js/features/folder-command.js public/js/features/repositories.js public/js/i18n-catalog.js public/js/panels/recovery.js public/js/panels/stashes.js public/js/panels/workspaces.js tests/backend-services.test.js tests/git-api.test.js tests/layout-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

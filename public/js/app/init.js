@@ -33,7 +33,7 @@ async function init() {
 }
 
 async function loadInitialRepoState(initialRef = "") {
-  const statePath = `/api/state?ref=${encodeURIComponent(initialRef)}`;
+  const statePath = `/api/state?ref=${encodeURIComponent(initialRef)}&details=core`;
   const initialData = await api(statePath);
   if (!initialData?.repo?.isSample) {
     saveRecentRepo(initialData.repo);

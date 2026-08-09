@@ -181,6 +181,76 @@ test("repository state helpers clamp history pages and select graph mode", () =>
   assert.deepEqual(state.logArgs("", 120).slice(-2), ["--branches", "--remotes"]);
 });
 
+test("repository core state skips deferred Git readers and enrichers", async () => {
+  const gitCalls = [];
+  let submoduleConfigChecks = 0;
+  let worktreeEnrichCalls = 0;
+  let submoduleEnrichCalls = 0;
+  const repoPath = path.resolve("repository-root");
+  const state = createRepositoryStateService({
+    git: async (_repoPath, args) => {
+      gitCalls.push(args);
+      if (args[0] === "rev-parse") return "a".repeat(40);
+      if (args[0] === "branch" && args.includes("--all")) return "refs/heads/main\nrefs/heads/feature/test";
+      if (args[0] === "worktree") return `worktree ${repoPath}\nHEAD ${"a".repeat(40)}\nbranch refs/heads/main\n`;
+      return "";
+    },
+    getCurrentRepo: () => repoPath,
+    submoduleService: {
+      buildWorktreePruneSnapshot: () => "prune-snapshot",
+      enrichSubmodules: async () => { submoduleEnrichCalls += 1; return []; },
+      enrichWorktreeList: async () => { worktreeEnrichCalls += 1; return []; },
+      parseSubmodules: () => [],
+      parseWorktreeBranches: () => ({}),
+      parseWorktreeList: () => [],
+      repoHasSubmoduleConfig: () => { submoduleConfigChecks += 1; return true; },
+      submoduleConfigArgs: () => ["config", "--file", ".gitmodules", "--get-regexp", "path"],
+    },
+    worktreeService: {
+      parseLog: () => [],
+      parseStashList: () => [],
+      readCurrentSyncDetails: async () => ({ branch: "main" }),
+      readWorkingStatus: async () => ({ files: [], snapshot: "worktree-snapshot" }),
+      sha256Json: () => "snapshot",
+    },
+    readBranchDisplayName: async () => "main",
+    parseRemoteNames: () => [],
+    parseRemoteDetails: () => [],
+    isKnownRemoteBranch: () => false,
+    parseBranchTracking: () => ({ main: {} }),
+    mergeBranchInfo: (...sources) => Object.assign({}, ...sources),
+    parseBranchCleanupMeta: () => ({}),
+    parseRemoteBranchInfo: () => ({}),
+    parseSimpleLines: () => [],
+    buildBranchCleanup: () => [],
+    parseTags: () => [],
+    parseRecoveryPoints: () => [],
+    detectRepoOperation: () => null,
+    recoveryRefPrefix: "refs/forkline/recovery",
+    defaultHistoryLimit: 120,
+    maxHistoryLimit: 5000,
+    refCommitLogFormat: "%H",
+    laneColors: ["#00aabb"],
+    operationLog: [],
+    listRunningOperations: () => [],
+  });
+
+  const core = await state.readState("", 120, { details: "core" });
+
+  assert.equal(core.worktreePruneSnapshot, "prune-snapshot");
+  assert.equal(core.worktrees, undefined);
+  assert.equal(core.submodules, undefined);
+  assert.equal(core.stashes, undefined);
+  assert.equal(core.recoveryPoints, undefined);
+  assert.equal(submoduleConfigChecks, 0);
+  assert.equal(worktreeEnrichCalls, 0);
+  assert.equal(submoduleEnrichCalls, 0);
+  assert.equal(gitCalls.some((args) => args[0] === "stash"), false);
+  assert.equal(gitCalls.some((args) => args[0] === "submodule"), false);
+  assert.equal(gitCalls.some((args) => args[0] === "branch" && args.includes("--merged")), false);
+  assert.equal(gitCalls.some((args) => args[0] === "for-each-ref" && args[1] === "refs/forkline/recovery"), false);
+});
+
 function recoveryPoint(ref, branch, timestamp) {
   return {
     ref,

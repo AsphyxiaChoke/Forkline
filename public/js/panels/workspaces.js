@@ -1,5 +1,6 @@
 // Branch cleanup, worktree, and submodule panels.
 function renderBranchesTab(commit) {
+  if (renderRepoDetailPlaceholder("branchCleanup", "分支整理", "var(--teal)")) return;
   const rows = branchCleanupRows();
   const summary = branchCleanupSummary(rows);
   const realRepo = Boolean(state.data && !state.data.repo.isSample);
@@ -182,18 +183,9 @@ async function runBranchCleanupAction(action, button) {
 async function refreshBranchCleanup(button) {
   if (!state.data) return;
   if (button) button.disabled = true;
-  const repoPath = repoPathSnapshot();
   try {
-    const requestedRef = state.selectedRef;
-    const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-    if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
-    state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
-    renderAll();
-    renderInspector();
-    toast(t("分支整理已刷新"));
+    if (await loadRepoDetailSection("branchCleanup", { refresh: true })) toast(t("分支整理已刷新"));
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -261,6 +253,7 @@ function branchCleanupContextOptions(branch) {
 }
 
 function renderWorktreesTab() {
+  if (renderRepoDetailPlaceholder("worktrees", "工作树", "var(--blue)")) return;
   const rows = state.data?.worktrees || [];
   const realRepo = Boolean(state.data && !state.data.repo.isSample);
   const summary = worktreeSummary(rows);
@@ -452,17 +445,9 @@ async function runWorktreeAction(action, button) {
 
 async function refreshWorktreeDashboard(button) {
   if (button) button.disabled = true;
-  const repoPath = repoPathSnapshot();
   try {
-    const requestedRef = state.selectedRef;
-    const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-    if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
-    state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
-    renderAll();
-    toast(t("工作树列表已刷新"));
+    if (await loadRepoDetailSection("worktrees", { refresh: true })) toast(t("工作树列表已刷新"));
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;
@@ -521,6 +506,7 @@ async function pruneWorktreeRecords(button) {
 }
 
 function renderSubmodulesTab() {
+  if (renderRepoDetailPlaceholder("submodules", "子模块", "var(--blue)")) return;
   const rows = state.data?.submodules || [];
   const realRepo = Boolean(state.data && !state.data.repo.isSample);
   const summary = submoduleSummary(rows);
@@ -662,17 +648,9 @@ function submoduleConfirmMessage(action, submodulePath) {
 
 async function refreshSubmodules(button) {
   if (button) button.disabled = true;
-  const repoPath = repoPathSnapshot();
   try {
-    const requestedRef = state.selectedRef;
-    const data = await api(`/api/state?ref=${encodeURIComponent(requestedRef)}`);
-    if (state.selectedRef !== requestedRef || !isCurrentRepoPath(repoPath)) return;
-    state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
-    renderAll();
-    toast(t("子模块列表已刷新"));
+    if (await loadRepoDetailSection("submodules", { refresh: true })) toast(t("子模块列表已刷新"));
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
   } finally {
     if (button) button.disabled = false;

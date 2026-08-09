@@ -1,5 +1,6 @@
 // Recovery points, reflog, and retention policy.
 function renderRecoveryTab() {
+  if (renderRepoDetailPlaceholder("recoveryPoints", "恢复点", "var(--purple)")) return;
   const points = state.data?.recoveryPoints || [];
   const reflogState = prepareReflogState();
   const reflogEntries = reflogState.entries || [];

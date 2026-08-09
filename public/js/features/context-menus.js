@@ -409,8 +409,7 @@ async function runBranchContextAction(action) {
     return;
   }
   if (action === "cleanupView") {
-    state.selectedTab = "branches";
-    renderInspector();
+    switchInspectorTab("branches");
     return;
   }
   if (action === "checkout") {

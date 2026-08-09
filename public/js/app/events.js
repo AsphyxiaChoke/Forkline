@@ -268,6 +268,13 @@ els.detailBody.addEventListener("change", (event) => {
   }
 });
 els.detailBody.addEventListener("click", (event) => {
+  const repoDetailRetry = event.target.closest("[data-repo-detail-retry]");
+  if (repoDetailRetry) {
+    event.preventDefault();
+    loadRepoDetailSection(repoDetailRetry.dataset.repoDetailRetry || "", { refresh: true });
+    renderInspector();
+    return;
+  }
   const moreButton = event.target.closest("[data-side-diff-more]");
   if (moreButton) {
     event.preventDefault();

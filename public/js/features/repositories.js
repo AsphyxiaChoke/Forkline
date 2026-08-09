@@ -371,7 +371,7 @@ async function applyOpenedRepoData(data, requestId = 0) {
 
 async function hydrateOpenedRepoData(requestId, repoPath, openedRef) {
   try {
-    const data = await api(`/api/state?ref=${encodeURIComponent(openedRef || "")}`);
+    const data = await api(`/api/state?ref=${encodeURIComponent(openedRef || "")}&details=core`);
     if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
     const viewedRef = state.selectedRef;
     const viewedCommits = state.data.commits || [];
@@ -406,6 +406,110 @@ async function hydrateOpenedRepoData(requestId, repoPath, openedRef) {
   }
 }
 
+const repoDetailFields = {
+  branchCleanup: ["branchCleanup"],
+  worktrees: ["worktrees", "worktreePruneSnapshot"],
+  submodules: ["submodules"],
+  stashes: ["stashes"],
+  recoveryPoints: ["recoveryPoints"],
+};
+
+function repoDetailSectionForTab(tab) {
+  return {
+    branches: "branchCleanup",
+    worktrees: "worktrees",
+    submodules: "submodules",
+    stashes: "stashes",
+    recovery: "recoveryPoints",
+  }[tab] || "";
+}
+
+function repoDetailLoaded(section) {
+  if (!state.data || state.data.progressive) return false;
+  const fields = repoDetailFields[section] || [];
+  return fields.length > 0 && fields.every((field) => Object.prototype.hasOwnProperty.call(state.data, field));
+}
+
+function repoDetailLoadState(section) {
+  if (repoDetailLoaded(section)) return { status: "loaded", error: "" };
+  if (state.data?.progressive) return { status: "loading", error: "" };
+  const current = state.repoDetailLoads[section];
+  if (current?.repoPath === repoPathSnapshot() && current.status !== "loaded") return current;
+  return { status: "idle", error: "" };
+}
+
+async function loadRepoDetailSection(section, options = {}) {
+  if (!repoDetailFields[section] || !state.data || state.data.repo.isSample || state.data.progressive) return false;
+  if (!options.refresh && repoDetailLoaded(section)) return true;
+  const repoPath = repoPathSnapshot();
+  if (!repoPath) return false;
+  const requestId = ++state.repoDetailRequestId;
+  state.repoDetailLoads[section] = { repoPath, requestId, status: "loading", error: "" };
+  try {
+    const data = await api(`/api/state-details?section=${encodeURIComponent(section)}`);
+    const current = state.repoDetailLoads[section];
+    if (!current || current.requestId !== requestId || !isCurrentRepoPath(repoPath)) return false;
+    if (data.section && data.section !== section) throw new Error(t("仓库详情区块不合法"));
+    mergeRepoDetailSection(section, data);
+    state.repoDetailLoads[section] = { repoPath, requestId, status: "loaded", error: "" };
+    if (section === "branchCleanup" || section === "worktrees") renderBranches();
+    if (repoDetailSectionForTab(state.selectedTab) === section) renderInspector();
+    return true;
+  } catch (error) {
+    const current = state.repoDetailLoads[section];
+    if (!current || current.requestId !== requestId || !isCurrentRepoPath(repoPath)) return false;
+    state.repoDetailLoads[section] = {
+      repoPath,
+      requestId,
+      status: "error",
+      error: String(error?.message || error || t("读取失败")),
+    };
+    if (repoDetailSectionForTab(state.selectedTab) === section) renderInspector();
+    return false;
+  }
+}
+
+function mergeRepoDetailSection(section, data) {
+  if (!state.data) return;
+  for (const field of repoDetailFields[section] || []) {
+    state.data[field] = field === "worktreePruneSnapshot" ? String(data[field] || "") : (data[field] || []);
+  }
+  if (Array.isArray(data.branches)) state.data.branches = data.branches;
+  if (section === "branchCleanup" && data.branchInfo) {
+    state.data.branchInfo = data.branchInfo;
+  } else if (section === "worktrees" && data.worktreeBranchInfo) {
+    const branchInfo = {};
+    for (const [branch, info] of Object.entries(state.data.branchInfo || {})) {
+      const { worktreePath, prunable, reason, ...rest } = info || {};
+      branchInfo[branch] = rest;
+    }
+    state.data.branchInfo = { ...branchInfo };
+    for (const [branch, info] of Object.entries(data.worktreeBranchInfo)) {
+      state.data.branchInfo[branch] = { ...(state.data.branchInfo[branch] || {}), ...info };
+    }
+  } else if (data.branchInfo) {
+    state.data.branchInfo = { ...(state.data.branchInfo || {}), ...data.branchInfo };
+  }
+}
+
+function renderRepoDetailPlaceholder(section, title, borderColor) {
+  if (repoDetailLoaded(section)) return false;
+  const loadState = repoDetailLoadState(section);
+  if (loadState.status === "idle") loadRepoDetailSection(section);
+  const failed = loadState.status === "error";
+  els.detailNode.style.borderColor = borderColor;
+  els.detailTitle.textContent = t(title);
+  els.detailSub.textContent = t(failed ? "读取失败" : "读取中");
+  setActiveDiff(null);
+  els.detailBody.innerHTML = `
+    <div class="empty-panel">
+      <strong>${t(failed ? "读取失败" : "读取中")}</strong>
+      ${failed ? `<span>${escapeHtml(loadState.error)}</span><button class="mini-btn" data-repo-detail-retry="${escapeAttr(section)}" type="button">${t("刷新")}</button>` : ""}
+    </div>
+  `;
+  return true;
+}
+
 function clearOpenedRepoState() {
   clearRepoScopedActionState();
   if (typeof clearRecoveryUndo === "function") clearRecoveryUndo();
@@ -436,6 +540,7 @@ function clearOpenedRepoState() {
   state.remoteCheck = null;
   state.authDiagnosticsRequestId += 1;
   state.authDiagnostics = { repoPath: "", remoteKey: "", data: null, loading: false, error: "", inline: false };
+  state.repoDetailLoads = {};
 }
 
 function clearRepoScopedActionState() {

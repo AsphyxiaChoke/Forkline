@@ -318,7 +318,7 @@ test("startup keeps a repository already restored by the server", async () => {
 
   const result = await context.loadInitialRepoState("");
   assert.strictEqual(result, serverRepo);
-  assert.deepEqual(calls, ["/api/state?ref="]);
+  assert.deepEqual(calls, ["/api/state?ref=&details=core"]);
   assert.deepEqual(saved, [serverRepo.repo]);
   assert.match(initSource, /state\.data = await loadInitialRepoState\(initialRef\)/);
 });
@@ -340,7 +340,7 @@ test("startup restores the latest recent repository", async () => {
 
   const result = await context.loadInitialRepoState("");
   assert.strictEqual(result, restored);
-  assert.deepEqual(calls.map((item) => item.url), ["/api/state?ref=", "/api/open"]);
+  assert.deepEqual(calls.map((item) => item.url), ["/api/state?ref=&details=core", "/api/open"]);
   assert.deepEqual(JSON.parse(calls[1].options.body), { path: "D:\\GitTest", progressive: true });
   assert.deepEqual(saved, [restored.repo]);
 });
@@ -360,7 +360,7 @@ test("startup stays on the sample repository when there is no recent repository"
 
   const result = await context.loadInitialRepoState("");
   assert.strictEqual(result, sample);
-  assert.deepEqual(calls, ["/api/state?ref="]);
+  assert.deepEqual(calls, ["/api/state?ref=&details=core"]);
 });
 
 test("startup falls back to the sample repository when the saved path is unavailable", async () => {
@@ -379,7 +379,7 @@ test("startup falls back to the sample repository when the saved path is unavail
 
   const result = await context.loadInitialRepoState("");
   assert.strictEqual(result, sample);
-  assert.deepEqual(calls, ["/api/state?ref=", "/api/open"]);
+  assert.deepEqual(calls, ["/api/state?ref=&details=core", "/api/open"]);
 });
 
 test("startup reapplies a requested ref after restoring the repository", async () => {
@@ -405,7 +405,7 @@ test("startup reapplies a requested ref after restoring the repository", async (
 
   const result = await context.loadInitialRepoState("feature/test");
   assert.deepEqual(JSON.parse(JSON.stringify(result)), selected);
-  assert.deepEqual(calls, ["/api/state?ref=feature%2Ftest", "/api/open", "/api/ref-state?ref=feature%2Ftest"]);
+  assert.deepEqual(calls, ["/api/state?ref=feature%2Ftest&details=core", "/api/open", "/api/ref-state?ref=feature%2Ftest"]);
   assert.deepEqual(JSON.parse(JSON.stringify(saved)), [selected.repo]);
 });
 
@@ -467,8 +467,8 @@ test("progressive repository open renders history before hydrating deferred deta
   const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
   const source = repositoriesSource.slice(start, end);
   const calls = [];
-  let resolveFullState;
-  const fullStatePromise = new Promise((resolve) => { resolveFullState = resolve; });
+  let resolveCoreState;
+  const coreStatePromise = new Promise((resolve) => { resolveCoreState = resolve; });
   const progressive = {
     progressive: true,
     repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
@@ -487,19 +487,14 @@ test("progressive repository open renders history before hydrating deferred deta
     commits: [{ sha: "core-main" }],
     history: { limit: 120, loaded: 1, hasMore: false },
   };
-  const full = {
+  const core = {
     repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
     branches: ["main", "feature/test"],
     branchInfo: { main: { upstream: "origin/main" }, "feature/test": {} },
-    branchCleanup: [{ branch: "feature/test" }],
-    worktrees: [{ path: "D:\\Repo", branch: "main" }],
-    submodules: [],
     remotes: ["origin/main"],
     remoteInfo: {},
     sync: { branch: "main", unborn: false, remotes: [] },
     workingFiles: [{ file: "draft.txt", state: "M" }],
-    stashes: [],
-    recoveryPoints: [],
     tags: [{ name: "v1.0.0" }],
     commits: [{ sha: "full-main" }],
     history: { limit: 120, loaded: 1, hasMore: false },
@@ -513,7 +508,7 @@ test("progressive repository open renders history before hydrating deferred deta
     els: { searchInput: { value: "old search" } },
     api: async (url) => {
       calls.push(url);
-      return fullStatePromise;
+      return coreStatePromise;
     },
     clearOpenedRepoState: () => {},
     loadRecoveryPolicyForRepo: () => {},
@@ -534,7 +529,7 @@ test("progressive repository open renders history before hydrating deferred deta
   await Promise.resolve();
   await Promise.resolve();
 
-  assert.deepEqual(calls, ["/api/state?ref=main"]);
+  assert.deepEqual(calls, ["/api/state?ref=main&details=core"]);
   assert.equal(renderAllCount, 1);
   assert.equal(state.repoHydrating, true);
   assert.equal(state.data.commits[0].sha, "core-main");
@@ -545,17 +540,80 @@ test("progressive repository open renders history before hydrating deferred deta
   state.data.repo.selectedRef = "feature/test";
   state.data.commits = [{ sha: "feature-head" }];
   state.data.history = { limit: 120, loaded: 1, hasMore: true };
-  resolveFullState(full);
+  resolveCoreState(core);
   assert.equal(await applying, true);
 
   assert.equal(state.repoHydrating, false);
   assert.equal(state.data.progressive, false);
   assert.equal(state.data.workingFiles[0].file, "draft.txt");
   assert.equal(state.data.tags[0].name, "v1.0.0");
+  assert.equal(state.data.branchCleanup, undefined);
+  assert.equal(state.data.worktrees, undefined);
+  assert.equal(state.data.submodules, undefined);
+  assert.equal(state.data.stashes, undefined);
+  assert.equal(state.data.recoveryPoints, undefined);
   assert.equal(state.selectedRef, "feature/test");
   assert.equal(state.selectedSha, "feature-head");
   assert.equal(state.data.commits[0].sha, "feature-head");
   assert.equal(renderStageCount, 1);
+});
+
+test("repository detail loading discards superseded and switched-repository responses", async () => {
+  const start = repositoriesSource.indexOf("const repoDetailFields");
+  const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
+  const source = repositoriesSource.slice(start, end);
+  const pending = [];
+  const state = {
+    data: { repo: { path: "D:\\RepoA", isSample: false } },
+    selectedTab: "details",
+    repoDetailRequestId: 0,
+    repoDetailLoads: {},
+  };
+  const context = vm.createContext({
+    state,
+    api: (url) => new Promise((resolve, reject) => pending.push({ url, resolve, reject })),
+    repoPathSnapshot: () => state.data?.repo?.path || "",
+    isCurrentRepoPath: (repoPath) => state.data?.repo?.path === repoPath,
+    renderBranches: () => {},
+    renderInspector: () => {},
+    t: (message) => message,
+    els: {},
+    setActiveDiff: () => {},
+    escapeHtml: (value) => String(value),
+    escapeAttr: (value) => String(value),
+  });
+  vm.runInContext(source, context);
+
+  const first = context.loadRepoDetailSection("stashes", { refresh: true });
+  const second = context.loadRepoDetailSection("stashes", { refresh: true });
+  assert.deepEqual(pending.map((item) => item.url), [
+    "/api/state-details?section=stashes",
+    "/api/state-details?section=stashes",
+  ]);
+  pending[1].resolve({ section: "stashes", stashes: [{ ref: "stash@{0}", message: "new" }] });
+  assert.equal(await second, true);
+  pending[0].resolve({ section: "stashes", stashes: [{ ref: "stash@{0}", message: "old" }] });
+  assert.equal(await first, false);
+  assert.equal(state.data.stashes[0].message, "new");
+
+  const switched = context.loadRepoDetailSection("recoveryPoints", { refresh: true });
+  state.data = { repo: { path: "D:\\RepoB", isSample: false } };
+  pending[2].resolve({ section: "recoveryPoints", recoveryPoints: [{ ref: "old-repo" }] });
+  assert.equal(await switched, false);
+  assert.equal(state.data.recoveryPoints, undefined);
+
+  state.data.branchInfo = {
+    main: { upstream: "origin/main" },
+    feature: { worktreePath: "D:\\OldWorktree", prunable: true, reason: "missing" },
+  };
+  context.mergeRepoDetailSection("worktrees", {
+    worktrees: [],
+    worktreePruneSnapshot: "fresh-snapshot",
+    worktreeBranchInfo: { topic: { worktreePath: "D:\\TopicWorktree", prunable: false } },
+  });
+  assert.equal(state.data.branchInfo.feature.worktreePath, undefined);
+  assert.equal(state.data.branchInfo.feature.prunable, undefined);
+  assert.equal(state.data.branchInfo.topic.worktreePath, "D:\\TopicWorktree");
 });
 
 test("command hint observer starts before the app renders dynamic panels", () => {

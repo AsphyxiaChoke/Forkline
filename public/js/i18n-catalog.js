@@ -468,6 +468,7 @@
     "请输入仓库路径": "Enter a repository path",
     "已打开 {name}": "Opened {name}",
     "仓库详情正在载入，完成后再执行操作": "Repository details are loading. Run the action after loading completes.",
+    "仓库详情区块不合法": "The repository detail section is invalid.",
     "仓库已打开，但工作区详情加载失败：{message}": "The repository opened, but worktree details failed to load: {message}",
     "未知错误": "Unknown error",
     "例如 git@github.com:org/repo.git": "e.g. git@github.com:org/repo.git",

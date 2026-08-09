@@ -215,6 +215,10 @@ test("progressive repository open returns history before deferred worktree detai
   await git(repo, ["commit", "-m", "base"]);
   await git(repo, ["branch", "feature/test"]);
   await git(repo, ["tag", "v1.0.0"]);
+  await fs.writeFile(path.join(repo, "saved.txt"), "saved\n", "utf8");
+  await git(repo, ["stash", "push", "--include-untracked", "-m", "deferred stash"]);
+  const head = await git(repo, ["rev-parse", "HEAD"]);
+  await git(repo, ["update-ref", "refs/forkline/recovery/20260809-120000/main/test", head]);
   await fs.writeFile(path.join(repo, "draft.txt"), "draft\n", "utf8");
 
   const progressive = await openRepo(repo, { progressive: true });
@@ -231,6 +235,45 @@ test("progressive repository open returns history before deferred worktree detai
   assert.equal(full.progressive, undefined);
   assert.ok(full.workingFiles.some((file) => file.file === "draft.txt"));
   assert.ok(full.tags.some((tag) => tag.name === "v1.0.0"));
+  assert.ok(full.stashes.some((stash) => stash.message === "deferred stash"));
+  assert.equal(full.recoveryPoints.length, 1);
+
+  const core = await request("/api/state?details=core", { repoPath: repo });
+  assertStatus(core, 200);
+  assert.ok(core.body.workingFiles.some((file) => file.file === "draft.txt"));
+  assert.ok(core.body.tags.some((tag) => tag.name === "v1.0.0"));
+  assert.ok(core.body.worktreePruneSnapshot, "core state keeps the prune safety snapshot used by branch actions");
+  for (const field of ["branchCleanup", "worktrees", "submodules", "stashes", "recoveryPoints"]) {
+    assert.equal(core.body[field], undefined, `${field} must stay out of the core state response`);
+  }
+
+  const branchDetails = await request("/api/state-details?section=branchCleanup", { repoPath: repo });
+  assertStatus(branchDetails, 200);
+  assert.ok(branchDetails.body.branchCleanup.some((row) => row.branch === "feature/test"));
+  assert.ok(branchDetails.body.branches.includes("main"));
+  assert.equal(branchDetails.body.commits, undefined);
+
+  const worktreeDetails = await request("/api/state-details?section=worktrees", { repoPath: repo });
+  assertStatus(worktreeDetails, 200);
+  assert.ok(worktreeDetails.body.worktrees.some((row) => path.resolve(row.path) === path.resolve(repo)));
+  assert.ok(worktreeDetails.body.worktreePruneSnapshot);
+  assert.deepEqual(worktreeDetails.body.worktreeBranchInfo, {});
+
+  const submoduleDetails = await request("/api/state-details?section=submodules", { repoPath: repo });
+  assertStatus(submoduleDetails, 200);
+  assert.deepEqual(submoduleDetails.body.submodules, []);
+
+  const stashDetails = await request("/api/state-details?section=stashes", { repoPath: repo });
+  assertStatus(stashDetails, 200);
+  assert.ok(stashDetails.body.stashes.some((stash) => stash.message === "deferred stash"));
+
+  const recoveryDetails = await request("/api/state-details?section=recoveryPoints", { repoPath: repo });
+  assertStatus(recoveryDetails, 200);
+  assert.equal(recoveryDetails.body.recoveryPoints.length, 1);
+
+  const invalidDetails = await request("/api/state-details?section=unknown", { repoPath: repo, locale: "en" });
+  assertStatus(invalidDetails, 400);
+  assert.match(invalidDetails.body.error, /detail section is invalid/i);
 });
 
 test("worktree file editor reads and saves UTF-8 text with stale-content protection", { timeout: 120000 }, async (t) => {

@@ -271,6 +271,8 @@ function renderInspectorTabs() {
 }
 
 function ensureInspectorTabData(tab) {
+  const detailSection = repoDetailSectionForTab(tab);
+  if (detailSection) loadRepoDetailSection(detailSection);
   if (tab === "sync") {
     refreshSyncState().catch((error) => toast(error.message));
   }
