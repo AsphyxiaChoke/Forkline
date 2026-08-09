@@ -36,6 +36,7 @@ const BASIC_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%P";
 const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
 const AUTH_DIAGNOSTICS_CACHE_TTL_MS = 60 * 1000;
 const AUTH_DIAGNOSTICS_CACHE_LIMIT = 12;
+const LOCAL_REQUEST_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1"]);
 const CANCELLABLE_ACTIONS = new Set([
   "cloneRepository",
   "fetch",
@@ -447,12 +448,50 @@ function sendJson(res, status, data) {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "Cache-Control": "no-store",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "X-Content-Type-Options": "nosniff",
   });
   res.end(body);
 }
 
 function requestLocale(req) {
   return i18nCatalog.normalizeLocale(req.headers["x-forkline-locale"]) || i18nCatalog.defaultLocale;
+}
+
+function rejectUntrustedLocalRequest(req, res, pathname) {
+  let error = "";
+  if (!isAllowedLocalHost(req.headers.host)) {
+    error = "请求主机不合法。Forkline 只接受当前本地地址的请求。";
+  } else if (pathname === "/api" || pathname.startsWith("/api/")) {
+    const origin = String(req.headers.origin || "").trim();
+    const fetchSite = String(req.headers["sec-fetch-site"] || "").trim().toLowerCase();
+    if ((origin && !isAllowedLocalOrigin(origin)) || (fetchSite && !["same-origin", "none"].includes(fetchSite))) {
+      error = "请求来源不合法。Forkline 本地 API 只接受当前页面的同源请求。";
+    }
+  }
+  if (!error) return false;
+  sendJson(res, 403, { error });
+  return true;
+}
+
+function isAllowedLocalHost(value) {
+  const host = String(value || "").trim();
+  return Boolean(host) && isAllowedLocalUrl(`http://${host}`);
+}
+
+function isAllowedLocalOrigin(value) {
+  return isAllowedLocalUrl(String(value || "").trim());
+}
+
+function isAllowedLocalUrl(value) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    const port = url.port || (url.protocol === "http:" ? "80" : "");
+    return url.protocol === "http:" && LOCAL_REQUEST_HOSTNAMES.has(hostname) && port === String(PORT) && url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 function localizeResponseData(value, locale, pathParts = []) {
@@ -1004,7 +1043,14 @@ function serveStatic(req, res) {
       res.end("Not found");
       return;
     }
-    res.writeHead(200, { "Content-Type": mime(filePath), "Cache-Control": "no-store" });
+    res.writeHead(200, {
+      "Content-Type": mime(filePath),
+      "Cache-Control": "no-store",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+    });
     res.end(data);
   });
 }
@@ -1035,6 +1081,7 @@ const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url, `http://localhost:${PORT}`);
   res.forklineLocale = requestLocale(req);
   try {
+    if (rejectUntrustedLocalRequest(req, res, parsed.pathname)) return;
     if (await updateService.handleRequest(req, res, parsed)) return;
     if (req.method === "GET" && parsed.pathname === "/api/state") {
       ensureRequestRepoMatchesCurrent(req);

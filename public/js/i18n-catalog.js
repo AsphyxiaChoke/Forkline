@@ -1572,6 +1572,8 @@
     "Tag 列表状态已过期，请刷新 Tag 列表后重新选择。": "The Tag list is out of date. Refresh it and select the Tag again.",
     "Tag 身份不合法，请刷新 Tag 列表后重新选择。": "The Tag identity is invalid. Refresh the list and select it again.",
     "请求内容类型不合法。Forkline 只接受 application/json 的本地页面请求。": "The request content type is invalid. Forkline only accepts application/json requests from the local page.",
+    "请求主机不合法。Forkline 只接受当前本地地址的请求。": "The request host is invalid. Forkline only accepts requests addressed to the current local service.",
+    "请求来源不合法。Forkline 本地 API 只接受当前页面的同源请求。": "The request origin is invalid. The Forkline local API only accepts same-origin requests from the current page.",
     "页面仓库上下文编码无效。请刷新页面后再试。": "The repository context encoding is invalid. Refresh the page and try again.",
     "页面缺少仓库上下文。为避免把操作执行到错误仓库，请刷新页面后再试。": "The page is missing repository context. Refresh before trying again so the operation does not run against the wrong repository.",
     "请先打开一个 Git 仓库，再检测认证环境。": "Open a Git repository before checking the authentication environment.",

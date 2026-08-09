@@ -7364,3 +7364,25 @@
 - `progress.md`：追加本轮实现、验证和回滚方式。
 - 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
 - 回滚点为 `3ac8b94`；提交前可执行 `git restore -- server/file-editor-service.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md` 并删除 `tests/file-editor-atomic-save.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+
+## 2026-08-09 - Task: 收紧 Forkline 本地 API 请求边界
+
+### What was done
+- 在任何静态资源、更新接口或 Git API 路由执行前校验 Host，只允许当前端口的 `127.0.0.1`、`localhost` 和 `::1`，阻止 DNS 重绑定使用其他域名访问本地服务。
+- `/api/*` 拒绝非本地同源 Origin 和非同源 Fetch Metadata；无浏览器来源头的本机 CLI/测试调用保持兼容，POST 的 `application/json` 边界不变。
+- JSON 与静态资源增加同源资源和防 MIME 嗅探响应头，静态页面禁止被 iframe 嵌入；新增中英文安全错误文案。
+
+### Testing
+- 本地请求安全专项 `1/1` 通过，覆盖非法 API/静态 Host、跨站 Origin、same-site/cross-site Fetch Metadata、跨站 POST、同源请求、`localhost` 别名、响应安全头和英文错误。
+- `tests/i18n.test.js` 与 `tests/api-repo-context.test.js` 合计 `7/7` 通过。
+- 完整非浏览器测试 `185/185` 通过，0 项失败、0 项跳过，耗时约 175.5 秒；最终 authority 严格化后再次运行安全专项 `1/1` 通过。本轮未运行真实 Chromium，因为没有布局或交互改动。
+
+### Notes
+- `server.js`：增加本地 Host、Origin、Fetch Metadata 校验和响应安全头。
+- `public/js/i18n-catalog.js`：增加非法 Host 与非法请求来源的英文文案。
+- `tests/git-api.test.js`：增加真实 HTTP 请求边界回归和原始 Host 请求辅助。
+- `docs/ARCHITECTURE.md`：记录本地服务同源模型、CLI 兼容和响应头规则。
+- `docs/CONTINUE.md`：更新当前回归数量、完成项和下一项计划。
+- `progress.md`：追加本轮实现、验证和回滚方式。
+- 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
+- 回滚点为 `5919af8`；提交前可执行 `git restore -- server.js public/js/i18n-catalog.js tests/git-api.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

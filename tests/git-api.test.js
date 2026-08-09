@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
+const http = require("node:http");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
@@ -60,6 +61,55 @@ test("sample state localizes display metadata without translating commit data", 
   assert.equal(response.body.branchCleanup[0].lastUpdated, "12 minutes ago");
   assert.match(response.body.sync.auth.summary, /SSH remote/);
   assert.doesNotMatch(response.body.sync.auth.summary, /[\u3400-\u9fff]/);
+});
+
+test("local server rejects rebinding hosts and cross-site API requests", async () => {
+  const port = new URL(baseUrl).port;
+
+  const reboundApi = await rawRequest("/api/state", { headers: { Host: `forkline.invalid:${port}` } });
+  assertStatus(reboundApi, 403);
+  assert.match(reboundApi.body.error, /请求主机不合法/);
+
+  const reboundPage = await rawRequest("/", { headers: { Host: `forkline.invalid:${port}` } });
+  assertStatus(reboundPage, 403);
+
+  const foreignOrigin = await request("/api/state", { headers: { Origin: "https://example.invalid" } });
+  assertStatus(foreignOrigin, 403);
+  assert.match(foreignOrigin.body.error, /请求来源不合法/);
+
+  const foreignFetchSite = await request("/api/state", { headers: { "Sec-Fetch-Site": "same-site" } });
+  assertStatus(foreignFetchSite, 403);
+
+  const blockedPost = await request("/api/open", {
+    method: "POST",
+    headers: { Origin: "https://example.invalid", "Sec-Fetch-Site": "cross-site" },
+    body: { path: "must-not-open" },
+  });
+  assertStatus(blockedPost, 403);
+
+  const sameOrigin = await request("/api/state", {
+    headers: { Origin: baseUrl, "Sec-Fetch-Site": "same-origin" },
+  });
+  assertStatus(sameOrigin, 200);
+  assert.equal(sameOrigin.headers["cross-origin-resource-policy"], "same-origin");
+  assert.equal(sameOrigin.headers["x-content-type-options"], "nosniff");
+
+  const sameOriginPage = await rawRequest("/", { headers: { Host: `127.0.0.1:${port}` } });
+  assertStatus(sameOriginPage, 200);
+  assert.equal(sameOriginPage.headers["x-frame-options"], "DENY");
+  assert.match(String(sameOriginPage.headers["content-security-policy"] || ""), /frame-ancestors 'none'/);
+
+  const localhostAlias = await rawRequest("/api/state", {
+    headers: { Host: `localhost:${port}`, Origin: `http://localhost:${port}`, "Sec-Fetch-Site": "same-origin" },
+  });
+  assertStatus(localhostAlias, 200);
+
+  const englishError = await request("/api/state", {
+    locale: "en",
+    headers: { Origin: "https://example.invalid" },
+  });
+  assertStatus(englishError, 403);
+  assert.match(englishError.body.error, /request origin is invalid/i);
 });
 
 test("repository context headers support non-Latin paths and legacy ASCII values", { timeout: 120000 }, async (t) => {
@@ -1905,6 +1955,7 @@ async function request(pathname, options = {}) {
   } else if (options.repoPath) {
     headers["X-Forkline-Repo-Path"] = `v1:${encodeURIComponent(options.repoPath)}`;
   }
+  Object.assign(headers, options.headers || {});
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: options.method || "GET",
     headers,
@@ -1917,7 +1968,42 @@ async function request(pathname, options = {}) {
   } catch {
     body = { error: raw || "响应不是 JSON" };
   }
-  return { status: response.status, body };
+  return { status: response.status, body, headers: Object.fromEntries(response.headers.entries()) };
+}
+
+async function rawRequest(pathname, options = {}) {
+  const url = new URL(pathname, baseUrl);
+  const body = options.body === undefined ? "" : JSON.stringify(options.body);
+  const headers = { "Content-Type": "application/json", ...options.headers };
+  if (body) headers["Content-Length"] = Buffer.byteLength(body);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: `${url.pathname}${url.search}`,
+        method: options.method || "GET",
+        headers,
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const raw = Buffer.concat(chunks).toString("utf8");
+          let parsedBody = {};
+          try {
+            parsedBody = raw ? JSON.parse(raw) : {};
+          } catch {
+            parsedBody = { error: raw || "响应不是 JSON" };
+          }
+          resolve({ status: res.statusCode || 0, body: parsedBody, headers: res.headers });
+        });
+      }
+    );
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
 }
 
 function assertStatus(response, expected) {
