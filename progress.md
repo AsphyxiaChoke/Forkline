@@ -7296,3 +7296,25 @@
 - `docs/CONTINUE.md`：更新完整回归数量并记录便携构建、运行验证和 Release 附件。
 - `progress.md`：追加本轮实现、验证、发布附件和回滚方式。
 - 回滚点为 `074fae6`；提交前可执行 `git restore -- .gitignore README.md package.json tests/portable-runtime.test.js docs/CONTINUE.md progress.md`，并删除 `.github/workflows/release-portable.yml`、`build-portable.cmd`、`docs/PACKAGING.md`、`scripts/build-portable.ps1`；提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。Release 附件需另行执行 `gh release delete-asset v0.3.0 Forkline-v0.3.0-windows-x64.zip -y` 和对应 SHA256 附件删除命令，不得移动 `v0.3.0` Tag。
+
+## 2026-08-09 - Task: 让 Git 安全快照校验失败即停止
+
+### What was done
+- 当前分支 HEAD、upstream、工作区、单文件和失效 worktree 快照读取失败时直接中止 Git 写操作，不再把失败结果降级为空状态后继续执行。
+- 将 upstream 快照查询改为成功时可明确返回空值的 `for-each-ref`，区分“未设置 upstream”和“Git 查询失败”。
+- 增加六条故障注入回归，确认每种快照读取失败后都不会执行后续暂存、取消 upstream 或 worktree 清理命令。
+
+### Testing
+- `node --check server/git-operations-service.js` 和 `node --check tests/git-snapshot-guards.test.js` 通过。
+- `tests/git-snapshot-guards.test.js` 专项 `6/6` 通过。
+- `tests/backend-services.test.js`、`tests/git-snapshot-guards.test.js` 和 `tests/git-api.test.js` 合计 `40/40` 通过，包含真实临时 Git 仓库的暂存、提交、签出、同步、冲突和取消长操作流程。
+- 其余非浏览器测试 `141/141` 通过；本轮未运行真实 Chromium，因为没有前端、样式或布局改动。
+
+### Notes
+- `server/git-operations-service.js`：让写操作前的 HEAD、upstream、工作区、文件和 worktree 清理快照读取失败即停止。
+- `tests/git-snapshot-guards.test.js`：新增六种安全快照读取失败的故障注入测试。
+- `docs/ARCHITECTURE.md`：补充 Git 写操作安全门和失败处理约束。
+- `docs/CONTINUE.md`：记录本项优化、验证结果和下一项计划。
+- `progress.md`：追加本轮实现、验证和回滚方式。
+- 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
+- 回滚点为 `767cf48`；提交前可执行 `git restore -- server/git-operations-service.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md` 并删除 `tests/git-snapshot-guards.test.js`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。

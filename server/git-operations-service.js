@@ -829,22 +829,22 @@ function createGitOperationsService(options) {
       throw new Error(`当前分支已经从 ${expectedBranch} 切换到 ${currentBranch || "HEAD"}。为避免把操作执行到错误分支，请刷新页面后重新操作。`);
     }
     if (expectedHead) {
-      const currentHead = (await git(currentRepo, ["rev-parse", "--verify", "HEAD^{commit}"], { timeout: 60000 }).catch(() => "")).trim().toLowerCase();
+      const currentHead = (await git(currentRepo, ["rev-parse", "--verify", "HEAD^{commit}"], { timeout: 60000 })).trim().toLowerCase();
       if (currentHead && currentHead !== expectedHead) {
         throw new Error(`当前分支 ${currentBranch} 的 HEAD 已经变化。为避免把操作执行到旧页面之外的提交上，请刷新页面后重新操作。`);
       }
     }
-    await ensureUpstreamSnapshot(body);
+    await ensureUpstreamSnapshot(body, currentBranch);
     await ensureCurrentOperationContextSnapshot(body);
   }
 
-  async function ensureUpstreamSnapshot(body = {}) {
+  async function ensureUpstreamSnapshot(body = {}, currentBranch = "") {
     const action = String(body.action || "");
     if (!UPSTREAM_SNAPSHOT_ACTIONS.has(action)) return;
     const hasExpectedUpstream = Object.prototype.hasOwnProperty.call(body, "expectedUpstream");
     if (!hasExpectedUpstream) throw new Error("页面 upstream 状态已过期，请刷新后重新执行这个操作。");
     const expectedUpstream = String(body.expectedUpstream || "").trim();
-    const currentUpstream = (await git(currentRepo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { timeout: 60000 }).catch(() => "")).trim();
+    const currentUpstream = (await git(currentRepo, ["for-each-ref", `refs/heads/${currentBranch}`, "--format=%(upstream:short)"], { timeout: 60000 })).trim();
     if (currentUpstream !== expectedUpstream) {
       const before = expectedUpstream || "未设置 upstream";
       const after = currentUpstream || "未设置 upstream";
@@ -1098,7 +1098,7 @@ function createGitOperationsService(options) {
     const action = String(body.action || "");
     if (!WORKTREE_SNAPSHOT_ACTIONS.has(action)) return;
     const expected = normalizeExpectedSnapshot(body.expectedWorktreeSnapshot, "工作区状态已过期，请刷新后重新执行这个操作。");
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
     const working = await readWorkingStatus(currentRepo, statusOutput);
     if (working.snapshot !== expected) {
       throw new Error("工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。");
@@ -1110,11 +1110,11 @@ function createGitOperationsService(options) {
     if (!FILE_SNAPSHOT_ACTIONS.has(action)) return;
     const file = normalizeRepoFile(body.file);
     const expected = normalizeExpectedSnapshot(body.expectedFileSnapshot, "文件状态已过期，请刷新后重新执行这个操作。");
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]).catch(() => "");
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
     const working = await readWorkingStatus(currentRepo, statusOutput);
     let target = selectStatusFile(working.files, file, fileSnapshotScope(body));
     if (!target || target.snapshot !== expected) {
-      const fullStatusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+      const fullStatusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
       const fullWorking = await readWorkingStatus(currentRepo, fullStatusOutput);
       target = selectStatusFile(fullWorking.files, file, fileSnapshotScope(body));
     }
@@ -1160,7 +1160,7 @@ function createGitOperationsService(options) {
     const action = String(body.action || "");
     if (!WORKTREE_PRUNE_SNAPSHOT_ACTIONS.has(action)) return;
     const expected = normalizeExpectedSnapshot(body.expectedWorktreePruneSnapshot, "失效 worktree 列表已过期，请刷新后重新清理。");
-    const output = await git(currentRepo, ["worktree", "list", "--porcelain"]).catch(() => "");
+    const output = await git(currentRepo, ["worktree", "list", "--porcelain"]);
     const current = buildWorktreePruneSnapshot(parseWorktreeList(output, currentRepo));
     if (current !== expected) {
       throw new Error("失效 worktree 列表已经变化。为避免旧页面清理到未确认的记录，请刷新后重新操作。");

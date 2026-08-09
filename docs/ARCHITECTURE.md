@@ -136,6 +136,7 @@
 - “储藏并签出”恢复提醒按仓库路径、实际检出分支和当前查看引用绑定；当前查看全部分支或储藏所属的检出分支时可以提示，查看其他引用或异步查询期间上下文变化时丢弃旧结果。
 - “储藏并签出”恢复检查统一为自动模式；本地/远端签出、应用启动和仓库打开入口共用相同的仓库、实际分支与查看引用校验，匹配时直接恢复，不匹配时丢弃结果，前端不再保留确认弹窗。
 - 仓库上下文通过 `X-Forkline-Repo-Path` 传递。浏览器把 Unicode 路径编码为 `v1:` 加 `encodeURIComponent(path)`，服务端只解码带版本前缀的形式，并兼容旧版 ASCII 原始值。
+- Git 写操作执行前的当前分支 HEAD、upstream、工作区、单文件和失效 worktree 快照属于强制安全门；对应 Git 读取失败时必须原样中止操作，不能把错误降级为空 HEAD、空状态或空列表。未设置 upstream 使用成功返回空值的 `for-each-ref` 查询，避免把“确实未设置”和“命令执行失败”混为一类。
 - 认证环境只在同步面板需要时通过 `GET /api/auth-diagnostics` 加载，并要求正常的仓库上下文请求头。
 - 认证结果按标准化仓库路径和完整远端 fetch/push URL 配置缓存 60 秒，最多保留 12 条；远端 URL 变化会形成新键，`?refresh=1` 会绕过缓存。
 - Windows 系统凭据入口使用 `POST /api/system-credentials/open`，只启动固定的 Windows Credential Manager 系统界面，不接受命令或凭据参数，也不读取、修改或删除凭据；非 Windows 平台明确返回不支持。
@@ -170,6 +171,7 @@
 - `tests/browser-performance.test.js` 对 4000 文件工作区分别记录冷 API 与紧接着的热 API，确认两次文件数和工作区快照一致，并继续测量首批/完整行数、DOM 节点、筛选、恢复、滚动分批加载、事件循环边界与文件树新增监听器数量；首批不得超过 1000 行和 6000 个树节点，滚动后必须完整显示 4000 个文件，两个长期容器最多补齐 8 个委托监听。
 - `tests/backend-modules.test.js` 固定入口、门面与二级服务边界，防止实现重新回流到 `server.js` 或两个门面文件。
 - `tests/backend-services.test.js` 直接覆盖补丁裁剪、路径边界、远端网页 URL、恢复点保留策略、受保护分支和历史分页等纯服务逻辑。
+- `tests/git-snapshot-guards.test.js` 使用故障注入验证 HEAD、upstream、全工作区、单文件、文件全量回退和 worktree 清理快照读取失败时不会继续执行 Git 写操作。
 - `tests/recovery-policy-ui.test.js` 覆盖旧策略迁移、按仓库隔离、操作后整理确认和示例仓库边界；`tests/recovery-undo-ui.test.js` 验证危险操作返回恢复点后会登记一键撤销并触发策略检查。
 - `tests/api-repo-context.test.js` 覆盖中文仓库路径请求头编码和当前语言请求头。
 - `tests/i18n.test.js` 覆盖语言标准化、中文默认、英文切换、浏览器持久化、静态文案回切，以及路径和原始 Git 输出不被翻译。

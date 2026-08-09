@@ -518,3 +518,11 @@
 - 实际产物 `Forkline-v0.3.0-windows-x64.zip` 为 `35,872,015` 字节，SHA256 为 `ef88c0a29bedfb1a0142ff92883bf813bcbced0c8cf993ec837779fc861ce702`；GitHub Release 返回的 asset digest 完全一致。
 - 解压实测为 `main`、HEAD `074fae6`、浅层仓库、官方 `origin` 且工作区干净；内置 Node `v24.13.0` 启动随机端口返回 HTTP 200。使用 `taskkill /PID <pid> /T /F` 强制终止完整进程树后端口确认释放，临时解压目录已删除。
 - PowerShell 语法检查、便携专项 `2/2` 和完整 `npm.cmd test` `176/176` 通过；完整 Chromium 回归中复杂文件打开约 `187.5 ms`、渐进打开约 `173.8 / 834.0 ms`，DOM、监听器和堆浸泡边界稳定。
+
+## 2026-08-09 Git 安全快照失败即停止
+
+- 当前分支 HEAD、upstream、工作区、单文件和失效 worktree 列表的快照读取不再把 Git 错误转换为空结果；无法确认页面状态仍然有效时，暂存、提交、签出、重置、清理等写操作会直接停止。
+- 未设置 upstream 改用 `git for-each-ref refs/heads/<branch> --format=%(upstream:short)` 判断：命令成功且输出为空才表示未设置，命令失败会保留错误并阻止操作。
+- 新增故障注入回归，覆盖 HEAD、upstream、全工作区、单文件、单文件全量回退和 worktree 清理六条失败路径，并确认后续写命令没有执行。
+- 语法与专项回归、真实临时 Git API 回归合计 `40/40` 通过；其余非浏览器测试 `141/141` 通过。未启动真实 Chromium，本轮没有前端或布局改动。
+- 下一项按计划优化远端分支只读切换，移除查看历史时的同步 `ls-remote` 网络等待，同时保留写操作前的远端状态校验。
