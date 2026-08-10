@@ -8,6 +8,7 @@
   const english = Object.freeze({
     "中文 Git 可视化工作台": "Git visual workspace",
     "Forkline 更新": "Forkline update",
+    "文件编辑器资源加载失败，请重试。": "The file editor failed to load. Please try again.",
     "发现 Forkline 新版本 {version}，点击查看": "Forkline {version} is available; click to view",
     "示例仓库": "Sample repository",
     "未连接真实仓库": "No repository connected",

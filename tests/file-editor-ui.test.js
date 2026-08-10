@@ -20,6 +20,7 @@ const worktreeRefresh = fs.readFileSync(path.join(root, "public", "js", "feature
 const diffWorkbench = [fileTree, diffCore, diffRenderer, diffSelection, worktreeRefresh].join("\n");
 const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
+const editorLoader = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-loader.js"), "utf8");
 const editorUtils = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-utils.js"), "utf8");
 const editorActions = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-actions.js"), "utf8");
 const editorWindow = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-window.js"), "utf8");
@@ -35,14 +36,15 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(html, /data-file-action="edit"/);
   assert.match(html, /id="fileEditorModal"/);
   assert.match(html, /id="fileEditorText"[^>]*wrap="off"/);
-  assert.match(html, /js\/features\/file-editor\.js/);
+  assert.match(html, /js\/features\/file-editor-loader\.js/);
+  assert.doesNotMatch(html, /vendor\/codemirror|js\/features\/file-editor-(?:utils|actions|window|search)\.js|js\/features\/file-editor\.js/);
   const diffScripts = [
+    "./js/features/file-editor-loader.js",
     "./js/features/file-tree.js",
     "./js/features/diff-renderer.js",
     "./js/features/diff-workbench.js",
     "./js/features/diff-selection.js",
     "./js/features/worktree-refresh.js",
-    "./js/features/file-editor-utils.js",
   ];
   let previousDiffScript = -1;
   for (const script of diffScripts) {
@@ -61,11 +63,7 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(branches, /function splitRemoteBranchRef\(/);
   assert.doesNotMatch(diffCore, /function renderSideDiff|function resetDiffLineSelection|function refreshWorktree/);
   const editorScripts = [
-    "./js/features/file-editor-utils.js",
-    "./js/features/file-editor-actions.js",
-    "./js/features/file-editor-window.js",
-    "./js/features/file-editor-search.js",
-    "./js/features/file-editor.js",
+    "./js/features/file-editor-loader.js",
     "./js/features/repositories.js",
     "./js/app/events.js",
   ];
@@ -83,10 +81,10 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.doesNotMatch(editorCore, /async function stageFileEditorChunk|function beginFileEditorDrag|function openFileEditorSearch/);
   assert.match(contextMenus, /action === "edit"/);
   assert.match(contextMenus, /previousFile: fileInfo\.previousFile/);
-  assert.match(contextMenus, /openFileEditor\(context\.file, context\.previousFile/);
+  assert.match(contextMenus, /openFileEditorLazy\(context\.file, context\.previousFile/);
   assert.match(diffWorkbench, /root\.addEventListener\("dblclick"/);
-  assert.match(diffWorkbench, /openFileEditor\(filePath, previousFile/);
-  assert.match(diffWorkbench, /switchOpenFileEditor\(filePath, previousFile/);
+  assert.match(diffWorkbench, /openFileEditorLazy\(filePath, previousFile/);
+  assert.match(diffWorkbench, /switchOpenFileEditorLazy\(filePath, previousFile/);
   assert.match(editor, /文件还有未保存的修改，确认切换到/);
 });
 
@@ -134,12 +132,12 @@ test("delegated worktree file events preserve selection, editing, context menus,
     toast: (message) => calls.push(["toast", message]),
   };
   vm.runInNewContext(fileTree, sandbox);
-  sandbox.switchOpenFileEditor = async (...args) => {
+  sandbox.switchOpenFileEditorLazy = async (...args) => {
     calls.push(["switch", ...args]);
     return true;
   };
   sandbox.selectChangeFile = (...args) => calls.push(["select", ...args]);
-  sandbox.openFileEditor = async (...args) => {
+  sandbox.openFileEditorLazy = async (...args) => {
     calls.push(["open", ...args]);
     return true;
   };
@@ -199,7 +197,7 @@ test("worktree selection updates in place so the same row can receive a double-c
 test("commit file double-click opens the shared comparison window in read-only mode", () => {
   assert.match(inspector, /bindFileTree\(els\.detailBody, \{ mode: "commit", commitSha: commit\.sha \}\)/);
   assert.match(diffWorkbench, /function handleFileTreeDoubleClick[\s\S]*options\.mode === "commit"/);
-  assert.match(diffWorkbench, /openCommitFileViewer\(filePath, previousFile, options\.commitSha\)/);
+  assert.match(diffWorkbench, /openCommitFileViewerLazy\(filePath, previousFile, options\.commitSha\)/);
   assert.match(editor, /async function openCommitFileViewer/);
   assert.match(editor, /"\/api\/commit-file"/);
   assert.match(editor, /readOnly: source === "commit"/);
@@ -493,7 +491,7 @@ test("historical comparison can switch between connectors and aligned spacer row
   assert.match(html, /id="fileEditorCompareMode"[\s\S]*data-file-editor-compare-mode="connect"[\s\S]*data-file-editor-compare-mode="align"/);
   assert.match(core, /commitFileCompareMode:\s*"connect"/);
   assert.match(core, /fileEditorCompareMode:\s*\$\("#fileEditorCompareMode"\)/);
-  assert.match(events, /fileEditorCompareMode\.addEventListener\("click"[\s\S]*setFileEditorCompareMode/);
+  assert.match(editorLoader, /fileEditorCompareMode\.addEventListener\("click"[\s\S]*setFileEditorCompareMode/);
   assert.match(editor, /compareMode:\s*source === "commit" \? normalizeFileEditorCompareMode\(state\.commitFileCompareMode\) : "align"/);
   assert.match(editor, /connect:\s*editor\.readOnly\s*\?\s*editor\.compareMode === "align" \? "align" : null\s*:\s*"align"/s);
   assert.match(editor, /function setFileEditorCompareMode[\s\S]*captureFileEditorView\(editor\)[\s\S]*destroyFileEditorInstance\(\)[\s\S]*createFileEditorInstance\(editor\)/);
@@ -560,18 +558,18 @@ test("large files use two lightweight CodeMirror panes instead of MergeView", ()
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {
-  const simpleModeIndex = html.indexOf("./vendor/codemirror/addon/mode/simple.js");
-  assert.ok(simpleModeIndex > html.indexOf("./vendor/codemirror/lib/codemirror.js"));
-  assert.ok(simpleModeIndex < html.indexOf("./vendor/codemirror/mode/dockerfile/dockerfile.js"));
-  assert.ok(simpleModeIndex < html.indexOf("./vendor/codemirror/mode/rust/rust.js"));
+  const simpleModeIndex = editorLoader.indexOf("./vendor/codemirror/addon/mode/simple.js");
+  assert.ok(simpleModeIndex > editorLoader.indexOf("./vendor/codemirror/lib/codemirror.js"));
+  assert.ok(simpleModeIndex < editorLoader.indexOf("./vendor/codemirror/mode/dockerfile/dockerfile.js"));
+  assert.ok(simpleModeIndex < editorLoader.indexOf("./vendor/codemirror/mode/rust/rust.js"));
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "lib", "codemirror.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "addon", "mode", "simple.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "addon", "merge", "merge.js")), true);
   assert.equal(fs.existsSync(path.join(root, "public", "vendor", "codemirror", "diff-match-patch.js")), true);
-  assert.match(html, /\.\/vendor\/codemirror\/lib\/codemirror\.css/);
-  assert.match(html, /\.\/vendor\/codemirror\/addon\/merge\/merge\.css/);
-  assert.match(html, /\.\/vendor\/codemirror\/diff-match-patch\.js/);
-  assert.match(html, /\.\/vendor\/codemirror\/addon\/merge\/merge\.js/);
+  assert.match(editorLoader, /\.\/vendor\/codemirror\/lib\/codemirror\.css/);
+  assert.match(editorLoader, /\.\/vendor\/codemirror\/addon\/merge\/merge\.css/);
+  assert.match(editorLoader, /\.\/vendor\/codemirror\/diff-match-patch\.js/);
+  assert.match(editorLoader, /\.\/vendor\/codemirror\/addon\/merge\/merge\.js/);
   assert.doesNotMatch(html, /https?:\/\//);
   assert.match(html, /id="fileEditorOldLabel"/);
   assert.match(html, /id="fileEditorNewLabel"/);
@@ -628,7 +626,7 @@ test("file editor provides find, replace, shortcuts, and repository cleanup", ()
   assert.match(html, /id="fileEditorCaseSensitive"/);
   assert.match(html, /id="fileEditorReplaceAll"/);
   assert.match(events, /submitFileEditor/);
-  assert.match(events, /addEventListener\("input", \(\) => updateFileEditorStatus\(\)\)/);
+  assert.match(editorLoader, /addEventListener\("input", \(\) => updateFileEditorStatus\(\)\)/);
   assert.match(events, /key\.toLowerCase\(\) === "f"/);
   assert.match(events, /key\.toLowerCase\(\) === "h"/);
   assert.match(events, /key\.toLowerCase\(\) === "s"/);
@@ -666,14 +664,14 @@ test("file editor window can be resized and dragged without escaping the viewpor
   assert.match(styles, /\.file-editor-resize-handle\s*\{/);
   assert.match(styles, /\.file-editor-head\s*\{[^}]*cursor:\s*move/s);
   assert.match(styles, /@media \(max-width: 720px\)[\s\S]*?\.file-editor-dialog[\s\S]*?resize:\s*none/);
-  assert.match(events, /beginFileEditorDrag/);
-  assert.match(events, /moveFileEditorDrag/);
-  assert.match(events, /endFileEditorDrag/);
-  assert.match(events, /beginFileEditorResize/);
-  assert.match(events, /moveFileEditorResize/);
-  assert.match(events, /endFileEditorResize/);
-  assert.match(events, /window\.addEventListener\("mousemove"/);
-  assert.match(events, /window\.addEventListener\("mouseup"/);
+  assert.match(editorLoader, /beginFileEditorDrag/);
+  assert.match(editorLoader, /moveFileEditorDrag/);
+  assert.match(editorLoader, /endFileEditorDrag/);
+  assert.match(editorLoader, /beginFileEditorResize/);
+  assert.match(editorLoader, /moveFileEditorResize/);
+  assert.match(editorLoader, /endFileEditorResize/);
+  assert.match(editorLoader, /window\.addEventListener\("mousemove"/);
+  assert.match(editorLoader, /window\.addEventListener\("mouseup"/);
   assert.match(editor, /function clampFileEditorWindow/);
   assert.match(editor, /new ResizeObserver/);
   assert.match(editor, /refreshFileEditorCodeMirror/);
@@ -684,7 +682,7 @@ test("file editor stages from the center and restores selected changes from a co
   assert.match(html, /data-file-editor-action="stageSelectedLines"/);
   assert.match(html, /data-file-editor-action="discardSelectedHunk"/);
   assert.match(core, /fileEditorContextMenu:\s*\$\("#fileEditorContextMenu"\)/);
-  assert.match(events, /showFileEditorContextMenu/);
+  assert.match(editorLoader, /showFileEditorContextMenu/);
   assert.match(events, /runFileEditorContextAction/);
   assert.match(editor, /stageFileEditorChunk/);
   assert.match(editor, /action: "stageHunk", hunkIndex, diffContext: editor\.diffContext/);

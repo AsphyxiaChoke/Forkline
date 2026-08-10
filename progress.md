@@ -7424,3 +7424,29 @@
 - `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
 - 保留用户已有的 `pull-latest.cmd` 本地修改，本轮未暂存、未修改。
 - 回滚点为 `016bb96`；提交前可执行 `git restore -- README.md server.js server/repository-service.js server/repository-state-service.js public/js/core.js public/js/app/init.js public/js/app/events.js public/js/features/context-menus.js public/js/features/folder-command.js public/js/features/repositories.js public/js/i18n-catalog.js public/js/panels/recovery.js public/js/panels/stashes.js public/js/panels/workspaces.js tests/backend-services.test.js tests/git-api.test.js tests/layout-ui.test.js docs/ARCHITECTURE.md docs/CONTINUE.md progress.md`；本任务提交位于 HEAD 时可执行 `git revert --no-edit HEAD`。
+## 2026-08-10 - Task: 文件编辑器与 CodeMirror 资源按需加载
+
+### What was done
+
+- 将 CodeMirror 样式、语言模式、MergeView 和五个文件编辑器模块从首屏移到首次打开文件时加载；所有入口共用一个进行中的加载任务，避免连续操作重复请求。
+- 编辑器专属事件延后到资源就绪后绑定一次；失败资源可单独重试，仓库切换、滚动和窗口缩放在编辑器尚未加载时保持安全。
+- 首屏声明资源从 71 个、1,874,043 字节降到 37 个、908,884 字节，减少 34 个请求和 965,159 字节。
+
+### Testing
+
+- `node --check`：加载器、事件、文件树、上下文菜单、仓库切换和相关测试文件通过。
+- 加载器、编辑器、布局和国际化专项：`75/75` 通过。
+- 完整非浏览器回归：`189/189` 通过，0 失败、0 跳过。
+- `npm run test:browser`：真实 Chromium `1/1` 通过；首屏编辑器资源为 0，首次打开后 35 个资源就绪，复杂历史文件打开约 236.0 ms，最大事件循环延迟约 42.3 ms，30 次开关后 DOM、监听器和堆边界稳定。
+
+### Notes
+
+- `public/index.html`：移除首屏 CodeMirror 和编辑器模块声明，加入轻量加载器入口。
+- `public/js/features/file-editor-loader.js`：新增资源顺序、共享加载任务、失败重试、延迟事件绑定和统一打开入口。
+- `public/js/app/events.js`：首屏只绑定编辑触发入口，未加载时安全跳过编辑器菜单清理。
+- `public/js/features/file-tree.js`、`public/js/features/context-menus.js`：工作区和历史文件入口改用懒加载门面。
+- `public/js/features/repositories.js`：仓库切换在编辑器未加载时不调用不存在的销毁函数。
+- `public/js/i18n-catalog.js`：增加编辑器资源加载失败英文提示。
+- `tests/file-editor-loader.test.js`、`tests/file-editor-ui.test.js`、`tests/browser-performance.test.js`：覆盖并发共享、失败重试、首屏无编辑器资源和首次真实加载。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录用户行为、加载顺序、验证结果和后续缓存任务。
+- 回滚点为本轮开始前 `dbc4640`；需要撤销本项时，对包含本记录的提交执行 `git revert <commit>`。

@@ -35,7 +35,8 @@
 - `public/js/panels/stashes.js`、`auth.js`、`sync.js`、`compare.js`：分别负责储藏、认证诊断、轻量同步状态和分支/引用比较面板。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、Git 操作日志、应用设置与在线更新面板。
 - `public/js/features/file-tree.js`、`diff-renderer.js`、`diff-workbench.js`、`diff-selection.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、双栏 Diff 渲染、Diff 数据加载与弹窗编排、按行操作与滚动恢复，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu/scroll 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。工作区与暂存区超过 800 个文件时先渲染首批，接近底部滚动或点击“继续显示”后按 800 个增量合并目录节点；目录数量仍按完整文件集合计算。
-- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；两种路径都只允许编辑中间的合并结果。
+- `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时按固定顺序载入 CodeMirror 样式、语言模式和五个编辑器模块，共享同一个进行中的加载 Promise，失败后只重试未成功资源，再绑定编辑器专属事件。
+- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：按需载入后分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；两种路径都只允许编辑中间的合并结果。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
 - `public/index.html`：静态结构和有序脚本加载。
@@ -69,24 +70,20 @@
 22. `js/panels/logs.js`
 23. `js/panels/settings.js`
 24. `js/features/recovery-undo.js`
-25. `js/features/file-tree.js`
-26. `js/features/diff-renderer.js`
-27. `js/features/diff-workbench.js`
-28. `js/features/diff-selection.js`
-29. `js/features/worktree-refresh.js`
-30. `js/features/file-editor-utils.js`
-31. `js/features/file-editor-actions.js`
-32. `js/features/file-editor-window.js`
-33. `js/features/file-editor-search.js`
-34. `js/features/file-editor.js`
-35. `js/features/repositories.js`
-36. `js/features/git-actions.js`
-37. `js/app/layout-utils.js`
-38. `js/app/events.js`
-39. `app.js`
-40. `js/bootstrap.js`
+25. `js/features/file-editor-loader.js`
+26. `js/features/file-tree.js`
+27. `js/features/diff-renderer.js`
+28. `js/features/diff-workbench.js`
+29. `js/features/diff-selection.js`
+30. `js/features/worktree-refresh.js`
+31. `js/features/repositories.js`
+32. `js/features/git-actions.js`
+33. `js/app/layout-utils.js`
+34. `js/app/events.js`
+35. `app.js`
+36. `js/bootstrap.js`
 
-前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`performance-diagnostics.js` 必须在后续功能脚本之前安装全局错误和长任务监听；`i18n-catalog.js` 和 `i18n.js` 必须先于功能和面板脚本加载；右侧面板模块、恢复点撤销、五个 Diff 工作台模块和五个文件编辑器模块必须先于 `js/app/events.js`；`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
+前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`performance-diagnostics.js` 必须在后续功能脚本之前安装全局错误和长任务监听；`i18n-catalog.js` 和 `i18n.js` 必须先于功能和面板脚本加载；右侧面板模块和恢复点撤销必须先于 `js/app/events.js`。`file-editor-loader.js` 必须先于文件树、仓库切换和事件模块；五个文件编辑器模块不再进入首屏脚本清单，由加载器在第一次打开文件时按原顺序载入并绑定专属事件。`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
 
 恢复点策略保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。
 

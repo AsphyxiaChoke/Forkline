@@ -113,6 +113,15 @@ test("real Chromium keeps historical file comparison responsive", {
   await cdp.send("Page.navigate", { url: baseUrl });
   await waitForPageReady(cdp);
 
+  const initialEditorResources = await evaluate(cdp, `({
+    codeMirror: typeof CodeMirror,
+    editor: typeof openFileEditor,
+    loadedResources: document.querySelectorAll("[data-file-editor-resource]").length,
+  })`);
+  assert.equal(initialEditorResources.codeMirror, "undefined");
+  assert.equal(initialEditorResources.editor, "undefined");
+  assert.equal(initialEditorResources.loadedResources, 0);
+
   const baselineResizeListeners = await countWindowListeners(cdp, "resize");
   const complex = await evaluate(cdp, `(async () => {
     let maxDelay = 0;
@@ -123,7 +132,7 @@ test("real Chromium keeps historical file comparison responsive", {
       lastTick = now;
     }, 25);
     const openStarted = performance.now();
-    const opened = await openCommitFileViewer("complex.c", "", ${JSON.stringify(head)});
+    const opened = await openCommitFileViewerLazy("complex.c", "", ${JSON.stringify(head)});
     const openMs = performance.now() - openStarted;
     await new Promise((resolve) => setTimeout(resolve, 75));
     clearInterval(timer);
@@ -141,6 +150,7 @@ test("real Chromium keeps historical file comparison responsive", {
       codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
       compareHidden: document.querySelector("#fileEditorCompareMode").hidden,
       status: document.querySelector("#fileEditorStatus").textContent,
+      loadedResources: document.querySelectorAll('[data-file-editor-resource][data-loaded="true"]').length,
       synchronized: scrollers.length === 2 && Math.abs(scrollers[0].scrollTop - scrollers[1].scrollTop) < 1,
     };
     const closeStarted = performance.now();
@@ -156,6 +166,7 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(complex.compareHidden, true);
   assert.match(complex.status, /复杂文件轻量模式 · 行数较多/);
   assert.equal(complex.synchronized, true);
+  assert.equal(complex.loadedResources, 35);
   assert.equal(complex.remainingCodeMirrors, 0);
   assert.ok(complex.openMs < 5000, `complex comparison opened in ${complex.openMs.toFixed(1)} ms`);
   assert.ok(complex.maxDelay < 1500, `complex comparison blocked the event loop for ${complex.maxDelay.toFixed(1)} ms`);
@@ -168,7 +179,7 @@ test("real Chromium keeps historical file comparison responsive", {
   );
 
   const scattered = await evaluate(cdp, `(async () => {
-    const opened = await openCommitFileViewer("scattered.c", "", ${JSON.stringify(head)});
+    const opened = await openCommitFileViewerLazy("scattered.c", "", ${JSON.stringify(head)});
     const result = {
       opened,
       mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
@@ -188,7 +199,7 @@ test("real Chromium keeps historical file comparison responsive", {
 
   const smallOpened = await evaluate(cdp, `(async () => {
     const started = performance.now();
-    const opened = await openCommitFileViewer("small.c", "", ${JSON.stringify(head)});
+    const opened = await openCommitFileViewerLazy("small.c", "", ${JSON.stringify(head)});
     return {
       opened,
       openMs: performance.now() - started,
@@ -251,7 +262,7 @@ test("real Chromium keeps historical file comparison responsive", {
     };
     let firstOpened = false;
     try {
-      firstOpened = await openCommitFileViewer("small.c", "", ${JSON.stringify(head)});
+      firstOpened = await openCommitFileViewerLazy("small.c", "", ${JSON.stringify(head)});
     } finally {
       CodeMirror.MergeView = originalMergeView;
     }
@@ -273,7 +284,7 @@ test("real Chromium keeps historical file comparison responsive", {
     closeFileEditor(true);
 
     const reopenStarted = performance.now();
-    const reopened = await openCommitFileViewer("small.c", "", ${JSON.stringify(head)});
+    const reopened = await openCommitFileViewerLazy("small.c", "", ${JSON.stringify(head)});
     const reopenMs = performance.now() - reopenStarted;
     const second = {
       opened: reopened,
@@ -324,7 +335,7 @@ test("real Chromium keeps historical file comparison responsive", {
       lastTick = now;
     }, 25);
     const smallStarted = performance.now();
-    const smallOpened = await openFileEditor("small-conflict.c");
+    const smallOpened = await openFileEditorLazy("small-conflict.c");
     const smallOpenMs = performance.now() - smallStarted;
     await new Promise((resolve) => setTimeout(resolve, 75));
     const incomingButton = document.querySelector("#fileEditorMerge .CodeMirror-merge-copybuttons-right .CodeMirror-merge-copy");
@@ -354,7 +365,7 @@ test("real Chromium keeps historical file comparison responsive", {
     closeFileEditor(true);
 
     const largeStarted = performance.now();
-    const largeOpened = await openFileEditor("large-conflict.c");
+    const largeOpened = await openFileEditorLazy("large-conflict.c");
     const largeOpenMs = performance.now() - largeStarted;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const panes = [state.fileEditor?.oldCodeMirror, state.fileEditor?.codeMirror, state.fileEditor?.theirsCodeMirror].filter(Boolean);
@@ -382,7 +393,7 @@ test("real Chromium keeps historical file comparison responsive", {
     let reopenFailures = 0;
     const reopenStarted = performance.now();
     for (let index = 0; index < 8; index += 1) {
-      if (!await openFileEditor("small-conflict.c")) reopenFailures += 1;
+      if (!await openFileEditorLazy("small-conflict.c")) reopenFailures += 1;
       closeFileEditor(true);
     }
     const reopenMs = performance.now() - reopenStarted;
@@ -818,7 +829,7 @@ test("real Chromium keeps historical file comparison responsive", {
     let failures = 0;
     const started = performance.now();
     for (let index = 0; index < 30; index += 1) {
-      const opened = await openCommitFileViewer("small.c", "", ${JSON.stringify(alternateHead)});
+      const opened = await openCommitFileViewerLazy("small.c", "", ${JSON.stringify(alternateHead)});
       if (!opened) failures += 1;
       if (opened && index % 2 === 0) setFileEditorCompareMode("align");
       closeFileEditor(true);
@@ -1152,8 +1163,8 @@ async function waitForPageReady(cdp) {
         typeof state !== "undefined" &&
         state.data?.repo &&
         !state.data.repo.isSample &&
-        typeof openCommitFileViewer === "function" &&
-        typeof setFileEditorCompareMode === "function"
+        typeof ensureFileEditorLoaded === "function" &&
+        typeof openCommitFileViewerLazy === "function"
       )`);
       if (ready) return;
     } catch {

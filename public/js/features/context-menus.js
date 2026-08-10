@@ -358,7 +358,7 @@ async function runFileContextAction(action) {
   hideFileContextMenu();
   if (!context?.file) return;
   if (action === "edit") {
-    await openFileEditor(context.file, context.previousFile || "");
+    await openFileEditorLazy(context.file, context.previousFile || "");
     return;
   }
   if (action === "diff") {

@@ -115,43 +115,8 @@ els.mainlineModal.addEventListener("click", (event) => {
   if (event.target === els.mainlineModal) closeMainlineModal();
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
-els.editWorktreeFile.addEventListener("click", () => openFileEditor(state.activeDiff?.path || state.selectedFile, state.activeDiff?.previousFile || "").catch((error) => toast(error.message)));
+els.editWorktreeFile.addEventListener("click", () => openFileEditorLazy(state.activeDiff?.path || state.selectedFile, state.activeDiff?.previousFile || "").catch((error) => toast(error.message)));
 els.maximizeDiff.addEventListener("click", openDiffModal);
-els.fileEditorForm.addEventListener("submit", (event) => submitFileEditor(event).catch((error) => toast(error.message)));
-els.fileEditorText.addEventListener("input", () => updateFileEditorStatus());
-els.fileEditorMerge.addEventListener("contextmenu", showFileEditorContextMenu);
-els.fileEditorText.addEventListener("contextmenu", showFileEditorContextMenu);
-els.fileEditorCompareMode.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-file-editor-compare-mode]");
-  if (!button || button.disabled) return;
-  try {
-    setFileEditorCompareMode(button.dataset.fileEditorCompareMode);
-  } catch (error) {
-    toast(error.message);
-  }
-});
-els.fileEditorToggleSearch.addEventListener("click", toggleFileEditorSearch);
-els.fileEditorSearchInput.addEventListener("input", scheduleFileEditorSearchRefresh);
-els.fileEditorSearchInput.addEventListener("keydown", handleFileEditorSearchKeydown);
-els.fileEditorReplaceInput.addEventListener("keydown", handleFileEditorSearchKeydown);
-els.fileEditorCaseSensitive.addEventListener("change", refreshFileEditorSearchMatches);
-els.fileEditorFindPrevious.addEventListener("click", () => findFileEditorMatch(-1));
-els.fileEditorFindNext.addEventListener("click", () => findFileEditorMatch(1));
-els.fileEditorReplaceOne.addEventListener("click", replaceCurrentFileEditorMatch);
-els.fileEditorReplaceAll.addEventListener("click", replaceAllFileEditorMatches);
-els.fileEditorCancel.addEventListener("click", () => closeFileEditor());
-els.fileEditorClose.addEventListener("click", () => closeFileEditor());
-const fileEditorHead = els.fileEditorForm.querySelector(".file-editor-head");
-fileEditorHead.addEventListener("mousedown", beginFileEditorDrag);
-els.fileEditorResizeHandle.addEventListener("mousedown", beginFileEditorResize);
-window.addEventListener("mousemove", (event) => {
-  moveFileEditorDrag(event);
-  moveFileEditorResize(event);
-});
-window.addEventListener("mouseup", () => {
-  endFileEditorDrag();
-  endFileEditorResize();
-});
 els.workDiffView.addEventListener("click", (event) => {
   const lineButton = event.target.closest("[data-line-action]");
   if (lineButton) {
@@ -697,7 +662,7 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest("#commitContextMenu")) hideCommitContextMenu();
   if (!event.target.closest("#branchContextMenu")) hideBranchContextMenu();
   if (!event.target.closest("#fileContextMenu")) hideFileContextMenu();
-  if (!event.target.closest("#fileEditorContextMenu")) hideFileEditorContextMenu();
+  if (typeof hideFileEditorContextMenu === "function" && !event.target.closest("#fileEditorContextMenu")) hideFileEditorContextMenu();
   if (!event.target.closest("#tagContextMenu")) hideTagContextMenu();
   if (!event.target.closest("#remoteContextMenu")) hideRemoteContextMenu();
   if (!event.target.closest("#reflogContextMenu")) hideReflogContextMenu();
@@ -804,7 +769,7 @@ document.addEventListener("scroll", (event) => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
-  hideFileEditorContextMenu();
+  if (typeof hideFileEditorContextMenu === "function") hideFileEditorContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
   hideReflogContextMenu();
@@ -814,7 +779,7 @@ window.addEventListener("resize", () => {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideFileContextMenu();
-  hideFileEditorContextMenu();
+  if (typeof hideFileEditorContextMenu === "function") hideFileEditorContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
   hideReflogContextMenu();

@@ -556,7 +556,7 @@ function clearRepoScopedActionState() {
   state.contextTag = null;
   state.contextRemote = null;
   state.contextReflogEntry = null;
-  destroyFileEditorInstance();
+  if (typeof destroyFileEditorInstance === "function") destroyFileEditorInstance();
   state.fileEditor = null;
   let closedModal = false;
   for (const modal of [els.branchModal, els.tagModal, els.mainlineModal, els.fileEditorModal]) {

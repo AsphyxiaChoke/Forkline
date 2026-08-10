@@ -161,7 +161,7 @@ async function handleFileTreeClick(root, binding, event) {
     const previousFile = row.dataset.previousFile || "";
     const scope = row.dataset.scope || "";
     try {
-      if (!await switchOpenFileEditor(filePath, previousFile)) return;
+      if (!await switchOpenFileEditorLazy(filePath, previousFile)) return;
     } catch (error) {
       toast(error.message);
       return;
@@ -184,12 +184,12 @@ function handleFileTreeDoubleClick(root, binding, event) {
   if (options.mode === "worktree" || options.selectable) {
     event.preventDefault();
     if (els.fileEditorModal.classList.contains("show")) return;
-    openFileEditor(filePath, previousFile).catch((error) => toast(error.message));
+    openFileEditorLazy(filePath, previousFile).catch((error) => toast(error.message));
     return;
   }
   if (options.mode === "commit") {
     event.preventDefault();
-    openCommitFileViewer(filePath, previousFile, options.commitSha).catch((error) => toast(error.message));
+    openCommitFileViewerLazy(filePath, previousFile, options.commitSha).catch((error) => toast(error.message));
   }
 }
 
