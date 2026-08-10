@@ -182,6 +182,7 @@
 - `tests/recovery-policy-ui.test.js` 覆盖旧策略迁移、按仓库隔离、操作后整理确认和示例仓库边界；`tests/recovery-undo-ui.test.js` 验证危险操作返回恢复点后会登记一键撤销并触发策略检查。
 - `tests/api-repo-context.test.js` 覆盖中文仓库路径请求头编码和当前语言请求头。
 - `tests/i18n.test.js` 覆盖语言标准化、中文默认、英文切换、浏览器持久化、静态文案回切，以及路径和原始 Git 输出不被翻译。
+- `tests/startup-resource-budget.test.js` 解析 `public/index.html` 的首屏样式和脚本，限制最多 37 个本地资源、总量不超过 750 KiB，并固定 CodeMirror、编辑器实现模块和完整英文词典继续按需加载。
 - API 集成测试覆盖中文仓库名、中文提交信息和中文分支名在英文响应中保持原值，同时验证默认中文、英文错误和不支持语言回退中文。
 - `tests/diff-preview.test.js` 验证聚合提交预览最多渲染 400 行，小 Diff 保持完整。
 - Git 行为缺陷优先在真实 API 边界增加回归测试，不要用无法复现 worktree、stash、ref 或子模块语义的 mock 代替。
