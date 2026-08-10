@@ -1,7 +1,7 @@
 // Starts Forkline after shared state, API helpers, and feature code are loaded.
-function startForkline() {
+async function startForkline() {
   state.recoveryPolicy = defaultRecoveryPolicy();
-  initLocale();
+  await initLocale();
   initTheme();
   initLayoutResizers();
   initCommandHints();
@@ -11,4 +11,4 @@ function startForkline() {
 }
 
 window.Forkline.start = startForkline;
-startForkline();
+startForkline().catch((error) => toast(error.message));

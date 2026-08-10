@@ -1,35 +1,56 @@
 // Locale state and translation helpers shared by browser feature scripts.
-const forklineI18nCatalog = window.ForklineI18nCatalog;
 const staticLocaleEntries = [];
 let staticLocaleCaptured = false;
 
+function forklineI18nCatalog() {
+  return window.ForklineI18nCatalog;
+}
+
 function normalizeLocale(locale) {
-  return forklineI18nCatalog.normalizeLocale(locale);
+  return forklineI18nCatalog().normalizeLocale(locale);
 }
 
 function currentLocale() {
-  return normalizeLocale(state.locale) || forklineI18nCatalog.defaultLocale;
+  return normalizeLocale(state.locale) || forklineI18nCatalog().defaultLocale;
 }
 
 function t(source, params) {
-  return forklineI18nCatalog.translate(currentLocale(), source, params);
+  return forklineI18nCatalog().translate(currentLocale(), source, params);
 }
 
 function tt(strings, ...values) {
   return strings.reduce((output, part, index) => {
-    const translated = forklineI18nCatalog.translateFragment(currentLocale(), part);
+    const translated = forklineI18nCatalog().translateFragment(currentLocale(), part);
     return `${output}${translated}${index < values.length ? values[index] : ""}`;
   }, "");
 }
 
-function initLocale() {
+async function initLocale() {
   captureStaticLocaleEntries();
   const storedLocale = localStorage.getItem(localeStorageKey);
-  applyLocale(normalizeLocale(storedLocale) || forklineI18nCatalog.defaultLocale, false);
+  const normalized = normalizeLocale(storedLocale) || forklineI18nCatalog().defaultLocale;
+  try {
+    await ensureLocaleCatalog(normalized);
+    applyLocale(normalized, false);
+  } catch (error) {
+    applyLocale(forklineI18nCatalog().defaultLocale, false);
+    setTimeout(() => toast(error.message), 0);
+  }
+}
+
+async function setLocale(locale, persist = true) {
+  const normalized = normalizeLocale(locale) || forklineI18nCatalog().defaultLocale;
+  await ensureLocaleCatalog(normalized);
+  return applyLocale(normalized, persist);
+}
+
+async function ensureLocaleCatalog(locale) {
+  const ensure = window.ForklineI18nLoader?.ensure;
+  if (typeof ensure === "function") await ensure(locale);
 }
 
 function applyLocale(locale, persist = true) {
-  const normalized = normalizeLocale(locale) || forklineI18nCatalog.defaultLocale;
+  const normalized = normalizeLocale(locale) || forklineI18nCatalog().defaultLocale;
   state.locale = normalized;
   document.documentElement.lang = normalized;
   document.documentElement.dataset.locale = normalized;
@@ -64,7 +85,7 @@ function captureStaticLocaleEntries() {
 
 function applyStaticLocaleEntries() {
   staticLocaleEntries.forEach((entry) => {
-    const translated = forklineI18nCatalog.translateFragment(currentLocale(), entry.source);
+    const translated = forklineI18nCatalog().translateFragment(currentLocale(), entry.source);
     if (entry.attribute) entry.node.setAttribute(entry.attribute, translated);
     else entry.node.nodeValue = translated;
   });
@@ -74,6 +95,7 @@ window.Forkline.i18n = {
   applyLocale,
   currentLocale,
   normalizeLocale,
+  setLocale,
   t,
   tt,
 };

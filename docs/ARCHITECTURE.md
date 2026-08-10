@@ -25,8 +25,9 @@
 ## 前端分层
 
 - `public/js/core.js`：共享状态、存储键、常量、DOM 引用和 `window.Forkline` 命名空间。
-- `public/js/i18n-catalog.js`：中英文文案目录、语言标准化、模板插值和已知服务端文本翻译；同时支持浏览器和 CommonJS 测试/服务端引用。
-- `public/js/i18n.js`：浏览器语言状态、静态页面文案捕获、语言切换和本地持久化。
+- `public/js/i18n-loader.js`：首屏轻量中文门面，提供语言标准化和原文回退；第一次使用英语时载入完整词典，共享进行中的加载 Promise，失败后允许重试。
+- `public/js/i18n-catalog.js`：完整英文文案目录、模板插值和已知服务端文本翻译；浏览器按需载入，CommonJS 测试和服务端继续直接引用。
+- `public/js/i18n.js`：浏览器语言状态、静态页面文案捕获、异步语言切换和本地持久化。
 - `public/js/api.js`：共享 API 请求封装，对外暴露 `Forkline.api`，并携带仓库上下文和当前语言请求头。
 - `public/js/app/`：启动附近的界面编排、界面性能诊断、事件绑定、布局工具和首轮渲染辅助。
 - `public/js/features/`：分支、工作区更改、历史列表、图谱渲染、仓库操作、Git 操作、右键菜单和 Diff 工作台等业务流程。
@@ -47,7 +48,7 @@
 `index.html` 必须按以下顺序加载脚本：
 
 1. `js/core.js`
-2. `js/i18n-catalog.js`
+2. `js/i18n-loader.js`
 3. `js/i18n.js`
 4. `js/api.js`
 5. `js/app/performance-diagnostics.js`
@@ -83,13 +84,14 @@
 35. `app.js`
 36. `js/bootstrap.js`
 
-前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`performance-diagnostics.js` 必须在后续功能脚本之前安装全局错误和长任务监听；`i18n-catalog.js` 和 `i18n.js` 必须先于功能和面板脚本加载；右侧面板模块和恢复点撤销必须先于 `js/app/events.js`。`file-editor-loader.js` 必须先于文件树、仓库切换和事件模块；五个文件编辑器模块不再进入首屏脚本清单，由加载器在第一次打开文件时按原顺序载入并绑定专属事件。`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数。
+前端仍使用经典浏览器全局变量，因为应用直接由本地服务提供，不经过打包器。`i18n-loader.js` 和 `i18n.js` 必须先于功能和面板脚本加载；完整 `i18n-catalog.js` 不再进入首屏清单，由语言加载器在恢复英语设置或第一次切换英语时载入。`performance-diagnostics.js` 必须在后续功能脚本之前安装全局错误和长任务监听；右侧面板模块和恢复点撤销必须先于 `js/app/events.js`。`file-editor-loader.js` 必须先于文件树、仓库切换和事件模块；五个文件编辑器模块不再进入首屏脚本清单，由加载器在第一次打开文件时按原顺序载入并绑定专属事件。`js/bootstrap.js` 依赖布局、恢复点策略、工作区刷新、追加提交和初始化辅助函数，并等待保存语言对应的词典就绪后再启动。
 
 恢复点策略保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。
 
 ## 国际化规则
 
 - 中文是默认语言，设置页可切换英语；当前语言保存在浏览器的 `forkline-locale` 中。
+- 默认中文首屏只载入 `i18n-loader.js` 的原文门面；恢复英语设置或第一次切换英语时才请求 `i18n-catalog.js`。并发请求共用一个 Promise，加载失败移除失败脚本并允许下一次重试。
 - 界面源码继续以中文作为主文案，英文统一维护在 `public/js/i18n-catalog.js`，不要在功能文件中并排写两套文案。
 - 固定文案使用 `t()`；模板静态片段可使用 `tt`，插值中的分支名、提交信息、作者、路径、引用和 SHA 必须保持原值。
 - API 请求通过 `X-Forkline-Locale` 传递语言。服务端只本地化克隆后的响应，不修改服务端全局仓库状态。

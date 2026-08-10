@@ -122,6 +122,29 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(initialEditorResources.editor, "undefined");
   assert.equal(initialEditorResources.loadedResources, 0);
 
+  const initialLocaleResources = await evaluate(cdp, `({
+    locale: state.locale,
+    englishTranslation: window.ForklineI18nCatalog.translateKnown("en", "打开"),
+    loadedResources: document.querySelectorAll("[data-i18n-catalog-resource]").length,
+  })`);
+  assert.equal(initialLocaleResources.locale, "zh-CN");
+  assert.equal(initialLocaleResources.englishTranslation, "打开");
+  assert.equal(initialLocaleResources.loadedResources, 0);
+
+  const englishLocale = await evaluate(cdp, `(async () => {
+    await setLocale("en", false);
+    const result = {
+      locale: state.locale,
+      translated: t("设置"),
+      loadedResources: document.querySelectorAll('[data-i18n-catalog-resource][data-loaded="true"]').length,
+    };
+    await setLocale("zh-CN", false);
+    return result;
+  })()`);
+  assert.equal(englishLocale.locale, "en");
+  assert.equal(englishLocale.translated, "Settings");
+  assert.equal(englishLocale.loadedResources, 1);
+
   const baselineResizeListeners = await countWindowListeners(cdp, "resize");
   const complex = await evaluate(cdp, `(async () => {
     let maxDelay = 0;

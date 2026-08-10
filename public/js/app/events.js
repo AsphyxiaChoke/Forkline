@@ -446,10 +446,11 @@ els.detailBody.addEventListener("click", (event) => {
     event.preventDefault();
     const locale = normalizeLocale(settingsLocale.dataset.settingsLocale);
     if (locale) {
-      applyLocale(locale);
-      applyTheme(state.theme, false);
-      renderRecentRepos();
-      renderAll();
+      setLocale(locale).then(() => {
+        applyTheme(state.theme, false);
+        renderRecentRepos();
+        renderAll();
+      }).catch((error) => toast(error.message));
     }
     return;
   }
