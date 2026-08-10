@@ -11,8 +11,8 @@
 ## 产物
 
 ```text
-Forkline-v0.3.0-windows-x64.zip
-Forkline-v0.3.0-windows-x64.zip.sha256
+Forkline-v0.3.1-windows-x64.zip
+Forkline-v0.3.1-windows-x64.zip.sha256
 ```
 
 ZIP 内额外包含：
@@ -32,7 +32,7 @@ PORTABLE-INFO.txt
 要求：Windows、Git、PowerShell、可访问 `github.com` 和 `nodejs.org`，当前源码仓库工作区干净且 `origin` 指向官方 Forkline。
 
 ```powershell
-./scripts/build-portable.ps1 -ReleaseTag v0.3.0
+./scripts/build-portable.ps1 -ReleaseTag v0.3.1
 ```
 
 也可以双击 `build-portable.cmd`，默认使用 `package.json` 对应的正式 Tag。产物写入 `dist/`。
@@ -50,6 +50,8 @@ PORTABLE-INFO.txt
 `.github/workflows/release-portable.yml` 在正式 Release 发布后构建并上传 ZIP 与 SHA256，也可以手动输入已有 Tag 重新构建并覆盖附件。
 
 `v0.3.0` 早于该工作流加入，因此首次便携附件由本地执行相同脚本构建并上传；后续 Release 走自动工作流。
+
+从 `v0.3.1` 起，发布 Release 后由该工作流自动构建并上传 Windows x64 ZIP 和 SHA256 文件。
 
 ## 更新边界
 

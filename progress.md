@@ -7521,3 +7521,27 @@
 - `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录测试入口、架构边界、当前基线和调整规则。
 - `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
 - 回滚点为本轮开始前 `120724c`；需要撤销本项时，对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-10 - Task: 准备 Forkline v0.3.1 发布
+
+### What was done
+
+- 将正式版本从 `0.3.0` 更新为 `0.3.1`，汇总自 `v0.3.0` 以来的安全、可靠性和首屏性能改进。
+- 更新 Windows 便携包示例，明确 `v0.3.1` 起由 GitHub Release 工作流自动构建并上传 ZIP 与 SHA256。
+- 发布范围不增加新功能代码；中文默认首屏当前为 37 个资源、731,088 字节，较优化前减少 34 个请求和 1,142,955 字节。
+
+### Testing
+
+- `npm.cmd test`：发布前完整回归 `196/196` 通过，0 失败、0 跳过；包含真实 Chromium `1/1`。
+- Chromium 实测复杂历史文件打开约 300.5 ms、最大事件循环延迟约 90.4 ms；3012 提交、4000 文件、渐进打开和 30 次编辑器开关边界稳定。
+- 首屏资源门限在完整回归中确认 37 个资源、731,088 字节。
+- `node --test tests/portable-runtime.test.js`：便携包契约 `2/2` 通过。
+- `scripts/build-portable.ps1` 通过 PowerShell 语法解析，`package.json` 版本确认为 `0.3.1`。
+
+### Notes
+
+- `package.json`：正式版本更新为 `0.3.1`。
+- `docs/PACKAGING.md`：更新便携包示例和自动附件构建起始版本。
+- `docs/CONTINUE.md`：记录发布范围、首屏优化汇总和 Release 附件流程。
+- `progress.md`：追加发布准备、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `dd44b70`；发布 Tag 创建后不得移动 Tag，代码回滚应发布新的修复版本。

@@ -1,6 +1,6 @@
 {
   "name": "forkline",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
