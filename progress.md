@@ -7545,3 +7545,26 @@
 - `docs/CONTINUE.md`：记录发布范围、首屏优化汇总和 Release 附件流程。
 - `progress.md`：追加发布准备、验证、文件清单和回滚方式。
 - 回滚点为本轮开始前 `dd44b70`；发布 Tag 创建后不得移动 Tag，代码回滚应发布新的修复版本。
+
+## 2026-08-10 - Task: 发布 Forkline v0.3.1
+
+### What was done
+
+- 在已验证提交 `e144fc1` 上创建并推送注释标签 `v0.3.1`，发布为 GitHub Latest Release。
+- Release 自动触发 Windows 便携包工作流，成功构建并上传 ZIP 与 SHA256 附件。
+- 核对本地/远端标签对象、目标提交、工作流步骤、附件大小和两层 SHA256，确认正式发布链路完整。
+
+### Testing
+
+- GitHub Release：`v0.3.1` 已发布，非草稿、非预发布，并标记为 Latest。
+- 本地与远端标签对象均为 `3941bf4d2a1accfeceacab4279690afe994a0165`，均指向 `e144fc1afedeb6efbffc5834438347511c1a4342`。
+- GitHub Actions `31352410934` 的检出、构建、工作流附件上传和 Release 附件上传步骤全部成功。
+- ZIP 大小 `35,977,719` 字节；GitHub 资产摘要和下载校验文件中的 SHA256 均为 `387f6b4b9e5332bb165dc347a97b5717b7667a8163e65045535b25245c9bfff8`。
+- `.sha256` 附件自身 SHA256 为 `1e2c6c4a7dc79d5a97a08b86c1ad471d2fb991fe56667b4ddb1e7fce675a9e81`，与 GitHub 资产摘要一致。
+
+### Notes
+
+- `docs/PACKAGING.md`：记录 v0.3.1 实际便携包大小、SHA256、工作流和下载入口。
+- `docs/CONTINUE.md`：记录正式 Tag、Release、Actions 和附件核验结果。
+- `progress.md`：追加正式发布证据、文件清单和不可移动 Tag 边界。
+- 正式 Tag 与 Release 不回退、不移动；如发布内容存在问题，最小修复方式是从当前 `main` 发布新的补丁版本。仅撤销本轮发布记录文档时，可对包含本记录的提交执行 `git revert <commit>`。

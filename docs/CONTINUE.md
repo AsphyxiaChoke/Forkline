@@ -595,3 +595,10 @@
 - 中文默认首屏由 `71 / 1,874,043` 降到 `37 / 731,088`，减少 34 个请求和 `1,142,955` 字节；文件编辑器和英语功能仍在首次使用时完整可用。
 - `v0.3.1` Release 发布后由 `.github/workflows/release-portable.yml` 自动构建并上传 Windows x64 便携 ZIP 与 SHA256；包内继续保留浅层 `.git`、`main`、官方 `origin` 和内置 Node.js，以支持应用内更新。
 - 发布前完整 `npm.cmd test` 为 `196/196`，0 项失败、0 项跳过；真实 Chromium 中复杂历史文件打开约 `300.5 ms`、最大事件循环延迟约 `90.4 ms`，首屏资源保持 `37 / 731,088`。便携包契约 `2/2` 和 PowerShell 构建脚本解析通过。
+
+## 2026-08-10 Forkline v0.3.1 正式发布
+
+- 注释标签 `v0.3.1` 指向发布提交 `e144fc1afedeb6efbffc5834438347511c1a4342`；本地与 GitHub 的标签对象均为 `3941bf4d2a1accfeceacab4279690afe994a0165`，目标提交完全一致。
+- GitHub Release 已发布为 Latest：[Forkline v0.3.1](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.3.1)。Release 不是草稿或预发布版本。
+- Windows 便携包工作流 [31352410934](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31352410934) 全部步骤成功；ZIP 为 `35,977,719` 字节，SHA256 为 `387f6b4b9e5332bb165dc347a97b5717b7667a8163e65045535b25245c9bfff8`。
+- GitHub ZIP 资产摘要、下载的 `.sha256` 内容和校验文件自身摘要均已核对一致。正式 Tag 不得移动；如发现问题应发布新的修复版本。
