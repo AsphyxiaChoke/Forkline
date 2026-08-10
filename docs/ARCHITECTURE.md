@@ -138,6 +138,7 @@
 - 仓库上下文通过 `X-Forkline-Repo-Path` 传递。浏览器把 Unicode 路径编码为 `v1:` 加 `encodeURIComponent(path)`，服务端只解码带版本前缀的形式，并兼容旧版 ASCII 原始值。
 - 服务只监听 `127.0.0.1`，并校验 `Host` 必须是当前端口的 `127.0.0.1`、`localhost` 或 `::1`，阻止 DNS 重绑定借用其他域名访问本地服务。`/api/*` 还会拒绝非本地同源 `Origin`，以及 `Sec-Fetch-Site` 为 `same-site` 或 `cross-site` 的浏览器请求；没有浏览器来源头的本机 CLI/测试请求继续允许。POST 仍只接受 `application/json`。
 - JSON 和静态响应统一发送 `Cross-Origin-Resource-Policy: same-origin` 与 `X-Content-Type-Options: nosniff`；静态页面额外使用 `frame-ancestors 'none'` 和 `X-Frame-Options: DENY`，避免 Forkline 被其他页面嵌入诱导操作。
+- JSON API 必须保持 `Cache-Control: no-store`。静态文件使用由大小和毫秒修改时间组成的弱 ETag、`Last-Modified` 与 `Cache-Control: private, no-cache`；匹配 `If-None-Match` 时优先返回 `304`，仅在没有 ETag 条件时使用 `If-Modified-Since`。不能改成长期 `immutable`，因为应用更新会在相同路径替换脚本和样式。
 - Git 写操作执行前的当前分支 HEAD、upstream、工作区、单文件和失效 worktree 快照属于强制安全门；对应 Git 读取失败时必须原样中止操作，不能把错误降级为空 HEAD、空状态或空列表。未设置 upstream 使用成功返回空值的 `for-each-ref` 查询，避免把“确实未设置”和“命令执行失败”混为一类。
 - 认证环境只在同步面板需要时通过 `GET /api/auth-diagnostics` 加载，并要求正常的仓库上下文请求头。
 - 认证结果按标准化仓库路径和完整远端 fetch/push URL 配置缓存 60 秒，最多保留 12 条；远端 URL 变化会形成新键，`?refresh=1` 会绕过缓存。
@@ -175,7 +176,7 @@
 - `tests/backend-services.test.js` 直接覆盖补丁裁剪、路径边界、远端网页 URL、恢复点保留策略、受保护分支和历史分页等纯服务逻辑。
 - `tests/git-snapshot-guards.test.js` 使用故障注入验证 HEAD、upstream、全工作区、单文件、文件全量回退和 worktree 清理快照读取失败时不会继续执行 Git 写操作。
 - `tests/file-editor-atomic-save.test.js` 故障注入临时文件写入中断和替换前外部修改，验证原文件不会留下半文件或覆盖外部更新，并确认临时文件被清理。
-- 本地请求边界集成测试覆盖非法 Host、静态页面 DNS 重绑定、跨站 Origin、Fetch Metadata、跨站 POST、`localhost` 别名、同源响应安全头和英文错误。
+- 本地请求边界集成测试覆盖非法 Host、静态页面 DNS 重绑定、跨站 Origin、Fetch Metadata、跨站 POST、`localhost` 别名、同源响应安全头、静态 ETag/修改时间重验证、API `no-store` 和英文错误。
 - `tests/recovery-policy-ui.test.js` 覆盖旧策略迁移、按仓库隔离、操作后整理确认和示例仓库边界；`tests/recovery-undo-ui.test.js` 验证危险操作返回恢复点后会登记一键撤销并触发策略检查。
 - `tests/api-repo-context.test.js` 覆盖中文仓库路径请求头编码和当前语言请求头。
 - `tests/i18n.test.js` 覆盖语言标准化、中文默认、英文切换、浏览器持久化、静态文案回切，以及路径和原始 Git 输出不被翻译。

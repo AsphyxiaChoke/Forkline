@@ -98,6 +98,31 @@ test("local server rejects rebinding hosts and cross-site API requests", async (
   assertStatus(sameOriginPage, 200);
   assert.equal(sameOriginPage.headers["x-frame-options"], "DENY");
   assert.match(String(sameOriginPage.headers["content-security-policy"] || ""), /frame-ancestors 'none'/);
+  assert.equal(sameOriginPage.headers["cache-control"], "private, no-cache");
+  assert.match(String(sameOriginPage.headers.etag || ""), /^W\/"[0-9a-f]+-[0-9a-f]+"$/);
+  assert.ok(sameOriginPage.headers["last-modified"]);
+
+  const matchingEtag = await rawRequest("/", {
+    headers: { Host: `127.0.0.1:${port}`, "If-None-Match": sameOriginPage.headers.etag },
+  });
+  assertStatus(matchingEtag, 304);
+  assert.equal(matchingEtag.headers.etag, sameOriginPage.headers.etag);
+
+  const stylesheet = await rawRequest("/styles.css", { headers: { Host: `127.0.0.1:${port}` } });
+  assertStatus(stylesheet, 200);
+  const matchingModifiedTime = await rawRequest("/styles.css", {
+    headers: { Host: `127.0.0.1:${port}`, "If-Modified-Since": stylesheet.headers["last-modified"] },
+  });
+  assertStatus(matchingModifiedTime, 304);
+
+  const staleEtag = await rawRequest("/", {
+    headers: { Host: `127.0.0.1:${port}`, "If-None-Match": 'W/"stale"' },
+  });
+  assertStatus(staleEtag, 200);
+  assert.equal(staleEtag.headers.etag, sameOriginPage.headers.etag);
+
+  assert.equal(sameOrigin.headers["cache-control"], "no-store");
+  assert.equal(sameOrigin.headers.etag, undefined);
 
   const localhostAlias = await rawRequest("/api/state", {
     headers: { Host: `localhost:${port}`, Origin: `http://localhost:${port}`, "Sec-Fetch-Site": "same-origin" },

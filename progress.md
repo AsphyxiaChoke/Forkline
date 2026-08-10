@@ -7450,3 +7450,25 @@
 - `tests/file-editor-loader.test.js`、`tests/file-editor-ui.test.js`、`tests/browser-performance.test.js`：覆盖并发共享、失败重试、首屏无编辑器资源和首次真实加载。
 - `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录用户行为、加载顺序、验证结果和后续缓存任务。
 - 回滚点为本轮开始前 `dbc4640`；需要撤销本项时，对包含本记录的提交执行 `git revert <commit>`。
+## 2026-08-10 - Task: 静态资源 ETag 与安全重验证缓存
+
+### What was done
+
+- 静态资源增加弱 ETag、Last-Modified 和 `private, no-cache`，允许浏览器保存本地副本但强制每次向当前服务重验证。
+- 匹配 ETag 或修改时间时直接返回 `304`，避免重复读取和传输正文；首次请求、旧 ETag 和文件变化继续返回完整 `200` 响应。
+- JSON API 保持 `no-store` 且不返回 ETag，现有同源、防嗅探、禁止嵌入和静态路径边界不变。
+
+### Testing
+
+- `node --check server.js tests/git-api.test.js` 通过。
+- 缓存与本地请求边界专项：`1/1` 通过，覆盖首次 200、ETag 304、修改时间 304、旧 ETag 200 和 API no-store。
+- 完整非浏览器回归：`189/189` 通过，0 失败、0 跳过。
+- `npm run test:browser`：真实 Chromium `1/1` 通过；复杂历史文件打开约 274.9 ms，最大事件循环延迟约 58.4 ms，大历史、大工作区、渐进打开及编辑器浸泡边界稳定。
+
+### Notes
+
+- `server.js`：静态文件改为元数据预检、条件请求判断和 304 响应；JSON 响应缓存策略未改变。
+- `tests/git-api.test.js`：扩展本地请求边界集成测试，固定静态缓存与 API 不缓存契约。
+- `docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：记录缓存策略、更新安全边界、验证结果和下一项优化。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `5bd0589`；需要撤销本项时，对包含本记录的提交执行 `git revert <commit>`。

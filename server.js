@@ -1038,22 +1038,51 @@ function serveStatic(req, res) {
     res.end("Forbidden");
     return;
   }
-  fs.readFile(filePath, (error, data) => {
-    if (error) {
+  fs.stat(filePath, (statError, stats) => {
+    if (statError || !stats.isFile()) {
       res.writeHead(404);
       res.end("Not found");
       return;
     }
-    res.writeHead(200, {
+    const etag = staticEtag(stats);
+    const headers = {
       "Content-Type": mime(filePath),
-      "Cache-Control": "no-store",
+      "Cache-Control": "private, no-cache",
       "Content-Security-Policy": "frame-ancestors 'none'",
       "Cross-Origin-Resource-Policy": "same-origin",
+      "ETag": etag,
+      "Last-Modified": stats.mtime.toUTCString(),
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
+    };
+    if (staticRequestIsFresh(req, etag, stats.mtimeMs)) {
+      res.writeHead(304, headers);
+      res.end();
+      return;
+    }
+    fs.readFile(filePath, (readError, data) => {
+      if (readError) {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+      res.writeHead(200, { ...headers, "Content-Length": data.length });
+      res.end(data);
     });
-    res.end(data);
   });
+}
+
+function staticEtag(stats) {
+  return `W/"${stats.size.toString(16)}-${Math.trunc(stats.mtimeMs).toString(16)}"`;
+}
+
+function staticRequestIsFresh(req, etag, modifiedMs) {
+  const ifNoneMatch = String(req.headers["if-none-match"] || "");
+  if (ifNoneMatch) {
+    return ifNoneMatch.split(",").map((value) => value.trim()).some((value) => value === "*" || value === etag);
+  }
+  const ifModifiedSince = Date.parse(String(req.headers["if-modified-since"] || ""));
+  return Number.isFinite(ifModifiedSince) && Math.trunc(modifiedMs / 1000) <= Math.trunc(ifModifiedSince / 1000);
 }
 
 function mime(filePath) {
