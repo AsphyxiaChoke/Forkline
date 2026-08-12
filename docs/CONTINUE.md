@@ -1075,3 +1075,11 @@
 - 页面左上角 `.brand-mark` 同步为三节点结构，真实 Chromium 验证尺寸仍为 `30x30`，三枚节点、主线和支线均清晰，并继续使用各主题的 `--topbar` 作为内部图形颜色。
 - 重新生成 `512x512` 透明 PNG 和含九档尺寸的 ICO；放大检查 `16/32/64px` 帧均能辨认分叉。Electron、设计系统与布局专项 `83/83`、完整 `npm.cmd test` `318/318` 通过。
 - 临时 `5298` 页面和服务已关闭；最终检查中相关 Node/Chromium 进程、性能临时目录和常用测试端口均为 0。本轮未启动真实 Electron，未修改 `D:/桌面/GitTest`，未提交或推送。
+
+## 2026-08-12 Forkline v0.4.0 正式发布
+
+- 发布准备提交为 `ba897f0d67a53b7c67437a4ae195c1447e211d53`，已推送到 `origin/main`；不可移动的注释标签 `v0.4.0` 固定在该提交。
+- GitHub 正式 Release 已发布并设为 Latest：<https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.0>，不是草稿或预发布版本。
+- Windows 便携包工作流 `31575254040` 在约 `47` 秒内成功完成构建、工作流附件上传和 Release 附件上传：<https://github.com/AsphyxiaChoke/Forkline/actions/runs/31575254040>。
+- Release 附件为 `Forkline-v0.4.0-windows-x64.zip`（`36,486,187` 字节）与 `Forkline-v0.4.0-windows-x64.zip.sha256`（`99` 字节）。ZIP SHA256 为 `8df2ba3da1c32be4fa5653cc72d447bfaaae67c4e31add36c54d59d18cd43343`；重新下载 ZIP 后本机计算值与校验文件一致。
+- 本次 Release 自动附件仍是 Web 便携包；Electron 源码桌面版随源码发布，Electron 安装包、代码签名和安装器级自动更新仍未发布。后续修复应创建新提交和新版本，不得移动 `v0.4.0` 标签。

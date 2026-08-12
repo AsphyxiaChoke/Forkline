@@ -9520,3 +9520,26 @@
 - `progress.md`：仅在末尾追加本轮发布准备记录。
 - 异常未跟踪文件 `n+fs.statSync(p.join('public'` 不属于项目，不纳入提交或 Release。
 - 回滚点为 `v0.3.1` 后当前共享未提交工作区；发布提交后应执行 `git revert <release-commit>` 形成新修复版本，不得移动已经发布的 `v0.4.0` 标签。
+
+## 2026-08-12 - Task: 正式发布 Forkline v0.4.0
+
+### What was done
+
+- 将发布准备提交 `ba897f0d67a53b7c67437a4ae195c1447e211d53` 推送到 `origin/main`，创建并推送不可移动的注释标签 `v0.4.0`。
+- 创建 GitHub 正式 Release `Forkline v0.4.0` 并设为 Latest，发布说明覆盖 Electron 源码桌面版、性能优化、远端离线打开和更新监督边界。
+- 等待 Windows 便携包自动工作流完成，确认 ZIP 与 SHA256 两个附件均已上传；重新下载附件并核对实际哈希。
+
+### Testing
+
+- 发布前完整自动回归为 `324/324` 通过；Electron、主题与便携专项为 `37/37` 通过，JavaScript 语法和 Git 差异检查通过。
+- GitHub Actions `31575254040` 成功完成，`windows-portable` 作业耗时约 `47` 秒，构建、工作流附件和 Release 附件步骤全部通过。
+- Release 状态确认不是草稿或预发布；附件 `Forkline-v0.4.0-windows-x64.zip` 为 `36,486,187` 字节，校验文件为 `99` 字节。
+- 校验文件内容与本机重新下载 ZIP 的 SHA256 均为 `8df2ba3da1c32be4fa5653cc72d447bfaaae67c4e31add36c54d59d18cd43343`。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.0 实际附件、大小、SHA256、工作流和 Release 地址。
+- `docs/CONTINUE.md`：追加发布提交、不可移动标签、正式 Release 和后续版本边界。
+- `progress.md`：仅在末尾追加本轮正式发布闭环与验证证据。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍未删除、未暂存、未提交，也未进入 Release。
+- 回滚方式：发布结果记录提交可执行 `git revert <documentation-commit>`；发布版本本身不得移动或删除 `v0.4.0` 标签，代码问题应从 `main` 创建修复提交并发布新版本。

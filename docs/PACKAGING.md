@@ -86,3 +86,13 @@ PORTABLE-INFO.txt
 - 内置运行时：Node.js `v24.13.0`
 - 自动构建：[GitHub Actions 31352410934](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31352410934)
 - Release 下载：[Forkline v0.3.1](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.3.1)
+
+## v0.4.0 实际产物
+
+- ZIP：`Forkline-v0.4.0-windows-x64.zip`
+- 大小：`36,486,187` 字节，约 `34.8 MiB`
+- SHA256：`8df2ba3da1c32be4fa5653cc72d447bfaaae67c4e31add36c54d59d18cd43343`
+- 内置运行时：Node.js `v24.13.0`
+- 自动构建：[GitHub Actions 31575254040](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31575254040)
+- Release 下载：[Forkline v0.4.0](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.0)
+- 验收：工作流成功，ZIP 与 SHA256 附件均已上传；重新下载 ZIP 后计算的 SHA256 与附件内容一致。
