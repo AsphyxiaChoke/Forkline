@@ -165,7 +165,7 @@ function createGitBranchService(options) {
     }
     if (mode === "stash") {
       await ensureNoDirtySubmodulesForDiscard("储藏并签出");
-      const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+      const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
       let stash = null;
       if (dirty.trim()) {
         if (!(await hasHeadCommit(currentRepo))) {
@@ -220,7 +220,7 @@ function createGitBranchService(options) {
     const switchArgs = localExists ? ["switch", localBranch] : ["switch", "--track", "-c", localBranch, remoteRef];
     if (mode === "stash") {
       await ensureNoDirtySubmodulesForDiscard("储藏并签出");
-      const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+      const dirty = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
       let stash = null;
       if (dirty.trim()) {
         if (!(await hasHeadCommit(currentRepo))) {
@@ -958,7 +958,7 @@ function createGitBranchService(options) {
       throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能变基。请先创建首个提交后再变基。`);
     }
     if (ref === currentBranch) throw new Error("不能把当前分支变基到自己");
-    const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+    const dirty = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"], { stdoutOnly: true }).catch(() => "");
     if (dirty.trim()) throw new Error("当前有未提交修改。请先提交或储藏后再变基。");
     await git(currentRepo, ["rev-parse", "--verify", `${ref}^{commit}`], { timeout: 60000 });
     const recovery = await createRecoveryPoint("rebase-onto");

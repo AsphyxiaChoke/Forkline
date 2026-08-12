@@ -1,9 +1,9 @@
 // DOM event bindings. Load after all feature functions.
 els.openRepo.addEventListener("click", openRepo);
-els.browseRepo.addEventListener("click", () => openFolderModal().catch((error) => toast(error.message)));
+els.browseRepo.addEventListener("click", () => openFolderModalLazy().catch((error) => toast(error.message)));
 els.cloneRepo.addEventListener("click", openCloneModal);
 els.initRepo.addEventListener("click", openInitModal);
-els.openCommandPalette.addEventListener("click", openCommandPalette);
+els.openCommandPalette.addEventListener("click", () => openCommandPaletteLazy().catch((error) => toast(error.message)));
 els.repoInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") openRepo();
 });
@@ -11,25 +11,25 @@ els.recentRepoSelect.addEventListener("change", () => {
   openRecentRepo().catch((error) => toast(error.message));
 });
 els.clearRecentRepos.addEventListener("click", clearRecentRepos);
-els.folderClose.addEventListener("click", closeFolderModal);
+els.folderClose.addEventListener("click", closeFolderModalLazy);
 els.folderModal.addEventListener("click", (event) => {
-  if (event.target === els.folderModal) closeFolderModal();
+  if (event.target === els.folderModal) closeFolderModalLazy();
 });
-els.folderGo.addEventListener("click", () => loadFolder(els.folderPathInput.value.trim()));
+els.folderGo.addEventListener("click", () => loadFolderLazy(els.folderPathInput.value.trim()).catch((error) => toast(error.message)));
 els.folderPathInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") loadFolder(els.folderPathInput.value.trim());
+  if (event.key === "Enter") loadFolderLazy(els.folderPathInput.value.trim()).catch((error) => toast(error.message));
 });
 els.folderParent.addEventListener("click", () => {
-  if (state.folderBrowse?.parent) loadFolder(state.folderBrowse.parent);
+  if (state.folderBrowse?.parent) loadFolderLazy(state.folderBrowse.parent).catch((error) => toast(error.message));
 });
-els.folderOpen.addEventListener("click", () => openSelectedFolder().catch((error) => toast(error.message)));
+els.folderOpen.addEventListener("click", () => openSelectedFolderLazy().catch((error) => toast(error.message)));
 els.folderRoots.addEventListener("click", (event) => {
   const button = event.target.closest("[data-folder-path]");
-  if (button) loadFolder(button.dataset.folderPath || "");
+  if (button) loadFolderLazy(button.dataset.folderPath || "").catch((error) => toast(error.message));
 });
 els.folderList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-folder-path]");
-  if (row) loadFolder(row.dataset.folderPath || "");
+  if (row) loadFolderLazy(row.dataset.folderPath || "").catch((error) => toast(error.message));
 });
 els.cloneForm.addEventListener("submit", submitCloneForm);
 els.cloneCancel.addEventListener("click", () => cancelCloneOrClose().catch((error) => toast(error.message)));
@@ -41,19 +41,19 @@ els.initForm.addEventListener("submit", submitInitForm);
 els.initCancel.addEventListener("click", closeInitModal);
 els.patchForm.addEventListener("submit", submitPatchForm);
 els.patchCancel.addEventListener("click", closePatchModal);
-els.commandClose.addEventListener("click", closeCommandPalette);
+els.commandClose.addEventListener("click", closeCommandPaletteLazy);
 els.commandPalette.addEventListener("click", (event) => {
-  if (event.target === els.commandPalette) closeCommandPalette();
+  if (event.target === els.commandPalette) closeCommandPaletteLazy();
 });
 els.commandInput.addEventListener("input", () => {
   state.commandPaletteIndex = 0;
-  renderCommandPalette();
+  renderCommandPaletteLazy();
 });
-els.commandInput.addEventListener("keydown", handleCommandPaletteKeydown);
+els.commandInput.addEventListener("keydown", handleCommandPaletteKeydownLazy);
 els.commandList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-command-id]");
   if (!button || button.disabled) return;
-  executeCommandPaletteItem(button.dataset.commandId).catch((error) => toast(error.message));
+  executeCommandPaletteItemLazy(button.dataset.commandId).catch((error) => toast(error.message));
 });
 els.branchFilterInput.addEventListener("input", () => updateBranchFilter(els.branchFilterInput.value));
 els.clearBranchFilter.addEventListener("click", clearBranchFilter);
@@ -80,7 +80,7 @@ els.commitGraph.addEventListener("contextmenu", async (event) => {
   event.preventDefault();
   try {
     await selectCommit(commit.sha);
-    showCommitContextMenu(event, commit);
+    await showCommitContextMenuLazy(event, commit);
   } catch (error) {
     toast(error.message);
   }
@@ -93,7 +93,9 @@ els.branchCancel.addEventListener("click", closeBranchModal);
 els.branchModal.addEventListener("click", (event) => {
   if (event.target === els.branchModal) closeBranchModal();
 });
-els.tagForm.addEventListener("submit", createTagFromForm);
+els.tagForm.addEventListener("submit", (event) => {
+  createTagFromForm(event).catch((error) => toast(error.message));
+});
 els.tagCancel.addEventListener("click", closeTagModal);
 els.tagModal.addEventListener("click", (event) => {
   if (event.target === els.tagModal) closeTagModal();
@@ -116,24 +118,24 @@ els.mainlineModal.addEventListener("click", (event) => {
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
 els.editWorktreeFile.addEventListener("click", () => openFileEditorLazy(state.activeDiff?.path || state.selectedFile, state.activeDiff?.previousFile || "").catch((error) => toast(error.message)));
-els.maximizeDiff.addEventListener("click", openDiffModal);
+els.maximizeDiff.addEventListener("click", () => openDiffModalLazy().catch((error) => toast(error.message)));
 els.workDiffView.addEventListener("click", (event) => {
   const lineButton = event.target.closest("[data-line-action]");
   if (lineButton) {
     event.preventDefault();
-    if (!lineButton.disabled) runWorkDiffLineAction(lineButton).catch((error) => toast(error.message));
+    if (!lineButton.disabled) runWorkDiffLineActionLazy(lineButton).catch((error) => toast(error.message));
     return;
   }
   const button = event.target.closest("[data-hunk-action]");
   if (button) {
     event.preventDefault();
-    if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
+    if (!button.disabled) runWorkDiffHunkActionLazy(button.dataset.hunkAction, button).catch((error) => toast(error.message));
     return;
   }
   const lineRow = event.target.closest("[data-diff-line-keys]");
   if (lineRow) {
     event.preventDefault();
-    handleDiffLineSelection(lineRow, event);
+    handleDiffLineSelectionLazy(lineRow, event).catch((error) => toast(error.message));
   }
 });
 els.closeDiffModal.addEventListener("click", closeDiffModal);
@@ -150,19 +152,19 @@ els.diffModalBody.addEventListener("click", (event) => {
   const lineButton = event.target.closest("[data-line-action]");
   if (lineButton) {
     event.preventDefault();
-    if (!lineButton.disabled) runWorkDiffLineAction(lineButton).catch((error) => toast(error.message));
+    if (!lineButton.disabled) runWorkDiffLineActionLazy(lineButton).catch((error) => toast(error.message));
     return;
   }
   const button = event.target.closest("[data-hunk-action]");
   if (button) {
     event.preventDefault();
-    if (!button.disabled) runWorkDiffHunkAction(button.dataset.hunkAction, button).catch((error) => toast(error.message));
+    if (!button.disabled) runWorkDiffHunkActionLazy(button.dataset.hunkAction, button).catch((error) => toast(error.message));
     return;
   }
   const lineRow = event.target.closest("[data-diff-line-keys]");
   if (lineRow) {
     event.preventDefault();
-    handleDiffLineSelection(lineRow, event, els.diffModalBody);
+    handleDiffLineSelectionLazy(lineRow, event, els.diffModalBody).catch((error) => toast(error.message));
   }
 });
 els.stashChanges.addEventListener("click", () => createStashFromSelection(null));
@@ -170,8 +172,14 @@ els.stageAll.addEventListener("click", () => runAction("stageAll"));
 els.discardAll.addEventListener("click", () => runAction("discardAll"));
 els.amendToggle.addEventListener("change", () => {
   updateAmendMode();
-  if (els.amendToggle.checked) fillLatestCommitMessage();
+  if (els.amendToggle.checked) {
+    fillLatestCommitMessage().finally(reportDesktopRecoveryState);
+  } else {
+    reportDesktopRecoveryState();
+  }
 });
+els.commitSummary.addEventListener("input", reportDesktopRecoveryState);
+els.commitBody.addEventListener("input", reportDesktopRecoveryState);
 els.commitForm.addEventListener("submit", (event) => {
   event.preventDefault();
   runAction(els.amendToggle.checked ? "amendCommit" : "commit");
@@ -196,7 +204,7 @@ els.detailBody.addEventListener("input", (event) => {
   }
   const historyQueueField = event.target.closest("[data-history-queue-field]");
   if (historyQueueField) {
-    updateHistoryQueueField(historyQueueField);
+    updateHistoryQueueField(historyQueueField).catch((error) => toast(error.message));
     return;
   }
   const filter = event.target.closest("[data-recovery-filter]");
@@ -464,13 +472,27 @@ els.detailBody.addEventListener("click", (event) => {
     }
     return;
   }
+  const settingsZoom = event.target.closest("[data-settings-zoom]");
+  if (settingsZoom) {
+    event.preventDefault();
+    const zoomFactor = Number(settingsZoom.dataset.settingsZoom);
+    const desktop = window.forklineDesktop;
+    if (Number.isFinite(zoomFactor) && desktop?.setZoomFactor) {
+      desktop.setZoomFactor(zoomFactor).then((applied) => {
+        state.desktopZoom = Number(applied);
+        renderInspector();
+        window.dispatchEvent(new Event("resize"));
+      }).catch((error) => toast(error.message));
+    }
+    return;
+  }
   const settingsAction = event.target.closest("[data-settings-action]");
   if (settingsAction) {
     event.preventDefault();
     if (settingsAction.disabled) return;
     const action = settingsAction.dataset.settingsAction;
     if (action === "chooseRepo") {
-      openFolderModal().catch((error) => toast(error.message));
+      openFolderModalLazy().catch((error) => toast(error.message));
       return;
     }
     if (action === "clearRecentRepos") {
@@ -555,7 +577,7 @@ els.detailBody.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     event.stopPropagation();
     const branch = cleanupRow.dataset.branchName || "";
-    if (branch) showBranchContextMenu(event, branch, branchCleanupContextOptions(branch));
+    if (branch) showBranchContextMenuLazy(event, branch, branchCleanupContextOptions(branch)).catch((error) => toast(error.message));
     return;
   }
   const remoteRow = event.target.closest(".remote-row[data-remote-name]");
@@ -563,7 +585,7 @@ els.detailBody.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     event.stopPropagation();
     const remote = findRemote(remoteRow.dataset.remoteName || "");
-    if (remote) showRemoteContextMenu(event, remote);
+    if (remote) showRemoteContextMenuLazy(event, remote).catch((error) => toast(error.message));
     return;
   }
   const reflogRow = event.target.closest(".reflog-row[data-reflog-selector]");
@@ -574,7 +596,7 @@ els.detailBody.addEventListener("contextmenu", (event) => {
     state.selectedReflogSelector = selector;
     renderInspector();
     const entry = findReflogEntry(selector);
-    if (entry) showReflogContextMenu(event, entry);
+    if (entry) showReflogContextMenuLazy(event, entry).catch((error) => toast(error.message));
     return;
   }
   const tagRow = event.target.closest(".tag-row[data-tag-name]");
@@ -585,7 +607,7 @@ els.detailBody.addEventListener("contextmenu", (event) => {
   if (tag) {
     state.selectedTag = tag.name;
     renderInspector();
-    showTagContextMenu(event, tag);
+    showTagContextMenuLazy(event, tag).catch((error) => toast(error.message));
   }
 });
 document.querySelectorAll("[data-action]").forEach((button) => {
@@ -711,7 +733,7 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
-  if (event.target.closest("[data-open-diff-modal]")) openDiffModal();
+  if (event.target.closest("[data-open-diff-modal]")) openDiffModalLazy().catch((error) => toast(error.message));
 });
 document.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && els.fileEditorModal.classList.contains("show")) {
@@ -731,7 +753,7 @@ document.addEventListener("keydown", (event) => {
   }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
-    openCommandPalette();
+    openCommandPaletteLazy().catch((error) => toast(error.message));
     return;
   }
   if (event.key === "Escape" && els.fileEditorContextMenu.classList.contains("show")) {
@@ -739,7 +761,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "Escape" && els.commandPalette.classList.contains("show")) {
-    closeCommandPalette();
+    closeCommandPaletteLazy();
     return;
   }
   if (event.key === "Escape" && els.fileEditorModal.classList.contains("show") && !els.fileEditorSearch.hidden) {
@@ -754,7 +776,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.cloneModal.classList.contains("show")) closeCloneModal();
   if (event.key === "Escape" && els.initModal.classList.contains("show")) closeInitModal();
   if (event.key === "Escape" && els.patchModal.classList.contains("show")) closePatchModal();
-  if (event.key === "Escape" && els.folderModal.classList.contains("show")) closeFolderModal();
+  if (event.key === "Escape" && els.folderModal.classList.contains("show")) closeFolderModalLazy();
   if (event.key === "Escape" && els.branchModal.classList.contains("show")) closeBranchModal();
   if (event.key === "Escape" && els.tagModal.classList.contains("show")) closeTagModal();
   if (event.key === "Escape" && els.mainlineModal.classList.contains("show")) closeMainlineModal();

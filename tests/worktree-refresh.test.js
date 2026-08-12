@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const { createRepositoryWorktreeService } = require("../server/repository-worktree-service");
@@ -14,7 +15,7 @@ const gitActionsSource = fs.readFileSync(path.join(root, "public", "js", "featur
 const stashesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "stashes.js"), "utf8");
 const repositoryWorktreeSource = fs.readFileSync(path.join(root, "server", "repository-worktree-service.js"), "utf8");
 
-function createWorktreeService(git) {
+function createWorktreeService(git, overrides = {}) {
   return createRepositoryWorktreeService({
     git,
     getCurrentRepo: () => "C:/repo",
@@ -37,8 +38,41 @@ function createWorktreeService(git) {
     refCommitLogFormat: "%H",
     laneColors: ["#000"],
     worktreeFileSnapshotCache: new Map(),
+    ...overrides,
   });
 }
+
+test("sync state reuses complete branch tracking snapshots without extra Git reads", async () => {
+  const calls = [];
+  const service = createWorktreeService(async (_repoPath, args) => {
+    calls.push(args);
+    return "";
+  });
+  const upstreamSha = "b".repeat(40);
+
+  const state = await service.readCurrentSyncState("C:/repo", {
+    branch: "main",
+    upstream: "origin/main",
+    upstreamSha,
+    upstreamGone: false,
+    ahead: 3,
+    behind: 2,
+    hasCommit: true,
+  });
+
+  assert.equal(state.upstreamSha, upstreamSha);
+  assert.equal(state.ahead, 3);
+  assert.equal(state.behind, 2);
+  const gone = await service.readCurrentSyncState("C:/repo", {
+    branch: "main",
+    upstream: "origin/main",
+    upstreamGone: true,
+    hasCommit: false,
+  });
+  assert.equal(gone.upstreamGone, true);
+  assert.equal(gone.upstreamSha, "");
+  assert.deepEqual(calls, []);
+});
 
 test("worktree signatures include file snapshots", () => {
   const context = vm.createContext({});
@@ -48,15 +82,352 @@ test("worktree signatures include file snapshots", () => {
   assert.notEqual(first, second);
 });
 
-test("worktree polling runs only while the page is visible and focused", () => {
+test("worktree signatures prefer the server snapshot and include operation changes", () => {
+  const context = vm.createContext({});
+  vm.runInContext(source, context);
+  const files = [{ state: "M", file: "note.txt", snapshot: "content-a" }];
+  const sameWorktree = context.worktreeStateSignature(files, null, "worktree-a");
+  const changedFileDetail = context.worktreeStateSignature(
+    [{ state: "M", file: "note.txt", snapshot: "content-b" }],
+    null,
+    "worktree-a"
+  );
+  const changedOperation = context.worktreeStateSignature(
+    files,
+    { type: "merge", snapshot: "operation-a" },
+    "worktree-a"
+  );
+
+  assert.equal(changedFileDetail, sameWorktree);
+  assert.notEqual(changedOperation, sameWorktree);
+});
+
+test("silent worktree refresh sends the current snapshot and skips unchanged rendering", async () => {
+  let requestedPath = "";
+  let renders = 0;
+  let merges = 0;
+  const state = {
+    data: {
+      repo: { path: "D:/repo", operation: null },
+      workingFiles: [{ state: "M", file: "note.txt", snapshot: "file-a" }],
+      worktreeSnapshot: "worktree-a",
+    },
+    refreshingWorktree: false,
+    worktreeSignature: "",
+  };
+  const context = vm.createContext({
+    state,
+    els: { refreshChanges: { disabled: false } },
+    api: async (path) => {
+      requestedPath = path;
+      return { unchanged: true, worktreeSnapshot: "worktree-a", operation: null };
+    },
+    mergeWorktreeState: () => {
+      merges += 1;
+    },
+    renderStage: () => {
+      renders += 1;
+    },
+    toast: () => {},
+    t: (value) => value,
+  });
+  vm.runInContext(source, context);
+  state.worktreeSignature = context.worktreeStateSignature(
+    state.data.workingFiles,
+    state.data.repo.operation,
+    state.data.worktreeSnapshot
+  );
+
+  const result = await context.refreshWorktree(true);
+
+  assert.equal(result, "unchanged");
+  assert.equal(requestedPath, "/api/worktree?expectedSnapshot=worktree-a");
+  assert.equal(renders, 0);
+  assert.equal(merges, 0);
+  assert.equal(state.data.workingFiles[0].file, "note.txt");
+});
+
+test("unchanged worktree refresh still updates the repository operation banner", async () => {
+  let bannerFiles = null;
+  const state = {
+    data: {
+      repo: { path: "D:/repo", operation: null },
+      workingFiles: [{ state: "M", file: "note.txt", snapshot: "file-a" }],
+      worktreeSnapshot: "worktree-a",
+    },
+    refreshingWorktree: false,
+    worktreeSignature: "",
+  };
+  const context = vm.createContext({
+    state,
+    els: { refreshChanges: { disabled: false } },
+    api: async () => ({
+      unchanged: true,
+      worktreeSnapshot: "worktree-a",
+      operation: { type: "merge", snapshot: "operation-a" },
+    }),
+    mergeWorktreeState: () => {
+      throw new Error("unchanged responses must not replace working files");
+    },
+    renderStage: () => {
+      throw new Error("operation-only changes must not rebuild the file tree");
+    },
+    refreshRepoOperationBanner: (files) => {
+      bannerFiles = files;
+    },
+    toast: () => {},
+    t: (value) => value,
+  });
+  vm.runInContext(source, context);
+  state.worktreeSignature = context.worktreeStateSignature(
+    state.data.workingFiles,
+    state.data.repo.operation,
+    state.data.worktreeSnapshot
+  );
+
+  const result = await context.refreshWorktree(true);
+
+  assert.equal(result, "changed");
+  assert.equal(state.data.repo.operation.type, "merge");
+  assert.equal(bannerFiles, state.data.workingFiles);
+});
+
+test("worktree service omits file details only when the expected snapshot still matches", async () => {
+  let status = "?? first.txt\0";
+  const operation = { type: "merge", snapshot: "operation-a" };
+  const service = createWorktreeService(async (_repo, args) => {
+    if (args[0] === "status") return status;
+    return "";
+  }, {
+    detectRepoOperation: () => operation,
+  });
+
+  const first = await service.readWorktree();
+  const unchanged = await service.readWorktree({ expectedSnapshot: first.worktreeSnapshot });
+  assert.deepEqual(unchanged, {
+    unchanged: true,
+    worktreeSnapshot: first.worktreeSnapshot,
+    operation,
+  });
+
+  const withStashes = await service.readWorktree({
+    includeStashes: true,
+    expectedSnapshot: first.worktreeSnapshot,
+  });
+  assert.equal(withStashes.unchanged, undefined);
+  assert.equal(withStashes.workingFiles.length, 1);
+  assert.deepEqual(withStashes.stashes, []);
+
+  status = "?? second.txt\0";
+  const changed = await service.readWorktree({ expectedSnapshot: first.worktreeSnapshot });
+  assert.equal(changed.unchanged, undefined);
+  assert.notEqual(changed.worktreeSnapshot, first.worktreeSnapshot);
+  assert.deepEqual(changed.workingFiles.map((file) => file.file), ["second.txt"]);
+});
+
+test("worktree watcher reuses snapshots until a file event or safety rescan", async (t) => {
+  const repo = await fs.promises.mkdtemp(path.join(os.tmpdir(), "forkline-worktree-watch-"));
+  t.after(() => fs.promises.rm(repo, { recursive: true, force: true }));
+  const filePath = path.join(repo, "note.txt");
+  await fs.promises.writeFile(filePath, "first\n", "utf8");
+  let now = 1000;
+  let watchListener = null;
+  let watcherClosed = 0;
+  let statusOptions = null;
+  const service = createWorktreeService(async (_repo, args, commandOptions) => {
+    if (args[0] === "status") statusOptions = commandOptions;
+    if (args[0] === "status") return "?? note.txt\0";
+    return "";
+  }, {
+    getCurrentRepo: () => repo,
+    now: () => now,
+    watchWorktree: (_repo, listener) => {
+      watchListener = listener;
+      return {
+        close: () => { watcherClosed += 1; },
+        on: () => {},
+      };
+    },
+  });
+
+  const first = await service.readWorktree();
+  assert.ok(watchListener);
+  assert.deepEqual(statusOptions, {
+    stdoutOnly: true,
+    env: { GIT_OPTIONAL_LOCKS: "0" },
+  });
+  await fs.promises.writeFile(filePath, "second content\n", "utf8");
+
+  const reused = await service.readWorktree({ expectedSnapshot: first.worktreeSnapshot });
+  assert.equal(reused.unchanged, true);
+  assert.equal(reused.worktreeSnapshot, first.worktreeSnapshot);
+
+  watchListener("change", "note.txt");
+  const watched = await service.readWorktree({ expectedSnapshot: first.worktreeSnapshot });
+  assert.equal(watched.unchanged, undefined);
+  assert.notEqual(watched.worktreeSnapshot, first.worktreeSnapshot);
+
+  await fs.promises.writeFile(filePath, "third content is longer\n", "utf8");
+  now += 60001;
+  const rescanned = await service.readWorktree({ expectedSnapshot: watched.worktreeSnapshot });
+  assert.equal(rescanned.unchanged, undefined);
+  assert.notEqual(rescanned.worktreeSnapshot, watched.worktreeSnapshot);
+
+  service.setCurrentRepo(null);
+  assert.equal(watcherClosed, 1);
+});
+
+test("worktree watcher cache survives one repository switch and evicts the least-recent third repository", async () => {
+  const repoA = "C:/repo-a";
+  const repoB = "C:/repo-b";
+  const repoC = "C:/repo-c";
+  const scans = new Map();
+  const closed = new Map();
+  const listeners = new Map();
+  const service = createWorktreeService(async (_repo, args) => {
+    if (args[0] === "status") return "?? note.txt\0";
+    return "";
+  }, {
+    getCurrentRepo: () => repoA,
+    statusFileSnapshot: async (repoPath, file) => {
+      const count = (scans.get(repoPath) || 0) + 1;
+      scans.set(repoPath, count);
+      return `${repoPath}:${file.file}:snapshot-${count}`;
+    },
+    watchWorktree: (repoPath, listener) => {
+      listeners.set(repoPath, listener);
+      return {
+        close: () => closed.set(repoPath, (closed.get(repoPath) || 0) + 1),
+        on: () => {},
+      };
+    },
+  });
+
+  const firstA = await service.readWorktree();
+  service.setCurrentRepo(repoB);
+  await service.readWorktree();
+  service.setCurrentRepo(repoA);
+  const secondA = await service.readWorktree({ expectedSnapshot: firstA.worktreeSnapshot });
+
+  assert.equal(secondA.unchanged, true);
+  assert.equal(scans.get(repoA), 1);
+  assert.equal(closed.get(repoA) || 0, 0);
+
+  service.setCurrentRepo(repoB);
+  listeners.get(repoA)("change", "note.txt");
+  service.setCurrentRepo(repoA);
+  const changedA = await service.readWorktree({ expectedSnapshot: firstA.worktreeSnapshot });
+  assert.equal(changedA.unchanged, undefined);
+  assert.equal(scans.get(repoA), 2);
+
+  service.setCurrentRepo(repoC);
+  await service.readWorktree();
+  assert.equal(closed.get(repoB), 1);
+  assert.equal(closed.get(repoA) || 0, 0);
+
+  service.setCurrentRepo(null);
+  assert.equal(closed.get(repoA), 1);
+  assert.equal(closed.get(repoC), 1);
+});
+
+test("worktree watcher refreshes affected paths and fully rescans index changes", async () => {
+  const status = [
+    "?? group/a.txt",
+    "?? group/b.txt",
+    "?? other/c.txt",
+  ].join("\0") + "\0";
+  const snapshots = new Map([
+    ["group/a.txt", "a-1"],
+    ["group/b.txt", "b-1"],
+    ["other/c.txt", "c-1"],
+  ]);
+  const calls = [];
+  let watchListener = null;
+  const service = createWorktreeService(async (_repo, args) => {
+    if (args[0] === "status") return status;
+    return "";
+  }, {
+    watchWorktree: (_repo, listener) => {
+      watchListener = listener;
+      return { close: () => {}, on: () => {} };
+    },
+    statusFileSnapshot: async (_repo, file) => {
+      calls.push(file.file);
+      return snapshots.get(file.file) || "missing";
+    },
+  });
+
+  const first = await service.readWorktree();
+  assert.deepEqual([...calls].sort(), ["group/a.txt", "group/b.txt", "other/c.txt"]);
+
+  calls.length = 0;
+  snapshots.set("group/a.txt", "a-2");
+  watchListener("change", "group");
+  watchListener("change", "group\\a.txt");
+  watchListener("change", "group\\a.txt");
+  const fileChanged = await service.readWorktree({ expectedSnapshot: first.worktreeSnapshot });
+  assert.deepEqual(calls, ["group/a.txt"]);
+  assert.notEqual(fileChanged.worktreeSnapshot, first.worktreeSnapshot);
+
+  calls.length = 0;
+  snapshots.set("group/b.txt", "b-2");
+  watchListener("change", "group");
+  const directoryChanged = await service.readWorktree({ expectedSnapshot: fileChanged.worktreeSnapshot });
+  assert.deepEqual([...calls].sort(), ["group/a.txt", "group/b.txt"]);
+  assert.notEqual(directoryChanged.worktreeSnapshot, fileChanged.worktreeSnapshot);
+
+  calls.length = 0;
+  watchListener("rename", ".git\\index.lock");
+  await service.readWorktree({ expectedSnapshot: directoryChanged.worktreeSnapshot });
+  assert.deepEqual([...calls].sort(), ["group/a.txt", "group/b.txt", "other/c.txt"]);
+});
+
+test("worktree watcher failures keep full snapshot scans", async (t) => {
+  const repo = await fs.promises.mkdtemp(path.join(os.tmpdir(), "forkline-worktree-watch-fallback-"));
+  t.after(() => fs.promises.rm(repo, { recursive: true, force: true }));
+  const filePath = path.join(repo, "note.txt");
+  await fs.promises.writeFile(filePath, "first\n", "utf8");
+  const service = createWorktreeService(async (_repo, args) => {
+    if (args[0] === "status") return "?? note.txt\0";
+    return "";
+  }, {
+    getCurrentRepo: () => repo,
+    watchWorktree: () => { throw new Error("watch unavailable"); },
+  });
+
+  const first = await service.readWorktree();
+  await fs.promises.writeFile(filePath, "second content\n", "utf8");
+  const changed = await service.readWorktree({ expectedSnapshot: first.worktreeSnapshot });
+
+  assert.equal(changed.unchanged, undefined);
+  assert.notEqual(changed.worktreeSnapshot, first.worktreeSnapshot);
+});
+
+test("large unchanged worktrees back off polling while small worktrees stay responsive", () => {
+  const context = vm.createContext({});
+  vm.runInContext(source, context);
+
+  assert.equal(context.nextWorktreeAutoRefreshDelay(5000, "unchanged", 799), 5000);
+  assert.equal(context.nextWorktreeAutoRefreshDelay(5000, "changed", 4000), 5000);
+  assert.equal(context.nextWorktreeAutoRefreshDelay(5000, "unchanged", 4000), 10000);
+  assert.equal(context.nextWorktreeAutoRefreshDelay(10000, "unchanged", 4000), 20000);
+  assert.equal(context.nextWorktreeAutoRefreshDelay(20000, "unchanged", 4000), 30000);
+  assert.equal(context.nextWorktreeAutoRefreshDelay(30000, "unchanged", 4000), 30000);
+});
+
+test("worktree polling backs off only while a large visible worktree stays unchanged", async () => {
   let focusHandler = null;
   let visibilityHandler = null;
-  let intervalHandler = null;
-  let intervalMs = 0;
+  let timerHandler = null;
+  let timerMs = 0;
+  let timerId = 0;
   let focused = false;
   const calls = [];
+  const results = ["unchanged", "unchanged", "unchanged", "changed", "unchanged"];
   const context = vm.createContext({
     __calls: calls,
+    __results: results,
+    state: { data: { workingFiles: Array.from({ length: 4000 }, () => ({})) } },
     window: {
       addEventListener: (name, handler) => {
         if (name === "focus") focusHandler = handler;
@@ -69,35 +440,50 @@ test("worktree polling runs only while the page is visible and focused", () => {
         if (name === "visibilitychange") visibilityHandler = handler;
       },
     },
-    setInterval: (handler, ms) => {
-      intervalHandler = handler;
-      intervalMs = ms;
-      return 1;
+    setTimeout: (handler, ms) => {
+      timerHandler = handler;
+      timerMs = ms;
+      timerId += 1;
+      return timerId;
     },
+    clearTimeout: () => {},
   });
   vm.runInContext(source, context);
-  vm.runInContext("refreshWorktree = (silent) => __calls.push(silent)", context);
+  vm.runInContext("refreshWorktree = (silent) => { __calls.push(silent); return Promise.resolve(__results.shift()) }", context);
   context.initWorktreeAutoRefresh();
 
-  assert.equal(intervalMs, 5000);
+  assert.equal(timerMs, 5000);
   assert.ok(focusHandler);
   assert.ok(visibilityHandler);
-  assert.ok(intervalHandler);
-  intervalHandler();
+  assert.ok(timerHandler);
+  await timerHandler();
   assert.deepEqual(calls, []);
+  assert.equal(timerMs, 30000);
 
   focused = true;
-  intervalHandler();
+  focusHandler();
+  assert.equal(timerMs, 0);
+  await timerHandler();
   assert.deepEqual(calls, [true]);
+  assert.equal(timerMs, 10000);
+
+  await timerHandler();
+  assert.equal(timerMs, 20000);
+  await timerHandler();
+  assert.equal(timerMs, 30000);
+  await timerHandler();
+  assert.equal(timerMs, 5000);
 
   context.document.hidden = true;
   focusHandler();
-  assert.deepEqual(calls, [true]);
+  assert.deepEqual(calls, [true, true, true, true]);
 
   context.document.hidden = false;
   visibilityHandler();
-  focusHandler();
-  assert.deepEqual(calls, [true, true, true]);
+  assert.equal(timerMs, 0);
+  await timerHandler();
+  assert.deepEqual(calls, [true, true, true, true, true]);
+  assert.equal(timerMs, 10000);
 });
 
 test("worktree file snapshots reuse hashes until file metadata changes", async () => {
@@ -105,9 +491,22 @@ test("worktree file snapshots reuse hashes until file metadata changes", async (
     repositoryWorktreeSource.indexOf("async function worktreeFileSnapshot"),
     repositoryWorktreeSource.indexOf("function sha256Json")
   );
-  let reads = 0;
+  let opens = 0;
+  let closes = 0;
+  let handleReads = 0;
+  let pathStats = 0;
+  let pathReads = 0;
   let content = "first";
   let mtimeNs = 1n;
+  const stat = () => ({
+    dev: 1n,
+    ino: 2n,
+    size: BigInt(Buffer.byteLength(content)),
+    mtimeNs,
+    ctimeNs: mtimeNs,
+    isFile: () => true,
+    isDirectory: () => false,
+  });
   const context = vm.createContext({
     path,
     process,
@@ -119,17 +518,23 @@ test("worktree file snapshots reuse hashes until file metadata changes", async (
     isPathInside: () => true,
     fs: {
       promises: {
-        stat: async () => ({
-          dev: 1n,
-          ino: 2n,
-          size: BigInt(Buffer.byteLength(content)),
-          mtimeNs,
-          ctimeNs: mtimeNs,
-          isFile: () => true,
-          isDirectory: () => false,
-        }),
+        open: async () => {
+          opens += 1;
+          return {
+            stat: async () => stat(),
+            readFile: async () => {
+              handleReads += 1;
+              return Buffer.from(content);
+            },
+            close: async () => { closes += 1; },
+          };
+        },
+        stat: async () => {
+          pathStats += 1;
+          return stat();
+        },
         readFile: async () => {
-          reads += 1;
+          pathReads += 1;
           return Buffer.from(content);
         },
       },
@@ -140,13 +545,21 @@ test("worktree file snapshots reuse hashes until file metadata changes", async (
   const first = await context.worktreeFileSnapshot("C:/repo", "note.txt");
   const second = await context.worktreeFileSnapshot("C:/repo", "note.txt");
   assert.equal(second, first);
-  assert.equal(reads, 1);
+  assert.equal(opens, 1);
+  assert.equal(closes, 1);
+  assert.equal(handleReads, 1);
+  assert.equal(pathStats, 1);
+  assert.equal(pathReads, 0);
 
   content = "other";
   mtimeNs = 2n;
   const changed = await context.worktreeFileSnapshot("C:/repo", "note.txt");
   assert.notEqual(changed, first);
-  assert.equal(reads, 2);
+  assert.equal(opens, 1);
+  assert.equal(closes, 1);
+  assert.equal(handleReads, 1);
+  assert.equal(pathStats, 2);
+  assert.equal(pathReads, 1);
 });
 
 test("worktree index snapshots skip untracked paths", async () => {

@@ -102,6 +102,87 @@ function bindConflictFileEditorScroll(editor) {
   });
 }
 
+function observeFileEditorChangeMarkers(editor) {
+  scheduleFileEditorChangeMarkers(editor);
+  editor.diffUpdateHandler = () => scheduleFileEditorChangeMarkers(editor);
+  editor.codeMirror.on("updateDiff", editor.diffUpdateHandler);
+}
+
+function scheduleFileEditorChangeMarkers(editor) {
+  if (!editor?.mergeView || editor.conflict) return;
+  if (editor.changeMarkerFrame) cancelAnimationFrame(editor.changeMarkerFrame);
+  editor.changeMarkerFrame = requestAnimationFrame(() => {
+    editor.changeMarkerFrame = 0;
+    refreshFileEditorChangeMarkers(editor);
+  });
+}
+
+function refreshFileEditorChangeMarkers(editor) {
+  editor.changeMarkerRails?.forEach((rail) => rail.remove());
+  editor.changeMarkerRails = [];
+  editor.changeMarkers = [];
+  if (state.fileEditor !== editor || !editor.mergeView || editor.conflict) return;
+
+  const oldCodeMirror = editor.mergeView.leftOriginal();
+  const newCodeMirror = editor.codeMirror;
+  const chunks = editor.mergeView.leftChunks() || [];
+  if (!oldCodeMirror || !newCodeMirror || !chunks.length) return;
+
+  const sides = [
+    { className: "is-old", codeMirror: oldCodeMirror, lineKey: "origFrom" },
+    { className: "is-new", codeMirror: newCodeMirror, lineKey: "editFrom" },
+  ];
+  sides.forEach(({ className, codeMirror, lineKey }) => {
+    const rail = document.createElement("div");
+    rail.className = `file-editor-change-rail ${className}`;
+    chunks.forEach((chunk) => {
+      const marker = document.createElement("button");
+      marker.type = "button";
+      marker.className = `file-editor-change-marker ${className}`;
+      const oldCount = Math.max(0, chunk.origTo - chunk.origFrom);
+      const newCount = Math.max(0, chunk.editTo - chunk.editFrom);
+      marker.title = `改动位置：旧版第 ${chunk.origFrom + 1} 行，新版第 ${chunk.editFrom + 1} 行；范围：旧 ${oldCount} 行，新 ${newCount} 行`;
+      marker.setAttribute("aria-label", marker.title);
+      marker.addEventListener("click", () => {
+        const targetTop = fileEditorChangeTargetTop(codeMirror, chunk[lineKey]);
+        codeMirror.scrollTo(null, Math.max(0, targetTop));
+      });
+      rail.append(marker);
+      editor.changeMarkers.push({ marker, codeMirror, line: chunk[lineKey] });
+    });
+    codeMirror.getWrapperElement().append(rail);
+    editor.changeMarkerRails.push(rail);
+  });
+  positionFileEditorChangeMarkers(editor);
+}
+
+function positionFileEditorChangeMarkers(editor) {
+  if (state.fileEditor !== editor) return;
+  editor.changeMarkers?.forEach(({ marker, codeMirror, line }) => {
+    const ratio = fileEditorChangeMarkerRatio(codeMirror, line);
+    marker.style.top = `clamp(0px, ${ratio * 100}%, calc(100% - 5px))`;
+  });
+}
+
+function fileEditorChangeMarkerRatio(codeMirror, line) {
+  const scrollInfo = codeMirror.getScrollInfo();
+  const scrollRange = Math.max(0, scrollInfo.height - scrollInfo.clientHeight);
+  if (scrollRange > 0) return fileEditorChangeTargetTop(codeMirror, line, scrollInfo) / scrollRange;
+
+  const lineCount = codeMirror.lineCount();
+  if (line <= 0) return 0;
+  if (line >= lineCount) return 1;
+  return Math.max(0, Math.min(1, codeMirror.heightAtLine(line, "local", true) / Math.max(1, scrollInfo.clientHeight)));
+}
+
+function fileEditorChangeTargetTop(codeMirror, line, scrollInfo = codeMirror.getScrollInfo()) {
+  const lineCount = codeMirror.lineCount();
+  const targetLine = Math.min(Math.max(0, line), Math.max(0, lineCount - 1));
+  const lineTop = codeMirror.heightAtLine(targetLine, "local", true);
+  const scrollRange = Math.max(0, scrollInfo.height - scrollInfo.clientHeight);
+  return Math.max(0, Math.min(scrollRange, lineTop - scrollInfo.clientHeight / 2));
+}
+
 function observeFileEditorStageButtons(editor) {
   refreshFileEditorStageButtons(editor);
   if (typeof MutationObserver !== "function") return;

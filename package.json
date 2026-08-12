@@ -1,10 +1,16 @@
 {
   "name": "forkline",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
+    "desktop": "electron .",
+    "desktop:dev": "electron . --watch-renderer",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "test:browser": "node --test --test-concurrency=1 tests/browser-performance.test.js"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0"
   }
 }

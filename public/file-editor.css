@@ -1,0 +1,788 @@
+.file-editor-modal {
+  overflow: hidden;
+  padding: 0;
+  pointer-events: none;
+  background: transparent;
+  z-index: 68;
+}
+
+.file-editor-modal.is-preparing {
+  visibility: hidden;
+}
+
+.file-editor-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: min(1180px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 64px));
+  min-width: 640px;
+  min-height: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  border-radius: 8px;
+  resize: none;
+}
+
+.file-editor-dialog.is-positioned {
+  transform: none;
+}
+
+.file-editor-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 12;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 0 44%, var(--line-strong) 44% 54%, transparent 54% 66%, var(--teal) 66% 78%, transparent 78%);
+}
+
+.file-editor-head {
+  display: grid;
+  grid-row: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--topbar) 82%, var(--panel-2));
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.file-editor-head > div {
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--teal);
+}
+
+.file-editor-head strong,
+.file-editor-head span {
+  display: block;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-editor-head strong {
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.file-editor-head span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.file-editor-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  cursor: default;
+}
+
+.file-editor-compare-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-3) 82%, var(--field));
+}
+
+.file-editor-compare-mode[hidden] {
+  display: none;
+}
+
+.file-editor-head .file-editor-compare-mode .mini-btn {
+  min-width: 50px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.file-editor-head .file-editor-compare-mode .mini-btn.active {
+  background: color-mix(in srgb, var(--teal) 24%, var(--field));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--teal) 58%, var(--line-soft));
+}
+
+body.file-editor-window-dragging,
+body.file-editor-window-dragging * {
+  cursor: move !important;
+  user-select: none !important;
+}
+
+body.file-editor-window-resizing,
+body.file-editor-window-resizing * {
+  cursor: nwse-resize !important;
+  user-select: none !important;
+}
+
+.file-editor-head .icon-btn,
+.file-editor-head .mini-btn {
+  min-width: 64px;
+  border-color: var(--line-soft);
+  background: color-mix(in srgb, var(--field) 88%, var(--panel-2));
+}
+
+.file-editor-search {
+  display: grid;
+  grid-row: 2;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto auto minmax(92px, auto);
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-2) 92%, var(--surface));
+}
+
+.file-editor-search[hidden] {
+  display: none;
+}
+
+.file-editor-search-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-editor-search-field > span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.file-editor-search-field input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--field);
+  color: var(--text);
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.file-editor-search-field input:focus {
+  border-color: var(--teal);
+  box-shadow: var(--focus-ring);
+}
+
+.file-editor-search-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.file-editor-search-option input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--teal);
+}
+
+.file-editor-search-actions {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 6px;
+}
+
+.file-editor-search-actions .mini-btn {
+  min-width: 58px;
+  height: 30px;
+  padding: 0 8px;
+}
+
+.file-editor-dialog.is-readonly .file-editor-search {
+  grid-template-columns: minmax(180px, 1fr) auto auto minmax(92px, auto);
+}
+
+.file-editor-dialog.is-readonly .file-editor-search-actions {
+  grid-template-columns: repeat(2, auto);
+}
+
+.file-editor-dialog.is-readonly .file-editor-replace-field,
+.file-editor-dialog.is-readonly #fileEditorReplaceOne,
+.file-editor-dialog.is-readonly #fileEditorReplaceAll,
+.file-editor-dialog.is-readonly #fileEditorSave {
+  display: none;
+}
+
+.file-editor-match-status {
+  overflow: hidden;
+  min-width: 0;
+  height: 30px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 30px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-editor-compare-labels {
+  display: grid;
+  grid-row: 3;
+  grid-template-columns: calc(50% - 24px) 48px calc(50% - 24px);
+  min-width: 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--panel-3) 84%, var(--surface));
+}
+
+.file-editor-compare-labels span {
+  overflow: hidden;
+  min-width: 0;
+  padding: 7px 12px;
+  color: var(--muted);
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#fileEditorOldLabel {
+  grid-column: 1;
+}
+
+#fileEditorResultLabel {
+  grid-column: 3;
+  text-align: center;
+}
+
+#fileEditorNewLabel {
+  grid-column: 3;
+}
+
+.file-editor-compare-labels.is-conflict-three-way {
+  grid-template-columns: calc((100% - 56px) / 3) 28px calc((100% - 56px) / 3) 28px calc((100% - 56px) / 3);
+}
+
+.file-editor-compare-labels.is-conflict-three-way #fileEditorNewLabel {
+  grid-column: 5;
+  text-align: right;
+}
+
+.file-editor-compare-labels.is-single-pane {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.file-editor-compare-labels.is-single-pane #fileEditorNewLabel {
+  grid-column: 1;
+}
+
+.file-editor-dialog.is-large-file .file-editor-compare-labels,
+.file-editor-dialog.is-lightweight-compare .file-editor-compare-labels {
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+}
+
+.file-editor-body {
+  grid-row: 4;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: color-mix(in srgb, var(--bg) 92%, var(--surface));
+}
+
+.file-editor-merge,
+.file-editor-body .file-editor-merge .CodeMirror-merge,
+.file-editor-body .file-editor-merge .CodeMirror {
+  width: 100%;
+  height: 100%;
+}
+
+.file-editor-merge .CodeMirror-merge {
+  border: 0;
+  background: var(--field);
+}
+
+.file-editor-large-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  background: var(--field);
+}
+
+.file-editor-large-pane {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.file-editor-large-old .CodeMirror {
+  background: color-mix(in srgb, var(--panel) 92%, var(--field));
+}
+
+.file-editor-large-divider {
+  background: var(--line-strong);
+}
+
+.file-editor-conflict-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  background: var(--field);
+}
+
+.file-editor-conflict-pane {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.file-editor-conflict-divider {
+  background: var(--line-strong);
+}
+
+.file-editor-conflict-ours .CodeMirror,
+.file-editor-merge .CodeMirror-merge-left .CodeMirror {
+  background: color-mix(in srgb, var(--blue) 7%, var(--field));
+}
+
+.file-editor-conflict-theirs .CodeMirror,
+.file-editor-merge .CodeMirror-merge-right .CodeMirror {
+  background: color-mix(in srgb, var(--warning) 7%, var(--field));
+}
+
+.file-editor-merge .CodeMirror-merge-pane {
+  height: 100%;
+}
+
+.file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-pane {
+  width: calc(50% - 24px);
+}
+
+.file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-gap {
+  width: 48px;
+}
+
+.file-editor-merge .CodeMirror-merge-3pane .CodeMirror-merge-pane {
+  width: calc((100% - 56px) / 3);
+}
+
+.file-editor-merge .CodeMirror-merge-3pane .CodeMirror-merge-gap {
+  width: 28px;
+}
+
+.file-editor-dialog.is-conflict-editor.is-lightweight-compare .file-editor-compare-labels.is-conflict-three-way {
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
+}
+
+.file-editor-dialog.is-line-aligned .file-editor-compare-labels {
+  grid-template-columns: calc(50% - 14px) 28px calc(50% - 14px);
+}
+
+.file-editor-dialog.is-line-aligned .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-pane {
+  width: calc(50% - 14px);
+}
+
+.file-editor-dialog.is-line-aligned .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-gap {
+  width: 28px;
+}
+
+.file-editor-merge .CodeMirror,
+.file-editor-fallback .file-editor-text {
+  background: color-mix(in srgb, var(--field) 97%, var(--surface));
+  color: var(--text);
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.file-editor-merge .CodeMirror-merge-left .CodeMirror {
+  background: color-mix(in srgb, var(--panel) 92%, var(--field));
+}
+
+.file-editor-merge .CodeMirror-merge-spacer {
+  box-sizing: border-box;
+  width: 100%;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 28%, var(--line-soft));
+  border-bottom: 1px solid color-mix(in srgb, var(--muted) 28%, var(--line-soft));
+  background-color: color-mix(in srgb, var(--panel-2) 82%, var(--field));
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 7px,
+    color-mix(in srgb, var(--muted) 30%, transparent) 7px 9px
+  );
+}
+
+.file-editor-merge .CodeMirror-gutters {
+  border-right: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel-2) 88%, var(--field));
+}
+
+.file-editor-merge .CodeMirror-linenumber {
+  color: var(--quiet);
+}
+
+.file-editor-merge .CodeMirror-cursor {
+  border-left-color: var(--teal);
+}
+
+.file-editor-merge .CodeMirror-selected {
+  background: rgba(var(--blue-rgb), 0.24);
+}
+
+.file-editor-merge .CodeMirror-activeline-background {
+  background: rgba(var(--teal-rgb), 0.08);
+}
+
+.file-editor-merge .CodeMirror-matchingbracket {
+  outline: 1px solid var(--teal);
+  color: var(--text) !important;
+}
+
+.file-editor-change-rail {
+  position: absolute;
+  z-index: 8;
+  top: 2px;
+  right: 3px;
+  bottom: 2px;
+  width: 6px;
+  pointer-events: none;
+}
+
+.file-editor-change-marker {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--field) 72%, transparent);
+  cursor: pointer;
+  opacity: 0.9;
+  pointer-events: auto;
+}
+
+.file-editor-change-marker.is-old {
+  background: var(--danger);
+}
+
+.file-editor-change-marker.is-new {
+  background: var(--green);
+}
+
+.file-editor-change-marker:hover,
+.file-editor-change-marker:focus-visible {
+  outline: 1px solid var(--text);
+  opacity: 1;
+}
+
+.file-editor-merge .CodeMirror-merge-gap {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--panel-3) 88%, var(--surface));
+}
+
+.file-editor-merge .CodeMirror-merge-scrolllock {
+  color: var(--muted);
+}
+
+.file-editor-merge .CodeMirror-merge-copybuttons-left {
+  pointer-events: none;
+}
+
+.file-editor-merge .CodeMirror-merge-copy {
+  display: grid;
+  place-items: center;
+  left: 50% !important;
+  width: 40px;
+  height: 26px;
+  margin-top: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid color-mix(in srgb, var(--teal) 72%, var(--line-strong));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-2) 82%, var(--teal));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.file-editor-dialog.is-operating .CodeMirror-merge-copy {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.file-editor-merge .CodeMirror-merge-copy:hover,
+.file-editor-merge .CodeMirror-merge-copy:focus-visible {
+  border-color: var(--teal);
+  outline: 0;
+  background: color-mix(in srgb, var(--panel-2) 66%, var(--teal));
+  box-shadow: var(--focus-ring), 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+
+.file-editor-merge .CodeMirror-merge-left .CodeMirror-merge-l-chunk {
+  background: color-mix(in srgb, var(--danger) 24%, var(--field));
+}
+
+.file-editor-merge .CodeMirror-merge-editor .CodeMirror-merge-l-chunk {
+  background: color-mix(in srgb, var(--green) 22%, var(--field));
+}
+
+.file-editor-merge .CodeMirror-merge-left .CodeMirror-merge-l-chunk-start,
+.file-editor-merge .CodeMirror-merge-left .CodeMirror-merge-l-chunk-end {
+  border-color: var(--danger);
+  border-width: 2px;
+}
+
+.file-editor-merge .CodeMirror-merge-editor .CodeMirror-merge-l-chunk-start,
+.file-editor-merge .CodeMirror-merge-editor .CodeMirror-merge-l-chunk-end {
+  border-color: var(--green);
+  border-width: 2px;
+}
+
+.file-editor-merge .CodeMirror-merge-l-deleted {
+  background-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  background-image: none;
+  box-shadow: inset 0 -2px 0 var(--danger);
+}
+
+.file-editor-merge .CodeMirror-merge-l-inserted {
+  background-color: color-mix(in srgb, var(--green) 38%, transparent);
+  background-image: none;
+  box-shadow: inset 0 -2px 0 var(--green);
+}
+
+.file-editor-merge .cm-s-default .cm-comment {
+  color: var(--green);
+}
+
+.file-editor-merge .cm-s-default .cm-keyword,
+.file-editor-merge .cm-s-default .cm-operator {
+  color: var(--violet);
+}
+
+.file-editor-merge .cm-s-default .cm-string,
+.file-editor-merge .cm-s-default .cm-string-2 {
+  color: var(--amber);
+}
+
+.file-editor-merge .cm-s-default .cm-number,
+.file-editor-merge .cm-s-default .cm-atom,
+.file-editor-merge .cm-s-default .cm-builtin {
+  color: var(--coral);
+}
+
+.file-editor-merge .cm-s-default .cm-def,
+.file-editor-merge .cm-s-default .cm-variable-2,
+.file-editor-merge .cm-s-default .cm-property,
+.file-editor-merge .cm-s-default .cm-tag {
+  color: var(--blue);
+}
+
+.file-editor-merge .cm-s-default .cm-variable,
+.file-editor-merge .cm-s-default .cm-variable-3,
+.file-editor-merge .cm-s-default .cm-attribute,
+.file-editor-merge .cm-s-default .cm-meta {
+  color: var(--teal);
+}
+
+.file-editor-search-match {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--amber) 38%, transparent);
+  box-shadow: inset 0 -1px 0 var(--amber);
+}
+
+.file-editor-fallback {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  background: var(--line-strong);
+}
+
+.file-editor-fallback[hidden] {
+  display: none;
+}
+
+.file-editor-text {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  resize: none;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  outline: 0;
+  background: color-mix(in srgb, var(--field) 96%, var(--surface));
+  color: var(--text);
+  caret-color: var(--teal);
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 4;
+  white-space: pre;
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.file-editor-text:focus {
+  border-color: var(--teal);
+  box-shadow: inset 0 0 0 1px var(--teal);
+}
+
+.file-editor-text:disabled {
+  color: var(--muted);
+  cursor: wait;
+  opacity: 0.78;
+}
+
+.file-editor-footer {
+  display: grid;
+  grid-row: 5;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--panel-2) 92%, var(--surface));
+}
+
+.file-editor-footer > span {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.file-editor-actions .mini-btn,
+.file-editor-actions .btn {
+  min-width: 72px;
+}
+
+@media (max-width: 720px) {
+  .file-editor-modal {
+    padding: 10px;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.48);
+  }
+
+  .file-editor-dialog {
+    position: relative;
+    top: auto !important;
+    left: auto !important;
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    min-width: 0;
+    min-height: 0;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    transform: none;
+    resize: none;
+  }
+
+  .file-editor-head {
+    padding: 12px;
+    cursor: default;
+    touch-action: auto;
+  }
+
+  .file-editor-resize-handle {
+    display: none;
+  }
+
+  .file-editor-head-actions {
+    gap: 5px;
+  }
+
+  .file-editor-head .icon-btn,
+  .file-editor-head .mini-btn {
+    min-width: 54px;
+    padding-inline: 8px;
+  }
+
+  .file-editor-head .file-editor-compare-mode .mini-btn {
+    min-width: 46px;
+    padding-inline: 6px;
+  }
+
+  .file-editor-search {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .file-editor-search-option,
+  .file-editor-match-status {
+    justify-self: stretch;
+  }
+
+  .file-editor-search-actions {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .file-editor-dialog.is-readonly .file-editor-search {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .file-editor-dialog.is-readonly .file-editor-search-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .file-editor-match-status {
+    text-align: left;
+  }
+
+  .file-editor-compare-labels {
+    grid-template-columns: calc(50% - 20px) 40px calc(50% - 20px);
+  }
+
+  .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-pane {
+    width: calc(50% - 20px);
+  }
+
+  .file-editor-merge .CodeMirror-merge-2pane .CodeMirror-merge-gap {
+    width: 40px;
+  }
+
+  .file-editor-footer {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+}

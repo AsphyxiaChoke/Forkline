@@ -155,29 +155,6 @@ function renderOperationLogItem(item) {
   `;
 }
 
-async function cancelRunningOperation(id, options = {}) {
-  let operation = (state.data?.runningOperations || []).find((item) => String(item.id) === String(id));
-  if (!operation) {
-    await refreshOperationProgress();
-    operation = (state.data?.runningOperations || []).find((item) => String(item.id) === String(id));
-  }
-  if (!operation) throw new Error(t("这个 Git 操作已经结束，请刷新操作日志查看结果。"));
-  if (!operation.cancellable && !operation.cancelRequested) throw new Error(t("这个 Git 操作当前不能取消。"));
-  if (operation.cancelRequested) return;
-  if (options.confirm !== false) {
-    const command = operation.command ? `\n\n${operation.command}` : "";
-    if (!confirm(t("确认取消“{label}”？{command}\n\nGit 会停止当前命令，已经完成的远端传输不会自动回退。", { label: t(operation.label || "Git 操作"), command }))) return;
-  }
-  if (options.button) options.button.disabled = true;
-  const result = await api("/api/operations/cancel", {
-    method: "POST",
-    body: JSON.stringify({ id: operation.id }),
-  });
-  renderOperationProgressIfVisible();
-  toast(result.output || t("正在取消操作"));
-  return result;
-}
-
 function formatDurationText(ms) {
   const value = Math.max(0, Number(ms) || 0);
   if (value < 1000) return `${Math.round(value)}ms`;

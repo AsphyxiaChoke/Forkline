@@ -2,12 +2,18 @@
 const SIDE_DIFF_INITIAL_RENDER_LINES = 1000;
 
 function renderSideDiff(diff, emptyText, options = {}) {
-  const feedback = renderWorkDiffFeedback(options);
+  const workDiffHelpersReady = Boolean(options.filePath && typeof renderWorkDiffFeedback === "function");
+  const feedback = workDiffHelpersReady ? renderWorkDiffFeedback(options) : "";
   if (!diff?.length) return `${feedback}<div class="diff-empty">${escapeHtml(t(emptyText))}</div>`;
   const visibleCount = sideDiffVisibleCount(diff.length, options.maxLines);
   const visibleDiff = visibleCount < diff.length ? diff.slice(0, visibleCount) : diff;
   const lineAction = options.lineAction && diffHasSelectableLines(visibleDiff) ? options.lineAction : null;
-  const targetHunks = highlightedWorkDiffHunks(visibleDiff, workDiffFeedbackForFile(options.filePath || ""));
+  const workFeedback = workDiffHelpersReady && typeof workDiffFeedbackForFile === "function"
+    ? workDiffFeedbackForFile(options.filePath)
+    : null;
+  const targetHunks = workFeedback && typeof highlightedWorkDiffHunks === "function"
+    ? highlightedWorkDiffHunks(visibleDiff, workFeedback)
+    : new Set();
   const columnWidths = diffColumnCharacterWidths(visibleDiff);
   return `
     <div class="side-diff ${lineAction ? "line-selectable" : ""} ${feedback ? "has-work-feedback" : ""}" style="--diff-old-ch:${columnWidths.old};--diff-new-ch:${columnWidths.new}">

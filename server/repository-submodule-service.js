@@ -119,7 +119,7 @@ function createRepositorySubmoduleService(options) {
       if (!row.exists || row.prunable || row.bare) return row;
       const statusPromise = options.statusOutput !== undefined && sameFsPath(row.path, options.repoPath)
         ? Promise.resolve(options.statusOutput)
-        : git(row.path, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+        : git(row.path, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true }).catch(() => "");
       const [statusOutput, operation] = await Promise.all([
         statusPromise,
         Promise.resolve().then(() => detectRepoOperation(row.path)).catch(() => null),
@@ -237,7 +237,7 @@ function createRepositorySubmoduleService(options) {
       const exists = fs.existsSync(absolutePath);
       if (!exists || item.status === "uninitialized") return { ...item, exists, initialized: false };
       const [statusOutput, branchOutput, headOutput] = await Promise.all([
-        git(absolutePath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+        git(absolutePath, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true }).catch(() => ""),
         git(absolutePath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => ""),
         git(absolutePath, ["rev-parse", "--short", "HEAD"]).catch(() => ""),
       ]);

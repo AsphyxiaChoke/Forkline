@@ -13,11 +13,12 @@ const events = fs.readFileSync(path.join(root, "public", "js", "app", "events.js
 const branches = fs.readFileSync(path.join(root, "public", "js", "features", "branches.js"), "utf8");
 const contextMenus = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
 const fileTree = fs.readFileSync(path.join(root, "public", "js", "features", "file-tree.js"), "utf8");
+const diffLoader = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench-loader.js"), "utf8");
 const diffCore = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
 const diffRenderer = fs.readFileSync(path.join(root, "public", "js", "features", "diff-renderer.js"), "utf8");
 const diffSelection = fs.readFileSync(path.join(root, "public", "js", "features", "diff-selection.js"), "utf8");
 const worktreeRefresh = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-refresh.js"), "utf8");
-const diffWorkbench = [fileTree, diffCore, diffRenderer, diffSelection, worktreeRefresh].join("\n");
+const diffWorkbench = [fileTree, diffLoader, diffRenderer, diffSelection, diffCore, worktreeRefresh].join("\n");
 const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const repositories = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 const editorLoader = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor-loader.js"), "utf8");
@@ -28,7 +29,10 @@ const editorSearch = fs.readFileSync(path.join(root, "public", "js", "features",
 const editorCore = fs.readFileSync(path.join(root, "public", "js", "features", "file-editor.js"), "utf8");
 const editor = [editorUtils, editorActions, editorWindow, editorSearch, editorCore].join("\n");
 const mergeAddon = fs.readFileSync(path.join(root, "public", "vendor", "codemirror", "addon", "merge", "merge.js"), "utf8");
-const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const baseStyles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const diffWorkbenchStyles = fs.readFileSync(path.join(root, "public", "diff-workbench.css"), "utf8");
+const editorStyles = fs.readFileSync(path.join(root, "public", "file-editor.css"), "utf8");
+const styles = `${baseStyles}\n${diffWorkbenchStyles}\n${editorStyles}`;
 const catalog = require(path.join(root, "public", "js", "i18n-catalog.js"));
 
 test("file editor opens from worktree double-click and follows file selection while open", () => {
@@ -37,13 +41,15 @@ test("file editor opens from worktree double-click and follows file selection wh
   assert.match(html, /id="fileEditorModal"/);
   assert.match(html, /id="fileEditorText"[^>]*wrap="off"/);
   assert.match(html, /js\/features\/file-editor-loader\.js/);
-  assert.doesNotMatch(html, /vendor\/codemirror|js\/features\/file-editor-(?:utils|actions|window|search)\.js|js\/features\/file-editor\.js/);
+  assert.doesNotMatch(html, /file-editor\.css|vendor\/codemirror|js\/features\/file-editor-(?:utils|actions|window|search)\.js|js\/features\/file-editor\.js/);
+  assert.match(editorLoader, /const fileEditorStyleResources = \[\s*"\.\/file-editor\.css"/);
+  assert.doesNotMatch(baseStyles, /\.file-editor-(?:modal|dialog|merge|search|footer)/);
+  assert.match(editorStyles, /\.file-editor-modal\s*\{/);
   const diffScripts = [
     "./js/features/file-editor-loader.js",
+    "./js/features/diff-workbench-loader.js",
     "./js/features/file-tree.js",
     "./js/features/diff-renderer.js",
-    "./js/features/diff-workbench.js",
-    "./js/features/diff-selection.js",
     "./js/features/worktree-refresh.js",
   ];
   let previousDiffScript = -1;
@@ -54,6 +60,8 @@ test("file editor opens from worktree double-click and follows file selection wh
   }
   assert.match(fileTree, /function fileTreeHtml\(/);
   assert.match(fileTree, /function shortFileName\(/);
+  assert.match(diffLoader, /async function ensureDiffWorkbenchLoaded\(/);
+  assert.match(diffLoader, /function setActiveDiff\(/);
   assert.match(diffCore, /async function runWorkDiffHunkAction\(/);
   assert.match(diffRenderer, /function renderSideDiff\(/);
   assert.match(diffRenderer, /function trimDiffPrefix\(/);
@@ -141,7 +149,7 @@ test("delegated worktree file events preserve selection, editing, context menus,
     calls.push(["open", ...args]);
     return true;
   };
-  sandbox.showFileContextMenu = (...args) => calls.push(["menu", ...args.slice(1)]);
+  sandbox.showFileContextMenuLazy = async (...args) => calls.push(["menu", ...args.slice(1)]);
   const rootElement = {
     addEventListener: (type, listener) => listeners.set(type, listener),
     contains: () => true,
@@ -188,7 +196,8 @@ test("worktree selection updates in place so the same row can receive a double-c
     diffWorkbench.indexOf("function updateChangeSelection")
   );
   assert.match(selectChangeSource, /refreshChangeSelectionUi\(\)/);
-  assert.match(selectChangeSource, /loadWorkingDiff\(filePath\)/);
+  assert.match(selectChangeSource, /setActiveDiff\(null\)/);
+  assert.doesNotMatch(selectChangeSource, /loadWorkingDiff(?:Lazy)?\(filePath\)/);
   assert.doesNotMatch(selectChangeSource, /renderStage\(\)/);
   assert.match(diffWorkbench, /function refreshChangeSelectionUi\(\)[\s\S]*?row\.classList\.toggle\("multi-selected", selected\)/);
   assert.match(diffWorkbench, /actions\?\.querySelectorAll\("\[data-bulk-file-action\]"\)[\s\S]*?button\.disabled = selectedCount === 0/);
@@ -594,6 +603,8 @@ test("file editor loads local CodeMirror MergeView with line numbers and syntax 
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-inserted/);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-2pane \.CodeMirror-merge-gap\s*\{[^}]*width:\s*40px/s);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-pane\s*\{[^}]*height:\s*100%/s);
+  assert.match(styles, /\.file-editor-body \.file-editor-merge \.CodeMirror-merge,/);
+  assert.match(styles, /\.file-editor-body \.file-editor-merge \.CodeMirror\s*\{[^}]*height:\s*100%/s);
   assert.match(styles, /\.file-editor-body\s*\{[^}]*grid-row:\s*4/s);
   assert.match(styles, /\.file-editor-footer\s*\{[^}]*grid-row:\s*5/s);
   assert.match(styles, /\.cm-s-default \.cm-keyword/);
@@ -616,6 +627,32 @@ test("conflict file editor uses current, result, and incoming panes", () => {
   assert.match(editor, /else \{\s*editor\.mergeView = CodeMirror\.MergeView/s);
   assert.match(styles, /\.file-editor-compare-labels\.is-conflict-three-way\s*\{[^}]*grid-template-columns:[^}]*calc\(\(100% - 56px\) \/ 3\)/s);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-3pane \.CodeMirror-merge-pane/);
+});
+
+test("two-pane file comparison shows clickable change markers beside both scrollbars", () => {
+  assert.match(editorActions, /function observeFileEditorChangeMarkers\(/);
+  assert.match(editorActions, /editor\.mergeView\.leftChunks\(\)/);
+  assert.match(editorActions, /file-editor-change-rail/);
+  assert.match(editorActions, /file-editor-change-marker/);
+  assert.match(editorActions, /scrollTo\(null, Math\.max\(0, targetTop\)\)/);
+  assert.match(editorActions, /function fileEditorChangeTargetTop\(/);
+  assert.match(editorActions, /scrollInfo\.height - scrollInfo\.clientHeight/);
+  assert.match(editorCore, /observeFileEditorChangeMarkers\(editor\)/);
+  assert.match(editorActions, /function positionFileEditorChangeMarkers\(/);
+  assert.match(editorWindow, /positionFileEditorChangeMarkers\(editor\)/);
+  assert.match(editorWindow, /editor\.codeMirror\.off\("updateDiff", editor\.diffUpdateHandler\)/);
+  assert.match(styles, /\.file-editor-change-rail\s*\{/);
+  assert.match(styles, /\.file-editor-change-marker\.is-old\s*\{[^}]*var\(--danger\)/s);
+  assert.match(styles, /\.file-editor-change-marker\.is-new\s*\{[^}]*var\(--green\)/s);
+});
+
+test("file editor stays hidden until the comparison is fully prepared", () => {
+  assert.match(
+    editorCore,
+    /await api\([\s\S]*?classList\.add\("show", "is-preparing"\)[\s\S]*?createFileEditorWithPerformanceGuard\(editor\)[\s\S]*?await waitForFileEditorPaint\(\)[\s\S]*?classList\.remove\("is-preparing"\)/
+  );
+  assert.match(editorCore, /classList\.remove\("show", "is-preparing"\)/);
+  assert.match(styles, /\.file-editor-modal\.is-preparing\s*\{[^}]*visibility:\s*hidden/s);
 });
 
 test("file editor provides find, replace, shortcuts, and repository cleanup", () => {
@@ -801,6 +838,13 @@ test("file editor restores the viewed line after save and staging actions", () =
 test("file editor exposes Chinese encoding and comparison messages in English mode", () => {
   assert.equal(catalog.translate("en", "查找替换"), "Find and replace");
   assert.equal(catalog.translate("en", "拖动调整窗口大小"), "Drag to resize the window");
+  assert.equal(catalog.translate("en", "恢复文件草稿"), "Recover file draft");
+  assert.equal(catalog.translate("en", "磁盘当前版本"), "Current disk version");
+  assert.equal(catalog.translate("en", "恢复草稿"), "Recovered draft");
+  assert.equal(
+    catalog.translate("en", "已恢复页面停止前的未保存内容"),
+    "Recovered unsaved content from before the page stopped"
+  );
   assert.equal(catalog.translate("en", "暂存区中不存在"), "Not present in the index");
   assert.equal(catalog.translate("en", "暂存此改动块"), "Stage this change block");
   assert.equal(catalog.translate("en", "还原所选改动块"), "Restore the selected change block");

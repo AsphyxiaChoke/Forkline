@@ -42,6 +42,17 @@ function applyTheme(theme, persist = true) {
   if (persist) localStorage.setItem("forkline-theme", selected);
   els.themeToggle.textContent = t(current.label);
   els.themeToggle.title = t("当前配色：{current}；点击切换到：{next}", { current: t(current.label), next: t(next.label) });
+  syncDesktopTitleBarTheme();
+}
+
+function syncDesktopTitleBarTheme() {
+  const setTitleBarTheme = window.forklineDesktop?.setTitleBarTheme;
+  if (typeof setTitleBarTheme !== "function") return;
+  const styles = getComputedStyle(document.documentElement);
+  setTitleBarTheme({
+    color: styles.getPropertyValue("--topbar").trim(),
+    symbolColor: styles.getPropertyValue("--text").trim(),
+  });
 }
 
 function toggleTheme() {

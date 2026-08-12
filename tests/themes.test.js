@@ -43,6 +43,42 @@ test("theme runtime accepts, restores, persists, and cycles through every palett
   assert.equal(inspectorRenders, 1, "top theme cycling should refresh the active settings card");
 });
 
+test("theme changes keep Electron native window controls in sync without affecting browsers", () => {
+  const palette = {
+    dark: { "--topbar": "#0b0f15", "--text": "#edf3fb" },
+    light: { "--topbar": "#fbfcfe", "--text": "#152131" },
+    graphite: { "--topbar": "#0c0e10", "--text": "#f3f5f7" },
+    forest: { "--topbar": "#09100e", "--text": "#eef7f2" },
+    rose: { "--topbar": "#fffafd", "--text": "#30202b" },
+    contrast: { "--topbar": "#000000", "--text": "#ffffff" },
+  };
+  const updates = [];
+  const desktopContext = createThemeContext({
+    desktop: {
+      setTitleBarTheme(value) {
+        updates.push({ color: value.color, symbolColor: value.symbolColor });
+      },
+    },
+    getComputedStyle: (root) => ({
+      getPropertyValue: (name) => palette[root.dataset.theme]?.[name] || "",
+    }),
+  });
+  vm.runInContext(layoutSource, desktopContext);
+
+  for (const theme of themeIds) {
+    vm.runInContext(`applyTheme(${JSON.stringify(theme)}, false)`, desktopContext);
+  }
+
+  assert.deepEqual(updates, themeIds.map((theme) => ({
+    color: palette[theme]["--topbar"],
+    symbolColor: palette[theme]["--text"],
+  })));
+
+  const browserContext = createThemeContext();
+  vm.runInContext(layoutSource, browserContext);
+  assert.doesNotThrow(() => vm.runInContext('applyTheme("light", false)', browserContext));
+});
+
 test("settings renders every theme as a compact palette preview", () => {
   const context = createThemeContext({ state: { theme: "graphite" } });
   vm.runInContext(layoutSource, context);
@@ -81,7 +117,11 @@ function createThemeContext(options = {}) {
   const document = options.document || { documentElement: { dataset: {} } };
   const context = vm.createContext({
     URLSearchParams,
-    window: { location: { search: options.search || "" } },
+    window: {
+      location: { search: options.search || "" },
+      ...(options.desktop ? { forklineDesktop: options.desktop } : {}),
+    },
+    ...(options.getComputedStyle ? { getComputedStyle: options.getComputedStyle } : {}),
     localStorage: {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, String(value)),

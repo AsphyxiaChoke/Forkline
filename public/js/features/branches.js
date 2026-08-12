@@ -77,7 +77,7 @@ function renderBranches() {
     chip.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      showBranchContextMenu(event, branch, options);
+      showBranchContextMenuLazy(event, branch, options).catch((error) => toast(error.message));
     });
     els.branchStrip.appendChild(chip);
   });
@@ -152,7 +152,7 @@ function branchButton(branch, index, active, options = {}) {
   row.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    showBranchContextMenu(event, branch, options);
+    showBranchContextMenuLazy(event, branch, options).catch((error) => toast(error.message));
   });
   const button = document.createElement("button");
   button.className = `nav-item ${active ? "active" : ""} ${options.current ? "current-branch" : ""}`;

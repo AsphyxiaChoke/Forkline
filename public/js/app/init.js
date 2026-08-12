@@ -17,15 +17,16 @@ async function init() {
     state.selectedRef = state.data.repo.selectedRef || initialRef;
     state.selectedSha = state.data.commits[0]?.sha || "";
     renderAll();
+    reportDesktopRecoveryState();
     const hydrationPromise = state.data.progressive
-      ? hydrateOpenedRepoData(state.openRepoRequestId, state.data.repo.path, state.selectedRef)
+      ? hydrateOpenedRepoData(state.openRepoRequestId, state.data.repo.path)
       : null;
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);
     }
     if (hydrationPromise && !(await hydrationPromise)) return;
     renderInspector();
-    if (state.selectedSha && state.openDiffOnInit) openDiffModal();
+    if (state.selectedSha && state.openDiffOnInit) await openDiffModalLazy();
     if (!state.data.progressiveError) await maybeRestoreCheckoutStash(state.data.repo.branch);
   } catch (error) {
     toast(error.message);

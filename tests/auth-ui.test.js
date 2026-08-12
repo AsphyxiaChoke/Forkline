@@ -11,6 +11,7 @@ const authSource = fs.readFileSync(path.join(root, "public", "js", "panels", "au
 const eventSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const repositoryPanelStyles = fs.readFileSync(path.join(root, "public", "repository-panels.css"), "utf8");
 
 function createContext() {
   const calls = { api: [], toast: [] };
@@ -63,7 +64,8 @@ test("authentication card exposes system credentials and remote connection tools
   assert.doesNotMatch(html, /data-auth-action="openCredentials"[^>]*disabled/);
   assert.match(html, /data-remote-action="test"/);
   assert.match(html, /https:\/\/www\.githubstatus\.com\//);
-  assert.match(styles, /\.auth-remote-entry\s*{/);
+  assert.match(repositoryPanelStyles, /\.auth-remote-entry\s*{/);
+  assert.doesNotMatch(styles, /\.auth-remote-entry\s*{/);
 
   await context.openSystemCredentialManagerFromSync();
   assert.equal(calls.api.length, 1);

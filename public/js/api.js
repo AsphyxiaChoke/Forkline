@@ -1,4 +1,4 @@
-// Shared HTTP wrapper for Forkline API calls.
+// Shared HTTP wrapper and long-running Git operation control.
 const OPERATION_POLL_INTERVAL_MS = 700;
 let operationPollTimer = 0;
 let operationPollRequest = null;
@@ -26,11 +26,22 @@ async function api(path, options = {}) {
   if (requestRepoPath && !state.data?.repo?.isSample) {
     headers["X-Forkline-Repo-Path"] = encodeRepoPathHeader(requestRepoPath);
   }
+  const requestOptions = { ...options, headers };
   try {
-    const response = await fetch(path, {
-      ...options,
-      headers,
-    });
+    let response;
+    try {
+      response = await fetch(path, requestOptions);
+    } catch (error) {
+      if (path === "/api/open" && isFetchNetworkError(error)) {
+        try {
+          response = await fetch(path, requestOptions);
+        } catch (retryError) {
+          throw normalizeFetchNetworkError(retryError);
+        }
+      } else {
+        throw normalizeFetchNetworkError(error);
+      }
+    }
     const data = await response.json();
     mergeOperationState(data, requestRepoPath);
     if (!response.ok || data.error) {
@@ -46,6 +57,14 @@ async function api(path, options = {}) {
       refreshOperationProgress();
     }
   }
+}
+
+function isFetchNetworkError(error) {
+  return /failed to fetch|networkerror|network request failed|load failed/i.test(String(error?.message || error || ""));
+}
+
+function normalizeFetchNetworkError(error) {
+  return isFetchNetworkError(error) ? new Error(t("无法连接 Forkline 本地服务")) : error;
 }
 
 function mergeOperationState(data, requestRepoPath = "") {
@@ -98,6 +117,29 @@ function renderOperationProgressIfVisible() {
   panel.querySelectorAll(".operation-log-item.running pre").forEach((output) => {
     output.scrollTop = output.scrollHeight;
   });
+}
+
+async function cancelRunningOperation(id, options = {}) {
+  let operation = (state.data?.runningOperations || []).find((item) => String(item.id) === String(id));
+  if (!operation) {
+    await refreshOperationProgress();
+    operation = (state.data?.runningOperations || []).find((item) => String(item.id) === String(id));
+  }
+  if (!operation) throw new Error(t("这个 Git 操作已经结束，请刷新操作日志查看结果。"));
+  if (!operation.cancellable && !operation.cancelRequested) throw new Error(t("这个 Git 操作当前不能取消。"));
+  if (operation.cancelRequested) return;
+  if (options.confirm !== false) {
+    const command = operation.command ? `\n\n${operation.command}` : "";
+    if (!confirm(t("确认取消“{label}”？{command}\n\nGit 会停止当前命令，已经完成的远端传输不会自动回退。", { label: t(operation.label || "Git 操作"), command }))) return;
+  }
+  if (options.button) options.button.disabled = true;
+  const result = await api("/api/operations/cancel", {
+    method: "POST",
+    body: JSON.stringify({ id: operation.id }),
+  });
+  renderOperationProgressIfVisible();
+  toast(result.output || t("正在取消操作"));
+  return result;
 }
 
 window.Forkline.api = api;

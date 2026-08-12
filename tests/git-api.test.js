@@ -20,6 +20,7 @@ const gitEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: nullConfig,
   GIT_CONFIG_NOSYSTEM: "1",
+  XDG_CONFIG_HOME: path.join(os.tmpdir(), "forkline-git-test-config"),
   GIT_TERMINAL_PROMPT: "0",
   GCM_INTERACTIVE: "never",
   LC_ALL: "C",
@@ -256,6 +257,16 @@ test("progressive repository open returns history before deferred worktree detai
   assert.deepEqual(progressive.workingFiles, []);
   assert.deepEqual(progressive.tags, []);
 
+  const openDetails = await request("/api/open-details", { repoPath: repo });
+  assertStatus(openDetails, 200);
+  assert.ok(openDetails.body.workingFiles.some((file) => file.file === "draft.txt"));
+  assert.ok(openDetails.body.tags.some((tag) => tag.name === "v1.0.0"));
+  assert.ok(openDetails.body.worktreePruneSnapshot);
+  assert.ok(openDetails.body.branchInfo.main);
+  for (const field of ["branches", "remotes", "remoteInfo", "sync", "commits", "history", "branchCleanup", "worktrees", "submodules", "stashes", "recoveryPoints"]) {
+    assert.equal(openDetails.body[field], undefined, `${field} must stay out of the progressive open details response`);
+  }
+
   const full = await readState(repo);
   assert.equal(full.progressive, undefined);
   assert.ok(full.workingFiles.some((file) => file.file === "draft.txt"));
@@ -299,6 +310,75 @@ test("progressive repository open returns history before deferred worktree detai
   const invalidDetails = await request("/api/state-details?section=unknown", { repoPath: repo, locale: "en" });
   assertStatus(invalidDetails, 400);
   assert.match(invalidDetails.body.error, /detail section is invalid/i);
+});
+
+test("worktree polling returns a compact unchanged response until file content changes", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-worktree-poll-"));
+  const repo = path.join(root, "repo");
+  const notePath = path.join(repo, "note.txt");
+  const indexVersionPath = path.join(root, "index-note.txt");
+  t.after(() => removeFixture(root));
+
+  await initRepository(repo);
+  await fs.writeFile(notePath, "base\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  await fs.appendFile(notePath, "first change\n", "utf8");
+  await openRepo(repo);
+
+  const first = await request("/api/worktree", { repoPath: repo });
+  assertStatus(first, 200);
+  assert.equal(first.body.workingFiles.length, 1);
+  assert.ok(first.body.worktreeSnapshot);
+
+  const unchanged = await request(
+    `/api/worktree?expectedSnapshot=${encodeURIComponent(first.body.worktreeSnapshot)}`,
+    { repoPath: repo }
+  );
+  assertStatus(unchanged, 200);
+  assert.equal(unchanged.body.unchanged, true);
+  assert.equal(unchanged.body.worktreeSnapshot, first.body.worktreeSnapshot);
+  assert.equal(unchanged.body.workingFiles, undefined);
+  assert.ok(Object.hasOwn(unchanged.body, "operation"));
+  assert.ok(JSON.stringify(unchanged.body).length < JSON.stringify(first.body).length);
+
+  await fs.appendFile(notePath, "second change with a different length\n", "utf8");
+  const changed = await request(
+    `/api/worktree?expectedSnapshot=${encodeURIComponent(first.body.worktreeSnapshot)}`,
+    { repoPath: repo }
+  );
+  assertStatus(changed, 200);
+  assert.equal(changed.body.unchanged, undefined);
+  assert.notEqual(changed.body.worktreeSnapshot, first.body.worktreeSnapshot);
+  assert.equal(changed.body.workingFiles.length, 1);
+
+  await git(repo, ["add", "note.txt"]);
+  await fs.appendFile(notePath, "worktree content after staged version\n", "utf8");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const indexBaseline = await request("/api/worktree", { repoPath: repo });
+  assertStatus(indexBaseline, 200);
+  const statusBeforeIndexChange = await git(repo, ["status", "--short", "--untracked-files=all"]);
+  assert.match(statusBeforeIndexChange, /^MM note\.txt$/m);
+
+  await fs.writeFile(indexVersionPath, "different index-only content\n", "utf8");
+  const indexBlob = await git(repo, ["hash-object", "-w", indexVersionPath]);
+  await git(repo, ["update-index", "--cacheinfo", "100644", indexBlob, "note.txt"]);
+  const statusAfterIndexChange = await git(repo, ["status", "--short", "--untracked-files=all"]);
+  assert.equal(statusAfterIndexChange, statusBeforeIndexChange);
+
+  let indexChanged = null;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    indexChanged = await request(
+      `/api/worktree?expectedSnapshot=${encodeURIComponent(indexBaseline.body.worktreeSnapshot)}`,
+      { repoPath: repo }
+    );
+    assertStatus(indexChanged, 200);
+    if (!indexChanged.body.unchanged) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(indexChanged.body.unchanged, undefined);
+  assert.notEqual(indexChanged.body.worktreeSnapshot, indexBaseline.body.worktreeSnapshot);
+  assert.equal(indexChanged.body.workingFiles.length, 1);
 });
 
 test("worktree file editor reads and saves UTF-8 text with stale-content protection", { timeout: 120000 }, async (t) => {
@@ -432,12 +512,14 @@ test("commit file viewer returns complete parent and commit versions for changed
   await fs.writeFile(renamedNewPath, "one\ntwo\nthree changed\nfour\nfive\nsix\n", "utf8");
   await fs.writeFile(gbkPath, iconv.encode("新版本\r\n提交内容\r\n", "gbk"));
   await git(repo, ["add", "-A"]);
-  await git(repo, ["commit", "-m", "change files"]);
+  await git(repo, ["commit", "-m", "change files", "-m", "commit detail body"]);
   const commitSha = await git(repo, ["rev-parse", "HEAD"]);
   await openRepo(repo);
 
   const detail = await request(`/api/commit?sha=${commitSha}`, { repoPath: repo });
   assertStatus(detail, 200);
+  assert.equal(detail.body.summary, "change files");
+  assert.equal(detail.body.message, "change files\n\ncommit detail body");
   assert.equal(detail.body.diffLoaded, false);
   assert.deepEqual(detail.body.diff, []);
   const renamedFile = detail.body.files.find((file) => file.file === "rename-new.txt");
@@ -563,7 +645,23 @@ test("remote-tracking refs remain readable while the remote is offline", { timeo
   await git(repo, ["switch", "main"]);
   await git(repo, ["fetch", "origin"]);
   await fs.rm(remote, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  await openRepo(repo);
+
+  const progressiveOpen = await request("/api/open", {
+    method: "POST",
+    body: { path: repo, progressive: true },
+  });
+  assertStatus(progressiveOpen, 200);
+  assert.equal(progressiveOpen.body.progressive, true);
+  assert.equal(progressiveOpen.body.commits[0]?.message, "main commit");
+
+  const openDetails = await request("/api/open-details", { repoPath: repo });
+  assertStatus(openDetails, 200);
+  assert.ok(Array.isArray(openDetails.body.workingFiles));
+
+  const coreState = await request("/api/state?details=core", { repoPath: repo });
+  assertStatus(coreState, 200);
+  assert.equal(coreState.body.repo.branch, "main");
+  assert.ok(coreState.body.commits.some((commit) => commit.message === "main commit"));
 
   const refState = await request("/api/ref-state?ref=origin/feature", { repoPath: repo });
   assertStatus(refState, 200);
@@ -1233,6 +1331,12 @@ test("common history flow covers branches, merge, cherry-pick, revert, tags, and
   const mergeSha = await git(repo, ["rev-parse", "HEAD"]);
   assert.equal((await git(repo, ["rev-list", "--parents", "-n", "1", "HEAD"])).split(/\s+/).length, 3);
   assert.equal(await fs.readFile(path.join(repo, "feature.txt"), "utf8"), "feature\n");
+  const mergeDetail = await request(`/api/commit?sha=${mergeSha}&diff=1`, { repoPath: repo });
+  assertStatus(mergeDetail, 200);
+  assert.equal(mergeDetail.body.parents.length, 2);
+  assert.equal(mergeDetail.body.parents[0], baseSha);
+  assert.ok(mergeDetail.body.files.some((file) => file.file === "feature.txt"));
+  assert.ok(mergeDetail.body.diff.some((line) => String(line.text || "").includes("feature")));
 
   state = await readState(repo);
   const renamed = await action(repo, state, {

@@ -14,6 +14,7 @@ function refreshFileEditorCodeMirror(editor) {
   editor.mergeView?.rightOriginal()?.refresh();
   refreshFileEditorStageButtons(editor);
   refreshFileEditorConflictButtons(editor);
+  positionFileEditorChangeMarkers(editor);
 }
 
 function captureFileEditorView(editor, focusLine = null) {
@@ -195,9 +196,12 @@ function destroyFileEditorInstance() {
   if (editor?.searchTimer) clearTimeout(editor.searchTimer);
   clearFileEditorSearchMarks();
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
+  if (editor?.codeMirror && editor.diffUpdateHandler) editor.codeMirror.off("updateDiff", editor.diffUpdateHandler);
   if (editor?.oldCodeMirror && editor.oldScrollHandler) editor.oldCodeMirror.off("scroll", editor.oldScrollHandler);
   if (editor?.codeMirror && editor.newScrollHandler) editor.codeMirror.off("scroll", editor.newScrollHandler);
   editor?.conflictScrollHandlers?.forEach(({ source, handler }) => source.off("scroll", handler));
+  if (editor?.changeMarkerFrame) cancelAnimationFrame(editor.changeMarkerFrame);
+  editor?.changeMarkerRails?.forEach((rail) => rail.remove());
   editor?.mergeView?.destroy?.();
   if (els.fileEditorMerge) els.fileEditorMerge.replaceChildren();
   els.fileEditorOldLabel.hidden = false;
@@ -213,6 +217,10 @@ function destroyFileEditorInstance() {
     editor.resizeObserver = null;
     editor.buttonObserver = null;
     editor.resizeFrame = 0;
+    editor.diffUpdateHandler = null;
+    editor.changeMarkerRails = [];
+    editor.changeMarkers = [];
+    editor.changeMarkerFrame = 0;
   }
   els.fileEditorForm.classList.remove("is-operating");
   els.fileEditorForm.classList.remove("is-readonly");
@@ -267,17 +275,30 @@ function updateFileEditorStatus(message = "") {
   } else if (editor.operating) {
     els.fileEditorStatus.textContent = editor.operationMessage || t("正在更新暂存区...");
   } else if (fileEditorDirty()) {
-    els.fileEditorStatus.textContent = `${t("有未保存的修改")} · ${metadata}`;
+    const dirtyMessage = editor.recoveryDraftRestored
+      ? t("已恢复页面停止前的未保存内容")
+      : t("有未保存的修改");
+    els.fileEditorStatus.textContent = `${dirtyMessage} · ${metadata}`;
   } else if (editor.feedbackMessage) {
     els.fileEditorStatus.textContent = `${t(editor.feedbackMessage)} · ${metadata}`;
   } else {
     els.fileEditorStatus.textContent = metadata;
   }
   els.fileEditorSave.disabled = Boolean(editor.readOnly || editor.loading || editor.saving || editor.operating || !fileEditorDirty());
+  reportDesktopRecoveryState();
 }
 
 function updateFileEditorCompareLabels(editor) {
   const labels = els.fileEditorOldLabel.parentElement;
+  if (editor.recoverySnapshotChanged) {
+    labels?.classList.remove("is-single-pane");
+    labels?.classList.remove("is-conflict-three-way");
+    els.fileEditorOldLabel.hidden = false;
+    els.fileEditorResultLabel.hidden = true;
+    els.fileEditorOldLabel.textContent = `${t("磁盘当前版本")} · ${String(editor.encoding || "utf-8").toUpperCase()}`;
+    els.fileEditorNewLabel.textContent = `${t("恢复草稿")} · ${t("只读")}`;
+    return;
+  }
   if (editor.source === "commit") {
     labels?.classList.remove("is-single-pane");
     labels?.classList.remove("is-conflict-three-way");

@@ -12,6 +12,7 @@ const branchSource = read("server/git-branch-service.js");
 const worktreeOperationsSource = read("server/git-worktree-service.js");
 const historyOperationsSource = read("server/git-history-service.js");
 const recoverySource = read("server/git-recovery-service.js");
+const runtimeSource = read("server/git-runtime.js");
 const repositorySource = read("server/repository-service.js");
 const repositoryBrowseSource = read("server/repository-browse-service.js");
 const repositoryAuthSource = read("server/repository-auth-service.js");
@@ -21,6 +22,9 @@ const repositoryStateSource = read("server/repository-state-service.js");
 const historySource = read("server/repository-history.js");
 const editorSource = read("server/file-editor-service.js");
 const updateSource = read("server/update-service.js");
+const serverModuleSources = fs.readdirSync(path.join(root, "server"))
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => ({ name: `server/${name}`, source: read(`server/${name}`) }));
 
 test("backend routes delegate Git domains to service modules", () => {
   assert.match(serverSource, /createGitOperationsService\(/);
@@ -60,6 +64,25 @@ test("Git operation and repository facades delegate their subdomains", () => {
   assert.match(repositoryWorktreeSource, /async function readWorktree\(/);
   assert.match(repositoryStateSource, /async function readState\(/);
   assert.match(repositoryStateSource, /async function readSyncState\(/);
+});
+
+test("machine-readable git status calls ignore successful stderr warnings", () => {
+  const statusCalls = serverModuleSources.flatMap(({ name, source }) => Array.from(
+    source.matchAll(/\bgit\([^)]*,\s*\["status"[\s\S]*?\]\s*,\s*\{[\s\S]*?\}\s*\)/g),
+    (match) => ({ name, call: match[0].replace(/\s+/g, " ").trim() })
+  ));
+
+  assert.ok(statusCalls.length > 0, "expected direct git status calls in server modules");
+  for (const call of statusCalls) {
+    assert.match(call.call, /stdoutOnly:\s*true/, `${call.name} must keep Git warnings out of status data: ${call.call}`);
+  }
+});
+
+test("authentication probes join the owned-process shutdown registry", () => {
+  assert.match(runtimeSource, /registerOwnedProcess/);
+  assert.match(serverSource, /registerOwnedProcess/);
+  assert.match(repositorySource, /registerOwnedProcess/);
+  assert.match(repositoryAuthSource, /registerOwnedProcess\(child\)/);
 });
 
 function read(relativePath) {

@@ -47,10 +47,35 @@ test("default page keeps startup resources within the performance budget", (t) =
   t.diagnostic(`startup resources ${entries.length}, ${formatBytes(totalBytes)}`);
 });
 
-test("lazy editor and English catalog resources stay out of the default page", () => {
+test("lazy editor, folder-command UI, diff workbench, commit actions, secondary panels, and English catalog stay out of the default page", () => {
   const resources = initialResources();
   const eagerHeavyResources = resources.filter((resource) => (
     resource === "./js/i18n-catalog.js"
+    || resource === "./commit-actions.css"
+    || resource === "./context-menu.css"
+    || resource === "./diff-workbench.css"
+    || resource === "./file-editor.css"
+    || resource === "./file-insights.css"
+    || resource === "./folder-command.css"
+    || resource === "./logs.css"
+    || resource === "./repository-panels.css"
+    || resource === "./settings.css"
+    || resource === "./workspaces.css"
+    || resource === "./js/panels/settings.js"
+    || resource === "./js/panels/stashes.js"
+    || resource === "./js/panels/tags.js"
+    || resource === "./js/panels/workspaces.js"
+    || resource === "./js/panels/recovery.js"
+    || resource === "./js/panels/file-insights.js"
+    || resource === "./js/panels/auth.js"
+    || resource === "./js/panels/compare.js"
+    || resource === "./js/panels/logs.js"
+    || resource === "./js/features/context-menus.js"
+    || resource === "./js/features/folder-command-implementation.js"
+    || resource === "./js/features/git-actions.js"
+    || resource === "./js/features/commit-actions.js"
+    || resource === "./js/features/diff-workbench.js"
+    || resource === "./js/features/diff-selection.js"
     || resource.startsWith("./lib/codemirror/")
     || /^\.\/js\/features\/file-editor-(?!loader\.js$)/.test(resource)
   ));
@@ -58,6 +83,11 @@ test("lazy editor and English catalog resources stay out of the default page", (
   assert.deepEqual(eagerHeavyResources, []);
   assert.ok(resources.includes("./js/i18n-loader.js"));
   assert.ok(resources.includes("./js/features/file-editor-loader.js"));
+  assert.ok(resources.includes("./js/features/diff-workbench-loader.js"));
+  assert.ok(resources.includes("./js/features/context-menu-loader.js"));
+  assert.ok(resources.includes("./js/features/git-actions-loader.js"));
+  assert.ok(resources.includes("./js/features/commit-actions-loader.js"));
+  assert.ok(resources.includes("./js/panels/inspector-panel-loader.js"));
 });
 
 function initialResources() {

@@ -149,6 +149,10 @@ function renderCompletedWorkDiff(file, scope) {
   setActiveDiff({ source: "worktree", title, path: file, diff: [], scope: normalizedScope, emptyText: t("此文件没有剩余未提交改动") });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = file;
+  if (!workDiffInlineVisible()) {
+    clearWorkDiffInline();
+    return;
+  }
   els.workDiffView.className = "work-diff-view";
   els.workDiffView.innerHTML = renderSideDiff([], "此文件没有剩余未提交改动", { filePath: file, scope: normalizedScope });
 }

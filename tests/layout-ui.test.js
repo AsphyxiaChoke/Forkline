@@ -15,29 +15,37 @@ const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "eve
 const inspectorSource = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
 const worktreeSource = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-changes.js"), "utf8");
 const contextMenuSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menus.js"), "utf8");
+const contextMenuLoaderSource = fs.readFileSync(path.join(root, "public", "js", "features", "context-menu-loader.js"), "utf8");
 const graphSource = fs.readFileSync(path.join(root, "public", "js", "features", "graph.js"), "utf8");
 const repositoriesSource = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
+const workspacesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "workspaces.js"), "utf8");
 const stashesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "stashes.js"), "utf8");
 const authSource = fs.readFileSync(path.join(root, "public", "js", "panels", "auth.js"), "utf8");
 const syncSource = fs.readFileSync(path.join(root, "public", "js", "panels", "sync.js"), "utf8");
 const compareSource = fs.readFileSync(path.join(root, "public", "js", "panels", "compare.js"), "utf8");
 const tagsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "tags.js"), "utf8");
 const recoverySource = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery.js"), "utf8");
+const recoveryPolicySource = fs.readFileSync(path.join(root, "public", "js", "features", "recovery-policy.js"), "utf8");
+const fileInsightsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "file-insights.js"), "utf8");
 const logsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "logs.js"), "utf8");
 const settingsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "settings.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const commitActionStyles = fs.readFileSync(path.join(root, "public", "commit-actions.css"), "utf8");
+const contextMenuStyles = fs.readFileSync(path.join(root, "public", "context-menu.css"), "utf8");
+const diffWorkbenchStyles = fs.readFileSync(path.join(root, "public", "diff-workbench.css"), "utf8");
+const fileInsightsStyles = fs.readFileSync(path.join(root, "public", "file-insights.css"), "utf8");
+const folderCommandStyles = fs.readFileSync(path.join(root, "public", "folder-command.css"), "utf8");
+const logsStyles = fs.readFileSync(path.join(root, "public", "logs.css"), "utf8");
+const repositoryPanelStyles = fs.readFileSync(path.join(root, "public", "repository-panels.css"), "utf8");
+const settingsStyles = fs.readFileSync(path.join(root, "public", "settings.css"), "utf8");
+const workspacesStyles = fs.readFileSync(path.join(root, "public", "workspaces.css"), "utf8");
 
 test("right inspector panels keep separate modules before event binding", () => {
   const scripts = [
-    "./js/panels/stashes.js",
-    "./js/panels/auth.js",
     "./js/panels/sync.js",
-    "./js/panels/compare.js",
-    "./js/panels/tags.js",
-    "./js/panels/recovery.js",
-    "./js/panels/logs.js",
-    "./js/panels/settings.js",
+    "./js/panels/inspector-panel-loader.js",
+    "./js/features/recovery-policy.js",
     "./js/features/recovery-undo.js",
     "./js/app/events.js",
   ];
@@ -47,16 +55,59 @@ test("right inspector panels keep separate modules before event binding", () => 
     assert.ok(position > previous, `${script} should load after the previous inspector module`);
     previous = position;
   }
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/stashes\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/tags\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/settings\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/workspaces\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/recovery\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/file-insights\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/auth\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/compare\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/panels\/logs\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<link[^>]+href="\.\/workspaces\.css"/);
   assert.doesNotMatch(indexHtml, /recovery-settings\.js/);
   assert.match(stashesSource, /function renderStashesTab\(\)/);
+  assert.match(authSource, /function renderSyncTab\(\)/);
+  assert.match(authSource, /function syncCommitPreviewHtml\(commit, detail, model\)/);
   assert.match(authSource, /async function loadAuthDiagnostics\(/);
-  assert.match(syncSource, /function renderSyncTab\(\)/);
+  assert.doesNotMatch(syncSource, /function renderSyncTab\(\)/);
+  assert.doesNotMatch(syncSource, /function syncCommitPreviewHtml\(commit, detail, model\)/);
+  assert.match(syncSource, /async function refreshSyncState\(\)/);
+  assert.match(syncSource, /function syncPushGuard\(sync\)/);
   assert.match(compareSource, /function renderCompareTab\(\)/);
   assert.doesNotMatch(syncSource, /renderStashesTab|renderCompareTab|loadAuthDiagnostics/);
   assert.match(tagsSource, /function renderTagsTab\(\)/);
   assert.match(recoverySource, /function renderRecoveryTab\(\)/);
+  assert.doesNotMatch(recoverySource, /function defaultRecoveryPolicy\(repoPath/);
+  assert.match(recoveryPolicySource, /function defaultRecoveryPolicy\(repoPath/);
+  assert.match(recoveryPolicySource, /async function maybeOfferRecoveryPolicyCleanup\(result\)/);
+  assert.match(inspectorSource, /renderInspectorPanelLazy\("fileInsights"\)/);
+  assert.match(inspectorSource, /renderInspectorPanelLazy\("sync"\)/);
+  assert.match(inspectorSource, /renderInspectorPanelLazy\("compare"\)/);
+  assert.match(inspectorSource, /renderInspectorPanelLazy\("logs"\)/);
+  assert.doesNotMatch(inspectorSource, /function renderFileHistoryTab\(\)/);
+  assert.doesNotMatch(inspectorSource, /function renderFileBlameTab\(\)/);
+  assert.match(fileInsightsSource, /function renderFileInsightsTab\(\)/);
+  assert.match(fileInsightsSource, /function loadFileHistoryPanel\(filePath, targetRef\)/);
+  assert.match(fileInsightsSource, /function loadFileBlamePanel\(filePath, targetRef\)/);
   assert.match(logsSource, /function renderLogsTab\(\)/);
   assert.match(settingsSource, /function renderSettingsTab\(\)/);
+  assert.match(workspacesSource, /function renderWorkspaceTab\(\)/);
+  assert.match(workspacesStyles, /\.branch-cleanup-layout\s*\{[^}]*display:\s*grid;/s);
+  assert.match(workspacesStyles, /\.worktree-dashboard\s*\{[^}]*display:\s*grid;/s);
+  assert.match(workspacesStyles, /\.submodule-dashboard\s*\{[^}]*display:\s*grid;/s);
+  assert.doesNotMatch(styles, /\.branch-cleanup-layout|\.worktree-dashboard|\.submodule-dashboard/);
+});
+
+test("context menus load on first use while positioning helpers stay eager", () => {
+  assert.match(indexHtml, /<script src="\.\/js\/features\/context-menu-loader\.js"><\/script>/);
+  assert.doesNotMatch(indexHtml, /<script src="\.\/js\/features\/context-menus\.js"><\/script>/);
+  assert.match(contextMenuLoaderSource, /async function ensureContextMenusLoaded\(\)/);
+  assert.match(contextMenuLoaderSource, /function positionContextMenu\(menu, event, fallbackHeight = 220\)/);
+  assert.match(contextMenuLoaderSource, /async function showCommitContextMenuLazy\(event, commit\)/);
+  assert.match(contextMenuSource, /function showCommitContextMenu\(event, commit\)/);
+  assert.doesNotMatch(contextMenuSource, /function positionContextMenu\(/);
+  assert.match(eventsSource, /showCommitContextMenuLazy\(event, commit\)/);
 });
 
 test("ordinary command hints become hover titles without duplicate text", () => {
@@ -199,10 +250,10 @@ test("settings makes the current update state explicit", () => {
   assert.match(settingsSource, /settings-update-recovery/);
   assert.match(settingsSource, /data-settings-action="installUpdate"/);
   assert.match(eventsSource, /action === "installUpdate"[\s\S]*?installAppUpdate\(\)/);
-  assert.match(styles, /\.settings-update-status\.current/);
-  assert.match(styles, /\.settings-update-status\.available/);
-  assert.match(styles, /\.settings-update-progress\s*\{/);
-  assert.match(styles, /\.settings-update-recovery\.danger/);
+  assert.match(settingsStyles, /\.settings-update-status\.current/);
+  assert.match(settingsStyles, /\.settings-update-status\.available/);
+  assert.match(settingsStyles, /\.settings-update-progress\s*\{/);
+  assert.match(settingsStyles, /\.settings-update-recovery\.danger/);
 });
 
 test("operation log shows live Git output and exposes real cancellation", () => {
@@ -245,9 +296,19 @@ test("operation log shows live Git output and exposes real cancellation", () => 
   assert.match(cancelledMarkup, /已取消/);
   assert.match(apiSource, /startOperationPolling\(\);/);
   assert.match(apiSource, /fetch\("\/api\/operations"/);
+  assert.match(apiSource, /async function cancelRunningOperation\(id, options = \{\}\)/);
+  assert.doesNotMatch(logsSource, /async function cancelRunningOperation\(/);
   assert.match(eventsSource, /data-operation-cancel/);
   assert.match(repositoriesSource, /cancelCloneOrClose[\s\S]*?cancelRunningOperation/);
-  assert.match(styles, /\.operation-log-command\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(logsStyles, /\.operation-log-command\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.doesNotMatch(styles, /\.logs-toolbar|\.operation-log-item|\.log-empty/);
+});
+
+test("file insights keep their panel-only styles out of the startup stylesheet", () => {
+  assert.match(fileInsightsStyles, /\.file-history-head\s*\{/);
+  assert.match(fileInsightsStyles, /\.file-blame-list\s*\{/);
+  assert.match(fileInsightsStyles, /\.state-pill\.renamed\s*\{/);
+  assert.doesNotMatch(styles, /\.file-history-head|\.file-blame-list|\.state-pill/);
 });
 
 test("self update results restore the previous repository and distinguish rollback failures", async () => {
@@ -409,6 +470,52 @@ test("startup reapplies a requested ref after restoring the repository", async (
   assert.deepEqual(JSON.parse(JSON.stringify(saved)), [selected.repo]);
 });
 
+test("desktop repository handoff waits for startup and keeps the latest pending path", async () => {
+  let openRepositoryHandler = null;
+  let resolveInit;
+  const opened = [];
+  const initPromise = new Promise((resolve) => { resolveInit = resolve; });
+  const context = vm.createContext({
+    window: {
+      Forkline: {},
+      forklineDesktop: {
+        onOpenRepository(handler) {
+          openRepositoryHandler = handler;
+          return () => {};
+        },
+      },
+    },
+    state: {},
+    defaultRecoveryPolicy: () => ({}),
+    initLocale: async () => {},
+    initTheme: () => {},
+    initLayoutResizers: () => {},
+    initCommandHints: () => {},
+    initWorktreeAutoRefresh: () => {},
+    updateAmendMode: () => {},
+    reportDesktopRecoveryState: () => {},
+    init: () => initPromise,
+    restoreDesktopRecoveryDraft: async () => false,
+    openRepo: async (repository) => { opened.push(repository); return true; },
+    toast: (message) => { throw new Error(message); },
+  });
+  vm.runInContext(bootstrapSource, context);
+
+  assert.equal(typeof openRepositoryHandler, "function");
+  openRepositoryHandler("D:\\RepoA");
+  openRepositoryHandler("D:\\RepoB");
+  await Promise.resolve();
+  assert.deepEqual(opened, []);
+
+  resolveInit();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, ["D:\\RepoB"]);
+
+  openRepositoryHandler("D:\\RepoC");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(opened, ["D:\\RepoB", "D:\\RepoC"]);
+});
+
 test("opening a repository refreshes only selected branch history", async () => {
   const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
   const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
@@ -462,13 +569,77 @@ test("opening a repository refreshes only selected branch history", async () => 
   assert.equal(context.els.searchInput.value, "");
 });
 
+test("repository switch state cleanup works before the lazy file editor search module loads", () => {
+  const start = repositoriesSource.indexOf("function clearRepoScopedActionState");
+  const end = repositoriesSource.indexOf("\nfunction repositorySwitchUnsavedItems", start);
+  assert.ok(start >= 0 && end > start);
+  const context = vm.createContext({ state: {}, els: {} });
+  vm.runInContext(repositoriesSource.slice(start, end), context);
+
+  assert.doesNotThrow(() => context.clearRepoScopedActionState());
+  assert.equal(context.state.fileEditor, null);
+});
+
+test("repository switches protect unsaved editor and commit drafts", () => {
+  assert.match(repositoriesSource, /function confirmRepositorySwitch\(repoPath\)/);
+  assert.match(repositoriesSource, /if \(!confirmRepositorySwitch\(repoPath\)\) return false;/);
+  assert.equal(
+    (repositoriesSource.match(/openAfter && !confirmRepositorySwitch\(targetPath\)/g) || []).length,
+    2
+  );
+});
+
+test("repository switch confirmation names every unsaved item and skips the current repository", () => {
+  const start = repositoriesSource.indexOf("function repositorySwitchUnsavedItems");
+  const end = repositoriesSource.indexOf("\nasync function openRepo", start);
+  assert.ok(start >= 0 && end > start);
+  const prompts = [];
+  const state = {
+    data: { repo: { path: "D:\\RepoA" } },
+    fileEditor: { file: "src/main.c" },
+  };
+  const els = {
+    commitSummary: { value: "修复显示" },
+    commitBody: { value: "" },
+  };
+  let editorDirty = true;
+  const context = vm.createContext({
+    state,
+    els,
+    fileEditorDirty: () => editorDirty,
+    repoPathSnapshot: () => state.data.repo.path,
+    normalizeRecentRepoPath: (value) => String(value).replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase(),
+    isCurrentRepoPath: (value) => value === state.data.repo.path,
+    confirm: (message) => { prompts.push(message); return false; },
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+  });
+  vm.runInContext(repositoriesSource.slice(start, end), context);
+
+  assert.equal(context.confirmRepositorySwitch("D:\\RepoB"), false);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /D:\\RepoB/);
+  assert.match(prompts[0], /src\/main\.c/);
+  assert.match(prompts[0], /提交信息草稿/);
+
+  assert.equal(context.confirmRepositorySwitch("D:\\RepoA"), true);
+  assert.equal(context.confirmRepositorySwitch("d:/repoa/"), true);
+  assert.equal(prompts.length, 1);
+
+  editorDirty = false;
+  state.fileEditor.recoverySnapshotChanged = true;
+  els.commitSummary.value = "";
+  assert.equal(context.confirmRepositorySwitch("D:\\RepoB"), false);
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /src\/main\.c/);
+});
+
 test("progressive repository open renders history before hydrating deferred details", async () => {
   const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
   const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
   const source = repositoriesSource.slice(start, end);
   const calls = [];
-  let resolveCoreState;
-  const coreStatePromise = new Promise((resolve) => { resolveCoreState = resolve; });
+  let resolveOpenDetails;
+  const openDetailsPromise = new Promise((resolve) => { resolveOpenDetails = resolve; });
   const progressive = {
     progressive: true,
     repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
@@ -487,17 +658,11 @@ test("progressive repository open renders history before hydrating deferred deta
     commits: [{ sha: "core-main" }],
     history: { limit: 120, loaded: 1, hasMore: false },
   };
-  const core = {
-    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
-    branches: ["main", "feature/test"],
+  const openDetails = {
+    repo: { operation: null },
     branchInfo: { main: { upstream: "origin/main" }, "feature/test": {} },
-    remotes: ["origin/main"],
-    remoteInfo: {},
-    sync: { branch: "main", unborn: false, remotes: [] },
     workingFiles: [{ file: "draft.txt", state: "M" }],
     tags: [{ name: "v1.0.0" }],
-    commits: [{ sha: "full-main" }],
-    history: { limit: 120, loaded: 1, hasMore: false },
   };
   const state = { openRepoRequestId: 9, repoHydrating: false };
   let renderAllCount = 0;
@@ -508,7 +673,7 @@ test("progressive repository open renders history before hydrating deferred deta
     els: { searchInput: { value: "old search" } },
     api: async (url) => {
       calls.push(url);
-      return coreStatePromise;
+      return openDetailsPromise;
     },
     clearOpenedRepoState: () => {},
     loadRecoveryPolicyForRepo: () => {},
@@ -529,7 +694,7 @@ test("progressive repository open renders history before hydrating deferred deta
   await Promise.resolve();
   await Promise.resolve();
 
-  assert.deepEqual(calls, ["/api/state?ref=main&details=core"]);
+  assert.deepEqual(calls, ["/api/open-details"]);
   assert.equal(renderAllCount, 1);
   assert.equal(state.repoHydrating, true);
   assert.equal(state.data.commits[0].sha, "core-main");
@@ -540,13 +705,15 @@ test("progressive repository open renders history before hydrating deferred deta
   state.data.repo.selectedRef = "feature/test";
   state.data.commits = [{ sha: "feature-head" }];
   state.data.history = { limit: 120, loaded: 1, hasMore: true };
-  resolveCoreState(core);
+  resolveOpenDetails(openDetails);
   assert.equal(await applying, true);
 
   assert.equal(state.repoHydrating, false);
   assert.equal(state.data.progressive, false);
   assert.equal(state.data.workingFiles[0].file, "draft.txt");
   assert.equal(state.data.tags[0].name, "v1.0.0");
+  assert.deepEqual(state.data.branches, ["main", "feature/test"]);
+  assert.equal(state.data.sync.branch, "main");
   assert.equal(state.data.branchCleanup, undefined);
   assert.equal(state.data.worktrees, undefined);
   assert.equal(state.data.submodules, undefined);
@@ -556,6 +723,126 @@ test("progressive repository open renders history before hydrating deferred deta
   assert.equal(state.selectedSha, "feature-head");
   assert.equal(state.data.commits[0].sha, "feature-head");
   assert.equal(renderStageCount, 1);
+});
+
+test("repository open falls back to local core state when detail fetch fails", async () => {
+  const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
+  const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
+  const source = repositoriesSource.slice(start, end);
+  const calls = [];
+  const messages = [];
+  const progressive = {
+    progressive: true,
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
+    branches: ["main"],
+    branchInfo: { main: {} },
+    remotes: ["origin/main"],
+    remoteInfo: {},
+    sync: { branch: "main", unborn: false, remotes: ["origin"] },
+    workingFiles: [],
+    tags: [],
+    commits: [{ sha: "initial-main" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
+  const localCore = {
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
+    branches: ["main"],
+    branchInfo: { main: { upstream: "origin/main" } },
+    remotes: ["origin/main"],
+    remoteInfo: {},
+    sync: { branch: "main", unborn: false, remotes: ["origin"] },
+    workingFiles: [{ file: "local-draft.txt", state: "M" }],
+    tags: [{ name: "local-v1" }],
+    commits: [{ sha: "fallback-main" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
+  const state = { openRepoRequestId: 12, repoHydrating: false };
+  const context = vm.createContext({
+    state,
+    els: { searchInput: { value: "" } },
+    api: async (url) => {
+      calls.push(url);
+      if (url === "/api/open-details") throw new Error("Failed to fetch");
+      return localCore;
+    },
+    clearOpenedRepoState: () => {},
+    loadRecoveryPolicyForRepo: () => {},
+    renderAll: () => {},
+    loadCommit: async () => {},
+    renderInspector: () => {},
+    renderRepo: () => {},
+    renderBranches: () => {},
+    renderStage: () => {},
+    updateAmendMode: () => {},
+    isCurrentRepoPath: (repoPath) => state.data?.repo?.path === repoPath,
+    toast: (message) => messages.push(message),
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+  });
+  vm.runInContext(source, context);
+
+  assert.equal(await context.applyOpenedRepoData(progressive, 12), true);
+
+  assert.deepEqual(calls, ["/api/open-details", "/api/state?ref=main&details=core"]);
+  assert.equal(state.repoHydrating, false);
+  assert.equal(state.data.progressive, false);
+  assert.equal(state.data.progressiveError, "");
+  assert.equal(state.data.progressiveWarning, "详情请求暂时失败，已使用本地 Git 数据打开仓库");
+  assert.equal(state.data.workingFiles[0].file, "local-draft.txt");
+  assert.equal(state.data.tags[0].name, "local-v1");
+  assert.equal(state.data.commits[0].sha, "initial-main");
+  assert.match(messages.join("\n"), /本地 Git 数据/);
+});
+
+test("repository open keeps local history readable when detail and fallback requests both fail", async () => {
+  const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
+  const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);
+  const source = repositoriesSource.slice(start, end);
+  const calls = [];
+  const messages = [];
+  const progressive = {
+    progressive: true,
+    repo: { path: "D:\\Repo", name: "Repo", branch: "main", selectedRef: "main", isSample: false },
+    branches: ["main"],
+    branchInfo: { main: {} },
+    remotes: ["origin/main"],
+    remoteInfo: {},
+    sync: { branch: "main", unborn: false, remotes: ["origin"] },
+    workingFiles: [],
+    tags: [],
+    commits: [{ sha: "local-main" }],
+    history: { limit: 120, loaded: 1, hasMore: false },
+  };
+  const state = { openRepoRequestId: 13, repoHydrating: false };
+  const context = vm.createContext({
+    state,
+    els: { searchInput: { value: "" } },
+    api: async (url) => {
+      calls.push(url);
+      throw new Error("Failed to fetch");
+    },
+    clearOpenedRepoState: () => {},
+    loadRecoveryPolicyForRepo: () => {},
+    renderAll: () => {},
+    loadCommit: async () => {},
+    renderInspector: () => {},
+    renderRepo: () => {},
+    renderBranches: () => {},
+    renderStage: () => {},
+    updateAmendMode: () => {},
+    isCurrentRepoPath: (repoPath) => state.data?.repo?.path === repoPath,
+    toast: (message) => messages.push(message),
+    t: (message, values = {}) => String(message).replace(/\{(\w+)\}/g, (_match, key) => String(values[key] ?? "")),
+  });
+  vm.runInContext(source, context);
+
+  assert.equal(await context.applyOpenedRepoData(progressive, 13), true);
+
+  assert.deepEqual(calls, ["/api/open-details", "/api/state?ref=main&details=core"]);
+  assert.equal(state.repoHydrating, true);
+  assert.equal(state.data.progressive, false);
+  assert.equal(state.data.progressiveError, "无法连接 Forkline 本地服务");
+  assert.equal(state.data.commits[0].sha, "local-main");
+  assert.match(messages.join("\n"), /提交历史已打开/);
 });
 
 test("repository detail loading discards superseded and switched-repository responses", async () => {
@@ -812,6 +1099,13 @@ test("transition-width topbar uses compact repository path columns", () => {
   assert.match(styles, /@media\s*\(max-width:\s*1040px\)[\s\S]*?\.path-open\s*\{[^}]*grid-template-columns:\s*minmax\(96px,\s*1fr\)\s+minmax\(96px,\s*116px\)\s+max-content;/s);
 });
 
+test("phone-width topbar moves repository actions onto a contained second row", () => {
+  assert.match(styles, /@media\s*\(max-width:\s*600px\)[\s\S]*?:root\s*\{[^}]*--header-h:\s*224px;/s);
+  assert.match(styles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.path-open\s*\{[^}]*height:\s*72px;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(104px,\s*128px\);[^}]*grid-template-rows:\s*30px\s+30px;/s);
+  assert.match(styles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.path-actions\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*grid-row:\s*2;[^}]*min-width:\s*0;/s);
+  assert.match(styles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.path-actions\s+\.btn\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1\s+1\s+0;/s);
+});
+
 test("worktree, index, and commit editor share one parallel bottom row", () => {
   const stageStart = indexHtml.indexOf('<section class="stage">');
   const stageEnd = indexHtml.indexOf("</section>", stageStart);
@@ -827,7 +1121,7 @@ test("worktree, index, and commit editor share one parallel bottom row", () => {
   assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*700px\)[\s\S]*?\.stage\s*\{[^}]*grid-template-columns:\s*220px\s+220px\s+minmax\(240px,\s*1fr\);/s);
   assert.match(worktreeSource, /els\.changeList\.innerHTML\s*=\s*`[\s\S]*?renderChangeSection\("unstaged"/s);
   assert.match(worktreeSource, /els\.stagedChangeList\.innerHTML\s*=\s*`[\s\S]*?renderChangeSection\("staged"/s);
-  assert.match(contextMenuSource, /action\s*===\s*"diff"[\s\S]*?await loadWorkingDiff\(context\.file\);[\s\S]*?openDiffModal\(\);/s);
+  assert.match(contextMenuSource, /action\s*===\s*"diff"[\s\S]*?await loadWorkingDiffLazy\(context\.file\);[\s\S]*?await openDiffModalLazy\(\);/s);
 });
 
 test("narrow layout preserves commit messages and contains the commit form", () => {
@@ -933,12 +1227,41 @@ test("history header exposes four draggable column separators", () => {
 test("minimum inspector width wraps controls instead of clipping labels", () => {
   assert.match(styles, /\.inspector\s*\{[^}]*container-name:\s*inspector-panel;/s);
   assert.match(styles, /@container\s+inspector-panel\s*\(max-width:\s*300px\)/);
-  assert.match(styles, /\.upstream-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
-  assert.match(styles, /\.settings-card-head\s*>\s*\.mini-btn\s*\{[^}]*width:\s*100%;/s);
+  assert.match(repositoryPanelStyles, /@container\s+inspector-panel\s*\(max-width:\s*300px\)[\s\S]*?\.upstream-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+  assert.match(settingsStyles, /\.settings-card-head\s*>\s*\.mini-btn\s*\{[^}]*width:\s*100%;/s);
 });
 
 test("sync panel grid buttons center their labels in both axes", () => {
-  assert.match(styles, /\.sync-actions \.mini-btn,\s*\.sync-section-head \.mini-btn,\s*\.upstream-actions \.mini-btn,\s*\.remote-actions \.mini-btn\s*\{[^}]*place-items:\s*center;[^}]*text-align:\s*center;/s);
+  assert.match(repositoryPanelStyles, /\.sync-actions \.mini-btn,\s*\.sync-section-head \.mini-btn,\s*\.upstream-actions \.mini-btn,\s*\.remote-actions \.mini-btn\s*\{[^}]*place-items:\s*center;[^}]*text-align:\s*center;/s);
+});
+
+test("repository tool panels keep their shared styles out of the startup stylesheet", () => {
+  assert.match(repositoryPanelStyles, /\.stash-layout,/);
+  assert.match(repositoryPanelStyles, /\.recovery-retention\s*\{/);
+  assert.match(repositoryPanelStyles, /\.auth-card\s*\{/);
+  assert.match(repositoryPanelStyles, /\.compare-picker\s*\{/);
+  assert.doesNotMatch(styles, /\.stash-layout|\.recovery-retention|\.auth-card|\.compare-picker/);
+});
+
+test("folder picker and command palette keep dedicated styles out of the startup stylesheet", () => {
+  assert.match(folderCommandStyles, /\.folder-dialog\s*\{[^}]*display:\s*grid;/s);
+  assert.match(folderCommandStyles, /\.folder-row\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(folderCommandStyles, /\.command-dialog\s*\{[^}]*width:\s*min\(680px,/s);
+  assert.match(folderCommandStyles, /\.command-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.doesNotMatch(styles, /\.folder-dialog|\.folder-head|\.folder-row|\.command-dialog|\.command-body|\.command-row/);
+  assert.match(styles, /\.checkout-modal\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /\.checkout-dialog\s*\{/);
+  assert.match(styles, /\.command-hint\s*\{/);
+});
+
+test("diff workbench keeps interactive layout out of the startup stylesheet", () => {
+  assert.match(styles, /\.diff-modal\s*\{[^}]*display:\s*none;/s);
+  assert.match(diffWorkbenchStyles, /\.diff-modal-head\s*\{[^}]*display:\s*flex;/s);
+  assert.match(diffWorkbenchStyles, /\.work-diff-feedback\s*\{[^}]*position:\s*sticky;/s);
+  assert.match(diffWorkbenchStyles, /\.diff-line-toolbar\s*\{[^}]*justify-content:\s*flex-end;/s);
+  assert.match(diffWorkbenchStyles, /\.side-row\.diff-line-selectable\s*\{[^}]*cursor:\s*pointer;/s);
+  assert.match(diffWorkbenchStyles, /\.hunk-actions\s*\{[^}]*position:\s*sticky;/s);
+  assert.doesNotMatch(styles, /\.diff-modal-head|\.work-diff-feedback|\.diff-line-toolbar|\.diff-line-selectable|\.hunk-actions|work-diff-target/);
 });
 
 test("minimum sidebar width contains branch rows and actions", () => {
@@ -962,6 +1285,17 @@ test("history editing controls are collapsed until a plan or queue needs attenti
   assert.match(styles, /\.commit-action-disclosure > summary\s*\{[^}]*justify-content:\s*center;[^}]*cursor:\s*pointer;/s);
 });
 
+test("history rewrite plan and queue keep full styles out of the startup stylesheet", () => {
+  assert.match(commitActionStyles, /\.history-plan-head\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(commitActionStyles, /\.history-plan-commit\s*\{[^}]*grid-template-columns:\s*42px\s+minmax\(0,\s*1fr\);/s);
+  assert.match(commitActionStyles, /\.history-queue-item\s*\{[^}]*grid-template-columns:\s*minmax\(108px,\s*0\.42fr\)\s+minmax\(0,\s*1fr\);/s);
+  assert.match(commitActionStyles, /\.history-queue-reword textarea\s*\{[^}]*resize:\s*vertical;/s);
+  assert.doesNotMatch(styles, /\.history-plan-head|\.history-plan-grid|\.history-plan-commit|\.history-queue-item|\.history-queue-reword|\.history-queue-preview-title/);
+  assert.match(styles, /\.history-plan\s*\{/);
+  assert.match(styles, /\.history-plan-empty\s*\{/);
+  assert.match(styles, /\.history-queue-empty\s*\{/);
+});
+
 test("commit operation buttons use a compact responsive grid", () => {
   assert.match(styles, /\.commit-action-tools\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*6px;/s);
   assert.match(styles, /\.commit-action-tools \.mini-btn\s*\{[^}]*white-space:\s*normal;/s);
@@ -981,8 +1315,8 @@ test("conflict choice buttons form an equal centered row", () => {
 });
 
 test("context menus stay accessible within short viewports", () => {
-  assert.match(styles, /\.context-menu\s*\{[^}]*max-height:\s*calc\(100vh\s*-\s*16px\);/s);
-  assert.match(styles, /\.context-menu\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(contextMenuStyles, /\.context-menu\s*\{[^}]*max-height:\s*calc\(100vh\s*-\s*16px\);/s);
+  assert.match(contextMenuStyles, /\.context-menu\s*\{[^}]*overflow-y:\s*auto;/s);
   assert.match(eventsSource, /document\.addEventListener\("scroll",\s*\(event\)\s*=>\s*\{\s*if\s*\(event\.target instanceof Element && event\.target\.closest\("\.context-menu"\)\) return;/s);
 });
 

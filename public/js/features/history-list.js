@@ -268,6 +268,16 @@ function updateCommitSelection(nextSha) {
   return true;
 }
 
+async function selectCommit(sha) {
+  if (!sha) return;
+  if (state.historyPlan?.sha !== sha) state.historyPlan = null;
+  setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
+  state.selectedSha = sha;
+  if (!updateCommitSelection(sha)) renderCommits({ inspector: "never" });
+  await loadCommit(sha);
+  renderInspector();
+}
+
 function scheduleCommitRender(delay = 90) {
   cancelScheduledCommitRender();
   state.commitSearchRenderTimer = window.setTimeout(() => {

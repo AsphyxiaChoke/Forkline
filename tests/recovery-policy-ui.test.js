@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
-const source = fs.readFileSync(path.join(root, "public", "js", "panels", "recovery.js"), "utf8");
+const source = fs.readFileSync(path.join(root, "public", "js", "features", "recovery-policy.js"), "utf8");
 const initSource = fs.readFileSync(path.join(root, "public", "js", "app", "init.js"), "utf8");
 const repositoriesSource = fs.readFileSync(path.join(root, "public", "js", "features", "repositories.js"), "utf8");
 

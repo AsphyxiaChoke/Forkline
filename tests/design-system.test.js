@@ -6,7 +6,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
-const styles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const baseStyles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const commitActionStyles = fs.readFileSync(path.join(root, "public", "commit-actions.css"), "utf8");
+const contextMenuStyles = fs.readFileSync(path.join(root, "public", "context-menu.css"), "utf8");
+const diffWorkbenchStyles = fs.readFileSync(path.join(root, "public", "diff-workbench.css"), "utf8");
+const editorStyles = fs.readFileSync(path.join(root, "public", "file-editor.css"), "utf8");
+const fileInsightsStyles = fs.readFileSync(path.join(root, "public", "file-insights.css"), "utf8");
+const folderCommandStyles = fs.readFileSync(path.join(root, "public", "folder-command.css"), "utf8");
+const logsStyles = fs.readFileSync(path.join(root, "public", "logs.css"), "utf8");
+const repositoryPanelStyles = fs.readFileSync(path.join(root, "public", "repository-panels.css"), "utf8");
+const settingsStyles = fs.readFileSync(path.join(root, "public", "settings.css"), "utf8");
+const workspacesStyles = fs.readFileSync(path.join(root, "public", "workspaces.css"), "utf8");
+const styles = `${baseStyles}\n${commitActionStyles}\n${contextMenuStyles}\n${diffWorkbenchStyles}\n${editorStyles}\n${fileInsightsStyles}\n${folderCommandStyles}\n${logsStyles}\n${repositoryPanelStyles}\n${settingsStyles}\n${workspacesStyles}`;
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const designSystem = fs.readFileSync(path.join(root, "docs", "DESIGN_SYSTEM.md"), "utf8");
 
@@ -22,6 +33,16 @@ const themeTokens = [
 test("design system is discoverable and identifies the code sources of truth", () => {
   assert.match(readme, /\[界面设计系统\]\(docs\/DESIGN_SYSTEM\.md\)/);
   assert.match(designSystem, /public\/styles\.css/);
+  assert.match(designSystem, /public\/commit-actions\.css/);
+  assert.match(designSystem, /public\/context-menu\.css/);
+  assert.match(designSystem, /public\/diff-workbench\.css/);
+  assert.match(designSystem, /public\/file-editor\.css/);
+  assert.match(designSystem, /public\/file-insights\.css/);
+  assert.match(designSystem, /public\/folder-command\.css/);
+  assert.match(designSystem, /public\/logs\.css/);
+  assert.match(designSystem, /public\/repository-panels\.css/);
+  assert.match(designSystem, /public\/settings\.css/);
+  assert.match(designSystem, /public\/workspaces\.css/);
   assert.match(designSystem, /public\/js\/app\/layout-utils\.js/);
   assert.match(designSystem, /tests\/browser-performance\.test\.js/);
 });

@@ -17,7 +17,9 @@ const diffWorkbenchSource = fs.readFileSync(path.join(root, "public", "js", "fea
 test("commit rows use container event delegation instead of per-row listeners", () => {
   assert.doesNotMatch(historySource, /row\.addEventListener\("(?:click|contextmenu)"/);
   assert.match(eventsSource, /els\.commitGraph\.addEventListener\("click"[\s\S]*?\.commit-row\[data-sha\]/);
-  assert.match(eventsSource, /els\.commitGraph\.addEventListener\("contextmenu"[\s\S]*?showCommitContextMenu/);
+  assert.match(eventsSource, /els\.commitGraph\.addEventListener\("contextmenu"[\s\S]*?showCommitContextMenuLazy/);
+  assert.match(historySource, /async function selectCommit\(sha\)/);
+  assert.doesNotMatch(contextMenuSource, /async function selectCommit\(sha\)/);
 });
 
 test("ordinary commit selection skips the full diff while sync preview requests it on demand", () => {
@@ -154,7 +156,6 @@ test("selecting a visible commit updates the selected row without rebuilding the
     renderInspector: () => { inspectorRenderCount += 1; },
   });
   vm.runInContext(historySource, context);
-  vm.runInContext(contextMenuSource, context);
   context.renderCommits = () => { renderCommitsCount += 1; };
 
   await context.selectCommit(second.sha);
@@ -189,7 +190,6 @@ test("selecting a commit outside the rendered graph keeps the full render fallba
     renderInspector: () => {},
   });
   vm.runInContext(historySource, context);
-  vm.runInContext(contextMenuSource, context);
   context.renderCommits = () => { renderCommitsCount += 1; };
 
   await context.selectCommit("c".repeat(40));

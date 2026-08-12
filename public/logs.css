@@ -1,0 +1,257 @@
+.logs-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.logs-toolbar > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.logs-toolbar strong,
+.logs-toolbar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-toolbar span {
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ui-diagnostics-section {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ui-diagnostics-section .logs-toolbar {
+  margin-bottom: 0;
+}
+
+.logs-toolbar-actions {
+  display: flex !important;
+  grid-template-columns: none !important;
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px !important;
+}
+
+.ui-diagnostic-item .operation-log-head {
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto;
+}
+
+.ui-diagnostic-item .log-status {
+  white-space: nowrap;
+}
+
+.ui-diagnostic-stack summary {
+  color: var(--quiet);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ui-diagnostic-stack pre {
+  max-height: 220px;
+  margin-top: 7px;
+}
+
+@media (max-width: 760px) {
+  .logs-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .logs-toolbar-actions {
+    justify-content: flex-end;
+  }
+}
+
+.operation-log-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.operation-log-item {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.operation-log-item.success {
+  border-left-color: var(--teal);
+}
+
+.operation-log-item.error {
+  border-left-color: var(--danger);
+}
+
+.operation-log-item.cancelled {
+  border-left-color: var(--quiet);
+}
+
+.operation-log-item.running {
+  border-left-color: var(--amber);
+}
+
+.operation-log-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.log-status {
+  min-width: 34px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(35, 199, 183, 0.14);
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.operation-log-item.error .log-status {
+  background: rgba(240, 99, 99, 0.12);
+  color: var(--danger);
+}
+
+.operation-log-item.cancelled .log-status {
+  background: color-mix(in srgb, var(--quiet) 16%, transparent);
+  color: var(--quiet);
+}
+
+.operation-log-item.running .log-status {
+  min-width: 46px;
+  background: rgba(240, 184, 91, 0.14);
+  color: var(--amber);
+}
+
+.running-log-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.running-log-title {
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operation-log-head strong,
+.operation-log-head em,
+.operation-log-meta span,
+.operation-log-meta code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-log-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.operation-log-head em {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.operation-log-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.operation-log-meta code {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.operation-log-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.operation-log-command code {
+  min-width: 0;
+  max-height: 76px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.operation-log-command .mini-btn {
+  min-width: 74px;
+  place-items: center;
+  text-align: center;
+}
+
+.operation-log-item pre {
+  max-height: 190px;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.log-empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  padding: 18px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  color: var(--quiet);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}

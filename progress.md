@@ -7568,3 +7568,1955 @@
 - `docs/CONTINUE.md`：记录正式 Tag、Release、Actions 和附件核验结果。
 - `progress.md`：追加正式发布证据、文件清单和不可移动 Tag 边界。
 - 正式 Tag 与 Release 不回退、不移动；如发布内容存在问题，最小修复方式是从当前 `main` 发布新的补丁版本。仅撤销本轮发布记录文档时，可对包含本记录的提交执行 `git revert <commit>`。
+## 2026-08-10 - Task: 修复历史文件对照窗口拉伸后的黑色空块
+
+### What was done
+
+- 修正延迟加载的 CodeMirror MergeView 样式覆盖问题，使历史文件左右对照编辑器随浮窗高度同步伸缩，不再固定为 `350px`。
+- 增加真实浏览器拉伸回归：先把窗口缩到 `520px`，再拉高到 `780px`，逐层检查内容区、MergeView 和左右 CodeMirror 的实际高度。
+
+### Testing
+
+- 修复前真实 Chromium 稳定复现：内容区从 `376px` 增长到 `635px`，左右 CodeMirror 仍停在 `350px`；新增回归按预期失败。
+- `node --test tests/file-editor-ui.test.js`：`31/31` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过。
+- `npm.cmd test`：完整回归 `196/196` 通过，0 失败、0 跳过。
+
+### Notes
+
+- `public/styles.css`：提高文件编辑器内 MergeView 和 CodeMirror 高度规则的选择器优先级，覆盖延迟加载资源中的固定高度。
+- `tests/browser-performance.test.js`：增加历史文件对照窗口缩小再拉大的真实高度断言。
+- `tests/file-editor-ui.test.js`：固定项目高度规则必须高于 CodeMirror MergeView 默认样式的契约。
+- `docs/CONTINUE.md`：记录问题原因、修复行为和验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前可执行 `git restore -- public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js docs/CONTINUE.md progress.md`，提交后可对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-10 - Task: 为双栏文件对照增加滚动条改动位置标记
+
+### What was done
+
+- 在普通双栏文件对照的旧版、新版滚动区域分别增加红色和绿色差异位置标记。
+- 点击标记可跳到对应差异块，悬停可查看两侧起始行和改动行数。
+- 编辑内容导致 MergeView 差异变化时自动刷新标记，并在关闭或重建编辑器时清理监听和节点。
+- 保持复杂文件、大文件轻量模式和三栏冲突编辑原有路径，不为这些场景重新计算完整差异。
+
+### Testing
+
+- `node --test tests/file-editor-ui.test.js`：`32/32` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；缩小对照窗口后两侧标记均位于轨道内，点击旧版标记后滚动位置大于 `0`。
+- `npm.cmd test`：完整回归 `197/197` 通过，0 失败、0 跳过。
+
+### Notes
+
+- `public/js/features/file-editor-actions.js`：根据 MergeView 现有差异块生成双侧标记并处理点击跳转和动态刷新。
+- `public/js/features/file-editor.js`：在普通双栏对照创建完成后启用标记监听，并保存相关生命周期状态。
+- `public/js/features/file-editor-window.js`：关闭或重建编辑器时解绑差异监听、取消待执行刷新并移除标记。
+- `public/styles.css`：增加滚动区域定位条及旧版红色、新版绿色标记样式。
+- `tests/browser-performance.test.js`：增加真实浏览器中的标记数量、边界、标题和点击滚动回归。
+- `tests/file-editor-ui.test.js`：增加双侧标记、颜色、监听和清理契约。
+- `docs/CONTINUE.md`：记录功能行为、性能边界和验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前可执行 `git restore -- public/js/features/file-editor-actions.js public/js/features/file-editor.js public/js/features/file-editor-window.js public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js docs/CONTINUE.md progress.md`，提交后可对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-10 - Task: 修复对照窗口提前显示和改动标记偏移
+
+### What was done
+
+- 文件内容、MergeView、慢文件自动降级和布局刷新全部完成后才显示编辑浮窗，避免用户看到尚未准备好的窗口并误认为页面卡死。
+- 使用不可见但参与布局的准备状态，保证 CodeMirror 在显示前即可获得真实窗口尺寸。
+- 将标记轨道位置与点击跳转统一为同一滚动目标公式，并在窗口拉伸后重新计算标记位置。
+- 隐藏准备期间仍保留关闭和失效结果清理能力，避免仓库切换或读取失败留下编辑器状态。
+
+### Testing
+
+- 修复前真实 Chromium 稳定复现：接口仍在等待时浮窗已经显示；标记轨道比例为 `0.328`，点击后的真实滚动比例为 `0.233`。
+- `node --test tests/file-editor-ui.test.js`：`33/33` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；读取期间浮窗不可见，完成后正常显示，标记比例与实际滚动比例误差小于 `0.03`。
+- `npm.cmd test`：完整回归 `198/198` 通过，0 失败、0 跳过；普通文件打开约 `111.0 ms`，慢文件首次降级约 `307.9 ms`。
+
+### Notes
+
+- `public/js/features/file-editor-actions.js`：统一标记轨道比例和点击跳转的滚动目标计算，并延后初始标记刷新。
+- `public/js/features/file-editor-window.js`：CodeMirror 尺寸刷新后立即重新定位改动标记。
+- `public/js/features/file-editor.js`：增加完整准备后显示的打开时序，并支持清理尚未显示的编辑器状态。
+- `public/styles.css`：增加编辑浮窗准备状态的不可见布局样式。
+- `tests/browser-performance.test.js`：增加延迟接口和标记滚动比例的真实浏览器回归。
+- `tests/file-editor-ui.test.js`：增加完整准备后显示、统一滚动公式和刷新时机契约。
+- `docs/CONTINUE.md`：记录问题原因、修复行为、实测偏移和性能结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前可执行 `git restore -- public/js/features/file-editor-actions.js public/js/features/file-editor.js public/js/features/file-editor-window.js public/styles.css tests/browser-performance.test.js tests/file-editor-ui.test.js docs/CONTINUE.md progress.md`，提交后可对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-10 - Task: 建立不使用浏览器内核的原生桌面首版
+
+### What was done
+
+- 在保留现有 Web 版的前提下新增 C# / .NET 8 / Avalonia 原生桌面工程，不使用 Chromium、WebView、本地 HTTP 服务或 Python。
+- 完成中文三栏响应式界面，可选择本地仓库并浏览本地/远端分支、提交历史、变更文件和旧版/新版文本。
+- Git 读取、解析和文本解码放在后台执行；仓库、分支、提交和文件切换会取消旧请求并终止仍在运行的 Git 进程树。
+- 增加 UTF-8、UTF-16、GB18030 文本读取，以及二进制和超过 4 MiB 文本的性能保护提示。
+- 增加 `native\start-native.cmd` 开发启动入口，并记录当前范围、构建方式和下一里程碑。
+
+### Testing
+
+- `.NET SDK 8.0.423`：安装并由 `dotnet --info` 确认。
+- `dotnet build native\Forkline.Native\Forkline.Native.csproj --no-restore`：成功，0 警告、0 错误。
+- `D:/桌面/GitTest` 真实运行：读取 9 个本地/远端引用、当前分支 20 条提交和首条提交 7 个变更文件；新增、删除文件的新旧内容与缺失提示正确。
+- Windows 200% DPI 视觉检查：最大化约 `1453×865` 逻辑视口和约 `1050×700` 逻辑窄窗口均无文字重叠、按钮越界或栏位覆盖；长分支名 `origin/local_debug` 完整显示。
+- Windows 无障碍接口快速选择 `local_debug → origin/main → 123`：最终引用为 `123`、20 条提交、7 个文件，进程 `Responding=True`。
+- 最终测试窗口和临时截图均已关闭或删除；没有遗留 Forkline 原生测试进程。
+
+### Notes
+
+- `.gitignore`：忽略 .NET `bin/obj` 和 Visual Studio 临时目录。
+- `native/Forkline.Native/`：新增原生应用、中文界面、MVVM 状态、Git 后台服务和数据模型。
+- `native/start-native.cmd`：新增开发期双击启动入口，并支持传入仓库路径。
+- `docs/NATIVE_DESKTOP.md`：记录技术基线、当前功能、性能边界和下一里程碑。
+- `README.md`：增加简短的原生桌面预览入口。
+- `docs/CONTINUE.md`：追加原生首版实现与真实高 DPI 验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚方式：删除 `native/` 和 `docs/NATIVE_DESKTOP.md`，并执行 `git restore -- .gitignore README.md docs/CONTINUE.md progress.md`；若后续已提交，则执行 `git revert <commit>`。
+
+## 2026-08-10 - Task: 精修 Avalonia 原生界面并增加 UI 缩放
+
+### What was done
+
+- 将 Web 版深色 Token、控件层次和主工作区密度映射到 Avalonia，精修标题栏、输入框、按钮、标签页、列表选中态、提交详情和底部三栏工作台。
+- 使用自绘标题栏替代系统标题栏，并补齐最小化、最大化/还原、关闭和标题区域拖动。
+- 增加 `75%`、`80%`、`90%`、`100%`、`110%` 五档 UI 缩放，默认 `90%`；缩放同时调整布局可用空间，不修改 Windows 系统缩放。
+- 有效宽度低于 `900` 时把固定右侧详情栏改为可呼出的覆盖面板；底部三栏使用横向滚动保留完整业务结构，避免低分辨率下文字重叠。
+
+### Testing
+
+- `dotnet build native\Forkline.Native\Forkline.Native.csproj --no-restore`：通过，0 警告、0 错误。
+- `dotnet format native\Forkline.Native\Forkline.Native.csproj --no-restore --verify-no-changes`：通过。
+- `git diff --check`：无空白错误；仅报告工作区现有 LF/CRLF 转换提示。
+- 使用 `D:\桌面\GitTest` 在 Windows 200% DPI 下实际载入 4 个本地分支、远端分支、提交图和 4 个工作区文件；最大化、约 `1050×700` 和约 `800×700` 逻辑窗口均无文字重叠或控件越界。
+- Windows 无障碍接口实测缩放到 `75%`、恢复到 `90%`，并在约 `800×700` 窗口打开/关闭详情覆盖面板；状态和交互均正确。
+- Forkline 原生测试窗口已关闭，所有临时验收截图已删除。
+
+### Notes
+
+- `native/Forkline.Native/App.axaml`：增加 Web 风格主题资源、渐变表面、控件状态、标签页、滚动条和窗口按钮样式。
+- `native/Forkline.Native/Views/MainWindow.axaml`：重排主界面、自绘标题栏、底部缩放控制、紧凑详情入口和可滚动三栏工作台。
+- `native/Forkline.Native/Views/MainWindow.axaml.cs`：增加窗口控制、五档 UI 缩放和紧凑详情覆盖逻辑。
+- `docs/NATIVE_DESKTOP.md`：记录当前只读工作区范围、界面映射、缩放档位和窄窗口行为。
+- `docs/CONTINUE.md`：追加原生界面精修、真实高 DPI 验证和下一里程碑。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚边界。
+- 回滚方式：提交后对包含本轮改动的提交执行 `git revert <commit>`；提交前 `native/` 仍包含上一轮未提交成果，禁止直接删除目录或执行整体 `git restore`，应仅反向撤销本记录列出的三个原生界面文件和两段文档增量。
+
+## 2026-08-11 - Task: 放弃 Avalonia 并建立 Electron 桌面试用外壳
+
+### What was done
+
+- 放弃需要维护第二套界面和功能的 Avalonia 方向，改为 Electron 直接承载现有 Forkline Web 界面与 Git 后端。
+- Electron 自动选择空闲本机端口、启动 `server.js`、支持启动参数打开仓库，并在最后一个窗口关闭时终止后台服务。
+- 渲染进程启用上下文隔离、关闭 Node 集成并开启沙箱；外部链接交给系统浏览器，Windows 顶栏保留原生窗口控制区。
+- 增加双击启动入口、试用文档和外壳契约测试；现有 Web 启动和便携包流程保持不变。
+
+### Testing
+
+- `node --check electron/main.js`：通过。
+- `node --check electron/preload.js`：通过。
+- `node --test tests/electron-shell.test.js`：`2/2` 通过。
+- `npm.cmd install --save-dev electron@latest`：未完成；首次受沙箱外 npm 缓存写入权限限制，申请联网安装后又被权限审核服务 `503 Service Unavailable` 阻断。
+- 因 Electron 尚未安装，真实窗口、`D:/桌面/GitTest` 自动载入和退出后端口释放仍未验证，不能标记为可发布桌面版本。
+
+### Notes
+
+- `package.json`：指定 Electron 主进程入口并增加桌面启动命令。
+- `electron/main.js`：新增单实例窗口、本机服务生命周期、启动仓库和外部链接边界。
+- `electron/preload.js`：为复用的 Web 界面标记 Electron 运行环境。
+- `start-electron.cmd`：新增桌面版双击启动入口和缺少依赖时的中文提示。
+- `public/styles.css`：把 Web 顶栏设为可拖动区域，并为 Windows 原生窗口按钮预留空间。
+- `tests/electron-shell.test.js`：增加安全配置、服务退出和标题栏交互区域契约。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：记录 Electron 试用方式、运行边界和未完成的真实验收。
+- `progress.md`：追加本轮实现、验证缺口、文件清单和回滚方式。
+- Avalonia 产品源码已删除；`native/` 仅剩忽略的 `obj` 构建缓存，递归清理同样被权限审核服务 `503` 阻断，不影响 Electron 源码和 Git 状态判断。
+- 提交前回滚时，先删除 `electron/`、`start-electron.cmd`、`docs/ELECTRON_DESKTOP.md` 和 `tests/electron-shell.test.js`，再执行 `git restore -p -- package.json README.md public/styles.css docs/CONTINUE.md progress.md` 逐块撤销本轮修改；不得整体恢复这些共享脏文件。
+
+## 2026-08-11 - Task: 完成 Electron 安装、Windows 启动修复和真实窗口验收
+
+### What was done
+
+- 安装并锁定 Electron `43.3.0`，生成依赖锁文件和完整 Windows x64 运行目录。
+- 修复 Windows/npm 把带引号仓库路径继续作为含引号字符串传入的问题，真实中文路径可在启动阶段正确识别。
+- 修复双击脚本的 UTF-8、BOM 和 LF 换行兼容问题，使 `cmd.exe` 能稳定执行中文提示与括号命令块。
+- 通过开发命令和最终双击入口分别启动 Electron，确认自动打开 `GitTest`、关闭窗口结束后台服务，并保留最终窗口供用户查看。
+
+### Testing
+
+- `npm.cmd install --save-dev electron@latest`：安装 Electron `43.3.0`，新增 13 个包，审计 14 个包，`0` 个漏洞。
+- Electron Windows x64 运行包通过镜像完整下载；`electron.exe` 大小为 `225441792` 字节。
+- `node --check electron/main.js`：通过。
+- `node --test tests/electron-shell.test.js`：`4/4` 通过，覆盖隔离配置、标题栏交互区、带引号中文路径和批处理 UTF-8 CRLF 契约。
+- `npm.cmd run desktop -- "D:\桌面\GitTest"`：真实启动成功；API 确认仓库为 `D:/桌面/GitTest`、分支为 `123`。
+- `start-electron.cmd "D:\桌面\GitTest"`：最终用户入口真实启动成功；不再输出内部批处理命令，API 再次确认仓库和分支正确。
+- Windows 200% DPI 窗口截图为 `1453×865`；现有 Web 排版、中文字体、分支标签和提交图无重叠，Electron 进程 `Responding=True`。
+- 退出后随机端口 `54786`、`52228`、`51608` 均确认关闭；最终窗口使用 `53876` 并按用户试用需求保留运行。
+
+### Notes
+
+- `package.json`、`package-lock.json`：锁定 Electron 开发依赖和完整依赖树。
+- `electron/main.js`：改为使用独立的启动仓库路径解析器。
+- `electron/startup-repository.js`：新增 Windows 外层引号清理和启动仓库识别。
+- `tests/electron-shell.test.js`：新增中文路径与 Windows 批处理编码、换行回归。
+- `start-electron.cmd`：固定 UTF-8 代码页、无 BOM UTF-8 和 CRLF，保留中文缺少依赖提示。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：更新为已完成开发态真实验收，并保留正式打包边界。
+- `progress.md`：追加本轮安装、修复、真实证据、文件清单和回滚方式。
+- 当前仍未加入正式安装包、代码签名和 Electron 自动更新；这三项不能因开发态窗口可用而视为完成。
+- 提交前回滚时，删除 `electron/`、`start-electron.cmd`、`docs/ELECTRON_DESKTOP.md`、`tests/electron-shell.test.js` 和 `package-lock.json`，再执行 `git restore -p -- package.json README.md public/styles.css docs/CONTINUE.md progress.md` 逐块撤销本轮修改；`node_modules/` 可单独删除且不影响源码。共享脏文件禁止整体恢复。
+
+## 2026-08-11 - Task: 修正 Electron 顶部栏排版并增加持久界面缩放
+
+### What was done
+
+- Electron 桌面窗口增加 `75%`、`80%`、`90%`、`100%`、`110%` 五档界面缩放，新安装默认 `90%`。
+- 在设置页加入桌面专用缩放选择，并支持 `Ctrl+-`、`Ctrl++`、`Ctrl+0` 快捷键；缩放结果写入用户偏好文件并在下次启动恢复。
+- 调整 Electron 中等逻辑宽度下的顶部栏断点和原生窗口按钮预留空间，使仓库、搜索和同步操作在缩放后保持紧凑对齐。
+
+### Testing
+
+- `node --check electron/main.js`：通过。
+- `node --check electron/preload.js`：通过。
+- `node --test tests/electron-shell.test.js`：`6/6` 通过，覆盖缩放归一化、步进、持久化、设置入口和顶部栏断点。
+- `node --test tests/layout-ui.test.js tests/i18n.test.js tests/i18n-loader.test.js`：`46/46` 通过。
+- 真实 Electron 验证：`75%` 时逻辑宽度 `1920px`，操作区右边界 `1770px`，保留 `150px` 原生按钮区域；`90%` 时逻辑宽度 `1600px`、顶部栏约 `104px`，设置页 `90%` 按钮正确选中。
+
+### Notes
+
+- `electron/desktop-zoom.js`：新增缩放档位、默认值、步进和用户偏好读写。
+- `electron/main.js`、`electron/preload.js`：接入启动恢复、IPC、快捷键和渲染层最小桥接。
+- `public/js/core.js`、`public/js/panels/settings.js`、`public/js/app/events.js`、`public/js/i18n-catalog.js`：增加桌面缩放状态、设置入口、交互和中英文文案。
+- `public/styles.css`：增加缩放选项样式和 Electron 中等逻辑宽度顶部栏布局。
+- `tests/electron-shell.test.js`：增加桌面缩放和顶部栏契约回归。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：记录桌面缩放用法、持久化位置和真实验收结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚时删除 `electron/desktop-zoom.js`，并逐块撤销上述共享文件中的本轮缩放增量；不得整体恢复这些文件，以免覆盖工作区中尚未提交的 Electron 外壳和历史文件性能改动。
+
+## 2026-08-11 - Task: 将 Electron 原生窗口按钮移入独立标题栏
+
+### What was done
+
+- 将 Windows 最小化、最大化和关闭按钮从业务顶部栏覆盖区域移到最上方独立标题栏。
+- 把 Electron 页面明确分成独立标题栏、业务顶部栏和工作区三行，删除业务操作区为系统按钮硬留的 `150px` 和 `160px` 空位。
+- 原生标题栏覆盖高度随界面缩放同步调整，使五档缩放下系统按钮始终与独立标题栏对齐。
+
+### Testing
+
+- 修复前 `node --test tests/electron-shell.test.js`：新增独立标题栏回归按预期失败，`5/6` 通过。
+- `node --check electron/main.js`：通过。
+- `node --test tests/electron-shell.test.js`：`6/6` 通过。
+- `node --test tests/layout-ui.test.js tests/i18n.test.js tests/i18n-loader.test.js`：`46/46` 通过。
+- 真实 Electron `90%`：页面逻辑宽度 `1800px`，独立标题栏 `40px`，业务顶部栏范围为 `40px` 至约 `144px`，工作区从约 `144px` 开始。
+- 真实 Electron `75%`：页面逻辑宽度 `1920px`，独立标题栏 `40px`，业务顶部栏范围为 `40px` 至 `144px`，工作区从 `144px` 开始；缩放偏好最终恢复为 `90%`。
+
+### Notes
+
+- `electron/main.js`：按界面缩放计算并同步 Windows 原生标题栏覆盖高度。
+- `public/styles.css`：增加独立拖动标题栏和三行页面结构，移除系统按钮对业务顶部栏的覆盖式留白。
+- `tests/electron-shell.test.js`：把标题栏契约改为独立行、业务栏下移和旧留白移除。
+- `docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：更新桌面标题栏行为和真实缩放验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚时仅反向撤销上述五个文件中的本轮独立标题栏增量；这些文件同时包含尚未提交的 Electron 外壳、缩放和其他工作区改动，禁止整体恢复。
+
+## 2026-08-11 - Task: 校准 Electron 右上角原生按钮与独立标题栏
+
+### What was done
+
+- 取消按界面缩放手工计算 Windows 原生标题栏高度，避免 DPI 和页面缩放叠加后出现小数像素偏差。
+- Windows 原生按钮区恢复固定 `40px`，页面独立标题栏改为直接采用 Electron 提供的 `titlebar-area-height` 环境值。
+- 保留独立标题栏、业务顶部栏、工作区三行结构，只修正右上角系统按钮与标题栏边界的校准方式。
+
+### Testing
+
+- 修复前 `node --test tests/electron-shell.test.js`：新增系统环境高度回归按预期失败，`5/6` 通过。
+- `node --check electron/main.js`：通过。
+- `node --test tests/electron-shell.test.js`：`6/6` 通过。
+- `node --test tests/layout-ui.test.js tests/i18n.test.js tests/i18n-loader.test.js`：`46/46` 通过。
+- 真实 Electron `75%`：系统标题栏环境值约 `54px`，业务顶部栏起点为 `54px`。
+- 真实 Electron `90%`：系统标题栏环境值为 `45px`，业务顶部栏起点约为 `45px`；验证后恢复用户原有 `75%` 偏好。
+
+### Notes
+
+- `electron/main.js`：原生标题栏使用固定标准高度，不再随 Web 缩放手工重算。
+- `public/styles.css`：独立标题栏高度改为 `env(titlebar-area-height, 40px)`。
+- `tests/electron-shell.test.js`：增加系统标题栏环境值契约并禁止恢复手工高度计算。
+- `docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：更新右上角原生按钮校准机制和真实测量结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚时仅反向撤销上述五个文件中的本轮校准增量；共享脏文件禁止整体恢复。
+
+## 2026-08-11 - Task: 减少 Electron 开发修改触发的混合 DPI 指针异常
+
+### What was done
+
+- 增加仅开发态启用的 `public/` 文件监听，把连续保存合并为一次现有页面热刷新，不再为样式和前端脚本修改反复关闭、创建和最大化 Electron 窗口。
+- 保持普通桌面启动、后台 Git 服务和正式打包行为不变；Electron 主进程或服务端改动仍明确要求手动重启。
+- 将当前诊断结论记录为 Windows 双屏混合 DPI 下的指针缓存触发问题，避免把系统指针异常误判为页面持续高负载。
+
+### Testing
+
+- `node --check electron/main.js`、`node --check electron/renderer-reloader.js`、`node --check tests/electron-shell.test.js`：通过。
+- `node --test --test-concurrency=1 tests/electron-shell.test.js`：`8/8` 通过，覆盖开发开关、打包禁用、连续变化去抖和停止监听。
+- 真实运行 `npm.cmd run desktop:dev -- "D:\桌面\GitTest"`：创建和删除临时前端探针均触发窗口内刷新；主 Electron PID 保持 `24136`，后台服务 PID 保持 `11616`，随机端口保持 `51124`，当前仓库和 `123` 分支未变化。
+- 临时探针文件已删除；测试窗口和随机端口在本轮结束前关闭并复查。
+
+### Notes
+
+- `package.json`：增加仅供开发使用的 `desktop:dev` 启动命令。
+- `electron/main.js`：接入开发态监听、现有页面无缓存刷新和退出清理。
+- `electron/renderer-reloader.js`：新增开发开关判断与连续文件变化去抖监听。
+- `tests/electron-shell.test.js`：增加热刷新启用边界和监听生命周期回归。
+- `docs/ELECTRON_DESKTOP.md`：记录热刷新命令、适用范围和仍需重启的文件类型。
+- `docs/CONTINUE.md`：记录指针异常证据、缓解策略和真实进程验证。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；删除 `electron/renderer-reloader.js`，并逐块撤销上述共享文件中的本轮热刷新增量。当前 Electron 文件仍包含此前未提交成果，禁止整体删除 `electron/` 或整体恢复共享文件；提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 记忆 Electron 上次屏幕与窗口状态
+
+### What was done
+
+- Electron 首次启动继续使用默认最大化，后续启动恢复上次所在显示器、普通窗口尺寸和最大化状态，不再固定回到主屏后重新最大化。
+- 恢复前校验当前显示器工作区；上次屏幕断开时丢弃失效坐标，窗口超过当前低分辨率工作区时自动收回可见范围。
+- 移动、拉伸、最大化和还原事件使用延迟合并保存，关闭窗口前立即刷新；最大化时保存可还原尺寸，避免下次普通窗口误用整屏矩形。
+
+### Testing
+
+- 先增加窗口状态模块回归并确认因模块不存在而失败，再实现后转为通过。
+- `node --check electron/main.js`、`node --check electron/desktop-window-state.js`、`node --check tests/electron-shell.test.js`：通过。
+- `node --test --test-concurrency=1 tests/electron-shell.test.js`：`12/12` 通过，覆盖双屏工作区收回、拔屏回退、状态读写和主窗口生命周期接入。
+- 真实双屏工作区：主屏 `0,0 / 1440x852`，左侧竖屏 `-864,-102 / 864x1488`。普通窗口在竖屏移动、拉伸并等待写入后，状态文件保存 `x=-820`、`y=-300`、`802x901`、非最大化；重开后渲染层为 `-827,-300 / 820x912`，仍位于竖屏。
+- 把同一竖屏普通尺寸标记为最大化后重开，渲染层边界为 `-864,-640 / 864x1489`，与竖屏报告的可用区域完全一致，设备像素比为 `0.9375`；仓库保持 `D:/桌面/GitTest`、分支 `123`。
+- 测试后恢复原有主屏最大化窗口偏好；Electron 进程、调试端口 `9333` 和最后一个随机服务端口 `53386` 均确认关闭。
+
+### Notes
+
+- `electron/desktop-window-state.js`：新增窗口状态校验、跨屏工作区收回及 JSON 读写。
+- `electron/main.js`：接入窗口状态恢复、事件合并保存和关闭前刷新。
+- `tests/electron-shell.test.js`：增加双屏、拔屏、持久化和主进程生命周期回归。
+- `README.md`：补充桌面版会记住上次窗口状态的用户说明。
+- `docs/ELECTRON_DESKTOP.md`：记录保存位置、恢复规则和手动重置方式。
+- `docs/CONTINUE.md`：记录双屏真实验证数据、仓库保持和资源清理结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；删除 `electron/desktop-window-state.js`，并逐块撤销上述共享文件中的本轮窗口状态增量。当前 Electron 与文档仍包含此前未提交成果，禁止整体删除目录或整体恢复共享文件；提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 增加 Electron 页面恢复并隔离 Git 状态警告
+
+### What was done
+
+- 增加 Electron 页面无响应和渲染进程崩溃处理，短暂停顿先等待，只在用户明确选择后重载或退出。
+- 让页面持续上报当前仓库、文件编辑器和提交草稿的未保存状态，弹窗会在重载前明确说明丢失风险。
+- 审计全部直接 `git status` 调用，把成功命令的 stderr 警告与机器可解析的 stdout 分开，避免警告被当成工作区文件。
+- 稳定真实 Chromium 性能回归的启动、CDP 超时、关闭和诊断输出，并隔离自动化测试的 Git 配置目录。
+- 用语义主题变量替换 Electron 标题栏剩余的硬编码颜色，保持六套皮肤契约一致。
+
+### Testing
+
+- `node --test tests/backend-modules.test.js`：`3/3` 通过，包括直接 `git status` 调用的 stdout-only 守卫。
+- `node --test tests/electron-shell.test.js`：`19/19` 通过，覆盖无响应延迟、恢复取消、未保存内容提示、崩溃原因和主进程接线。
+- `node --test tests/design-system.test.js`：`4/4` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；3012 条历史渲染约 `4.6 ms`，4000 文件渐进首屏约 `162 ms`、完整详情约 `727 ms`，30 次编辑器开关后 DOM 和监听器无增长。
+- `node --test tests/git-api.test.js`：本轮正常桌面权限基线 `29/29` 通过；完成调用点审计后，受限环境中除进程树取消外的 `28/28` 均通过。唯一环境缺口为沙箱拒绝 `taskkill /T /F`，错误文本为“拒绝访问”。
+- `npm.cmd test`：`217/218` 通过；唯一失败与上述沙箱 `taskkill` 权限一致，其他 Web、Electron、Git、更新、主题和性能回归通过。
+- 所有 `[DEBUG-fetch-cancel]` 临时诊断输出已删除。
+
+### Notes
+
+- `electron/renderer-health.js`：新增恢复状态归一化、无响应延迟、崩溃原因和用户选择控制。
+- `electron/main.js`：接入页面无响应、恢复、渲染进程停止和恢复状态 IPC。
+- `electron/preload.js`：在隔离桥接中增加有限的恢复状态上报接口。
+- `public/js/core.js`：生成有界的桌面恢复快照并避免重复上报。
+- `public/js/app/events.js`、`public/js/app/init.js`、`public/js/bootstrap.js`、`public/js/features/file-editor-window.js`、`public/js/features/file-editor.js`、`public/js/features/git-actions.js`：在提交草稿、编辑器和仓库状态变化时同步恢复快照。
+- `public/styles.css`：使用语义颜色变量完善 Electron 标题栏的多主题契约。
+- `server/git-branch-service.js`、`server/git-history-service.js`、`server/git-operations-service.js`、`server/git-worktree-service.js`、`server/repository-history.js`、`server/repository-state-service.js`、`server/repository-submodule-service.js`、`server/repository-worktree-service.js`：机器解析的 Git 状态调用只读取 stdout。
+- `tests/backend-modules.test.js`：增加全部直接 `git status` 调用的静态契约守卫。
+- `tests/electron-shell.test.js`：增加页面健康、恢复风险和 Electron 事件接线回归。
+- `tests/browser-performance.test.js`：稳定 Chromium/CDP 生命周期、超时诊断和真实工作区数量断言，并隔离 Git 配置。
+- `tests/git-api.test.js`：隔离 Git 的 XDG 配置目录。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：记录桌面恢复行为、Git 警告隔离、性能数据和已知验证环境限制。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚边界。
+- 回滚点为本轮开始前 `c607f2c`。提交前应仅逐块撤销本记录列出的健康保护、Git 输出隔离和测试稳定化增量，不得整体恢复共享脏文件或删除整个 `electron/`；提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 资源清理：确认无项目测试进程，端口 `5177`、`5287`、`5288` 均已关闭，并删除全部匹配的 Forkline 浏览器性能和取消用例临时目录。
+- 旧 `native/` 目录删除前已确认没有 `bin/obj` 之外的文件；删除后路径不存在，没有触及 Electron 或共享 Web 源码。
+
+## 2026-08-11 - Task: 降低大型工作区静默刷新开销
+
+### What was done
+
+- 5 秒静默轮询携带当前工作区快照；文件没有变化时，后端只返回快照和未完成 Git 操作状态，不再传输完整文件对象。
+- 前端优先使用服务端工作区快照判断变化，无变化时保留现有文件树；未完成操作变化时只更新冲突/继续操作横幅，不重建文件列表或当前 Diff。
+- 手动刷新、文件内容变化和储藏列表读取继续返回完整状态，保持原有文件树层级、暂存、储藏和冲突处理语义。
+
+### Testing
+
+- 先增加工作区轻量响应、文件变化回退完整响应、静默轮询跳过渲染和操作横幅更新回归，并确认旧实现 `7/11` 通过、4 项按预期失败；实现后 `tests/worktree-refresh.test.js` 为 `11/11` 通过。
+- `node --test --test-concurrency=1 --test-name-pattern="worktree polling returns a compact unchanged response" tests/git-api.test.js`：`1/1` 通过，真实临时 Git 仓库验证无变化短响应和继续编辑后的完整响应。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；4000 文件完整响应约 `1,012,121` 字节，无变化响应 `121` 字节，文件树首批 800 个并可继续载入全部 4000 个，最大事件循环延迟约 `114 ms`。
+- `npm.cmd test`：`222/223` 通过；唯一失败仍为受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，本轮新增和其余 Web、Electron、Git、主题、更新及性能回归全部通过。尝试在正常桌面权限下单独复跑时，权限审批服务返回 `503 auth_unavailable`，因此未能在本轮重新取得该环境证据。
+- `node --check public/js/features/worktree-refresh.js`、`node --check public/js/features/worktree-changes.js`、`node --check server/repository-worktree-service.js`、`node --check server.js`、`node --check tests/browser-performance.test.js`：通过。
+- `git diff --check`：通过，仅有仓库既有的 LF/CRLF 提示；端口 `5177`、`5287`、`5288` 均未监听。
+
+### Notes
+
+- `public/js/features/worktree-refresh.js`：静默请求携带快照，处理 `unchanged` 响应并避免文件树重绘。
+- `public/js/features/worktree-changes.js`：签名优先使用服务端快照，并支持只替换未完成操作横幅。
+- `server/repository-worktree-service.js`：匹配 `expectedSnapshot` 时返回轻量状态，储藏请求保持完整响应。
+- `server.js`：把工作区接口的 `expectedSnapshot` 查询参数传给仓库服务。
+- `tests/worktree-refresh.test.js`：增加快照签名、静默轮询、操作横幅和储藏完整响应回归。
+- `tests/git-api.test.js`：增加真实仓库无变化/继续编辑接口回归。
+- `tests/browser-performance.test.js`：验证 4000 文件无变化响应体积和现有完整文件树性能边界。
+- `README.md`、`docs/CONTINUE.md`：记录自动刷新行为、完整请求边界和真实性能数据。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前应只逐块撤销本记录列出的工作区轮询增量，不得整体恢复共享脏文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 降低大型工作区空闲扫描频率
+
+### What was done
+
+- 对 4000 文件热刷新做分段基准，确认剩余主要成本是逐文件元数据检查，而不是 `git status`、响应体解析或文件树首屏渲染。
+- 仅当工作区达到 800 个文件且连续没有变化时，把自动轮询从 5 秒逐步退避到 10、20、30 秒；重新聚焦、检测到变化或小工作区继续使用 5 秒。
+- 保持手动刷新、Git 操作后刷新、文件内容快照、冲突横幅和完整工作区状态语义不变，没有采用会连续阻塞 Node 线程的同步文件读取，也没有依赖可能漏事件的文件监听缓存。
+
+### Testing
+
+- 临时 4000 文件基准中，`git status` 三次约 `59-78 ms`，热 `readWorkingStatus` 约 `192 ms`，不同异步并发下 4000 次 `stat` 约 `183-200 ms`；同步 `stat` 约 `139 ms`，但会整段阻塞 Node 线程，因此未采用。完整热读取约 `255-398 ms`，无变化响应保持 `121` 字节。临时基准脚本和系统临时仓库均已删除。
+- 先修改退避回归并确认旧实现 `8/12` 通过、4 项按预期失败；实现后 `node --test --test-concurrency=1 tests/worktree-refresh.test.js` 为 `12/12` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；4000 文件完整/无变化响应仍为 `1,012,121/121` 字节，首批 800 个文件和后续 4 批完整载入、仓库切换、编辑器连续开关、DOM、监听器和 GC 后堆边界均通过。
+- `npm.cmd test`：`223/224` 通过；唯一失败仍是受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，新增退避以及其余 Web、Electron、Git、更新、主题和真实性能回归全部通过。
+- 首屏性能门限通过：默认资源 `37` 个、`738,688` 字节，未把编辑器或英文词典重新放回启动路径。
+
+### Notes
+
+- `public/js/features/worktree-refresh.js`：增加大工作区无变化轮询退避、刷新结果分类和重新聚焦立即检查。
+- `tests/worktree-refresh.test.js`：覆盖小工作区固定 5 秒、大工作区退避上限、变化复位、隐藏页面停扫和重新聚焦刷新。
+- `README.md`、`docs/CONTINUE.md`：记录退避条件、时间序列、响应边界、性能依据和当前回归基线。
+- `progress.md`：追加本轮实现、基准、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只撤销本记录列出的自动轮询退避增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 资源清理：完整测试曾留下两个 `forkline-operation-cancel-*` 临时目录；逐项确认没有 `slow-ssh.pid` 或测试助手进程后按明确路径删除。最终工作区扫描、浏览器性能和取消测试临时目录均为 0，Node 监听端口为 0，`5177`、`5287`、`5288` 均未监听。
+
+## 2026-08-11 - Task: 降低大型工作区文件树滚动载入停顿
+
+### What was done
+
+- 保持工作区文件树首屏显示 800 个文件，把后续滚动续载从每批 800 个缩小为每批 400 个，避免一次向页面追加过多文件行。
+- 对工作区目录组增加布局和绘制隔离，并让 Chromium 跳过屏幕外文件行的实际绘制；完整 DOM、目录归纳、折叠、选择、双击和全部文件访问保持不变。
+- 增加真实浏览器回归，记录每批同步处理、帧完成时间和事件循环延迟，并守卫单帧追加上限及屏幕外绘制跳过状态。
+
+### Testing
+
+- 先运行 `npm.cmd run test:browser`，确认旧实现因单帧追加 800 行按预期失败；修复后连续三次真实 Chromium 回归均为 `1/1` 通过。
+- 4000 文件夹具中，未启用屏幕外绘制跳过时完整续载约 `916 ms`、最大事件循环延迟约 `227 ms`；最终两次专项复测约为 `623-629 ms`、`89-100 ms`。完整回归内再次测得约 `638 ms`、`115 ms`，首屏仍为 800 行，8 批后完整访问 4000 行。
+- `node --test --test-concurrency=1 tests/worktree-refresh.test.js`：`12/12` 通过；`node --check public/js/features/worktree-changes.js` 和 `node --check tests/browser-performance.test.js`：通过。
+- `npm.cmd test`：`223/224` 通过；唯一失败仍是受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，本轮工作区、浏览器、Electron、Git、主题和更新相关回归均通过。
+- `git diff --check`：通过，仅有仓库既有的 LF/CRLF 提示。项目 Node 监听端口、`5177`、`5287`、`5288` 均为空；完整测试遗留的唯一 `forkline-operation-cancel-*` 临时目录已按明确路径删除。
+
+### Notes
+
+- `public/js/features/worktree-changes.js`：拆分首屏文件上限和后续续载批次，分别保持 800 和 400。
+- `public/styles.css`：为工作区目录组增加布局/绘制隔离，并为屏幕外文件行启用 `content-visibility`。
+- `tests/browser-performance.test.js`：增加分批载入诊断、400 行上限和屏幕外绘制状态回归。
+- `README.md`、`docs/CONTINUE.md`：记录大型工作区渐进显示方式、行为边界和真实性能数据。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的文件树续载和绘制优化，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 降低首屏资源并按需加载设置与储藏面板
+
+### What was done
+
+- 审计大工作区后端读取后，实测把 Node 文件系统线程池提高到 16 没有稳定收益，因此没有引入全局线程数调整或额外资源占用。
+- 把设置和储藏面板从默认首屏脚本清单移出，新增共享右栏面板加载器；第一次打开对应页签时才加载真实模块，后续直接复用。
+- 同一面板的并发渲染只插入一个脚本；加载失败会移除失败资源并显示重试入口，用户切到其他页后完成的旧加载不会覆盖当前右栏。
+
+### Testing
+
+- 先修改首屏资源与模块顺序回归，确认旧实现为 `38/40`，两项按预期失败；实现后加载器、布局和首屏资源专项为 `42/42` 通过。
+- 中文首屏从 `37` 个资源、`738,911` 字节降到 `36` 个资源、`718,820` 字节，减少 `20,091` 字节；设置与储藏实现文件不再出现在首屏清单。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；启动时设置/储藏渲染函数和资源均不存在，首次打开分别约 `12-23 ms`，连续两次渲染各只加载一个脚本，DOM、监听器和 GC 后堆边界保持稳定。
+- `npm.cmd test`：`225/226` 通过；唯一失败仍是受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，设置、储藏、Electron、Git、主题、更新和其余真实性能回归全部通过。
+- `node --check public/js/panels/inspector-panel-loader.js`、`node --check tests/browser-performance.test.js` 和 `git diff --check`：通过，仅有仓库既有的 LF/CRLF 提示。
+- 线程池对照使用 `UV_THREADPOOL_SIZE=16` 运行真实 Chromium，4000 文件完整/无变化 API 约 `419/261 ms`，与默认线程池约 `432-447/252-259 ms` 没有稳定差异，因此未保留该实验。
+
+### Notes
+
+- `public/index.html`：首屏改为加载共享右栏面板加载器，不再直接加载设置和储藏实现。
+- `public/js/panels/inspector-panel-loader.js`：新增设置/储藏模块的按需、去重、失败重试和切页保护。
+- `public/js/panels/inspector.js`：设置和储藏页签改走共享按需加载入口。
+- `public/js/i18n-catalog.js`：增加通用面板加载与失败提示的英文翻译。
+- `tests/inspector-panel-loader.test.js`：覆盖并发去重和失败后重试。
+- `tests/startup-resource-budget.test.js`、`tests/layout-ui.test.js`、`tests/browser-performance.test.js`：守卫首屏排除项、脚本顺序和真实浏览器首次加载行为。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：记录用户行为、性能数据和新的脚本加载顺序。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的按需面板加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载标签面板并继续降低首屏资源
+
+### What was done
+
+- 把标签面板加入现有共享右栏加载器，从默认首屏脚本清单移除 `tags.js`；第一次打开“标签列表”时才载入，后续直接复用。
+- 保留标签列表选择、按钮操作和标签行右键菜单的原有行为；加载器仍提供并发去重、失败重试和切页保护。
+- 首屏资源守卫新增标签模块排除项，布局和真实浏览器回归同步固定新的加载边界。
+
+### Testing
+
+- 加载器、布局和首屏资源专项：`43/43` 通过；中文首屏为 `35` 个资源、`712,397` 字节，相比上一基线减少 1 个请求和 `6,423` 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；设置/储藏/标签首次加载约 `11-23 ms`，标签行右键菜单正常，复杂历史文件、大工作区、渐进打开和长时间开关编辑器边界保持稳定。
+- `npm.cmd test`：`226/227` 通过；唯一失败仍是受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，本轮标签加载、右键操作及其余 Git、Electron、更新和性能回归全部通过。
+- `git diff --check` 在本轮收尾检查中执行；仅允许仓库既有的 LF/CRLF 提示，不接受新增空白错误。
+
+### Notes
+
+- `public/index.html`：移除标签实现的首屏脚本声明。
+- `public/js/panels/inspector-panel-loader.js`：加入标签面板资源和渲染器定义。
+- `public/js/panels/inspector.js`：标签页签改走共享按需加载入口。
+- `tests/inspector-panel-loader.test.js`：覆盖标签首次加载及实际复制动作函数可用。
+- `tests/startup-resource-budget.test.js`、`tests/layout-ui.test.js`、`tests/browser-performance.test.js`：守卫标签不进入首屏，并验证真实标签渲染和右键菜单。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：记录用户行为、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的标签按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载分支整理、工作树和子模块面板
+
+### What was done
+
+- 把包含分支整理、工作树和子模块的 `workspaces.js` 从默认首屏脚本清单移出，三个页签第一次打开时才共同加载该模块。
+- 为共享右栏加载器增加多页签模块支持；工作区模块加载期间即使用户切换到另一个关联页签，完成后也只渲染当前页，不会回写旧页。
+- 保留三个面板的刷新、创建、打开、清理和子模块操作；左侧分支右键菜单继续使用原有独立实现，不受模块拆出影响。
+
+### Testing
+
+- 先增加首屏、加载器和布局回归，旧实现为 `41/44`，三项按预期失败；实现及测试夹具补齐后专项为 `44/44` 通过。
+- 中文首屏从 `35` 个资源、`712,397` 字节降到 `34` 个资源、`680,879` 字节，减少 1 个请求和 `31,518` 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；工作区管理模块首次加载约 `11.5 ms`，三个页签复用同一个脚本，复杂文件、3012 条提交、4000 文件工作区和长时间编辑器开关边界稳定。
+- `npm.cmd test`：`227/228` 通过；唯一失败仍是受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，分支整理、工作树、子模块、Electron、Git 与其余性能回归全部通过。
+- `node --check` 与 `git diff --check` 通过；`5177/5287/5288` 和 Node 监听均为 0。完整回归失败项留下 1 个 `forkline-operation-cancel-*` 临时夹具，删除审批服务返回 `503 auth_unavailable`，因此本轮未绕过权限清理，后续获得明确授权后只删除该已验证位于系统 TEMP 内的目录。
+
+### Notes
+
+- `public/index.html`：移除工作区管理模块的首屏脚本声明。
+- `public/js/panels/inspector-panel-loader.js`：增加多页签工作区模块定义和当前页签保护。
+- `public/js/panels/inspector.js`、`public/js/panels/workspaces.js`：三个页签改走共享按需入口，并由模块按当前页签分派实际渲染器。
+- `public/js/i18n-catalog.js`：补充分支与工作区加载提示的英文文案。
+- `tests/inspector-panel-loader.test.js`、`tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：覆盖模块拆出、共享加载、快速切页、首屏门限和真实浏览器复用。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：记录用户行为、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的工作区面板按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 资源清理：真实浏览器与完整测试服务均已退出，唯一 `forkline-operation-cancel-*` 临时目录已按明确路径删除；项目 Node 监听端口、`5177`、`5287`、`5288` 均为空。
+
+## 2026-08-11 - Task: 按需加载恢复点面板并保留启动保护
+
+### What was done
+
+- 把恢复点页面、列表、筛选、reflog 和页面操作从默认首屏拆出，第一次打开“恢复点”时由共享右栏加载器载入，后续直接复用。
+- 把启动、仓库切换、设置页和危险操作需要的恢复策略保留为轻量首屏模块；恢复策略、清理确认和后端候选校验语义不变。
+- 清理完成后的选择恢复不再调用按需页面中的筛选函数：原选择仍存在时保留，否则选择新的第一项，消除启动模块对页面模块的反向依赖。
+- 中文首屏资源数量保持 34 个，总体积由 680,879 降到 655,389 字节，减少 25,490 字节。
+
+### Testing
+
+- 先确认旧实现的加载器、布局和首屏资源回归为 `42/45`，三项按预期失败；拆分后恢复策略、加载器、布局和首屏资源专项为 `49/49` 通过。
+- `node --check public/js/features/recovery-policy.js`、`node --check public/js/panels/recovery.js`：通过；`git diff --check`：通过，仅有仓库既有的 LF/CRLF 提示。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；启动时 `renderRecoveryTab` 未定义、恢复策略已可用，首次打开恢复点页面约 108.2 ms，只加载 1 个恢复资源。复杂文件、3012 条历史、4000 文件工作区和反复开关编辑器边界保持稳定。
+- `npm.cmd test`：`228/229` 通过；唯一失败仍是受限环境中 Windows 长时间 fetch 取消测试等待进程树退出超时，本轮恢复策略、恢复点、Electron、Git 与其余性能回归全部通过。
+- 测试服务已退出，`5177`、`5287`、`5288` 监听数量均为 0。
+
+### Notes
+
+- `public/js/features/recovery-policy.js`：新增首屏恢复策略、偏好、整理确认和危险操作后清理模块。
+- `public/js/panels/recovery.js`：只保留恢复点页面、筛选、reflog 和页面动作。
+- `public/js/panels/inspector-panel-loader.js`、`public/js/panels/inspector.js`：增加恢复点模块定义并让恢复页走共享按需入口。
+- `public/index.html`：首屏用轻量恢复策略模块替换完整恢复点页面脚本。
+- `tests/recovery-policy-ui.test.js`、`tests/inspector-panel-loader.test.js`、`tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：固定策略模块边界、恢复页首次加载、首屏排除项和真实 Chromium 行为。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的恢复点按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 旧测试临时目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-operation-cancel-WsjQez` 仍存在但没有进程或端口占用；本轮未绕过此前失败的删除权限审核。
+
+## 2026-08-11 - Task: 按需加载文件历史与逐行追踪
+
+### What was done
+
+- 把文件历史和逐行追踪的渲染、API 请求、刷新与跳转动作从首屏 `inspector.js` 拆到共享按需模块。
+- 保留轻量打开入口和原有仓库/引用/文件请求键；重复打开共用同一进行中的 Promise，旧请求丢弃和图谱外提交跳转语义保持不变。
+- 文件历史与逐行追踪共用一个资源和加载 Promise；快速切页期间完成的加载只渲染当前页签。
+- 中文首屏资源数保持 34 个，总体积由 655,389 降到 646,883 字节，减少 8,506 字节。
+
+### Testing
+
+- `node --check public/js/panels/file-insights.js`、`node --check public/js/panels/inspector.js`、`node --check public/js/panels/inspector-panel-loader.js`：通过。
+- `node --test tests\inspector-panel-loader.test.js tests\layout-ui.test.js tests\startup-resource-budget.test.js`：`46/46` 通过；首屏诊断为 34 个资源、646,883 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；启动时文件历史、逐行追踪和共享渲染器均未定义，首次打开 `small.c` 后两页均有记录，只加载 1 个 `fileInsights` 资源，两页合计约 230.5 ms。
+- `npm.cmd test`：`229/230` 通过；唯一失败仍是受限 Windows 环境中长时间 fetch 进程树取消后等待响应超时，本轮文件追踪、其他 Git、Electron 与性能回归全部通过。
+- 测试服务和项目 Node/Git 进程已退出，`5177`、`5287`、`5288` 监听数均为 0；本轮新生成的两个取消测试临时目录已按明确路径删除。
+
+### Notes
+
+- `public/js/panels/file-insights.js`：新增文件历史与逐行追踪的共享按需实现。
+- `public/js/panels/inspector.js`：只保留右栏分派、打开入口和引用选择，移除文件追踪的重实现。
+- `public/js/panels/inspector-panel-loader.js`：增加文件历史/逐行追踪共享模块定义。
+- `tests/inspector-panel-loader.test.js`、`tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：固定按需边界、共享资源、首屏排除项和真实浏览器行为。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、加载边界、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的文件追踪按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 旧临时目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-operation-cancel-WsjQez` 仍存在但没有相关进程或端口占用；本轮没有绕过既有权限边界删除它。
+
+## 2026-08-11 - Task: 按需加载同步页认证与远端诊断
+
+### What was done
+
+- 把 `auth.js` 从默认首屏脚本清单移出，第一次打开“同步情况”时由共享右栏加载器载入，后续直接复用。
+- 认证模块继续提供远端列表、连接诊断、认证助手和系统凭据入口；仅增加轻量同步页渲染入口。
+- `sync.js` 中的同步状态合并、轻量刷新和推送保护保留在首屏，顶栏和 Git 动作的调用边界不变。
+- 中文首屏从 34 个资源、646,883 字节降到 33 个资源、628,513 字节，减少 1 个请求和 18,370 字节。
+
+### Testing
+
+- 先增加同步按需回归，旧实现为 `44/47`，同步加载、首屏脚本排除和资源预算三项按预期失败；实现后 `47/47` 通过。
+- `node --check public/js/panels/auth.js`、`node --check public/js/panels/inspector.js`、`node --check public/js/panels/inspector-panel-loader.js`：通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；启动时 `renderSyncPanel` 和 `loadAuthDiagnostics` 均未定义，打开同步页后只加载 1 个同步认证资源，页面约 47.8 ms 可用；完整回归内复测约 40.3 ms。
+- `npm.cmd test`：`230/231` 通过；唯一失败仍是受限 Windows 环境中长时间 fetch 进程树取消后等待响应超时，本轮同步 API、认证、其他 Git、Electron 与性能回归全部通过。
+- 测试服务、项目 Node/Git 进程已退出，`5177`、`5287`、`5288` 监听数均为 0；本轮新生成的取消测试临时目录已按明确路径删除。
+
+### Notes
+
+- `public/index.html`：移除同步认证模块的首屏脚本声明。
+- `public/js/panels/auth.js`：增加按需同步页渲染入口，保留认证与远端诊断实现。
+- `public/js/panels/inspector.js`、`public/js/panels/inspector-panel-loader.js`：同步页改走共享按需加载入口。
+- `tests/inspector-panel-loader.test.js`、`tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：覆盖首屏排除、单资源复用、同步页真实渲染和性能基线。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、启动/按需边界、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的同步认证按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 旧临时目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-operation-cancel-WsjQez` 仍存在但没有相关进程或端口占用；本轮没有绕过既有权限边界删除它。
+
+## 2026-08-11 - Task: 将同步页展示整体移入按需模块
+
+### What was done
+
+- 把同步页布局、待拉取/待推送提交列表与预览、upstream、远端管理、PR 入口和认证展示从首屏同步核心移入现有按需模块；第一次打开“同步情况”时一次载入完整页面，后续直接复用。
+- 首屏同步核心只保留状态合并、仓库快照校验、轻量刷新和推送保护，顶栏抓取/拉取/推送、命令面板与 Git 动作不依赖同步页面先完成加载。
+- 中文首屏资源数保持 33 个，体积从 `628,513` 降到 `615,018` 字节，再减少 `13,495` 字节；相对本轮开始的 `34 / 655,389` 累计减少 1 个请求和 `40,371` 字节。
+
+### Testing
+
+- `node --test tests\inspector-panel-loader.test.js tests\layout-ui.test.js tests\recovery-policy-ui.test.js tests\startup-resource-budget.test.js`：`51/51` 通过，首屏诊断为 33 个资源、615,018 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；完整同步页首次按需加载约 `38-49 ms`，文件历史与逐行追踪约 `198-225 ms`，4000 文件、3012 条提交、编辑器反复开关、DOM、监听器和堆边界均通过。
+- `npm.cmd test`：`230/231` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，本轮同步、Git、Electron 和真实性能回归其余项目全部通过。
+- `node --check public/js/panels/sync.js`、`node --check public/js/panels/auth.js`、`node --check public/js/panels/inspector-panel-loader.js` 和 `git diff --check`：通过，仅有仓库既有的 LF/CRLF 提示。
+- 测试服务与项目 Node/Git/SSH 测试进程均已退出，`5177`、`5287`、`5288` 监听数为 0；本轮新生成的 `forkline-operation-cancel-FcxCJN` 已按确认的 TEMP 路径删除，旧目录 `forkline-operation-cancel-WsjQez` 保留。
+
+### Notes
+
+- `public/js/panels/sync.js`：只保留首屏需要的同步状态、轻量刷新和推送保护核心。
+- `public/js/panels/auth.js`：承接完整同步页布局、提交预览、upstream/远端、PR 和认证诊断展示。
+- `public/js/panels/inspector-panel-loader.js`：同步页加载完成后直接调用按需模块渲染器，保留资源去重、失败重试和快速切页保护。
+- `tests/inspector-panel-loader.test.js`、`tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：固定完整同步页按需边界、首屏门限和真实浏览器行为。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：记录同步模块职责、用户加载行为、最终首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的同步页展示按需化增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载分支比较页
+
+### What was done
+
+- 把分支/引用比较页面从默认首屏脚本清单移入现有共享右栏加载器；第一次进入“分支比较”或从分支右键发起比较时才载入，后续复用同一资源。
+- 保留首屏 `openCompareBranch()` 和真实比较 API 请求；页面资源与结果无论谁先就绪，都按当前比较状态渲染，交换引用、刷新、提交跳转和文件 Diff 行为不变。
+- 中文首屏从 `33` 个资源、`615,018` 字节降到 `32` 个资源、`606,029` 字节，减少 1 个请求和 `8,989` 字节。
+
+### Testing
+
+- 先增加比较页加载器、布局和首屏排除回归，确认旧实现为 `45/48`，三项按预期失败；实现后专项 `48/48` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；通过 `openCompareBranch("HEAD", "HEAD~1")` 发起真实比较后，首次 API、资源加载和渲染约 `249-291 ms`，比较资源节点保持 1 个。3012 条提交、4000 文件、编辑器浸泡、DOM、监听器和堆边界继续通过。
+- `npm.cmd test`：`231/232` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，本轮比较页、Git、Electron 和真实性能回归其余项目全部通过。
+- `node --check public/js/panels/inspector-panel-loader.js`、`node --check public/js/panels/inspector.js`、`node --check tests/browser-performance.test.js` 和 `git diff --check`：通过，仅有仓库既有的 LF/CRLF 提示。
+- 测试服务与项目 Node/Git/SSH 测试进程均已退出，`5177`、`5287`、`5288` 监听数为 0；本轮新生成的 `forkline-operation-cancel-vYkrvN` 已按确认的 TEMP 路径删除，旧目录 `forkline-operation-cancel-WsjQez` 保留。
+
+### Notes
+
+- `public/index.html`：移除分支比较页面的首屏脚本声明。
+- `public/js/panels/inspector-panel-loader.js`：增加比较页资源、渲染器和加载状态定义。
+- `public/js/panels/inspector.js`：比较页改走共享按需加载入口。
+- `tests/inspector-panel-loader.test.js`：覆盖比较资源首次加载、动作函数就绪和重复打开复用。
+- `tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`：守卫比较页不进入首屏，并固定加载器连接和新资源基线。
+- `tests/browser-performance.test.js`：从真实比较请求入口验证首次载入、页面渲染、资源复用和性能边界。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：记录用户行为、模块职责、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的比较页按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载操作日志面板并保留取消能力
+
+### What was done
+
+- 把操作日志列表、界面诊断、复制/清空和页面刷新从默认首屏移入共享右栏按需模块；第一次打开“操作日志”时载入，后续复用同一资源。
+- 把长时间 Git 操作轮询和取消核心保留在首屏 API 层；日志页面未载入时，克隆窗口和运行中操作提示仍可取消，确认、按钮禁用和结果提示语义不变。
+- 中文首屏从 `32 / 606,029` 降到 `31 / 598,497`，减少 1 个请求和 `7,532` 字节；相对 `37 / 738,911` 累计减少 6 个请求和 `140,414` 字节。
+
+### Testing
+
+- `node --check public/js/api.js`、`node --check public/js/panels/logs.js`、`node --check public/js/panels/inspector-panel-loader.js`、`node --check public/js/panels/inspector.js`、`node --check tests/browser-performance.test.js`：全部通过。
+- `node --test tests\api-repo-context.test.js tests\inspector-panel-loader.test.js tests\layout-ui.test.js tests\startup-resource-budget.test.js`：`53/53` 通过，首屏诊断为 31 个资源、598,497 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；启动时 `renderLogsTab` 未定义而 `cancelRunningOperation` 已定义，首次打开日志页只载入 1 个日志资源并显示工具栏，九个按需模块合计保持 9 个资源。3012 条提交、4000 文件、编辑器浸泡、DOM、监听器和堆边界继续通过。
+- `npm.cmd test`：`233/234` 通过；唯一失败仍是受限 Windows 环境中长时间 fetch 进程树取消后等待响应超时，本轮新增日志按需测试、其他 Git、Electron 与性能回归全部通过。
+- `5177`、`5287`、`5288` 无监听；没有遗留的 Forkline Node、Git、Edge 或 Electron 测试进程。
+
+### Notes
+
+- `public/index.html`：移除操作日志页面的首屏脚本声明。
+- `public/js/api.js`：承接长操作轮询和取消核心，保证日志模块未载入时仍能取消。
+- `public/js/panels/logs.js`：只保留操作日志、界面诊断和页面刷新实现。
+- `public/js/panels/inspector-panel-loader.js`、`public/js/panels/inspector.js`：增加日志模块定义并让操作日志页走共享按需入口。
+- `tests/api-repo-context.test.js`、`tests/inspector-panel-loader.test.js`、`tests/layout-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：固定取消能力首屏边界、日志资源首开复用、首屏排除项和真实 Chromium 行为。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、模块边界、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的操作日志按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 本轮失败用例生成的 `C:\Users\Administrator\AppData\Local\Temp\forkline-operation-cancel-beLRs5` 仍存在但没有相关进程或端口占用；自动删除权限审核服务暂时不可用，本轮未绕过权限边界处理。旧目录 `forkline-operation-cancel-WsjQez` 继续保留。
+
+## 2026-08-11 - Task: 按需加载右键菜单并继续降低首屏资源
+
+### What was done
+
+- 把完整右键菜单实现移出默认首屏；第一次右键提交、分支、文件、Tag、远端或 reflog 时载入，所有入口共用同一个加载 Promise，失败后可清理资源并重试。
+- 把普通提交选择移到首屏历史模块，并把菜单定位、关闭和上下文清理保留在轻量加载器中；左键浏览和文件编辑器专属右键行为保持不变。
+- 中文首屏资源数保持 31 个，体积由 598,497 降到 581,019 字节，减少 17,478 字节；相对 37 / 738,911 累计减少 6 个请求和 157,892 字节。
+
+### Testing
+
+- 相关前端和测试脚本 `node --check`：全部通过。
+- 右键菜单加载、布局、提交选择、文件编辑和首屏资源专项：`85/85` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；首次右键菜单约 `10.6 ms`，只载入 1 个资源，后续菜单复用。
+- `npm.cmd test`：`238/239` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，本轮右键菜单、Git、Electron 和其余性能回归全部通过。
+- `5177`、`5287`、`5288` 无监听；本轮新临时目录 `forkline-operation-cancel-HBVdDB` 已清理。旧目录 `forkline-operation-cancel-WsjQez` 与 `forkline-operation-cancel-beLRs5` 保留且没有相关进程或端口占用。
+
+### Notes
+
+- `public/js/features/context-menu-loader.js`：新增首次右键按需加载、资源复用、失败重试以及首屏菜单定位和关闭能力。
+- `public/js/features/context-menus.js`、`public/js/features/history-list.js`：完整菜单只保留菜单行为，普通提交选择迁回首屏历史模块。
+- `public/index.html`、`public/js/app/events.js`、`public/js/features/branches.js`、`public/js/features/file-tree.js`：首屏改用加载器，提交、分支、文件、Tag、远端和 reflog 入口统一走按需包装函数。
+- `tests/context-menu-loader.test.js`、`tests/layout-ui.test.js`、`tests/commit-selection-performance.test.js`、`tests/file-editor-ui.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：覆盖首次加载、并发复用、失败重试、首屏边界和真实浏览器行为。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的右键菜单按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载目录选择与命令面板实现
+
+### What was done
+
+- 把目录读取、目录弹窗、命令搜索和命令执行从默认首屏拆入首次使用资源；点击“选择”或打开命令面板共用同一个加载 Promise，失败后可清理并重试。
+- 保留右栏页签切换、上下文判断和详情读取触发在首屏，提交、分支、文件和右侧面板行为不依赖完整目录/命令实现。
+- 中文首屏资源数保持 31 个，体积由 581,019 降到 569,571 字节，减少 11,448 字节；相对 37 / 738,911 累计减少 6 个请求和 169,340 字节。
+
+### Testing
+
+- `node --check` 覆盖目录/命令加载器、完整实现、事件绑定、加载器测试、首屏资源测试和真实浏览器测试：全部通过。
+- 加载器、同步页上下文、布局和首屏资源专项：`48/48` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；命令面板首次载入约 `4.1 ms`，完整回归内约 `8.1 ms`，只加载 1 个资源并正常打开和关闭；大历史、大工作区、冲突编辑器与浸泡边界继续通过。
+- `npm.cmd test`：`242/243` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，本轮目录/命令面板、Git、Electron 和其余性能回归全部通过。
+- 本轮新临时目录 `forkline-operation-cancel-IhWXXN` 已按明确路径删除；旧目录 `forkline-operation-cancel-WsjQez` 与 `forkline-operation-cancel-beLRs5` 保留且没有相关进程或端口占用。
+
+### Notes
+
+- `public/js/features/folder-command.js`：改为首屏加载器和右栏上下文模块，提供资源复用、失败重试和轻量入口。
+- `public/js/features/folder-command-implementation.js`：承接目录浏览、目录弹窗和命令面板完整实现。
+- `public/js/app/events.js`：目录和命令相关事件统一调用按需入口，错误继续使用现有中文提示。
+- `tests/folder-command-loader.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：覆盖首屏排除、并发复用、失败重试、右栏上下文保留和真实浏览器首次打开。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、模块边界、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的目录/命令面板按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载文件编辑器专用样式
+
+### What was done
+
+- 把文件编辑器浮窗、CodeMirror 覆盖和 `720px` 窄屏规则从全局样式表拆到 `public/file-editor.css`，只浏览提交图和工作区时不再请求或解析这部分样式。
+- 文件编辑器第一次打开时先等待项目编辑器样式和 CodeMirror 样式全部就绪，再按原顺序载入编辑器脚本；后续打开继续复用同一组资源，失败重试边界不变。
+- 中文首屏资源数保持 31 个，体积由 `569,571` 降到 `550,908` 字节，减少 `18,663` 字节；相对 `37 / 738,911` 累计减少 6 个请求和 `188,003` 字节。
+
+### Testing
+
+- 相关脚本 `node --check`：全部通过；文件编辑器、加载器、首屏门限、浏览器性能与设计系统专项此前同轮验证为 `81/81` 通过。
+- 文档同步后重跑 `node --test tests\file-editor-ui.test.js tests\file-editor-loader.test.js tests\startup-resource-budget.test.js tests\design-system.test.js`：`42/42` 通过，首屏诊断为 31 个资源、550,908 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；编辑器专用样式只载入 1 份，浮窗布局有效，复杂文件打开约 `266 ms`，连续 30 次开关后的 DOM、监听器和堆无增长。
+- `npm.cmd test`：`243/244` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，其余 Git、Electron、文件编辑器和性能回归全部通过。
+- `git diff --check` 通过，仅有仓库既有的 LF/CRLF 提示；`5177`、`5287`、`5288` 无监听。新临时目录 `forkline-operation-cancel-JVDBZv` 已删除，TEMP 只剩明确保留的 `forkline-operation-cancel-WsjQez` 与 `forkline-operation-cancel-beLRs5`。
+
+### Notes
+
+- `public/file-editor.css`：承接文件编辑器浮窗、CodeMirror 覆盖和窄屏规则。
+- `public/styles.css`：移除已迁出的编辑器专用规则，只保留全局主题、布局和通用组件样式。
+- `public/js/features/file-editor-loader.js`：首次打开文件时按需加载项目编辑器样式并等待全部样式就绪。
+- `tests/file-editor-ui.test.js`、`tests/file-editor-loader.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`、`tests/design-system.test.js`：固定样式拆分、首次加载、资源复用、首屏排除、真实浏览器和设计系统边界。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`、`docs/DESIGN_SYSTEM.md`：同步用户行为、加载顺序、样式职责、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的文件编辑器样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载 Diff 工作台并移除文件单击的隐藏 Diff 请求
+
+### What was done
+
+- 发现工作区和暂存区底部“变更对照”虽已从可见布局移除，但文件单击仍会请求 `/api/worktree-diff` 并在隐藏容器中渲染完整差异；大文件选择因此承担了无效 API、解析和 DOM 成本。
+- 文件单击现在只更新选中状态、Diff 范围和右侧文件上下文，不再读取或渲染隐藏 Diff；右键“查看对照”仍按原语义读取差异并打开最大化窗口。
+- 新增轻量 Diff 工作台加载器，首屏保留文件列表所需的状态/范围判断和清理函数；第一次显式查看对照时才有序载入按行选择与完整工作台实现，并发入口复用、失败清理和重试边界完整保留。
+- 中文首屏从 `31 / 550,908` 降到 `30 / 534,702`，减少 1 个请求和 `16,206` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `204,209` 字节。
+
+### Testing
+
+- 先增加 Diff 加载器和首屏排除回归，旧实现为 `1/6` 通过、5 项按预期失败；实现后加载器、文件选择、布局、文件编辑和首屏资源专项 `78/78` 通过。
+- 相关前端与测试脚本 `node --check` 全部通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；文件单击产生 0 个 Diff 请求和 0 个工作台资源，第一次显式打开工作台约 `88.6 ms`，完整回归中约 `89.5 ms`，只载入 2 份实现并正常显示、关闭。
+- 同轮 Chromium 复杂历史文件打开约 `258 ms`，3012 条提交渲染约 `4.5-5.4 ms`，4000 文件首批渲染约 `9-11 ms`，30 次编辑器开关后的 DOM、监听器和堆边界稳定。
+- `npm.cmd test`：`247/248` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，其余 Git、Electron、Diff、文件编辑器和性能回归全部通过。
+- `git diff --check` 最终通过，仅有仓库既有的 LF/CRLF 提示；`5177`、`5287`、`5288` 无监听。失败测试新生成的 `forkline-operation-cancel-HZpPqJ` 已在确认位于 TEMP 后删除，TEMP 只剩明确保留的两个旧目录。
+
+### Notes
+
+- `public/js/features/diff-workbench-loader.js`：新增 Diff 状态/范围轻量核心、两份实现的按需加载、并发复用和失败重试。
+- `public/index.html`：首屏改载 Diff 加载器，移除 `diff-workbench.js` 与 `diff-selection.js` 的直接声明。
+- `public/js/features/diff-workbench.js`、`public/js/features/diff-renderer.js`：完整工作台改为按需实现，基础渲染器可在工作台尚未载入时供同步、储藏和比较页面使用。
+- `public/js/features/file-tree.js`、`public/js/features/worktree-changes.js`：文件单击不再自动读取隐藏 Diff，只有已有工作区 Diff 需要刷新时才走加载器。
+- `public/js/features/context-menus.js`、`public/js/app/events.js`、`public/js/app/init.js`：查看对照、最大化、按块和按行入口统一等待 Diff 工作台就绪。
+- `public/js/i18n-catalog.js`：增加 Diff 工作台加载失败的英文提示。
+- `tests/diff-workbench-loader.test.js`、`tests/startup-resource-budget.test.js`、`tests/file-editor-ui.test.js`、`tests/layout-ui.test.js`、`tests/browser-performance.test.js`：覆盖首屏排除、单击零请求、首次加载、失败重试、真实显示关闭和既有 Diff 操作边界。
+- `README.md`、`docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步用户行为、模块职责、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的 Diff 工作台按需加载与文件单击优化增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 避免最大化工作区 Diff 重复渲染隐藏副本
+
+### What was done
+
+- 用 2500 行真实工作区改动复现显式“查看对照”：旧实现会先在已从布局移除的隐藏容器生成 2513 个行节点，再在最大化弹窗生成首批 1000 个行节点，同一份 Diff 承担两次 DOM 构建和排版。
+- 工作区 Diff 继续完整保存活动文件、范围、原始差异和操作反馈，但隐藏宿主现在只清理旧节点，不再生成行 DOM；最大化弹窗成为唯一可见渲染面并继续按最多 1000 行一批加载。
+- 文件已经没有剩余改动时采用相同边界；按块/按行暂存、取消暂存、结果提示、目标高亮、加载范围和横纵滚动恢复保持原行为。
+
+### Testing
+
+- 回归断言先在旧实现稳定失败：隐藏容器实际为 2513 行而预期为 0；实现后 `npm.cmd run test:browser` 为 `1/1` 通过，真实数据为源 Diff / 隐藏区 / 弹窗 `2513 / 0 / 1000`，首次工作台加载约 `116.5 ms`。
+- `node --check` 通过两个工作台实现和浏览器测试；Diff 加载器、工作区刷新、布局、文件编辑器和首屏资源专项为 `90/90` 通过。
+- `npm.cmd test` 为 `247/248` 通过；唯一失败仍是受限 Windows 环境中取消长时间 fetch 后等待响应超时，其余 Git、Electron、Diff、文件编辑器和真实性能回归全部通过。
+- `git diff --check` 通过，仅有仓库既有的 LF/CRLF 提示；`5177`、`5287`、`5288` 监听数为 0，浏览器性能临时目录为 0。失败测试新生成的 `forkline-operation-cancel-O782zg` 已在确认位于 TEMP 后删除，只保留既有的 `WsjQez` 与 `beLRs5`。
+
+### Notes
+
+- `public/js/features/diff-workbench.js`：隐藏内联宿主只清理节点，活动 Diff 继续供最大化弹窗渲染。
+- `public/js/features/diff-selection.js`：无剩余改动的完成状态也不再写入隐藏 DOM。
+- `tests/browser-performance.test.js`：使用 2500 行工作区改动固定单份可见渲染、首批 1000 行和性能诊断输出。
+- `README.md`：说明大型 Diff 只在可见窗口生成一份内容。
+- `docs/ARCHITECTURE.md`：固定隐藏宿主与最大化弹窗的渲染职责边界。
+- `docs/CONTINUE.md`：记录真实行节点数据和保留的操作语义。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚点。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的单份 Diff 渲染增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载完整 Git 操作实现
+
+### What was done
+
+- 把完整 Git 操作实现移出默认首屏；提交、签出、合并、变基、储藏、远端、单文件和批量文件动作第一次执行时才载入，所有入口共用同一个进行中的 Promise，失败资源会移除并允许重试。
+- 首屏继续立即提供当前分支、工作区、未完成操作和远端配置快照，追加状态、文件选择辅助，以及“储藏并签出”返回原分支后的自动恢复，启动与切仓语义保持不变。
+- 中文首屏资源数保持 30 个，体积从 `534,702` 降到 `500,063` 字节，减少 `34,639` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `238,848` 字节。
+
+### Testing
+
+- `node --check` 覆盖 Git 操作加载器、完整实现、国际化目录和三份相关测试脚本：`6/6` 通过。
+- `node --test tests\git-actions-loader.test.js tests\startup-resource-budget.test.js`：`6/6` 通过，实测首屏为 30 个资源、500,063 字节；加载器与首屏相关专项此前同轮为 `106/106` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；完整 Git 操作实现首次载入约 `3.5 ms`，只创建 1 个资源节点，大 Diff、3012 条提交、4000 文件和编辑器浸泡边界同轮继续通过。
+- `npm.cmd test`：`251/252` 通过；唯一失败为 `tests/git-api.test.js:1759`，受限 Windows 环境取消长时间 fetch 后等待响应超时，其余 Git、Electron、Diff、文件编辑器和真实性能回归全部通过。
+- `git diff --check` 通过，仅有仓库既有的 LF/CRLF 提示；`5177`、`5287`、`5288` 无监听，浏览器性能临时目录为 0。新目录 `forkline-operation-cancel-WQbCxO` 已在确认位于 `%TEMP%` 后删除，只保留既有的 `forkline-operation-cancel-WsjQez` 与 `forkline-operation-cancel-beLRs5`。
+
+### Notes
+
+- `public/js/features/git-actions-loader.js`：新增首屏快照、追加状态、切换储藏恢复辅助和完整 Git 操作的按需加载门面。
+- `public/js/features/git-actions.js`：完整实现载入后通过 `ForklineGitActions` 注册可调用动作。
+- `public/index.html`：首屏改载 Git 操作加载器，不再直接声明完整实现。
+- `public/js/i18n-catalog.js`：增加 Git 操作资源加载失败的英文提示。
+- `tests/git-actions-loader.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：覆盖首屏排除、并发复用、失败重试、启动辅助、资源预算和真实浏览器首次载入。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步用户行为、模块边界、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单、临时资源清理和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的 Git 操作按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载完整提交操作实现
+
+### What was done
+
+- 把挑选、还原、重置、历史编辑、补丁、Tag、PR 和分支比较等完整提交操作移出默认首屏；第一次使用时载入，所有入口共用同一个进行中的 Promise，失败资源会移除并允许重试。
+- 首屏继续提供提交详情和菜单渲染需要的历史编辑配置、队列提交信息、远端提交 URL、复制，以及 Tag 和 merge 主线弹窗关闭辅助；普通提交浏览和详情渲染不依赖完整操作实现提前载入。
+- 中文首屏资源数保持 30 个，体积从 `500,063` 降到 `475,114` 字节，减少 `24,949` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `263,797` 字节。
+
+### Testing
+
+- 新回归先在旧实现稳定失败为 `0/4`；实现后加载器、右键菜单与首屏专项 `10/10` 通过，相关前端、布局、文件编辑器和加载器专项 `110/110` 通过。
+- `node --check` 覆盖提交操作加载器、完整实现、事件绑定、国际化目录和四份相关测试脚本：`8/8` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；完整提交操作实现首次载入约 `3.1-3.2 ms`，只创建 1 个资源节点，分支比较、右键菜单、大 Diff、3012 条提交、4000 文件和编辑器浸泡边界继续通过。
+- `npm.cmd test`：`255/256` 通过；唯一失败为 `tests/git-api.test.js:1759`，受限 Windows 环境取消长时间 fetch 后等待响应超时，其余 Git、Electron、提交操作、Diff、文件编辑器和真实性能回归全部通过。
+- `git diff --check` 通过，仅有仓库既有的 LF/CRLF 提示；`5177`、`5287`、`5288` 无监听，浏览器性能临时目录为 0。本轮新目录 `forkline-operation-cancel-jr1hwp` 已确认位于 `%TEMP%`，但自动删除审批服务返回 503，未绕过权限处理；既有 `forkline-operation-cancel-WsjQez` 与 `forkline-operation-cancel-beLRs5` 同样保留。
+
+### Notes
+
+- `public/js/features/commit-actions-loader.js`：新增提交详情纯辅助、弹窗关闭能力和完整提交操作的按需加载门面。
+- `public/js/features/commit-actions.js`：完整实现载入后通过 `ForklineCommitActions` 注册可调用动作。
+- `public/index.html`：首屏改载提交操作加载器，不再直接声明完整实现。
+- `public/js/app/events.js`：Tag 表单和历史队列输入统一接收异步加载失败提示。
+- `public/js/i18n-catalog.js`：增加提交操作资源加载失败的英文提示。
+- `tests/commit-actions-loader.test.js`、`tests/context-menu-loader.test.js`、`tests/startup-resource-budget.test.js`、`tests/browser-performance.test.js`：覆盖首屏排除、并发复用、失败重试、立即可用辅助、加载顺序、资源预算和真实浏览器首次载入。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步用户行为、模块边界、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单、临时资源状态和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的提交操作按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载历史编辑计划与队列界面
+
+### What was done
+
+- 把历史编辑计划、队列项和实际执行顺序的完整渲染从默认首屏移入提交操作按需实现；普通提交详情不再承担这部分代码的下载和解析成本。
+- 首屏门面仍能立即显示空队列；已有计划、预检结果或非空队列时才载入完整提交操作，并在资源就绪后自动重绘右栏。
+- 中文首屏资源数保持 30 个，体积从 `475,114` 降到 `465,507` 字节，减少 `9,607` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `273,404` 字节。
+
+### Testing
+
+- 历史界面加载器、布局、国际化和首屏资源专项 `119/119` 通过；空队列确认不创建资源，已有历史计划确认只创建 1 个资源并在加载后重绘。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；初始空队列不加载完整提交操作，加载后历史队列实际渲染 1 行，完整提交操作首次载入约 `4.5 ms`；大 Diff、3012 条提交、4000 文件和编辑器浸泡边界继续通过。
+- `npm.cmd test`：`256/257` 通过；唯一失败为 `tests/git-api.test.js:1759`，受限 Windows 环境取消长时间 fetch 后等待响应超时，其余 Git、Electron、历史编辑、Diff、文件编辑器和真实性能回归全部通过。
+- 本轮新目录 `forkline-operation-cancel-5DpGTF` 已在确认位于 `%TEMP%` 后删除；既有 `forkline-operation-cancel-WsjQez`、`forkline-operation-cancel-beLRs5` 与 `forkline-operation-cancel-jr1hwp` 未改动。
+
+### Notes
+
+- `public/js/panels/inspector.js`：移除首屏历史编辑计划和队列的完整渲染实现。
+- `public/js/features/commit-actions.js`：承接历史编辑计划、队列项和执行顺序渲染，并通过 `ForklineCommitActions` 注册。
+- `public/js/features/commit-actions-loader.js`：提供空队列快速路径、历史界面加载提示和完成后的右栏重绘。
+- `public/js/i18n-catalog.js`：增加历史编辑界面加载提示的英文翻译。
+- `tests/commit-actions-loader.test.js`、`tests/browser-performance.test.js`：固定空队列零加载、已有状态自动重绘和真实历史队列渲染。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步用户行为、模块边界、首屏基线和验证结果。
+- `progress.md`：仅在末尾追加本轮实现、测试证据、临时资源清理和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的历史编辑界面按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载设置页专用样式
+
+### What was done
+
+- 把设置卡片、更新状态、主题预览、界面缩放和窄右栏规则从全局样式表原样迁入设置页专用样式；图谱、工作区和普通提交详情不再承担这部分下载与解析成本。
+- 右栏加载器现在可以并行加载面板脚本和可选样式，等待两者都完成后才渲染；任一资源失败时只清理失败项，重试会复用已经完成的另一项，并发入口继续共用一个 Promise。
+- 中文首屏资源数保持 30 个，体积从 `465,507` 降到 `459,624` 字节，净减少 `5,883` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `279,287` 字节。
+
+### Testing
+
+- 加载器回归先在旧实现稳定为 `8/10`，实现后又捕获到脚本先完成时被样式状态误判的问题；修正为独立判断脚本和样式后，加载器与首屏专项 `12/12` 通过。
+- 加载器、布局、设计系统和首屏资源专项 `55/55` 通过，确认设置样式不在 `index.html` 首屏资源中，窄右栏规则仍由专用样式提供。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；设置页首次载入约 `21.5 ms`，完整回归内约 `22.8 ms`，只创建 1 份脚本和 1 份样式。大 Diff、3012 条提交、4000 文件和编辑器浸泡边界继续通过，DOM、监听器和堆没有持续增长。
+- `npm.cmd test`：`257/258` 通过；唯一失败为 `tests/git-api.test.js:1759`，受限 Windows 环境取消长时间 fetch 后等待响应超时，其余 Git、Electron、设置页、Diff、文件编辑器和真实性能回归全部通过。
+- `5177`、`5287`、`5288` 无监听，浏览器性能临时目录和相关测试进程为 0。本轮新目录 `forkline-operation-cancel-oVOm8k` 已确认位于 `%TEMP%`，但删除审批服务返回 503，未绕过权限处理；既有三个保留目录未改动。
+
+### Notes
+
+- `public/settings.css`：新增设置页卡片、更新状态、主题预览、缩放和窄右栏专用样式。
+- `public/styles.css`：移除已经迁出的设置页专用规则，保留主题、主布局和通用组件样式。
+- `public/js/panels/inspector-panel-loader.js`：支持面板脚本与可选样式并行加载、完成判定和失败项独立重试。
+- `tests/inspector-panel-loader.test.js`、`tests/startup-resource-budget.test.js`：固定双资源复用、样式失败重试和首屏排除边界。
+- `tests/layout-ui.test.js`、`tests/design-system.test.js`、`tests/browser-performance.test.js`：从专用样式验证设置组件，并检查真实页面样式完成、加载数量和性能边界。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/DESIGN_SYSTEM.md`、`docs/CONTINUE.md`：同步加载行为、样式职责、首屏基线和验证结果。
+- `progress.md`：仅在末尾追加本轮实现、测试证据、临时资源状态和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的设置页样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载工作区管理专用样式
+
+### What was done
+
+- 把分支整理、工作树和子模块的摘要、列表、状态与操作布局从全局样式表原样迁入工作区管理专用样式；主图谱、底部工作区和普通提交详情不再承担这部分启动成本。
+- 三个右栏页签继续共用一个 `workspaces.js` 模块，并与专用样式并行加载；脚本先完成时等待样式，不会短暂显示无样式页面，后续页签切换复用同一组资源。
+- 中文首屏资源数保持 30 个，体积从 `459,624` 降到 `448,632` 字节，减少 `10,992` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `290,279` 字节。
+
+### Testing
+
+- 加载器回归先在旧实现稳定为 `9/10`，确认旧边界只有脚本；实现后脚本先完成仍不渲染，样式完成后按用户当前页签绘制，加载器与首屏专项 `12/12` 通过。
+- 加载器、布局、设计系统和首屏资源专项 `55/55` 通过，确认 `workspaces.css` 不在 `index.html` 首屏资源中，三个面板的核心布局选择器也不再留在全局样式。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；工作区管理首次载入约 `75.0-75.8 ms`，分支整理页面实际为 `grid`，工作树和子模块切换后脚本与样式资源数都保持 1。大 Diff、3012 条提交、4000 文件和浸泡边界继续通过。
+- `npm.cmd test`：`257/258` 通过；唯一失败为 `tests/git-api.test.js:1759`，受限 Windows 环境取消长时间 fetch 后等待响应超时，其余 Git、Electron、分支整理、工作树、子模块和真实性能回归全部通过。
+- `5177`、`5287`、`5288` 无监听，浏览器性能临时目录和相关测试进程为 0。本轮新目录 `forkline-operation-cancel-IAXRXD` 已在确认位于 `%TEMP%` 后删除；此前保留的四个目录未改动。
+
+### Notes
+
+- `public/workspaces.css`：新增分支整理、工作树和子模块专用样式。
+- `public/styles.css`：移除已经迁出的工作区管理规则，继续保留主题、主布局和通用组件样式。
+- `public/js/panels/inspector-panel-loader.js`：为 `workspaces` 面板声明专用样式资源，复用既有脚本/样式并行加载和失败重试机制。
+- `tests/inspector-panel-loader.test.js`、`tests/startup-resource-budget.test.js`：固定双资源等待、三个页签复用和首屏排除边界。
+- `tests/layout-ui.test.js`、`tests/design-system.test.js`、`tests/browser-performance.test.js`：从专用样式验证布局，并检查真实页面完成状态、资源数量和性能边界。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/DESIGN_SYSTEM.md`、`docs/CONTINUE.md`：同步加载行为、样式职责、首屏基线和验证结果。
+- `progress.md`：仅在末尾追加本轮实现、测试证据、资源清理和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的工作区管理样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载文件追踪与操作日志专用样式
+
+### What was done
+
+- 把文件历史、状态标记、逐行归属，以及 Git 操作日志、运行中操作和界面诊断的专用规则从全局首屏样式原样迁出；主提交图、底部工作区和普通提交详情不再承担这两组样式的下载与解析成本。
+- 文件追踪和操作日志现在都并行载入各自脚本与专用样式，等待两者完成后才渲染；文件历史/逐行追踪和日志重复打开继续复用各自唯一的资源与加载 Promise。
+- 中文首屏资源数保持 `30` 个，体积从 `448,632` 降到 `439,054` 字节，减少 `9,578` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `299,857` 字节。
+
+### Testing
+
+- 新增加载器回归先在旧实现稳定为 `8/10`，文件追踪和操作日志各因只有脚本、没有样式资源而按预期失败；实现后脚本先完成仍不渲染，样式完成后才按当前页签显示。
+- `node --test --test-concurrency=1 tests/inspector-panel-loader.test.js tests/startup-resource-budget.test.js tests/design-system.test.js tests/layout-ui.test.js`：`56/56` 通过，首屏诊断为 30 个资源、439,054 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；操作日志首次载入约 `16.3 ms`，文件追踪约 `213.0 ms`，两者都各保留 1 份脚本和 1 份样式，九个按需面板合计为 9 份脚本和 4 份专用样式。大 Diff、3012 条提交、4000 文件、编辑器浸泡、DOM、监听器与堆边界继续通过。
+- `npm.cmd test`：`258/259` 通过；唯一失败仍是 `tests/git-api.test.js:1759` 在受限 Windows 环境中取消长时间 fetch 后等待响应超时，本轮新增样式加载、其他 Git、Electron 与真实性能回归全部通过。
+- `5177`、`5287`、`5288` 无监听，浏览器性能临时目录为 0。本轮新生成的 `forkline-operation-cancel-1kxbKF` 已在确认路径位于 `%TEMP%` 后删除，原有四个保留目录未改动。
+
+### Notes
+
+- `public/file-insights.css`：新增文件历史、状态标记和逐行归属的按需样式。
+- `public/logs.css`：新增 Git 操作日志、运行中操作和界面诊断的按需样式。
+- `public/styles.css`：移除已经迁出的文件追踪与操作日志规则，继续保留主题、主布局和通用组件样式。
+- `public/js/panels/inspector-panel-loader.js`：为文件追踪和操作日志声明专用样式资源，复用既有脚本/样式并行加载、失败重试和快速切页保护。
+- `tests/inspector-panel-loader.test.js`、`tests/startup-resource-budget.test.js`：固定双资源等待、复用和首屏排除边界。
+- `tests/design-system.test.js`、`tests/layout-ui.test.js`：把两份专用样式纳入设计系统守卫，并固定选择器不回流到全局样式。
+- `tests/browser-performance.test.js`：验证真实 Chromium 中两份样式只加载一次且面板实际应用布局。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/DESIGN_SYSTEM.md`、`docs/CONTINUE.md`：同步用户行为、模块职责、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实施、验证、清理和回滚记录。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的文件追踪与操作日志样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 跨仓库工具面板共享按需样式
+
+### What was done
+
+- 把储藏、Tag、恢复点、同步认证、远端管理和分支比较的完整样式区域从全局首屏样式原样迁出；只浏览提交图、工作区和普通提交详情时不再解析这五个右栏面板的样式。
+- 右栏加载器新增共享样式键：五个独立面板脚本共用一个样式节点和一个进行中的样式 Promise。快速切页时脚本完成不会提前显示旧页面，脚本失败重试也不会丢掉仍可复用的共享样式。
+- 中文首屏资源数保持 `30` 个，体积从 `439,054` 降到 `415,318` 字节，减少 `23,736` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `323,593` 字节。
+
+### Testing
+
+- 新增加载器回归先在旧实现稳定为 `5/11`，6 项按预期失败，覆盖缺少专用样式、快速切页重复资源、脚本先完成提前渲染和脚本失败重试边界；实现后 `11/11` 通过。
+- 首次 Chromium 回归因测试仓库没有储藏记录而对不存在的 `.stash-layout` 取样式失败；测试夹具改为临时注入一条仅存在于页面状态的储藏记录并在检查后恢复，不修改真实仓库。修正后真实 Chromium `1/1` 通过。
+- 完整回归首次发现 `tests/auth-ui.test.js` 仍只从全局样式读取认证规则；守卫改为检查 `repository-panels.css` 并确认规则不回流首屏后，认证、加载器、布局、设计系统和首屏资源专项 `60/60` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；储藏/Tag/恢复点/同步/比较连续打开后共享样式保持 1 份，九个按需面板合计为 9 份脚本和 5 份样式。大 Diff、3012 条提交、4000 文件、编辑器浸泡、DOM、监听器与堆边界继续通过。
+- `npm.cmd test`：`260/261` 通过；唯一失败仍是 `tests/git-api.test.js:1759` 在受限 Windows 环境中取消长时间 fetch 后等待响应超时，本轮新增共享样式、认证、其他 Git、Electron 与真实性能回归全部通过。
+- `5177`、`5287`、`5288` 无监听，浏览器性能临时目录为 0。本轮新生成的 `forkline-operation-cancel-eA8Yo0` 与 `forkline-operation-cancel-vnwr6J` 已在确认路径位于 `%TEMP%` 后删除，原有四个保留目录未改动。
+
+### Notes
+
+- `public/repository-panels.css`：新增储藏、Tag、恢复点、同步认证、远端管理和分支比较的共享按需样式。
+- `public/styles.css`：移除已经迁出的仓库工具面板规则和对应窄右栏规则，继续保留主题、主布局和通用组件样式。
+- `public/js/panels/inspector-panel-loader.js`：新增共享样式键、跨面板样式 Promise 复用和脚本失败时的样式保留。
+- `tests/inspector-panel-loader.test.js`、`tests/startup-resource-budget.test.js`：固定跨面板单样式加载、快速切页、失败重试和首屏排除边界。
+- `tests/design-system.test.js`、`tests/layout-ui.test.js`、`tests/auth-ui.test.js`：把共享样式纳入设计系统、响应式和认证界面守卫，并确认面板规则不回流全局样式。
+- `tests/browser-performance.test.js`：验证真实 Chromium 中五个面板共用一份样式并实际应用布局；无储藏仓库使用可恢复的页面状态夹具。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/DESIGN_SYSTEM.md`、`docs/CONTINUE.md`：同步用户行为、共享样式职责、加载顺序、首屏基线和验证结果。
+- `progress.md`：追加本轮实施、验证、清理和回滚记录。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的仓库工具面板共享样式增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载目录选择与命令面板专用样式
+
+### What was done
+
+- 把目录选择器和命令面板的专用布局从默认首屏样式迁入独立资源；只浏览提交图、工作区和右栏时不再下载或解析这组弹窗布局。
+- 目录与命令门面改为并行载入完整实现和专用样式，等待两者都完成后再打开；失败时只重试失败资源，两个入口和后续打开继续复用同一组资源。
+- 中文首屏资源数保持 `30` 个，体积从 `415,318` 降到 `411,319` 字节，净减少 `3,999` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `327,592` 字节。
+
+### Testing
+
+- 新加载器回归先在旧实现稳定为 `1/5` 通过、4 项失败，覆盖缺少样式资源、脚本先完成提前打开，以及脚本/样式失败后独立重试；实现后 `5/5` 通过。
+- `node --check public/js/features/folder-command.js` 通过；加载器、布局、设计系统和首屏资源专项 `53/53` 通过，首屏诊断为 30 个资源、411,319 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；首次载入 1 份脚本和 1 份样式约 `24.5 ms`，完整回归内约 `23.8 ms`，两个弹窗均正常打开、关闭并应用布局，大 Diff、3012 条提交、4000 文件和编辑器浸泡边界继续通过。
+- `npm.cmd test`：`262/263` 通过；唯一失败仍是 `tests/git-api.test.js:1759`，受限 Windows 环境取消长时间 fetch 后等待响应超时，其余 Git、Electron、目录/命令弹窗和真实性能回归全部通过。
+- `git diff --check` 通过，仅有仓库既有的 LF/CRLF 提示；本轮新目录 `forkline-operation-cancel-T2XQod` 已在确认位于 `%TEMP%` 后删除，浏览器性能临时目录为 0，`5177`、`5287`、`5288` 无监听，原有四个保留目录未改动。
+
+### Notes
+
+- `public/folder-command.css`：新增目录选择器和命令面板的按需内层布局。
+- `public/styles.css`：移除已迁出的目录/命令专用规则，保留通用弹窗和菜单提示样式。
+- `public/js/features/folder-command.js`：新增脚本与样式并行加载、完成等待和失败项独立重试。
+- `tests/folder-command-loader.test.js`：固定双资源复用、样式完成前不打开，以及脚本/样式失败重试边界。
+- `tests/startup-resource-budget.test.js`：阻止 `folder-command.css` 回流默认首屏。
+- `tests/design-system.test.js`：把目录/命令专用样式纳入设计系统与颜色 Token 守卫。
+- `tests/layout-ui.test.js`：验证专用选择器已迁出全局样式，并保留通用弹窗基础。
+- `tests/browser-performance.test.js`：验证真实 Chromium 中两份资源只加载一次且两个弹窗实际应用布局。
+- `README.md`：同步首次打开行为、失败重试和最新首屏基线。
+- `docs/ARCHITECTURE.md`：记录加载器、专用样式职责和通用样式保留边界。
+- `docs/DESIGN_SYSTEM.md`：登记目录与命令组件样式的代码来源。
+- `docs/CONTINUE.md`：同步当前加载行为、性能数据、回归和环境清理结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的目录/命令样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-11 - Task: 按需加载提交操作历史编辑样式
+
+### What was done
+
+- 把历史编辑预检、影响提交列表、队列项和改信息表单从默认首屏样式迁入提交操作专用资源；普通提交浏览继续保留必要按钮、折叠标题、加载容器和空队列提示。
+- 提交操作门面改为并行载入完整脚本和专用样式，等待两者都完成后再渲染；脚本或样式失败时只重试失败项，并发入口继续复用同一组进行中资源。
+- 中文首屏资源数保持 `30` 个，体积从 `411,319` 降到 `407,579` 字节，净减少 `3,740` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `331,332` 字节。
+
+### Testing
+
+- 新加载器回归先在旧实现稳定为 `1/6` 通过、5 项失败，覆盖缺少专用样式、脚本先完成提前渲染，以及脚本/样式失败后独立重试；实现后 `6/6` 通过。
+- `node --check public/js/features/commit-actions-loader.js` 通过；加载器、布局、设计系统和首屏专项 `60/60` 通过，首屏诊断为 30 个资源、407,579 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；完整回归内提交操作首次载入约 `10.9 ms`，只保留 1 份脚本和 1 份样式。空队列在零按需资源时仍正常显示，完整历史队列实际应用 Grid 布局，大 Diff、3012 条提交、4000 文件和编辑器浸泡边界继续通过。
+- `npm.cmd test`：`264/265` 通过；唯一失败仍是 `tests/git-api.test.js:1759`，Windows 取消长时间 fetch 后等待响应超时，其余 Git、Electron、提交操作、历史编辑和真实性能回归全部通过。
+- 本轮新生成的 `forkline-operation-cancel-GEwGiC` 已在确认路径位于 `%TEMP%` 后删除；浏览器性能临时目录为 0，`5177`、`5287`、`5288` 无监听，原有 `forkline-operation-cancel-WsjQez`、`forkline-operation-cancel-beLRs5`、`forkline-operation-cancel-jr1hwp`、`forkline-operation-cancel-oVOm8k` 未改动。
+
+### Notes
+
+- `public/commit-actions.css`：新增历史编辑预检、影响提交、队列和改信息表单的按需样式。
+- `public/styles.css`：移除已迁出的完整历史编辑规则，保留普通提交操作、折叠标题和加载/空队列基础样式。
+- `public/js/features/commit-actions-loader.js`：新增脚本与样式并行加载、完成等待和失败项独立重试。
+- `tests/commit-actions-loader.test.js`：固定双资源复用、样式完成前不渲染，以及脚本/样式失败重试边界。
+- `tests/startup-resource-budget.test.js`：阻止提交操作专用样式回流默认首屏，并更新资源体积基线。
+- `tests/design-system.test.js`、`tests/layout-ui.test.js`：把专用样式纳入设计系统守卫，并固定完整历史编辑选择器的归属。
+- `tests/browser-performance.test.js`：验证真实 Chromium 中两份资源只加载一次，空队列保留首屏样式且完整队列应用专用布局。
+- `README.md`：同步提交操作首次打开行为和最新首屏基线。
+- `docs/ARCHITECTURE.md`：记录提交操作脚本、专用样式和首屏门面的职责边界。
+- `docs/DESIGN_SYSTEM.md`：登记历史编辑组件样式的代码来源。
+- `docs/CONTINUE.md`：同步当前加载行为、性能数据、回归和环境清理结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的提交操作历史编辑样式增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 按需加载 Diff 工作台专用样式
+
+### What was done
+
+- 把最大化 Diff、逐行/按块操作、结果反馈、目标块高亮和粘性工具栏从默认首屏样式迁入独立资源；首屏只保留弹窗默认隐藏规则，普通浏览不再解析完整工作台布局。
+- Diff 门面改为并行载入专用样式与有序脚本链，继续保证选择模块先于工作台实现；三份资源全部完成后才读取或打开对照，脚本或样式失败时只重试失败项。
+- 中文首屏资源数保持 `30` 个，体积从 `407,579` 降到 `401,079` 字节，净减少 `6,500` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `337,832` 字节。
+
+### Testing
+
+- 新加载器回归先在旧实现稳定为 `1/5` 通过、4 项失败，覆盖缺少专用样式、脚本先完成提前执行，以及脚本/样式失败后独立重试；实现后 `5/5` 通过。
+- `node --check public/js/features/diff-workbench-loader.js` 通过；加载器、文件编辑、布局、设计系统和首屏专项 `88/88` 通过，首屏诊断为 30 个资源、401,079 字节。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；首次载入约 `117.2 ms`，只保留 2 份脚本和 1 份样式，最大化弹窗实际使用 Grid，行操作工具栏实际使用 Sticky。大 Diff、3012 条提交、4000 文件、编辑器浸泡、DOM、监听器与堆边界继续通过。
+- `npm.cmd test`：`266/267` 通过；唯一失败仍是 `tests/git-api.test.js:1759`，Windows 取消长时间 fetch 后等待响应超时，其余 Git、Electron、Diff 工作台、文件编辑器和真实性能回归全部通过。完整回归中的工作台首次载入约 `107.6 ms`。
+- 本轮新生成的 `forkline-operation-cancel-KgQY7o` 已在确认路径位于 `%TEMP%` 后删除；浏览器性能临时目录为 0，`5177`、`5287`、`5288` 无监听，原有 `forkline-operation-cancel-WsjQez`、`forkline-operation-cancel-beLRs5`、`forkline-operation-cancel-jr1hwp`、`forkline-operation-cancel-oVOm8k` 未改动。
+
+### Notes
+
+- `public/diff-workbench.css`：新增最大化 Diff、逐行/按块操作、反馈、高亮和减弱动画的按需样式。
+- `public/styles.css`：移除已迁出的工作台规则，只保留静态 Diff 弹窗默认隐藏与通用双栏 Diff 基础。
+- `public/js/features/diff-workbench-loader.js`：新增样式与脚本链并行加载、完成等待和失败项独立重试。
+- `tests/diff-workbench-loader.test.js`：固定三资源复用、脚本顺序、样式完成前不执行，以及脚本/样式失败重试边界。
+- `tests/startup-resource-budget.test.js`：阻止 Diff 工作台专用样式回流默认首屏，并更新资源体积基线。
+- `tests/design-system.test.js`、`tests/layout-ui.test.js`：把工作台样式纳入设计系统守卫，并固定交互选择器与全局隐藏规则的归属。
+- `tests/file-editor-ui.test.js`：让现有 Diff 反馈、目标高亮和最大化布局契约读取新的专用样式来源。
+- `tests/browser-performance.test.js`：验证真实 Chromium 中两份脚本和一份样式只加载一次，并确认最大化 Grid 与 Sticky 工具栏实际生效。
+- `README.md`：同步 Diff 工作台首次打开行为、失败重试和最新首屏基线。
+- `docs/ARCHITECTURE.md`：记录专用样式、有序脚本链、首屏隐藏规则和加载顺序。
+- `docs/DESIGN_SYSTEM.md`：登记 Diff 工作台组件样式的代码来源。
+- `docs/CONTINUE.md`：同步当前加载行为、性能数据、回归和环境清理结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的 Diff 工作台样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 按需加载右键菜单专用样式
+
+### What was done
+
+- 把右键菜单完整布局迁入独立样式资源；首屏只保留菜单默认隐藏规则，普通提交浏览和工作区刷新不再解析完整右键菜单样式。
+- 右键菜单门面改为并行载入完整实现与专用样式，两者全部完成后才显示；脚本或样式失败时只重试失败项。文件编辑器首次打开时复用同一份样式，不加载普通菜单实现。
+- `styles.css` 减少 `1,451` 字节；中文首屏保持 `30` 个资源，体积从 `401,079` 降到 `400,983` 字节，净减少 `96` 字节；相对 `37 / 738,911` 累计减少 7 个请求和 `337,928` 字节。
+
+### Testing
+
+- 新加载器回归先在旧实现稳定为 `1/5` 通过、4 项失败，覆盖专用样式缺失、脚本先完成提前显示，以及脚本/样式独立失败重试；实现后菜单与文件编辑器加载专项 `8/8` 通过。
+- `node --check public/js/features/context-menu-loader.js` 与 `node --check public/js/features/file-editor-loader.js` 通过；加载器、文件编辑、布局、设计系统和首屏专项 `91/91` 通过，首屏诊断为 30 个资源、400,983 字节。
+- `node --test tests/browser-performance.test.js`：真实 Chromium `1/1` 通过；首次右键约 `11.3 ms`，只保留 1 份脚本和 1 份样式，菜单实际显示为 Grid；复杂文件打开约 `272.6 ms`，滚动约 `5.1 ms`，编辑器复用同一份菜单样式。大 Diff、3012 条提交、4000 文件、DOM、监听器和堆边界继续通过。
+- `npm.cmd test`：`267/268` 通过；唯一失败仍是 `tests/git-api.test.js:1759`，Windows 取消长时间 fetch 后等待响应超时，其余 Git、Electron、右键菜单、文件编辑器和真实性能回归全部通过。完整回归中的菜单首次载入约 `11.0 ms`。
+- 本轮新生成的 `forkline-operation-cancel-WSURJV` 已在确认路径位于 `%TEMP%` 后删除；浏览器性能临时目录为 0，`5177`、`5287`、`5288` 无监听，原有 `forkline-operation-cancel-WsjQez`、`forkline-operation-cancel-beLRs5`、`forkline-operation-cancel-jr1hwp`、`forkline-operation-cancel-oVOm8k` 未改动。
+
+### Notes
+
+- `public/context-menu.css`：新增提交、分支、文件、Tag、远端、reflog 和编辑器右键菜单的按需布局。
+- `public/styles.css`：移除完整菜单规则，只保留静态菜单默认隐藏和共享命令提示样式。
+- `public/js/features/context-menu-loader.js`：新增脚本与样式并行加载、完成等待、共享样式入口和失败项独立重试。
+- `public/js/features/file-editor-loader.js`：文件编辑器资源加载时复用右键菜单样式 Promise。
+- `tests/context-menu-loader.test.js`、`tests/file-editor-loader.test.js`：固定双资源复用、样式完成前不显示、编辑器复用和脚本/样式失败重试边界。
+- `tests/layout-ui.test.js`、`tests/design-system.test.js`、`tests/startup-resource-budget.test.js`：登记新样式来源，守卫短视口菜单布局并阻止专用样式回流首屏。
+- `tests/browser-performance.test.js`：验证真实 Chromium 中菜单脚本与样式各一份、Grid 实际生效，并确认文件编辑器复用样式。
+- `README.md`：同步右键菜单首次打开行为和最新首屏基线。
+- `docs/ARCHITECTURE.md`：记录菜单样式、加载顺序、文件编辑器复用和失败重试边界。
+- `docs/DESIGN_SYSTEM.md`：登记右键菜单组件样式的代码来源。
+- `docs/CONTINUE.md`：同步当前加载行为、性能数据、回归和环境清理结果。
+- `progress.md`：追加本轮实现、测试证据、文件清单和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的右键菜单样式按需加载增量，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 修复受限 Windows 环境中的 Git 操作取消
+
+### What was done
+
+- 修复 Windows 拒绝 `taskkill /T /F` 后取消状态一直停留在 `cancelling` 的问题；权限失败时只对 Forkline 当前操作持有的 Git 子进程发送 `SIGTERM`，并关闭其继承的标准流，让原 `/api/action` 能及时结束。
+- 回退严格使用当前操作登记的子进程句柄，不按进程名扫描或终止其他 Git/SSH；`taskkill` 正常可用时继续沿用完整进程树终止行为。
+- 新增确定性运行时回归，并同步用户说明、后端边界和继续开发记录。
+
+### Testing
+
+- `node --check server/git-runtime.js` 通过；`node --test tests/git-runtime.test.js` 为 `2/2` 通过，覆盖 `taskkill` 权限失败回退和成功时不手动关闭标准流。
+- 修复实现阶段连续两次真实长时间 fetch 取消均在约 `1.17` 秒内返回；最终 `npm.cmd test` 为 `270/270` 通过，完整回归中的真实 fetch 取消约 `1.02` 秒完成。
+- `rg -n "DEBUG-cancel-a13f" server tests` 无结果；`git diff --check` 通过，仅显示仓库既有的 LF/CRLF 提示。
+- `5177`、`5287`、`5288` 监听数为 0，`forkline-browser-performance-*` 临时目录为 0。本轮遗留的 `forkline-operation-cancel-Af03oJ`、`forkline-operation-cancel-gQ7YDP`、`forkline-operation-cancel-N9PLM3`、`forkline-operation-cancel-voZPel` 已在确认位于 `%TEMP%` 后删除；原有 `WsjQez`、`beLRs5`、`jr1hwp`、`oVOm8k` 四个目录保持不变。
+
+### Notes
+
+- `server/git-runtime.js`：增加 `taskkill` 权限失败时的当前子进程句柄回退，并导出终止辅助函数供测试使用。
+- `tests/git-runtime.test.js`：新增 Windows 取消回退与正常 `taskkill` 边界测试。
+- `README.md`：说明受限 Windows 环境中的取消行为和不会误杀其他 Git/SSH 的范围。
+- `docs/ARCHITECTURE.md`：记录进程句柄回退、标准流解除和进程边界。
+- `docs/CONTINUE.md`：更新当前取消能力、`270/270` 回归基线并追加本轮记录。
+- `progress.md`：追加本轮实现、验证、临时资源清理和回滚方式。
+- 回滚点为本轮开始前 `c607f2c`；提交前只逐块撤销本记录列出的取消修复增量并删除新增测试，不得整体恢复包含其他未提交成果的共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 接收 Electron 第二实例仓库路径并保护切仓草稿
+
+### What was done
+
+- 修复 Forkline 已运行时再次传入仓库路径只聚焦窗口、目标路径被忽略的问题；第二实例现在复用当前窗口和后台服务，页面未就绪时保留最新路径，初始化完成后交给现有渐进切仓流程。
+- 手动切仓、桌面路径、克隆后打开和初始化后打开统一检查文件编辑器与提交信息框；发现未保存内容时列出具体风险并确认，不再直接销毁草稿。
+- Windows 同一盘符路径只存在大小写、斜杠方向或末尾斜杠差异时视为当前仓库，不重复提示；未修改其他平台的全局仓库快照比较规则。
+
+### Testing
+
+- 新回归在旧实现稳定为 `63/65`，两项失败分别固定第二实例路径被丢弃和切仓缺少未保存内容保护；实现完成后 Electron 与布局专项为 `68/68` 通过。
+- `node --check` 覆盖 Electron 主进程、preload、路径协调器、页面启动、仓库切换、国际化和两份测试脚本：`8/8` 通过。
+- `node --test tests/startup-resource-budget.test.js` 为 `2/2` 通过；中文首屏保持 `30` 个资源，体积从 `400,983` 增至 `403,595` 字节，仍低于 `750 KiB` 门限。
+- `npm.cmd test` 为 `275/275` 通过。真实 Chromium 中 3012 条历史首绘约 `4.9 ms`，4000 文件渐进首屏约 `153.8 ms`、完整详情约 `702.1 ms`，30 次编辑器开关后 DOM、监听器和堆保持稳定；长时间 fetch 取消约 `1.02` 秒完成。
+- `git diff --check` 通过，仅显示仓库既有 LF/CRLF 提示；`5177`、`5287`、`5288` 监听数为 0，`forkline-browser-performance-*` 与 `forkline-electron-*` 临时目录为 0。原有 `WsjQez`、`beLRs5`、`jr1hwp`、`oVOm8k` 四个取消测试目录保持不变。
+
+### Notes
+
+- `electron/repository-open-coordinator.js`：新增第二实例仓库请求的就绪等待、最新路径合并与交付状态机。
+- `electron/main.js`：读取第二实例参数、聚焦现有窗口，并在渲染器加载边界更新路径交付状态。
+- `electron/preload.js`：新增单向仓库路径订阅接口，不暴露任意 IPC 能力。
+- `public/js/bootstrap.js`：启动前登记桌面路径监听，等待异步 `init()` 完成后串行切仓。
+- `public/js/features/repositories.js`：统一未保存内容确认，并让克隆/初始化完成后打开复用同一保护。
+- `public/js/i18n-catalog.js`：增加切仓风险项目和确认提示的英文文案。
+- `tests/electron-shell.test.js`、`tests/layout-ui.test.js`：覆盖第二实例参数、未就绪排队、最新路径合并、启动竞争、未保存内容和 Windows 等价路径。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步用户行为、桌面模块边界、最新回归和首屏基线。
+- `progress.md`：追加本轮实现、验证、清理和回滚记录。
+- 回滚点为本轮开始前包含取消修复的未提交工作区；提交前只逐块撤销本记录列出的第二实例路径与切仓保护增量，并删除 `electron/repository-open-coordinator.js`，不得整体恢复共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 优雅关闭 Electron 后台服务及其 Git 子进程
+
+### What was done
+
+- Electron 退出时先通过 IPC 请求后台服务停止，等待关闭完成后再继续退出；只有优雅路径超时才对当前实例持有的服务进程树执行有界兜底。
+- 服务端统一处理桌面退出、自更新、父进程断开和终止信号，先停止 HTTP 接入并清理 Git 运行时，再结束服务进程。
+- Git 运行时登记普通查询、二进制读取、认证助手 `ssh-add` 探针和可取消操作启动的全部子进程；关闭开始后拒绝新命令，清理范围不扩展到 Forkline 未持有的 Git/SSH，用户主动打开的系统凭据管理器不受影响。
+
+### Testing
+
+- 首轮旧实现专项稳定失败 3 项：缺少 Electron 关闭模块、缺少服务关闭协调器、Git 运行时没有统一关闭入口；边界审查又固定认证探针未登记 1 项。实现后 Electron、Git 运行时、服务关闭和后端装配专项 `33/33` 通过。
+- 真实 fork 测试启动独立 HTTP 服务和长运行辅助子进程；发送桌面关闭消息后服务进程与辅助进程 PID 均消失，未使用进程名扫描。
+- `node --check` 覆盖 12 个本轮主进程、服务端、测试与真实进程夹具脚本，全部通过。
+- `npm.cmd test` 为 `282/282` 通过，包含真实 Chromium 性能回归；中文首屏保持 `30` 个资源、`403,595` 字节。
+- `git diff --check` 通过，仅显示仓库既有 LF/CRLF 提示；`5177`、`5287`、`5288` 无监听，系统临时目录只剩原有 `WsjQez`、`beLRs5`、`jr1hwp`、`oVOm8k` 四个取消测试目录。
+
+### Notes
+
+- `electron/main.js`：退出事件改为等待后台服务关闭完成，并保留异常退出提示边界。
+- `electron/server-process-shutdown.js`：新增 IPC 优雅关闭、等待和当前服务进程树超时兜底。
+- `server.js`：接入统一关闭协调器，并让自更新复用相同关闭流程。
+- `server/git-runtime.js`：登记全部 Git 子进程，关闭期间拒绝新命令并定向清理已登记进程。
+- `server/shutdown-controller.js`：新增 HTTP、Git 运行时和进程退出的有界协调。
+- `server/repository-service.js`、`server/repository-auth-service.js`：把认证助手的 `ssh-add` 探针登记到同一运行时，保留系统凭据管理器的独立窗口行为。
+- `tests/electron-shell.test.js`、`tests/git-runtime.test.js`：覆盖桌面优雅退出、超时兜底和普通 Git 查询清理。
+- `tests/backend-modules.test.js`：固定认证探针从服务装配到运行时登记的接线边界。
+- `tests/server-shutdown.test.js`、`tests/fixtures/shutdown-server-child.js`：覆盖服务关闭顺序、HTTP 超时和真实父子进程退出。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步退出行为、模块边界、验证结果和当前限制。
+- `progress.md`：追加本轮实现、验证、资源清理和回滚记录。
+- 回滚点为本轮开始前已包含第二实例路径保护的未提交工作区；提交前只逐块撤销本记录列出的退出生命周期增量，并删除 `electron/server-process-shutdown.js`、`server/shutdown-controller.js`、`tests/server-shutdown.test.js` 和 `tests/fixtures/shutdown-server-child.js`，不得整体恢复共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 让 Electron 应用内更新保持桌面进程监督
+
+### What was done
+
+- 修复 Electron 中“立即更新并重启”只重启后台 `server.js`、更新后服务脱离桌面主进程管理的问题；更新计划现在区分 Web 服务重启和 Electron 桌面重启。
+- Electron 后台服务把主进程 PID、可执行文件和应用入口交给更新器。更新准备完成后只通知当前桌面父进程退出，主进程继续使用既有优雅关闭流程清理 HTTP 服务与 Git/SSH 子进程。
+- 更新器重新启动 Electron 后等待新窗口健康标记；新实例启动失败或未正常显示时，终止本次启动的进程树、恢复更新前提交并重新打开旧桌面版本。
+
+### Testing
+
+- `node --check` 覆盖 `app-self-update.js`、`server/update-service.js`、`server.js`、`electron/main.js` 和 `electron/self-update-health.js`，全部通过。
+- 首次专项运行为 `36/37`，唯一失败准确固定 Electron 主进程尚未传递监督更新元数据；接线完成后 `node --test tests/app-self-update.test.js tests/electron-shell.test.js` 为 `37/37` 通过。
+- 真实本地 Git 远端夹具验证新桌面入口成功启动；损坏目标入口场景验证更新失败后代码回退并重新启动旧入口。健康标记同时校验目标版本和实际子进程 PID。
+- `npm.cmd test` 为 `286/286` 通过，包含真实 Chromium 性能、完整 Git 操作、Electron 退出和更新恢复回归；总耗时约 `128.7` 秒。
+- `git diff --check` 无空白错误，仅显示仓库既有 LF/CRLF 提示。`5177`、`5287`、`5288` 无监听，未发现 Electron 进程；可见 Node 进程路径均属于 Codex 运行时。`%TEMP%` 仍只保留原有 `WsjQez`、`beLRs5`、`jr1hwp`、`oVOm8k` 四个取消测试目录。
+- 按用户要求未手动启动真实 Electron 窗口；更新器的进程启动与回退由真实 Node 进程夹具验证，Electron 窗口事件和 IPC 来源限制由静态契约测试覆盖。
+
+### Notes
+
+- `app-self-update.js`：新增 Electron 重启计划、受限健康标记等待、失败进程树清理和旧桌面恢复。
+- `electron/self-update-health.js`：新增系统临时目录健康标记的路径限制与写入逻辑。
+- `electron/main.js`：传递桌面更新元数据，只接受当前后台子进程的更新就绪消息，并在新窗口可显示后报告健康。
+- `server/update-service.js`：把运行壳层元数据写入更新计划，并把完整计划交给关闭调度器。
+- `server.js`：识别 Electron 监督运行环境，在桌面模式通知父进程退出，Web 模式继续使用服务关闭协调器。
+- `tests/app-self-update.test.js`、`tests/electron-shell.test.js`：覆盖桌面成功重启、失败回退、元数据、消息来源和健康标记边界。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步桌面更新行为、模块边界、正式打包限制和验证结果。
+- `progress.md`：追加本轮实现、验证、资源检查和回滚说明。
+- 回滚点为本轮开始前已包含 Electron 退出生命周期的未提交工作区；提交前只逐块撤销本记录列出的桌面更新增量并删除 `electron/self-update-health.js`，不得整体恢复共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 恢复 Electron 页面重载前的未保存草稿
+
+### What was done
+
+- 新增 Electron 主进程内存草稿，受限保存当前仓库的提交摘要、正文、追加状态，以及工作区文件路径、快照、未保存内容和查看位置；不写磁盘，不跨应用重启保留。
+- 页面恢复当前仓库后自动恢复提交信息和文件编辑器。文件快照一致时可继续编辑保存；快照变化时改为“磁盘当前版本 / 恢复草稿”只读对照，并保留旧快照防止后续重载误覆盖新内容。
+- 区分用户主动放弃与渲染器崩溃：无响应弹窗明确放弃时先清草稿再重载，渲染进程停止后的普通重载保留草稿。
+
+### Testing
+
+- 新回归先因缺少 `electron/renderer-draft-store.js` 稳定失败；实现后 Electron 草稿、IPC、重载选择、提交恢复和快照冲突专项 `29/29` 通过。
+- 文件编辑器、布局、国际化和首屏资源专项 `119/119` 通过；中文首屏保持 `30` 个资源、`408,045` 字节，文件编辑器与完整对照资源仍按需加载。
+- `npm.cmd test` 为 `290/290` 通过，总耗时约 `128.7` 秒。真实 Chromium 中复杂历史文件、3012 条提交、4000 文件工作区、慢编辑器降级、冲突编辑器和 30 次编辑器开关边界继续通过。
+- 修改的 JavaScript 文件均通过 `node --check`；`git diff --check` 无空白错误，仅显示仓库既有 LF/CRLF 提示。
+- `5177`、`5287`、`5288` 无监听，没有 Electron 遗留进程；`%TEMP%` 仍只保留原有 `forkline-operation-cancel-WsjQez`、`forkline-operation-cancel-beLRs5`、`forkline-operation-cancel-jr1hwp`、`forkline-operation-cancel-oVOm8k` 四个目录。
+- 按约束未手动启动真实 Electron 窗口；页面恢复语义由可执行 VM 行为测试覆盖，真实 Chromium 回归验证现有编辑器和性能边界。
+
+### Notes
+
+- `electron/renderer-draft-store.js`：新增受限字段、`8 MiB` 总量、读取副本和空草稿清除的主进程内存仓库。
+- `electron/renderer-health.js`：主动放弃时先清草稿，崩溃重载继续保留，并更新恢复提示。
+- `electron/main.js`：装配草稿仓库、当前窗口来源限制和读写 IPC。
+- `electron/preload.js`：新增受限的草稿保存与读取接口。
+- `public/js/core.js`：新增 `600 ms` 固定节流、草稿采集、初始化后恢复和原始文件快照保留。
+- `public/js/bootstrap.js`：等待仓库初始化与草稿恢复完成后再处理桌面第二实例路径。
+- `public/js/app/events.js`：追加复选框自动填充提交信息后再同步恢复草稿。
+- `public/js/features/file-editor.js`：应用恢复内容，并在磁盘快照变化时建立只读恢复对照。
+- `public/js/features/file-editor-window.js`：显示恢复状态、磁盘当前版本和恢复草稿标签。
+- `public/js/features/repositories.js`：把只读恢复草稿和待恢复文件纳入未保存内容检查，切换仓库前必须明确确认。
+- `public/js/i18n-catalog.js`：补齐恢复提示的英文映射。
+- `tests/electron-shell.test.js`：覆盖草稿规范化、容量、复制、重载清除、崩溃保留、提交恢复和文件快照安全。
+- `tests/file-editor-ui.test.js`：固定恢复界面的英文文案。
+- `tests/layout-ui.test.js`：让桌面路径启动顺序回归包含草稿恢复阶段。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步用户行为、模块边界、限制、回归和环境结果。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚说明。
+- 回滚点为本轮开始前已包含 Electron 应用内更新监督的未提交工作区；提交前只逐块撤销本记录列出的草稿恢复增量并删除 `electron/renderer-draft-store.js`，不得整体恢复共享文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 修复 476px 窄竖屏顶栏按钮被裁切
+
+### What was done
+
+- 在约 `476×1043` 的窄竖屏下复现仓库路径操作组超出视口、最右侧“打开”被页面裁切的问题。
+- 宽度不超过 `600px` 时把路径输入与最近仓库保留在第一行，将“选择 / 克隆 / 初始化 / 打开”移到同一框内第二行并平均分配宽度；顶栏同步增高到 `224px`。
+- 保留左侧分支栏、中间图谱、底部三栏内部横向滚动和下沉详情栏的既有响应式语义，没有隐藏仓库操作或缩短按钮文字。
+
+### Testing
+
+- 新增真实 Chromium 回归后，旧样式稳定失败：`476px` 视口中的应用外壳扩到 `515px`。
+- `node --test tests/layout-ui.test.js`：`48/48` 通过。
+- `npm.cmd run test:browser`：真实 Chromium `1/1` 通过；复杂编辑器、3012 条历史、4000 文件工作区和 30 次编辑器开关边界继续通过。
+- `npm.cmd test`：完整回归 `291/291` 通过；中文首屏保持 `30` 个资源、`408,990` 字节。
+- 真实 `D:/桌面/GitTest` 只读复测：约 `477×1045` CSS 视口中应用外壳和顶栏约 `478px`，仓库操作组最右侧约 `462px`；主区域和详情栏底边仍落在视口内，仓库原有改动未修改。
+- `5177`、`5287`、`5288`、`5290`、`5291` 无监听，没有 Forkline Node/Electron 遗留进程；浏览器性能临时目录为 0，系统临时目录仍只保留原有四个 `forkline-operation-cancel-*` 目录。
+
+### Notes
+
+- `public/styles.css`：增加 `600px` 窄屏顶栏、路径栏和仓库操作第二行布局。
+- `tests/browser-performance.test.js`：增加精确 `476×1043` 的页面级横向溢出真实浏览器回归。
+- `tests/layout-ui.test.js`：固定第二行路径操作、按钮收缩和顶栏高度契约。
+- `README.md`：把主要功能说明更新为同时支持竖屏与窄屏布局。
+- `docs/CONTINUE.md`：更新回归数量、首屏体积、当前布局基线并追加本轮实测记录。
+- `progress.md`：追加本轮实现、验证、环境清理、文件清单和回滚方式。
+- 回滚点为本轮开始前已包含 Electron 草稿恢复的未提交工作区；提交前只逐块撤销本记录列出的窄竖屏增量，不得整体恢复这些共享脏文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 修复首次打开真实仓库状态不一致并复核窄竖屏
+
+### What was done
+
+- 从示例页首次打开真实仓库时，仓库级清理不再无条件调用尚未载入的文件编辑器搜索模块，避免后台已切仓而页面仍停留在示例仓库。
+- 新增直接覆盖“文件编辑器搜索模块未载入”的仓库切换回归，固定这条按需加载边界。
+- 在真实 `D:/桌面/GitTest` 上只读复核页面与 API 一致性，并确认约 `477×1045` CSS 竖屏下底部三栏和下沉详情均可完整滚动访问。
+
+### Testing
+
+- 新回归在修复前稳定失败并给出 `resetFileEditorSearchUi is not defined`；最小修复后 `node --test tests/layout-ui.test.js` 为 `49/49` 通过。
+- 真实页面与 `/api/state` 均显示 `GitTest`、分支 `123`、29 条图谱记录和 4 个工作区文件，浏览器控制台错误为 0；测试未修改仓库现有内容。
+- 窄竖屏中底部工作台内部横向滚动从 `0` 到最大约 `369px` 后可完整显示提交编辑栏；详情正文纵向滚动从 `0` 到最大约 `605px`，检查后均恢复到顶部。
+- `npm.cmd test` 为 `292/292` 通过，总耗时约 `129.9` 秒；中文首屏为 `30` 个资源、`409,040` 字节。
+- 临时浏览器视口已恢复并结束测试标签；`5177`、`5287`、`5288`、`5292` 监听数量为 0。按约束未启动真实 Electron。
+
+### Notes
+
+- `public/js/features/repositories.js`：在仓库级状态清理中保护按需载入的文件编辑器搜索界面重置函数。
+- `tests/layout-ui.test.js`：增加按需搜索模块缺席时清理仓库状态的可执行回归。
+- `README.md`：说明首次真实仓库切换的一致性行为并更新首屏资源基线。
+- `docs/CONTINUE.md`：更新当前回归数量、首屏体积，并记录真实仓库和竖屏复核结果。
+- `progress.md`：追加本轮实现、验证、环境清理、文件清单和回滚方式。
+- 鼠标指针异常按用户要求移出本轮范围；未修改 Electron 运行参数，也未启动 Electron。
+- 回滚点为本轮开始前已包含窄竖屏顶栏收口的未提交工作区；提交前只逐块撤销本记录列出的仓库切换保护、对应测试和文档增量，不得整体恢复这些共享脏文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 把首次真实仓库切换纳入 Chromium 冷启动回归
+
+### What was done
+
+- 真实 Chromium 回归改为使用独立浏览器配置从示例页启动，不再由测试代码提前调用后台 API 打开仓库。
+- 首屏确认文件编辑器尚未载入后，通过真实路径输入和“打开”按钮进入临时 Git 仓库；页面和后台仓库、提交图、渐进详情及按钮收尾必须全部一致。
+- 保留后续按需模块、复杂文件、3012 条历史、4000 文件工作区和反复切仓性能场景，使冷启动验证成为现有完整性能回归的一部分。
+
+### Testing
+
+- 第一次运行准确暴露旧就绪辅助仍要求“启动时已经是真实仓库”；拆分示例页启动和切仓完成后，第二次运行暴露仓库数据完成与按钮最终恢复之间的正常短暂时序，等待条件据此收紧到完整操作结束。
+- `npm.cmd run test:browser` 为 `1/1` 通过；冷启动切仓验证前后端路径一致、示例标记关闭、提交行已渲染、按钮可用、提示无 `is not defined`，同时 CodeMirror、搜索实现和文件编辑器资源仍未预载。
+- `npm.cmd test` 为 `292/292` 通过，总耗时约 `129.4` 秒；首屏为 `30` 个资源、`409,040` 字节，复杂文件打开约 `263 ms`，真实性能与浸泡边界保持通过。
+- `%TEMP%` 中 `forkline-browser-performance-*` 目录数量为 0，命令行属于本仓库的 `server.js` Node 进程数量为 0；`5177`、`5287`、`5288`、`5292` 监听数量为 0。
+
+### Notes
+
+- `tests/browser-performance.test.js`：把真实浏览器启动流程改为示例页冷启动后通过界面打开临时仓库，并删除不再使用的后台预打开辅助函数。
+- `docs/CONTINUE.md`：追加冷启动切仓回归的覆盖范围、性能结果和环境清理证据。
+- `progress.md`：追加本轮验证强化、失败收敛过程、文件清单和回滚方式。
+- 本轮没有修改产品运行时代码，没有启动真实 Electron，也没有修改 `D:/桌面/GitTest`。
+- 回滚点为本轮开始前已包含首次切仓修复和竖屏复核的未提交工作区；提交前只撤销本记录新增的浏览器冷启动回归及文档增量，不得整体恢复共享脏文件。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 阻止按需加载中的旧仓库动作落到新仓库
+
+### What was done
+
+- Git 操作、提交操作、文件编辑器、Diff 工作台和右键菜单入口在等待按需资源前记录仓库路径，资源完成后再次确认仍是同一仓库。
+- 如果加载期间发生切仓，旧入口直接结束，不再把仓库 A 的点击、写操作或菜单请求交给仓库 B 的实现。
+- 为五类加载器补充确定性竞争回归，固定覆盖资源尚未完成时切仓的边界。
+
+### Testing
+
+- 新增的五条回归在修复前均稳定失败；修复后加载器专项 `28/28` 通过。
+- 相关 5 个加载器和 5 个测试文件均通过 `node --check`。
+- `npm.cmd test` 为 `297/297` 通过，总耗时约 `129.0` 秒；真实 Chromium `1/1`，复杂文件打开约 `265 ms`，3012 条历史、4000 文件工作区和 30 次编辑器开关边界均通过。
+- `git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `%TEMP%` 中 `forkline-browser-performance-*` 目录数量为 0，属于本仓库的 `server.js` Node 进程数量为 0；`5177`、`5287`、`5288`、`5292` 监听数量为 0。
+
+### Notes
+
+- `public/js/features/git-actions-loader.js`：Git 动作按需加载完成后校验仓库快照。
+- `public/js/features/commit-actions-loader.js`：提交与历史动作按需加载完成后校验仓库快照。
+- `public/js/features/file-editor-loader.js`：工作区和历史文件打开或切换前后校验仓库快照。
+- `public/js/features/diff-workbench-loader.js`：Diff 读取、弹窗、逐行和按块动作前后校验仓库快照。
+- `public/js/features/context-menu-loader.js`：所有仓库相关右键菜单按需加载完成后校验仓库快照。
+- `tests/git-actions-loader.test.js`：覆盖 Git 动作等待实现期间切仓。
+- `tests/commit-actions-loader.test.js`：覆盖提交动作等待实现期间切仓。
+- `tests/file-editor-loader.test.js`：覆盖文件打开等待资源期间切仓。
+- `tests/diff-workbench-loader.test.js`：覆盖 Diff 读取等待资源期间切仓。
+- `tests/context-menu-loader.test.js`：覆盖右键菜单等待资源期间切仓。
+- `docs/CONTINUE.md`：更新完整回归数量并记录按需动作切仓保护。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，也没有处理鼠标指针问题。
+- 回滚点为本轮开始前包含冷启动回归的共享未提交工作区；提交前应只反向移除上述五个加载器中的仓库快照校验、五条对应测试及本轮文档增量，不得对这些共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 降低大型工作区文件树滚动展开卡顿
+
+### What was done
+
+- 为每个目录节点按完整文件数量写入固有高度，并让工作区和暂存区目录组使用 `content-visibility: auto`。
+- 浏览器可以跳过屏幕外整棵目录子树的布局和绘制，同时继续保留首批 800、后续每批 400、完整 DOM、目录归纳、折叠、选择、双击和右键语义。
+- 在真实 4000 文件压力回归中增加目录组计算样式契约，防止后续改动退回只逐行隔离的高停顿路径。
+
+### Testing
+
+- 修改前连续四次真实 Chromium 基线中，4000 文件完整展开约 `655-850 ms`，加载阶段最长停顿约 `89-227 ms`，最慢加载帧约 `133-210 ms`。
+- 先验证把每批 400 改为 200：完整展开变为约 `1.26 s`，最长停顿仍约 `187 ms`，因此该实验已完整撤回。
+- 目录级回归在旧样式下确定性失败为 `visible !== auto`；实现后连续两次独立回归和一次完整回归均通过，完整展开约 `245-253 ms`，最长停顿约 `15-23 ms`，最慢帧约 `34-36 ms`。
+- `node --check public/js/features/file-tree.js` 与 `node --check tests/browser-performance.test.js` 通过；`git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `npm.cmd test` 为 `297/297` 通过，总耗时约 `129.0` 秒；复杂文件、冲突编辑器、3012 条历史、渐进切仓、4000 文件和 30 次编辑器开关边界均通过，中文首屏保持 `30` 个资源、`410,717` 字节。
+- `%TEMP%` 中 `forkline-browser-performance-*` 目录数量为 0，属于本仓库的 `server.js` Node 进程数量为 0；`5177`、`5287`、`5288`、`5292` 监听数量为 0。
+
+### Notes
+
+- `public/js/features/file-tree.js`：为目录节点写入按完整文件数量估算的固有高度。
+- `public/styles.css`：让工作区文件树目录组跳过屏幕外子树的布局和绘制。
+- `tests/browser-performance.test.js`：在真实 4000 文件 DOM 中固定目录级渲染隔离契约。
+- `README.md`：说明大型工作区按目录跳过屏幕外布局并保留稳定滚动高度。
+- `docs/ARCHITECTURE.md`：记录首批/增量数量、目录固有高度和真实性能回归边界。
+- `docs/CONTINUE.md`：更新大型工作区当前实现、前后指标和被否决方案。
+- `progress.md`：追加本轮诊断、实现、验证、文件清单和回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，也没有处理鼠标指针问题。
+- 回滚点为本轮开始前包含按需动作切仓保护的共享未提交工作区；提交前应只反向移除目录固有高度、目录级 `content-visibility`、对应浏览器断言及本轮文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 降低大型工作区无变化轮询开销
+
+### What was done
+
+- 定位 4000 文件工作区空闲刷新瓶颈：`git status` 约 `57-60 ms`，逐文件元数据快照约 `192-392 ms`。
+- 后端为当前仓库增加递归、非持久文件监听，并缓存最近一次完整工作区快照；状态、期望快照、监听代次一致且未超过 60 秒时跳过重复文件扫描。
+- 文件事件、Git 状态变化、监听错误、切换仓库或安全期限到达都会完整重扫；监听不可用时自动回退。高频状态读取使用 `GIT_OPTIONAL_LOCKS=0`，避免只读轮询触发可选索引写入。
+- 修正状态命令契约测试按单行代码识别的误报，并固定完整调用块、stdout-only 和可选锁参数；真实浏览器回归改为连续采集 5 次无变化请求，并真实修改文件验证监听失效。
+
+### Testing
+
+- `node --test tests/backend-modules.test.js tests/worktree-refresh.test.js`：`18/18` 通过。
+- `node --test tests/browser-performance.test.js`：真实 Chromium `1/1` 通过；4000 文件冷 API 约 `450.6 ms`，5 次无变化请求中位数 `61.1 ms`，完整展开约 `257.9 ms`，最长加载停顿约 `21.6 ms`，真实文件修改后下一次请求立即返回新快照。
+- `npm.cmd test`：`299/299` 通过，总耗时约 `129.0` 秒；完整回归中的 4000 文件冷 API 约 `456.1 ms`，无变化请求中位数 `60.5 ms`，完整展开约 `244.8 ms`。
+- `node --check` 覆盖 `server/repository-worktree-service.js`、`tests/backend-modules.test.js`、`tests/worktree-refresh.test.js` 和 `tests/browser-performance.test.js`，全部通过。
+- `git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `%TEMP%` 中 `forkline-browser-performance-*` 目录数量为 0，属于本仓库的 `server.js` Node 进程数量为 0；`5177`、`5287`、`5288`、`5292` 监听数量均为 0。
+
+### Notes
+
+- `server/repository-worktree-service.js`：增加当前仓库文件监听、快照复用、60 秒安全重扫、失败回退和只读 Git 状态参数。
+- `tests/worktree-refresh.test.js`：覆盖监听复用、文件事件失效、安全重扫、监听失败回退和状态命令参数。
+- `tests/backend-modules.test.js`：让机器可读状态契约检查完整的多行 Git 调用块。
+- `tests/browser-performance.test.js`：采集 5 次无变化 API 中位数，并真实修改现有文件验证下一次刷新返回新快照。
+- `README.md`：说明后台状态核对、监听辅助复用和 60 秒安全重扫。
+- `docs/ARCHITECTURE.md`：记录缓存生效条件、正确性回退和性能回归边界。
+- `docs/CONTINUE.md`：更新大型工作区当前实现、前后指标和后续开发基线。
+- `progress.md`：追加本轮诊断、实现、验证、环境清理、文件清单和回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，也没有处理鼠标指针问题。
+- 回滚点为本轮开始前包含大型工作区目录级渲染隔离的共享未提交工作区；提交前应只反向移除 `repository-worktree-service.js` 中的监听缓存、对应三份测试增量和本轮文档增量，不得对这些共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 让大型工作区按变化路径增量刷新快照
+
+### What was done
+
+- 在上一轮无变化快照缓存上继续保存完整文件状态列表、规范化变化路径和是否要求全扫的监听状态。
+- Git 状态文本不变时，具体文件事件只重算对应状态项；只有目录事件时重算该目录覆盖的状态项；重复事件和已有具体子路径的祖先事件会合并。
+- `.git/index`、`.git/index.lock`、模糊路径、状态变化、监听错误、切仓和 60 秒安全期限继续完整扫描；其他 `.git` 对象事件忽略。增量刷新保留上一次完整扫描时间，不能无限延期安全全扫。
+- 增加真实 Git index-only 场景：porcelain 前后都为 `MM note.txt`，只替换 index blob，验证 Forkline 仍立即更新工作区快照。
+
+### Testing
+
+- 新增回归在旧实现稳定失败：工作区专项为 `14/15`，新增测试没有经过快照读取钩子；真实 Chromium 单文件变化刷新为 `422.0 ms`，超过 `300 ms` 门限。
+- 实现后 `node --test tests/backend-modules.test.js tests/worktree-refresh.test.js` 为 `19/19` 通过。
+- `node --test --test-name-pattern 'worktree polling returns a compact unchanged response' tests/git-api.test.js` 为 `1/1` 通过，真实验证相同 `MM` 状态文本下 index-only 变化仍刷新快照。第一次通过 `cmd` 使用错误引号启动的专项没有输出，已主动终止；确认无遗留进程后使用 PowerShell 正确传参重跑。
+- `node --test tests/browser-performance.test.js` 为 `1/1` 通过；4000 文件冷 API 约 `439.8 ms`，无变化中位数 `61.4 ms`，单文件变化从 `422.0 ms` 降到 `71.1 ms`，一次请求即返回新快照。
+- `npm.cmd test` 为 `300/300` 通过，总耗时约 `130.7` 秒；完整回归中冷 API 约 `450.5 ms`、无变化中位数 `61.4 ms`、单文件变化 `82.5 ms`。
+- `node --check` 覆盖 `server/repository-worktree-service.js`、`tests/worktree-refresh.test.js`、`tests/browser-performance.test.js` 和 `tests/git-api.test.js`，全部通过。
+- `git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `%TEMP%` 中浏览器性能、监听事件探针和工作区轮询临时目录数量为 0，属于本仓库的 Node 进程数量为 0；`5177`、`5287`、`5288`、`5292` 监听数量均为 0。
+
+### Notes
+
+- `server/repository-worktree-service.js`：记录监听变化路径，缓存完整文件状态，并按文件或目录增量重算；Git index 与安全边界保持全扫。
+- `tests/worktree-refresh.test.js`：覆盖具体文件、父目录、重复事件和 Git index 强制全扫。
+- `tests/browser-performance.test.js`：记录单文件变化 API 时长并固定低于 `300 ms` 的真实浏览器门限。
+- `tests/git-api.test.js`：增加 porcelain 文本不变的真实 index-only 快照刷新验证。
+- `README.md`：说明无变化复用、按路径增量重算和完整扫描边界。
+- `docs/ARCHITECTURE.md`：记录监听事件归并、增量快照、索引正确性和 60 秒安全重扫规则。
+- `docs/CONTINUE.md`：更新大型工作区当前实现、前后指标和后续开发基线。
+- `progress.md`：追加本轮诊断、实现、验证、环境清理、文件清单和回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成无变化轮询快照复用的共享未提交工作区；提交前应只反向移除变化路径集合、增量文件重算、索引强制全扫、对应三份测试增量和本轮文档增量，不得对这些共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 降低大型工作区首次冷扫描开销
+
+### What was done
+
+- 保留工作区文件内容 SHA-256、安全路径校验、快照格式和 8192 项 LRU 缓存边界，不以削弱写操作过期保护换取速度。
+- 缓存为空时使用同一个文件句柄完成打开、元数据读取、内容读取和关闭，减少每个文件一次独立路径查询；缓存命中继续使用路径 `stat` 快速验证元数据，变化后重新读取并生成新哈希。
+- 为 4000 文件真实浏览器场景增加冷 API `350 ms` 门限，并固定首次只打开一个句柄、缓存命中不重复读内容和元数据变化后重新哈希的行为。
+
+### Testing
+
+- 独立 4000 文件微基准中，原 `stat + readFile` 路径为 `353.9-442.8 ms`，单句柄路径为 `180.8-184.9 ms`。
+- `node --test tests/worktree-refresh.test.js` 为 `15/15` 通过；工作区安全专项为 `21/21`，真实 Git index-only 专项为 `1/1`。
+- `node --test tests/browser-performance.test.js` 为 `1/1` 通过；修复前真实 Chromium 冷 API 为 `460.2 ms`，修复后独立回归为 `307.2 ms`，无变化刷新约 `61.6-62.5 ms`，单文件变化约 `76.9-81.4 ms`，渐进详情约 `650.2 ms`。
+- `npm.cmd test` 为 `300/300` 通过，总耗时约 `128.6` 秒；完整回归中的冷 API 为 `306.2 ms`，渐进详情约 `565.5 ms`。
+- `node --check` 覆盖 `server/repository-worktree-service.js`、`tests/worktree-refresh.test.js` 和 `tests/browser-performance.test.js`，全部通过。
+- `git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `%TEMP%` 中 `forkline-browser-performance-*`、`forkline-cold-hash-*` 和 `forkline-open-dir-*` 临时目录均为 0；已关闭本轮遗留的 Forkline `server.js` 测试服务，`5177`、`5287`、`5288`、`5290`、`5292` 监听均为 0。
+
+### Notes
+
+- `server/repository-worktree-service.js`：让冷缓存文件快照复用单个文件句柄，缓存命中路径和强 SHA-256 语义保持不变。
+- `tests/worktree-refresh.test.js`：固定首次句柄打开/关闭次数、缓存命中路径 `stat` 和元数据变化后的重新读取。
+- `tests/browser-performance.test.js`：为 4000 文件冷 API 增加低于 `350 ms` 的真实浏览器门限。
+- `README.md`：简要说明冷扫描仍保留 SHA-256，并记录真实 4000 文件指标。
+- `docs/ARCHITECTURE.md`：记录单句柄读取、缓存命中路径和强快照安全边界。
+- `docs/CONTINUE.md`：追加实现、前后性能、回归结果和环境清理证据。
+- `progress.md`：追加本轮实现、验证、文件清单和局部回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成变化路径增量快照的共享未提交工作区；提交前只应反向恢复 `worktreeFileSnapshot` 的冷缓存读取分支、对应两份测试增量和本轮四份文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 并行载入文件编辑器的独立依赖
+
+### What was done
+
+- 定位文件编辑器首次打开的可优化开销：复杂历史文件冷打开约 `283.3 ms`，资源已加载后的普通文件约 `104.5 ms`，加载器此前依次等待 33 份本地脚本。
+- 把 CodeMirror 核心、插件和语言模式拆成显式依赖层；同层资源并行请求，`JSX / HTMLMixed / Markdown / Dockerfile / PHP` 仍等待各自基础模式，五个 Forkline 编辑器模块继续按原顺序执行。
+- 保留原资源集合、按需加载边界、共享进行中 Promise、切仓过期保护和失败重试语义；当前依赖层失败时不会提前执行后续模块，重试只补失败资源。
+
+### Testing
+
+- 新增分组加载行为测试在旧实现稳定失败为 `4/5`，错误为 `fileEditorScriptResourceGroups is not defined`；实现后 `node --test tests/file-editor-loader.test.js` 为 `5/5` 通过。
+- `node --test tests/file-editor-ui.test.js tests/file-editor-loader.test.js tests/startup-resource-budget.test.js` 为 `40/40` 通过，中文首屏仍为 `30` 个资源、`410,922` 字节。
+- 优化前真实 Chromium 首次复杂文件为 `283.3 ms`；优化后两次独立回归分别为 `234.1 ms` 和 `213.3 ms`，完整回归为 `212.0 ms`，提升约 `17%-25%`。资源已加载后的普通文件保持 `100.5-111.6 ms`。
+- 三次优化后 `npm.cmd run test:browser` / 完整套件中的真实 Chromium 均为 `1/1`；慢编辑器自动降级、冲突编辑器、3012 条历史、4000 文件、渐进打开、30 次编辑器开关、DOM、监听器和堆边界继续通过。
+- `npm.cmd test` 为 `301/301` 通过，总耗时约 `127.6` 秒。
+- `node --check public/js/features/file-editor-loader.js` 和 `node --check tests/file-editor-loader.test.js` 通过；`git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `%TEMP%` 中 `forkline-browser-performance-*`、`forkline-cold-hash-*` 和 `forkline-open-dir-*` 临时目录均为 0，没有本仓库 Node 测试进程；`5177`、`5287`、`5288`、`5290`、`5292` 监听均为 0。
+
+### Notes
+
+- `public/js/features/file-editor-loader.js`：把 33 份文件编辑器脚本改为依赖分组，同组并行、跨组等待。
+- `tests/file-editor-loader.test.js`：增加受控加载器回归，固定同层同时开始和后续依赖层等待行为。
+- `README.md`：说明文件编辑器依赖分组并行载入，并更新首屏资源字节基线。
+- `docs/ARCHITECTURE.md`：记录 CodeMirror 模式依赖层、Forkline 模块顺序和失败重试边界。
+- `docs/CONTINUE.md`：更新当前文件编辑器性能基线并追加实现、回归和环境清理证据。
+- `progress.md`：追加本轮诊断、实现、验证、文件清单和局部回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成冷扫描单句柄读取的共享未提交工作区；提交前只应把 `file-editor-loader.js` 恢复为原有平铺资源数组和逐项等待，移除对应分组测试及本轮文档增量，不得对这些共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 并行读取分支比较并固定提交快照
+
+### What was done
+
+- 定位分支比较首次打开约 `249.1 ms` 的等待链：当前分支名与 HEAD 状态、共同祖先与左右独有提交数此前分别串行等待。
+- 把两组彼此独立的只读 Git 信息改为并行读取；基准和目标解析完成后，后续共同祖先、计数、独有提交日志与 Diff 全部使用固定提交 SHA，避免同一次比较混入分支引用移动后的状态。
+- 保留响应中的基准、目标引用名、中文错误提示、独有提交上限和用户可读命令展示，不改变比较页交互与 Git 语义。
+
+### Testing
+
+- 新增确定性服务回归在旧实现稳定失败为 `false !== true`，同时固定前置读取并发、拓扑读取并发和所有后续 Git 范围使用已解析 SHA；实现后专项 `1/1` 通过。
+- 沙箱内 Node 子进程读取 `D:/桌面/GitTest/.git/objects` 被系统拒绝，确认不是产品错误后，在获准的只读环境重跑真实接口。`main` 对 `local_debug` 连续 6 次均返回基准独有 9 个提交，耗时为 `160.3-168.8 ms`，相对本轮修改前约 `249.1 ms` 降低约 `32%-36%`；测试前后未写入该仓库。
+- `node --test --test-concurrency=1 tests/repository-history-performance.test.js tests/git-api.test.js` 为 `31/31` 通过；`node --check server/repository-history.js` 通过。
+- `npm.cmd test` 为 `302/302` 通过，总耗时约 `128.7` 秒。真实 Chromium 中分支比较页首次 API、资源和渲染合计约 `189.4 ms`，大型历史、4000 文件工作区、编辑器浸泡、Electron、Git 操作与安全边界继续通过。
+- `git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示；临时测量脚本已删除，属于本仓库的 `server.js` Node 进程为 0，`5177`、`5287`、`5288`、`5290`、`5292`、`5294` 均无监听。
+
+### Notes
+
+- `server/repository-history.js`：并行读取分支比较的独立信息，并让后续比较命令使用固定提交 SHA。
+- `tests/repository-history-performance.test.js`：新增受控 Promise 回归，固定并发开始顺序和提交快照范围。
+- `README.md`：说明分支比较的等待优化、快照一致性和真实接口指标。
+- `docs/ARCHITECTURE.md`：记录 `/api/compare` 的并行读取与固定 SHA 边界。
+- `docs/CONTINUE.md`：更新当前分支比较实现、性能基线和完整回归数量。
+- `progress.md`：追加本轮诊断、实现、验证、文件清单和局部回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成文件编辑器依赖并行载入的共享未提交工作区；提交前只应恢复 `readCompare` 原有串行等待和引用名范围、移除 `repository-history-performance.test.js` 及本轮四份文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 复用逐行追踪的文件存在性检查
+
+### What was done
+
+- 拆分“文件历史 / 逐行追踪”的真实接口耗时，确认文件历史为 `80.0-86.0 ms`，逐行追踪为 `113.2-116.8 ms`；正常文件路径中存在两次完全相同的 `cat-file -e ref:file`。
+- 文件路径解析现在同时返回目标文件是否已经存在于指定引用；逐行追踪直接复用该结果，只在未找到时继续检查父提交。
+- 保留工作区重命名旧路径解析、父提交回溯、无提交分支中文提示、逐行内容上限和 API 返回结构，不改变文件历史行为。
+
+### Testing
+
+- 新回归在旧实现稳定为 `1/2`，失败为存在性检查 `2 !== 1`；实现后 `tests/repository-history-performance.test.js` 为 `2/2` 通过，并确认正常文件不触发工作区状态读取。
+- 在获准的只读环境对 `D:/桌面/GitTest` 连续复测：文件历史保持 `79.0-83.3 ms`，逐行追踪降到 `79.1-82.7 ms`，相对修改前降低约 `28%-32%`；每次均返回相同的 9 行归属结果，测试前后未写入仓库。
+- `npm.cmd run test:browser` 为 `1/1` 通过；“文件历史 + 逐行追踪”首次资源、两次 API 和渲染合计约 `174.6 ms`，修改前完整回归约 `206.9 ms`。完整套件中的同项为 `179.4 ms`。
+- `node --test --test-concurrency=1 tests/repository-history-performance.test.js tests/git-api.test.js` 为 `32/32` 通过，覆盖正常引用、无提交分支提示、离线远端引用和完整 Git 工作流。
+- `npm.cmd test` 为 `303/303` 通过，总耗时约 `127.4` 秒；真实 Chromium、Electron、布局、编辑器、Git 操作、4000 文件工作区和安全边界继续通过。
+- `node --check` 覆盖 `server/repository-history.js` 和 `tests/repository-history-performance.test.js`；`git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。临时测量脚本已删除，属于本仓库的 `server.js` Node 进程为 0，`5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295` 均无监听。
+
+### Notes
+
+- `server/repository-history.js`：让文件路径解析携带引用存在性结果，逐行追踪复用后再决定是否检查父提交。
+- `tests/repository-history-performance.test.js`：增加正常文件只执行一次存在性检查的确定性回归。
+- `README.md`：说明逐行追踪的重复 Git 读取优化和真实接口指标。
+- `docs/ARCHITECTURE.md`：记录文件路径解析与逐行追踪之间的存在性复用边界。
+- `docs/CONTINUE.md`：更新逐行追踪、文件追踪面板性能和完整回归数量。
+- `progress.md`：追加本轮诊断、实现、验证、文件清单和局部回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成分支比较并行读取的共享未提交工作区；提交前只应移除路径解析结果中的 `existsAtRef`、恢复逐行追踪的第二次存在性检查、移除对应测试及本轮四份文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 合并分支比较快照并同轮读取结果
+
+### What was done
+
+- 继续拆解分支比较等待链：上一轮仍依次经历当前分支状态、两侧引用解析、共同祖先/计数、日志/Diff 四轮 Git 等待。
+- 有效引用现在用一次 `rev-parse` 快照展开取得基准 SHA、目标 SHA 和共同祖先；左右计数、两侧最多 40 条日志、文件列表和完整 Diff 随后同轮启动，所有范围继续固定使用解析后的 SHA。
+- 快照展开失败时回退到原有逐项引用校验并保留“比较基准 / 比较目标”中文提示；没有共同祖先时继续使用双点 Diff，不改变返回结构、提交上限或界面行为。
+
+### Testing
+
+- 新并发和回退回归在旧实现为 `1/3`，分别因结果读取仍等待计数、未先尝试快照展开而失败；实现后加上无共同祖先覆盖，`tests/repository-history-performance.test.js` 为 `4/4` 通过。
+- 在获准的只读环境对 `D:/桌面/GitTest` 连续 6 次复测，`main` 对 `local_debug` 均返回基准独有 9 个提交、相同两侧 SHA、共同祖先和空文件差异；接口由上一版 `160.3-168.8 ms` 降到 `125.9-135.2 ms`，相对最初约 `249.1 ms` 总体降低约 `46%-49%`。不存在的目标仍返回 HTTP 400 和原中文提示，测试前后未写入仓库。
+- `npm.cmd run test:browser` 为 `1/1` 通过；比较页首次 API、按需资源和渲染合计约 `153.7 ms`，完整套件中为 `164.7 ms`，上一轮为 `189.4-208.4 ms`。
+- `node --test --test-concurrency=1 tests/repository-history-performance.test.js tests/git-api.test.js` 为 `34/34` 通过，覆盖远端引用、完整 Git 工作流、有效快路径、无效引用回退和无共同祖先范围。
+- `npm.cmd test` 为 `305/305` 通过，总耗时约 `127.1` 秒；真实 Chromium、Electron、布局、编辑器、Git 操作、4000 文件工作区和安全边界继续通过。
+- `node --check` 覆盖 `server/repository-history.js` 和 `tests/repository-history-performance.test.js`；`git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。临时测量脚本已删除，属于本仓库的 `server.js` Node 进程为 0，`5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 均无监听。
+
+### Notes
+
+- `server/repository-history.js`：增加分支比较单次快照展开、带标签回退和结果命令同轮读取。
+- `tests/repository-history-performance.test.js`：固定快照命令、并发波次、无效引用回退和无共同祖先双点范围。
+- `README.md`：更新分支比较快路径、错误回退和累计真实性能指标。
+- `docs/ARCHITECTURE.md`：记录 `/api/compare` 的快照展开、固定 SHA、并发结果读取和回退边界。
+- `docs/CONTINUE.md`：更新分支比较当前实现、性能基线和完整回归数量。
+- `progress.md`：追加本轮诊断、实现、验证、文件清单和局部回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成逐行追踪存在性复用的共享未提交工作区；提交前只应恢复分支比较的两次独立 `rev-parse`、单独 `merge-base`、计数后再启动日志/Diff 的顺序，移除对应两条测试和本轮四份文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 复用历史文件父提交并验证真实双击首开
+
+### What was done
+
+- 提交详情和基础提交读取现在把第一父提交写入按仓库隔离的 512 项 LRU；历史文件读取优先复用，首次未命中仍执行一次 `rev-list --parents` 并回填，根提交空父值同样可复用。
+- 真实 Chromium 性能场景改为先选中提交、进入右侧“文件”页，再对 `complex.c` 文件行触发实际 `dblclick` 委托，覆盖用户真实入口而不是直接调用编辑器函数。
+- 分段记录编辑器资源、提交文件 API 和双栏构建耗时。当前 60000 行历史文件首开已稳定约 `187-190 ms`，因此没有引入约 887 KiB 的 CodeMirror 生成 bundle；其最多影响约 50 ms 资源阶段，却会增加生成文件和校验维护成本。
+
+### Testing
+
+- `node --test --test-concurrency=1 tests/file-editor-performance.test.js tests/repository-history-performance.test.js` 为 `7/7` 通过，覆盖缓存命中、首次未命中、回填复用、提交详情预热、分支比较和逐行追踪边界。
+- 独立 `npm.cmd run test:browser` 为 `1/1` 通过；真实列表双击复杂文件约 `187.4 ms`，提交文件 API `49.3 ms`，资源 `49.1 ms / 36` 请求，估算双栏构建 `89.0 ms`，最大事件循环延迟 `42.6 ms`。
+- `npm.cmd test` 为 `308/308` 通过，总耗时约 `126.4` 秒；完整回归中的复杂文件首开约 `190.2 ms`，提交文件 API `52.5 ms`，最大事件循环延迟 `49.3 ms`，3012 条历史、4000 文件工作区、冲突编辑器、30 次编辑器开关、DOM、监听器和堆边界继续通过。
+- `node --check` 覆盖 `server.js`、两个历史文件服务和三份相关测试；`git diff --check` 无空白错误，仅有仓库既有 LF/CRLF 提示。
+- `%TEMP%` 中 `forkline-browser-performance-*` 临时目录、本仓库 Node 测试进程以及 `5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 监听均为 0。
+
+### Notes
+
+- `server/repository-history.js`：增加按仓库和提交 SHA 隔离的第一父提交 LRU，并在提交详情和基础提交读取后填充。
+- `server/file-editor-service.js`：历史文件读取优先使用父提交缓存，未命中时保留原 Git 解析和回填路径。
+- `server.js`：把仓库历史服务的父提交缓存延迟接入文件编辑服务，保持现有服务初始化顺序。
+- `tests/repository-history-performance.test.js`：固定提交详情读取会记住第一父提交。
+- `tests/file-editor-performance.test.js`：覆盖缓存命中跳过 Git，以及首次未命中只解析和回填一次。
+- `tests/browser-performance.test.js`：通过右侧提交文件树真实双击入口测量复杂历史文件首开，并输出资源、API 和构建分段。
+- `README.md`：说明右侧文件页与历史文件双击之间的父提交复用和真实性能结果。
+- `docs/ARCHITECTURE.md`：记录 512 项缓存键、根提交空值、未命中回退和文件内容读取边界。
+- `docs/CONTINUE.md`：追加实现、真实性能、完整回归、资源合并取舍和环境清理证据。
+- `progress.md`：追加本轮实现、验证、文件清单和局部回滚边界。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，鼠标指针问题按用户要求不处理，也没有提交或推送。
+- 回滚点为本轮开始前已完成分支比较快照合并的共享未提交工作区；提交前只应移除第一父提交缓存与三处接线、两条缓存回归、真实双击性能增量及本轮文档内容，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 避免渐进切仓重复读取核心状态
+
+### What was done
+
+- 为渐进打开增加专用补充接口，只读取首屏缺失的完整分支元数据、Tag、worktree 占用和工作区快照，不再重复当前分支、HEAD、远端、同步和提交历史。
+- 前端把补充结果合并到已经显示的渐进首屏，保留用户当前查看引用、提交选择和历史分页，并清除延迟页签的空占位，保证对应页签仍按需读取。
+- 保留 `/api/state?details=core` 的冷启动兼容用途，以及切仓写操作阻止、仓库上下文校验、旧响应丢弃和错误提示边界。
+
+### Testing
+
+- 新增的服务单元、真实 Git API 和前端状态专项为 `3/3` 通过；旧实现分别稳定失败于缺少方法、接口 `404` 和旧核心状态请求。
+- 独立真实 Chromium `1/1` 通过：12 次切仓从修改前约 `5152.1 ms` 降到 `4683.2 ms`，补充阶段中位从约 `320.5 ms` 降到 `288.4 ms`。
+- 完整 `npm.cmd test` 为 `309/309` 通过，总耗时约 `125.4` 秒；完整回归中的 12 次切仓为 `4706.2 ms`，补充接口中位 `283.4 ms`，渐进首屏/完整补齐约 `153.9/498.0 ms`。
+- 相关脚本通过 `node --check`，`git diff --check` 无空白错误，仅保留仓库既有 LF/CRLF 提示。测试后相关临时目录、本仓库 Node 进程以及 `5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 监听均为 0。
+
+### Notes
+
+- `server/repository-state-service.js`：新增只补渐进首屏缺失数据的 `readOpenDetails()`。
+- `server/repository-service.js`：导出仓库打开补充读取能力。
+- `server.js`：接入带仓库上下文校验的 `GET /api/open-details`。
+- `public/js/features/repositories.js`：改用补充接口并合并渐进首屏状态。
+- `public/js/app/init.js`：同步新的补充加载函数参数。
+- `tests/backend-services.test.js`：固定补充读取只执行五类必要 Git 命令。
+- `tests/git-api.test.js`：覆盖补充接口返回范围和延迟字段边界。
+- `tests/layout-ui.test.js`：验证首屏数据、当前引用和历史在补充阶段保持不变。
+- `tests/browser-performance.test.js`：记录补充接口分段耗时并禁止切仓回退到完整核心状态。
+- `README.md`：说明渐进打开不再重复读取首屏数据。
+- `docs/ARCHITECTURE.md`：记录两个状态接口的职责和前端合并边界。
+- `docs/CONTINUE.md`：追加实现、性能、回归和环境清理证据。
+- `progress.md`：追加本轮闭环记录。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成历史文件父提交缓存的共享未提交工作区；提交前只应移除 `readOpenDetails()`、路由/导出/前端接线、四份对应测试增量和本轮文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 复用最近仓库的工作区快照
+
+### What was done
+
+- 取消切到不同仓库时对绝对路径文件哈希 LRU 的无差别清空；缓存仍由 8192 项上限约束，命中时继续核对文件元数据。
+- 把单一 worktree watcher/read cache 改为按仓库路径隔离的两项 LRU；切回最近仓库可复用，后台文件事件仍会让对应仓库增量刷新，第三个仓库进入时关闭最久未用 watcher，仓库上下文清空时关闭全部。
+- 渐进补充接口改用 watcher 支持的工作区读取缓存；只读状态命令统一设置 `GIT_OPTIONAL_LOCKS=0`，避免 Git 自己刷新索引触发强制全扫。Git 写操作仍走原有新鲜强快照校验。
+
+### Testing
+
+- 新红测在旧实现分别稳定失败为文件哈希 LRU 被清空、切回仓库重复计算 `2 !== 1`，以及补充接口缺少 `GIT_OPTIONAL_LOCKS=0`；实现后缓存、后台事件、两项淘汰和全部关闭边界通过。
+- 工作区/后端/真实 Git 专项 `56/56` 通过；覆盖普通暂存/提交/丢弃、stash、冲突、同步和写前安全快照，没有用读取缓存替代写操作复核。
+- 独立真实 Chromium `1/1` 通过：渐进补齐约 `316.4 ms`，12 次切仓 `3613.3 ms`，补充阶段中位 `88.7 ms`。
+- 完整 `npm.cmd test` 为 `311/311` 通过，总耗时约 `124.8` 秒；完整 Chromium 对应为 `324.8 ms / 3636.6 ms / 89.4 ms`，补充阶段相对上一轮约降低 `68%`。
+- 真实浏览器回归新增补充阶段中位 `< 200 ms` 门限。测试后相关临时目录、本仓库 Node 进程以及 `5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 监听均为 0。
+
+### Notes
+
+- `server/repository-service.js`：切仓不再清空绝对路径文件哈希 LRU。
+- `server/repository-worktree-service.js`：增加两仓库 watcher/read cache LRU、后台事件隔离、淘汰关闭和缓存读取路径。
+- `server/repository-state-service.js`：渐进补充接口使用工作区读取缓存，只读状态命令禁止可选索引写入。
+- `tests/backend-services.test.js`：固定文件哈希 LRU、缓存读取入口和只读 status 环境边界。
+- `tests/worktree-refresh.test.js`：覆盖切回复用、后台事件失效、第三仓库淘汰和全部关闭。
+- `tests/browser-performance.test.js`：为切仓补充阶段增加真实性能门限。
+- `README.md`：说明最近仓库工作区快照复用及失效条件。
+- `docs/ARCHITECTURE.md`：记录两项 LRU、watcher 生命周期、可选锁和写前安全边界。
+- `docs/CONTINUE.md`：追加诊断、实现、性能、回归和环境清理证据。
+- `progress.md`：追加本轮闭环记录。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，没有处理鼠标指针问题，也没有提交或推送。
+- 回滚点为本轮开始前已完成渐进打开补充接口的共享未提交工作区；提交前只应恢复切仓清空、单 watcher/read cache 和普通只读 status 选项，移除三条缓存回归、浏览器门限及本轮文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 减少仓库打开和提交详情的 Git 进程波次
+
+### What was done
+
+- 当前分支优先从 worktree 的 `.git/HEAD` 读取，异常结构保留原 Git 回退；渐进打开复用已取得的分支，避免同步状态再次查询。
+- 同步状态复用 tracking 中的 upstream、ahead、behind、gone 和 remote-tracking SHA；完整快照存在时不再重复执行 upstream 解析或领先/落后统计。
+- 提交详情把元数据、正文、父提交合并为一次读取，并与第一父提交文件清单、可选 Diff 同轮启动；合并提交和历史文件父提交缓存语义保持不变。
+- 为仓库打开、提交详情和补充接口增加真实性能门限，并同步更新使用与架构文档。
+
+### Testing
+
+- 新红测在旧实现稳定失败为 HEAD 文件未使用、渐进打开分支读取 `2 !== 1`、tracking 数量未复用，以及提交文件/Diff 未在元数据等待期间启动；实现后全部通过。
+- 后端/工作区/提交详情专项 `34/34` 通过；真实 Git 的渐进打开、同步状态、提交文件和合并历史流程 `4/4` 通过。
+- 两次独立真实 Chromium `1/1` 均通过：第一轮 `3209.7 ms / 140.8 ms / 64.6 ms`，最终轮 12 次切仓约 `2783.0 ms`、`/api/open` 中位 `105.9 ms`、提交详情中位 `65.0 ms`。完整套件内对应为 `2830.3 / 107.4 / 64.4 ms`。
+- 完整 `npm.cmd test` 为 `314/314` 通过，总耗时约 `119.8` 秒；性能门限为 `/api/open < 140 ms`、`/api/open-details < 200 ms`、`/api/commit < 100 ms`。
+
+### Notes
+
+- `server/repository-service.js`：增加 `.git/HEAD` 当前分支快速路径和原 Git 回退。
+- `server/repository-state-service.js`：渐进打开复用分支，并向同步详情传递 tracking 与远端 SHA 快照。
+- `server/repository-worktree-service.js`：完整同步快照存在时跳过重复 upstream 和领先/落后 Git 读取。
+- `server/repository-history.js`：提交元数据、文件清单和可选 Diff 改为同轮读取。
+- `tests/backend-services.test.js`：覆盖 HEAD 快速路径、渐进分支复用和同步快照传递。
+- `tests/worktree-refresh.test.js`：覆盖完整 tracking 快照不再启动额外 Git 命令。
+- `tests/repository-history-performance.test.js`：覆盖提交详情三路读取并发与父提交缓存。
+- `tests/git-api.test.js`：覆盖真实合并提交仍按第一父提交返回文件与 Diff。
+- `tests/browser-performance.test.js`：固定打开仓库、补充接口和提交详情中位性能门限。
+- `README.md`：补充仓库首屏和提交详情的快照复用及当前性能数据。
+- `docs/ARCHITECTURE.md`：记录 HEAD、tracking、远端 SHA 和提交详情并发契约。
+- `docs/CONTINUE.md`：追加诊断、实现、性能和完整回归证据。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 本轮没有启动真实 Electron，没有修改 `D:/桌面/GitTest`，鼠标指针问题按用户要求不处理，也没有提交或推送。
+- 回滚点为上一节“复用最近仓库的工作区快照”完成后的共享未提交工作区；提交前只应移除本节列出的快速路径、快照字段、并发提交读取、对应红测/门限和文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 最终检查中相关 Node/Chromium 进程、三类性能临时目录和 `5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 监听均为 0；临时性能分析脚本已删除。
+
+## 2026-08-12 - Task: 合并仓库引用快照并减少状态读取 Git 进程
+
+### What was done
+
+- 渐进首屏和默认完整状态使用一次保留 `branch.sort` 的 `git branch --all` 格式化快照，同时取得本地/远端分支、tracking、提交元数据和远端 SHA，不再为同一批引用重复启动独立 Git 命令。
+- 渐进补充接口把 tracking、分支元数据和 Tag 合为一次引用查询，并让工作区快照在 `git status` 返回后立即开始；原有 API 字段、分支/Tag/Git 安全语义保持不变。
+- 收紧真实 Chromium 中仓库打开与补充接口性能门限，并更新使用说明、架构约束和续开发记录。
+
+### Testing
+
+- 红测先分别确认补充接口仍有 3 次 `for-each-ref`、渐进首屏和核心状态仍有重复分支引用命令；实现后 `tests/backend-services.test.js` 为 `12/12` 通过。
+- 真实 Git 的渐进打开专项和优化状态专项分别为 `1/1` 通过；本轮未修改 `D:/桌面/GitTest`。
+- 独立波次测量：补充接口旧五进程中位 `65.7 ms`、新三进程 `54.1 ms`；完整状态旧四引用进程中位 `56.5 ms`、新单引用进程 `45.5 ms`。临时测量脚本运行后已删除。
+- 两轮独立 `npm.cmd run test:browser` 均为 `1/1` 通过；最终 12 次切仓约 `2603.6 ms`，`/api/open` 中位 `99.2 ms`、`/api/open-details` 中位 `80.3 ms`、`/api/commit` 中位 `55.7 ms`，4000 文件渐进首屏/完整补齐约 `114.7/247.3 ms`。
+- 最终完整 `npm.cmd test` 为 `314/314` 通过，耗时约 `118.1` 秒；完整 Chromium 中 12 次切仓约 `2596.4 ms`，`/api/open` 中位 `100.1 ms`、`/api/open-details` 中位 `80.8 ms`、`/api/commit` 中位 `55.1 ms`，收紧后的 `<130/<150/<100 ms` 门限全部通过。4000 文件渐进首屏/完整补齐约 `113.5/255.5 ms`，30 次编辑器开关后的 DOM、监听器和堆边界继续稳定。
+- `node --check` 覆盖服务实现和两份相关测试；`git diff --check` 无空白错误，仅保留仓库既有 LF/CRLF 提示。
+- 最终检查中 `forkline-browser-performance-*`、`forkline-open-dir-*`、`forkline-cold-hash-*` 临时目录均为 0，没有指向本仓库或浏览器性能夹具的 Node/Chromium 进程；`5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 均无监听，临时性能脚本为 0。
+
+### Notes
+
+- `server/repository-state-service.js`：增加统一引用快照格式与拆分逻辑，并接入渐进首屏、补充详情和默认状态。
+- `tests/backend-services.test.js`：固定单引用查询、分支排序入口、tracking、远端 SHA、Tag 和核心状态边界。
+- `tests/browser-performance.test.js`：收紧 `/api/open` 与 `/api/open-details` 中位耗时门限。
+- `README.md`：更新引用快照复用和当前真实 Chromium 指标。
+- `docs/ARCHITECTURE.md`：记录统一引用快照、并行工作区读取和不可退化的 Git 语义。
+- `docs/CONTINUE.md`：追加诊断、实现、性能和验证证据。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 本轮未启动真实 Electron，未处理鼠标指针问题，未提交或推送。
+- 回滚点为上一节“减少仓库打开和提交详情的 Git 进程波次”完成后的共享未提交工作区；提交前只应移除本节列出的统一引用快照、三条红测/门限和文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 缩短 Git 操作完成后的仓库状态回填
+
+### What was done
+
+- 常用 Git 操作结束后统一读取轻量核心仓库状态，不再等待分支整理、工作树、子模块、储藏和恢复点等延迟区块；图谱、同步摘要、Tag、工作区和未完成操作状态仍会立即更新。
+- 核心状态响应确认仍属于原仓库后，使旧详情请求失效并清空详情加载缓存；切仓期间返回的旧响应不会影响新仓库，当前打开的延迟页签会按需重新读取。
+- 提交/同步、冲突继续或中止、远端管理三条常用动作改为复用统一回填入口；工作区专用刷新和动作直接返回的状态保持原路径。
+
+### Testing
+
+- 新增专项回归在旧实现稳定失败为 `2/3`，修复后 `tests/action-state-refresh.test.js` 为 `3/3` 通过；覆盖 `details=core` URL、详情请求失效、切仓隔离和三条常用动作不再直读完整状态。
+- `node --check` 覆盖 `public/js/core.js`、`public/js/features/git-actions.js` 和浏览器性能测试；相邻动作、仓库上下文和工作区回归 `26/26` 通过。
+- 独立真实 Chromium `1/1` 通过，只观察到 `/api/state?ref=main&details=core`，状态回填约 `57.3 ms`；复杂文件、冲突编辑器、3012 条历史、4000 文件和 30 次编辑器开关边界继续通过。
+- 完整 `npm.cmd test` 为 `317/317` 通过，耗时约 `105.6` 秒；完整 Chromium 中状态回填约 `58.9 ms`，首屏资源保持 `30` 个、`411,226` 字节。
+
+### Notes
+
+- `public/js/core.js`：统一动作状态入口改为核心状态请求，并使原仓库的旧详情请求失效。
+- `public/js/features/git-actions.js`：提交/同步、仓库未完成操作和远端管理复用统一状态入口。
+- `tests/action-state-refresh.test.js`：新增动作回填、详情缓存失效和切仓隔离专项。
+- `tests/browser-performance.test.js`：在真实 Chromium 中固定核心状态请求 URL、缓存失效和实际耗时。
+- `README.md`：补充操作完成后轻量回填的用户可感知行为。
+- `docs/ARCHITECTURE.md`：记录统一入口、详情请求失效和不可退化的专用刷新契约。
+- `docs/CONTINUE.md`：追加诊断、实现、性能和完整回归基线。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 本轮未启动真实 Electron，未修改 `D:/桌面/GitTest`，未处理鼠标指针问题，也未提交或推送。
+- 回滚点为上一节“合并仓库引用快照并减少状态读取 Git 进程”完成后的共享未提交工作区；提交前只应移除本节列出的轻量动作回填、专项/浏览器断言和文档增量，不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+- 最终清理确认 `forkline-browser-performance-*` 临时目录为 0、Node 监听服务为 0，`5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 均无监听。
+
+## 2026-08-12 - Task: 使用页面品牌标识作为 Forkline 桌面图标
+
+### What was done
+
+- 按页面左上角现有品牌标识制作可维护的 SVG、高清透明 PNG 和 Windows 多尺寸 ICO，保留青绿到珊瑚色渐变、两枚节点和斜向分支线。
+- Electron 窗口、任务栏和桌面快捷方式统一使用 Forkline 品牌图标，不再显示 Electron 默认图标。
+
+### Testing
+
+- `electron/assets/forkline-icon.png` 验证为 `512x512`、32 位透明 PNG，角落透明、主体不透明；人工检查渐变、节点、连线和小尺寸识别度正常。
+- `electron/assets/forkline-icon.ico` 验证为标准 ICO，包含 `16/20/24/32/40/48/64/128/256` 九档尺寸。
+- `node --test tests/electron-shell.test.js` 为 `30/30` 通过，覆盖图标文件结构、尺寸列表和 Electron 窗口引用。本轮没有启动真实 Electron，也没有修改 `D:/桌面/GitTest`。
+- 完整 `npm.cmd test` 为 `318/318` 通过，耗时约 `107.5` 秒；真实 Chromium、Git 操作、Electron 外壳、文件编辑器、布局和性能边界全部通过。
+- 最终检查中相关 Node/Chromium 进程、性能临时目录以及 `5177`、`5287`、`5288`、`5290`、`5292`、`5294`、`5295`、`5296` 监听均为 0。
+
+### Notes
+
+- `electron/assets/forkline-icon.svg`：页面品牌标识的可维护矢量源图。
+- `electron/assets/forkline-icon.png`：Electron 非 Windows 窗口和高清预览图标。
+- `electron/assets/forkline-icon.ico`：Windows 窗口、任务栏、快捷方式和后续安装包图标。
+- `electron/main.js`：为 `BrowserWindow` 指定平台对应的 Forkline 图标。
+- `tests/electron-shell.test.js`：固定图标资源结构、多尺寸 ICO 和窗口引用契约。
+- `docs/ELECTRON_DESKTOP.md`：补充桌面图标用途和手工快捷方式配置说明。
+- `docs/CONTINUE.md`：追加图标实现与验证基线。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 回滚时只移除上述三份图标资源、`electron/main.js` 的图标路径与窗口配置、对应测试和本轮文档增量；不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 将 Forkline 图标升级为三节点分叉
+
+### What was done
+
+- 把原有两节点连线改为三节点 Git 分叉，使用左侧纵向主线和右上曲线支线增强产品辨识度，保留既有渐变、圆角底板和主题适配。
+- 页面左上角、Electron 窗口、任务栏和桌面快捷方式继续共用同一品牌结构；重新生成高清 PNG 和九档 Windows ICO。
+
+### Testing
+
+- 新契约在旧实现稳定失败为 SVG 节点数量 `2 !== 3`；实现后验证 SVG 包含三枚节点、两条线，页面 CSS 包含一条分叉轮廓和三枚径向节点。
+- `16/32/64px` ICO 帧放大检查均能辨认主线、支线和三枚节点；高清 PNG 验证为 `512x512`、32 位透明图。
+- 真实 Chromium 中页面标识为 `30x30`，三节点渐变和 `clip-path` 分叉均实际生效；截图确认顶部栏没有尺寸或排版变化。
+- `node --test tests/electron-shell.test.js tests/design-system.test.js tests/layout-ui.test.js` 为 `83/83` 通过。临时浏览器页和 `5298` 服务已关闭，未启动真实 Electron，未修改 `D:/桌面/GitTest`。
+- 完整 `npm.cmd test` 为 `318/318` 通过，耗时约 `108.3` 秒；真实 Chromium、Git 操作、Electron 外壳、文件编辑器、布局和性能边界全部通过。
+- 最终检查中相关 Node/Chromium 进程、性能临时目录和常用测试端口均为 0；小尺寸预览临时文件已删除。
+
+### Notes
+
+- `public/styles.css`：把页面品牌标识改为三节点分叉结构。
+- `electron/assets/forkline-icon.svg`：更新可维护矢量源图。
+- `electron/assets/forkline-icon.png`：重新生成三节点高清透明图标。
+- `electron/assets/forkline-icon.ico`：重新生成九档 Windows 图标。
+- `tests/electron-shell.test.js`：固定三节点、两条线、页面分叉轮廓和三枚节点契约。
+- `docs/ELECTRON_DESKTOP.md`：说明新图标的主线与支线语义。
+- `docs/CONTINUE.md`：追加设计、渲染和专项验证基线。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 回滚时只恢复上述品牌图形、三份生成资源、对应契约和本轮文档增量；不得对共享脏文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 修复带远端仓库在请求失败后无法打开
+
+### What was done
+
+- 仓库打开接口遇到一次浏览器级瞬时网络错误时自动重试；原始 `Failed to fetch` 统一转换为明确的中文“无法连接 Forkline 本地服务”。
+- 渐进打开的详情请求失败后自动回退到当前引用的本地核心 Git 状态，成功时正常结束载入并保留中文降级提示；回退也失败时仍保留提交历史，只继续保护依赖可靠工作区快照的写操作。
+- Electron 通过启动参数预加载仓库失败时不再终止整个应用，而是照常打开窗口并把仓库路径交给页面重试。打开与降级过程不执行隐式 `git fetch`。
+
+### Testing
+
+- 新增前端红测在旧实现稳定失败：详情请求抛出 `Failed to fetch` 后没有本地回退，`state.repoHydrating` 永久保持为真；修复后正常渐进打开、本地回退和双重失败保护 `3/3` 通过。
+- API/Electron 专项验证 `6/6` 通过，覆盖网络错误中文化、`/api/open` 单次重试、详情回退、历史保留和 Electron 启动降级。
+- 真实 Git 临时仓库删除本地裸远端后，渐进打开、`/api/open-details`、本地核心状态、`origin/feature` 提交历史、文件历史、逐行追踪和分支比较全部通过；未使用或修改 `D:/桌面/GitTest`。
+- 完整 `npm.cmd test` 为 `322/322` 通过，耗时约 `110.8` 秒；真实 Chromium、Electron 外壳、Git 操作、离线远端、布局与性能边界全部通过。相关 JavaScript `node --check` 和本轮文件 `git diff --check` 通过，仅有仓库既有的 LF/CRLF 提示。
+
+### Notes
+
+- `public/js/api.js`：中文化浏览器网络错误，并只对幂等的仓库打开入口自动重试一次。
+- `public/js/features/repositories.js`：增加详情失败后的本地核心状态回退、降级提示和双重失败保护。
+- `electron/main.js`：启动仓库预加载失败时保留应用窗口并交给页面重试。
+- `public/js/i18n-catalog.js`：补充本地服务和仓库降级提示的英文词条。
+- `tests/api-repo-context.test.js`：固定网络错误中文化和仓库打开单次重试。
+- `tests/layout-ui.test.js`：固定正常渐进打开、详情失败回退和双重失败时历史可浏览。
+- `tests/electron-shell.test.js`：固定 Electron 启动预加载失败的非致命处理。
+- `tests/git-api.test.js`：扩展远端离线真实仓库的渐进打开和本地详情读取验证。
+- `README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`、`docs/ELECTRON_DESKTOP.md`：记录用户行为、状态契约、继续开发基线和桌面启动边界。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 本轮未提交、未推送，也未修改共享工作区中的其他任务内容。
+- 回滚时只逆向移除上述打开重试、本地回退、Electron 非致命预加载、对应测试和本轮文档增量；共享工作区已有大量未提交修改，不得对这些文件执行整文件 `git restore`。提交后应对包含本记录的提交执行 `git revert <commit>`。
+
+## 2026-08-12 - Task: 准备 Forkline v0.4.0 发布
+
+### What was done
+
+- 将正式版本更新为 `0.4.0`，收口 Electron 源码桌面能力、Web 性能优化、远端离线打开降级和标题栏皮肤联动。
+- Windows 原生标题栏通过受限 IPC 使用当前皮肤的顶部背景色和文字色，最小化、最大化、关闭按钮在切换皮肤及启动恢复皮肤时同步变化；浏览器版不受影响。
+- 更新 README、Electron 桌面说明、便携包说明和继续开发记录，明确本次自动发布 Web 便携 ZIP，Electron 安装包仍不在发布范围。
+
+### Testing
+
+- 标题栏联动先以失败测试复现，修复后主题与 Electron 专项 `35/35` 通过。
+- `node --check` 覆盖主题脚本、Electron 主进程和 preload；本轮相关文件 `git diff --check` 通过，仅保留仓库既有 LF/CRLF 提示。
+- 完整 `npm.cmd test` 为 `324/324` 通过，0 项失败、0 项跳过，总耗时约 `112.8` 秒。
+- 真实 Electron 在 `D:/桌面/GitTest` 中启动成功；从深色切换浅色后，页面和 Windows 原生标题栏按钮区域实际同步换色。验收服务和窗口随后关闭，未修改测试仓库内容。
+
+### Notes
+
+- `package.json`、`package-lock.json`：版本更新为 `0.4.0`，保留 Electron 依赖与入口。
+- `public/js/app/layout-utils.js`：应用皮肤后同步桌面标题栏颜色。
+- `electron/preload.js`、`electron/main.js`：增加受限标题栏主题 IPC、颜色校验和 Windows 原生覆盖更新。
+- `tests/themes.test.js`、`tests/electron-shell.test.js`：覆盖六套皮肤、浏览器无桌面接口、IPC 与原生标题栏调用。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`：记录发布范围、桌面标题栏行为和附件边界。
+- `progress.md`：仅在末尾追加本轮发布准备记录。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 不属于项目，不纳入提交或 Release。
+- 回滚点为 `v0.3.1` 后当前共享未提交工作区；发布提交后应执行 `git revert <release-commit>` 形成新修复版本，不得移动已经发布的 `v0.4.0` 标签。

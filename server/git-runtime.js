@@ -9,6 +9,13 @@ const OPERATION_CANCELLED_CODE = "FORKLINE_OPERATION_CANCELLED";
 
 function createGitRuntime(options = {}) {
   const gitBin = options.gitBin || findGitExecutable();
+  const runExecFile = options.execFile || execFile;
+  const terminateProcess = options.terminateProcess || terminateOperationProcess;
+  const shutdownWaitMs = Number.isFinite(options.shutdownWaitMs) ? Math.max(0, options.shutdownWaitMs) : 1200;
+  const forceWaitMs = Number.isFinite(options.forceWaitMs) ? Math.max(0, options.forceWaitMs) : 300;
+  const ownedProcesses = new Set();
+  let shuttingDown = false;
+  let shutdownPromise = null;
 
   function git(repoPath, args, commandOptions = {}) {
     const fullArgs = ["-C", repoPath, "-c", "core.quotepath=false", ...args];
@@ -27,12 +34,16 @@ function createGitRuntime(options = {}) {
 
   function executeGit(fullArgs, commandOptions = {}) {
     return new Promise((resolve, reject) => {
+      if (shuttingDown) {
+        reject(runtimeShutdownError());
+        return;
+      }
       const operation = commandOptions.operation;
       if (operation?.cancelRequested) {
         reject(operationCancelledError(operation));
         return;
       }
-      const child = execFile(
+      const child = runExecFile(
         gitBin,
         fullArgs,
         {
@@ -55,14 +66,19 @@ function createGitRuntime(options = {}) {
           resolve(commandOptions.stdoutOnly ? stdout : output);
         }
       );
+      registerOwnedProcess(child);
       if (operation) trackOperationProcess(operation, child, commandOptions.command || "git");
     });
   }
 
   function gitBuffer(repoPath, args, commandOptions = {}) {
     return new Promise((resolve, reject) => {
+      if (shuttingDown) {
+        reject(runtimeShutdownError());
+        return;
+      }
       const fullArgs = ["-C", repoPath, "-c", "core.quotepath=false", ...args];
-      execFile(
+      const child = runExecFile(
         gitBin,
         fullArgs,
         {
@@ -81,7 +97,35 @@ function createGitRuntime(options = {}) {
           resolve(stdout || Buffer.alloc(0));
         }
       );
+      registerOwnedProcess(child);
     });
+  }
+
+  function registerOwnedProcess(child) {
+    if (!child || typeof child.once !== "function") return child;
+    ownedProcesses.add(child);
+    child.once("close", () => ownedProcesses.delete(child));
+    if (shuttingDown) void stopOwnedProcess(child);
+    return child;
+  }
+
+  async function stopOwnedProcess(child) {
+    try {
+      await terminateProcess(child);
+    } catch {
+      // Continue to the owned-handle fallback below.
+    }
+    if (await waitForProcessExit(child, shutdownWaitMs)) return;
+    forceOwnedProcessExit(child);
+    await waitForProcessExit(child, forceWaitMs);
+  }
+
+  function shutdown() {
+    if (shutdownPromise) return shutdownPromise;
+    shuttingDown = true;
+    shutdownPromise = Promise.all([...ownedProcesses].map(stopOwnedProcess))
+      .then(() => ({ remainingProcesses: ownedProcesses.size }));
+    return shutdownPromise;
   }
 
   return {
@@ -90,8 +134,53 @@ function createGitRuntime(options = {}) {
     gitBuffer,
     gitStandalone,
     isOperationCancelledError,
+    registerOwnedProcess,
+    shutdown,
     terminateOperationProcess,
   };
+}
+
+function runtimeShutdownError() {
+  const error = new Error("Forkline 后台服务正在关闭，不能再启动新的 Git 命令。");
+  error.code = "FORKLINE_RUNTIME_SHUTTING_DOWN";
+  return error;
+}
+
+function processHasExited(child) {
+  return !child || child.exitCode != null || child.signalCode != null;
+}
+
+function waitForProcessExit(child, timeoutMs) {
+  if (processHasExited(child)) return Promise.resolve(true);
+  if (!child || typeof child.once !== "function") return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      child.removeListener?.("exit", onExit);
+      child.removeListener?.("close", onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    child.once("exit", onExit);
+    child.once("close", onExit);
+    timer = setTimeout(() => finish(processHasExited(child)), timeoutMs);
+  });
+}
+
+function forceOwnedProcessExit(child) {
+  if (processHasExited(child)) return;
+  try {
+    child.kill?.("SIGKILL");
+  } catch {
+    // The owned process may have exited between the status check and fallback.
+  }
+  child.stdin?.destroy?.();
+  child.stdout?.destroy?.();
+  child.stderr?.destroy?.();
 }
 
 function trackOperationProcess(operation, child, command) {
@@ -138,11 +227,24 @@ function isOperationCancelledError(error, operation) {
   return error?.code === OPERATION_CANCELLED_CODE || Boolean(operation?.cancelRequested);
 }
 
-function terminateOperationProcess(child) {
+function terminateOperationProcess(child, runTaskkill = execFile) {
   if (!child?.pid || child.exitCode !== null || child.killed) return Promise.resolve();
   if (process.platform === "win32") {
     return new Promise((resolve) => {
-      execFile("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, () => resolve());
+      runTaskkill("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, (error) => {
+        if (error) {
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            // The root process may have exited while taskkill was running.
+          }
+          // Git helpers can keep inherited pipes open after the root process exits.
+          child.stdin?.destroy();
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+        }
+        resolve();
+      });
     });
   }
   try {
@@ -184,4 +286,5 @@ module.exports = {
   createGitRuntime,
   findGitExecutable,
   formatGitCommand,
+  terminateOperationProcess,
 };

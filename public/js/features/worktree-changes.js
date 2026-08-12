@@ -1,5 +1,6 @@
 // Worktree and staging area rendering.
-const WORKTREE_FILE_BATCH_SIZE = 800;
+const WORKTREE_FILE_INITIAL_LIMIT = 800;
+const WORKTREE_FILE_BATCH_SIZE = 400;
 
 function renderStage(options = {}) {
   const refreshDiff = options.refreshDiff !== false;
@@ -31,7 +32,7 @@ function renderStage(options = {}) {
   els.refreshChanges.disabled = Boolean(state.refreshingWorktree);
   const terms = worktreeFilterTerms();
   const visibleFiles = filterWorkingFiles(files, terms);
-  state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation);
+  state.worktreeSignature = worktreeStateSignature(files, state.data.repo.operation, state.data.worktreeSnapshot);
   updateWorktreeFilterMeta(terms, visibleFiles.length, files.length);
   const operationBanner = renderRepoOperationBanner(files);
   if (!files.length) {
@@ -77,8 +78,8 @@ function renderStage(options = {}) {
       bindFileTree(els.changeList, { selectable: true, loadMoreScope: "unstaged" });
       bindFileTree(els.stagedChangeList, { selectable: true, loadMoreScope: "staged" });
       markSelectedFile();
-      if (refreshDiff && state.activeDiff?.source !== "history") {
-        if (state.selectedFile) loadWorkingDiff(state.selectedFile);
+      if (refreshDiff && state.activeDiff?.source === "worktree") {
+        if (state.selectedFile) loadWorkingDiffLazy(state.selectedFile).catch((error) => toast(error.message));
         else renderWorkDiffEmpty("未选择文件");
       }
     }
@@ -251,6 +252,17 @@ function renderRepoOperationBanner(files) {
   `;
 }
 
+function refreshRepoOperationBanner(files) {
+  const current = els.changeList.querySelector(".operation-banner");
+  const html = renderRepoOperationBanner(files);
+  if (current) {
+    if (html) current.outerHTML = html;
+    else current.remove();
+  } else if (html) {
+    els.changeList.insertAdjacentHTML("afterbegin", html);
+  }
+}
+
 function renderConflictChoiceRows(conflicts) {
   if (!conflicts.length) return "";
   return `
@@ -316,8 +328,8 @@ function renderChangeSection(scope, title, files, actions) {
 }
 
 function worktreeFileRenderLimit(scope, files) {
-  if (!state.worktreeRenderLimits) state.worktreeRenderLimits = { unstaged: WORKTREE_FILE_BATCH_SIZE, staged: WORKTREE_FILE_BATCH_SIZE };
-  const current = Math.max(WORKTREE_FILE_BATCH_SIZE, Number(state.worktreeRenderLimits[scope]) || 0);
+  if (!state.worktreeRenderLimits) state.worktreeRenderLimits = { unstaged: WORKTREE_FILE_INITIAL_LIMIT, staged: WORKTREE_FILE_INITIAL_LIMIT };
+  const current = Math.max(WORKTREE_FILE_INITIAL_LIMIT, Number(state.worktreeRenderLimits[scope]) || 0);
   let selectedLimit = 0;
   files.forEach((file, index) => {
     if (state.selectedChanges.has(changeKey(scope, file.file))) selectedLimit = index + 1;

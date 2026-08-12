@@ -162,6 +162,206 @@ async function runCommitToolAction(action, sha) {
   }
 }
 
+function renderHistoryRewritePlan(commit) {
+  const plan = state.historyPlan;
+  if (!plan || plan.sha !== commit.sha) return "";
+  const config = historyRewriteConfig(plan.mode) || { title: t("编辑历史"), command: "git rebase -i" };
+  if (plan.loading) {
+    return tt`
+      <section class="history-plan loading">
+        <div class="history-plan-head">
+          <strong>${escapeHtml(t("{title}计划", { title: config.title }))}</strong>
+          <span>${escapeHtml(config.command)}</span>
+        </div>
+        <div class="history-plan-empty">正在预检历史编辑范围...</div>
+      </section>
+    `;
+  }
+  if (plan.error && !plan.preview) {
+    return tt`
+      <section class="history-plan blocked">
+        <div class="history-plan-head">
+          <strong>${escapeHtml(t("{title}计划", { title: config.title }))}</strong>
+          <span>${escapeHtml(config.command)}</span>
+        </div>
+        <div class="history-plan-alert">${escapeHtml(t(plan.error))}</div>
+        <div class="history-plan-actions">
+          <button class="mini-btn" data-history-plan-action="refresh" type="button">重新预检</button>
+          <button class="mini-btn" data-history-plan-action="cancel" type="button">取消</button>
+        </div>
+      </section>
+    `;
+  }
+  const preview = plan.preview || {};
+  const blockers = preview.blockers || [];
+  const warnings = preview.warnings || [];
+  const affected = preview.affectedPreview || [];
+  return tt`
+    <section class="history-plan ${preview.canRun ? "" : "blocked"}">
+      <div class="history-plan-head">
+        <strong>${escapeHtml(t("{title}计划", { title: t(preview.title || config.title) }))}</strong>
+        <span>${escapeHtml(preview.command || config.command)}</span>
+      </div>
+      <p class="history-plan-effect">${escapeHtml(t(preview.effect || config.effect || ""))}</p>
+      <div class="history-plan-grid">
+        <span>当前分支</span><strong>${escapeHtml(preview.branch || state.data?.repo?.branch || t("未知"))}</strong>
+        <span>目标提交</span><strong>${escapeHtml(preview.target?.short || commit.short)} · ${escapeHtml(preview.target?.message || commit.message)}</strong>
+        <span>父提交</span><strong>${preview.parent ? `${escapeHtml(preview.parent.short)} · ${escapeHtml(preview.parent.message)}` : t("无父提交")}</strong>
+        <span>重放范围</span><strong>${escapeHtml(preview.rebaseStart || t("待计算"))}</strong>
+        <span>影响提交</span><strong>${t("{count} 个", { count: escapeHtml(String(preview.affectedCount ?? affected.length)) })}</strong>
+      </div>
+      ${
+        blockers.length
+          ? `<div class="history-plan-alert">${blockers.map((item) => `<span>${escapeHtml(t(item))}</span>`).join("")}</div>`
+          : `<div class="history-plan-ok">${t("预检通过，可以执行。执行前会创建恢复点。")}</div>`
+      }
+      ${
+        warnings.length
+          ? `<div class="history-plan-warnings">${warnings.map((item) => `<span>${escapeHtml(t(item))}</span>`).join("")}</div>`
+          : ""
+      }
+      <div class="history-plan-list">
+        ${affected.length ? affected.map((item) => renderHistoryPlanCommit(item, preview.target?.sha)).join("") : `<div class="history-plan-empty">${t("没有可显示的影响提交")}</div>`}
+      </div>
+      <div class="history-plan-actions">
+        <button class="mini-btn" data-history-plan-action="refresh" type="button">重新预检</button>
+        <button class="mini-btn" data-history-plan-action="cancel" type="button">取消</button>
+        <button class="mini-btn ${plan.mode === "drop" ? "danger" : ""}" data-history-plan-action="execute" type="button" ${preview.canRun ? "" : "disabled"}>
+          <span>确认执行</span><span class="command-hint">${escapeHtml(preview.command || config.command)}</span>
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderHistoryPlanCommit(commit, targetSha) {
+  const isTarget = commit.sha === targetSha;
+  return `
+    <div class="history-plan-commit ${isTarget ? "target" : ""}">
+      <span>${t(isTarget ? "目标" : "重放")}</span>
+      <strong>${escapeHtml(commit.short)} · ${escapeHtml(commit.message)}</strong>
+      <em>${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
+    </div>
+  `;
+}
+
+function renderHistoryRewriteQueue() {
+  const queue = state.historyQueue;
+  const items = queue.items || [];
+  if (!items.length) {
+    return `<div class="history-plan-empty history-queue-empty">${t("队列为空。可以把多个提交加入队列后一次预检和执行。")}</div>`;
+  }
+  const preview = queue.preview || {};
+  const blockers = preview.blockers || [];
+  const warnings = preview.warnings || [];
+  const affected = preview.affectedPreview || [];
+  const actionDetails = new Map((preview.actions || []).map((item) => [item.target?.sha, item]));
+  return tt`
+    <section class="history-plan history-queue ${preview.canRun ? "" : "blocked"}">
+      <div class="history-plan-head">
+        <strong>历史编辑队列</strong>
+        <span>git rebase -i / queue</span>
+      </div>
+      <p class="history-plan-effect">把多个 squash / fixup / drop / reword 动作排队，预检通过后一次重写当前分支历史。</p>
+      <div class="history-plan-grid">
+        <span>当前分支</span><strong>${escapeHtml(preview.branch || state.data?.repo?.branch || t("未知"))}</strong>
+        <span>队列动作</span><strong>${t("{count} 项", { count: escapeHtml(String(preview.queueCount ?? items.length)) })}</strong>
+        <span>重放范围</span><strong>${escapeHtml(preview.rebaseStart || t(queue.loading ? "正在计算" : "待预检"))}</strong>
+        <span>影响提交</span><strong>${t("{count} 个", { count: escapeHtml(String(preview.affectedCount ?? affected.length)) })}</strong>
+      </div>
+      <div class="history-plan-list history-queue-list">
+        ${items.map((item, index) => renderHistoryQueueItem(item, index, actionDetails.get(item.sha))).join("")}
+      </div>
+      ${queue.loading ? `<div class="history-plan-empty">${t("正在预检历史编辑队列...")}</div>` : ""}
+      ${queue.error ? `<div class="history-plan-alert"><span>${escapeHtml(t(queue.error))}</span></div>` : ""}
+      ${
+        blockers.length
+          ? `<div class="history-plan-alert">${blockers.map((item) => `<span>${escapeHtml(t(item))}</span>`).join("")}</div>`
+          : !queue.loading && preview.canRun
+            ? `<div class="history-plan-ok">${t("预检通过，可以执行队列。执行前会创建恢复点。")}</div>`
+            : ""
+      }
+      ${
+        warnings.length
+          ? `<div class="history-plan-warnings">${warnings.map((item) => `<span>${escapeHtml(t(item))}</span>`).join("")}</div>`
+          : ""
+      }
+      ${
+        affected.length
+          ? `<div class="history-queue-preview-title"><strong>${t("实际执行顺序")}</strong><span>${t("按当前分支历史生成")}</span></div><div class="history-plan-list">${affected.map(renderHistoryQueueAffectedCommit).join("")}</div>`
+          : ""
+      }
+      <div class="history-plan-actions">
+        <button class="mini-btn" data-history-queue-action="refresh" type="button">重新预检</button>
+        <button class="mini-btn" data-history-queue-action="clear" type="button">清空队列</button>
+        <button class="mini-btn danger" data-history-queue-action="execute" type="button" ${preview.canRun && !queue.loading ? "" : "disabled"}>
+          <span>执行队列</span><span class="command-hint">git rebase -i</span>
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderHistoryQueueItem(item, index, detail) {
+  const config = historyRewriteConfig(item.mode) || { title: t("编辑历史"), command: "git rebase -i" };
+  const target = detail?.target || item;
+  const commandText = item.mode === "reword" && item.summary ? `${config.command} -> ${item.summary}` : config.command;
+  const modeOptions = ["squash", "fixup", "reword", "drop"]
+    .map((mode) => {
+      const modeConfig = historyRewriteConfig(mode);
+      return `<option value="${escapeAttr(mode)}" ${mode === item.mode ? "selected" : ""}>${escapeHtml(modeConfig.title)}</option>`;
+    })
+    .join("");
+  const rewordItem = historyQueueItemWithMode(item, "reword");
+  const rewordFields = item.mode === "reword"
+    ? tt`
+      <div class="history-queue-reword">
+        <label>
+          <span>新摘要</span>
+          <input data-history-queue-field data-sha="${escapeAttr(item.sha)}" data-field="summary" value="${escapeAttr(rewordItem.summary || "")}" autocomplete="off" />
+        </label>
+        <label>
+          <span>新正文</span>
+          <textarea data-history-queue-field data-sha="${escapeAttr(item.sha)}" data-field="body">${escapeHtml(rewordItem.body || "")}</textarea>
+        </label>
+      </div>
+    `
+    : "";
+  return tt`
+    <div class="history-plan-commit history-queue-item ${item.mode === "drop" ? "danger" : ""}">
+      <div class="history-queue-mode-cell">
+        <span>${t("第 {index} 项", { index: index + 1 })}</span>
+        <select data-history-queue-action="changeMode" data-sha="${escapeAttr(item.sha)}" title="${t("修改此队列项动作")}">
+          ${modeOptions}
+        </select>
+      </div>
+      <div class="history-queue-copy">
+        <strong>${escapeHtml(target.short || item.short || item.sha.slice(0, 7))} · ${escapeHtml(target.message || item.message || "")}</strong>
+        <em>${escapeHtml(commandText)}</em>
+      </div>
+      ${rewordFields}
+      <div class="history-queue-buttons">
+        <button class="mini-btn" data-history-queue-action="moveUp" data-sha="${escapeAttr(item.sha)}" type="button" ${index === 0 ? "disabled" : ""} title="${t("上移队列显示顺序")}">${t("上移")}</button>
+        <button class="mini-btn" data-history-queue-action="moveDown" data-sha="${escapeAttr(item.sha)}" type="button" ${index >= state.historyQueue.items.length - 1 ? "disabled" : ""} title="${t("下移队列显示顺序")}">${t("下移")}</button>
+        <button class="mini-btn" data-history-queue-action="remove" data-sha="${escapeAttr(item.sha)}" type="button" title="${t("从历史编辑队列移除第 {index} 项", { index: index + 1 })}">${t("移除")}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHistoryQueueAffectedCommit(commit) {
+  const action = commit.queueAction || "pick";
+  const isChanged = action !== "pick";
+  const command = commit.queueSummary ? `${commit.queueCommand || "pick"} -> ${commit.queueSummary}` : commit.queueCommand || "pick";
+  return `
+    <div class="history-plan-commit ${isChanged ? "target" : ""} ${action === "drop" ? "danger" : ""}">
+      <span>${escapeHtml(t(commit.queueActionLabel || (isChanged ? action : "保留")))}</span>
+      <strong>${escapeHtml(commit.short)} · ${escapeHtml(commit.message)}</strong>
+      <em>${escapeHtml(command)} · ${escapeHtml(commit.author || "")} ${escapeHtml(commit.time || "")}</em>
+    </div>
+  `;
+}
+
 function historyRewriteConfig(mode) {
   return {
     squash: {
@@ -895,4 +1095,24 @@ async function createTagFromForm(event) {
     els.tagSubmit.disabled = false;
   }
 }
+
+globalThis.ForklineCommitActions = {
+  openCompareBranch,
+  refreshCompare,
+  runCommitContextAction,
+  runCommitToolAction,
+  updateHistoryQueueField,
+  runHistoryRewriteQueue,
+  runHistoryRewritePlan,
+  reloadAfterHistoryAction,
+  openRemoteCommit,
+  copyCommitPatch,
+  downloadCommitPatch,
+  runSyncPullRequestAction,
+  openTagModal,
+  createTagFromForm,
+  submitMainlineForm,
+  renderHistoryRewritePlan,
+  renderHistoryRewriteQueue,
+};
 

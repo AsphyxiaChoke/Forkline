@@ -2,12 +2,15 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 
 const { createGitBranchService } = require("../server/git-branch-service");
 const { createGitRecoveryService } = require("../server/git-recovery-service");
 const { createRepositoryAuthService } = require("../server/repository-auth-service");
 const { createRepositoryBrowseService } = require("../server/repository-browse-service");
+const { createRepositoryService } = require("../server/repository-service");
 const { createRepositoryStateService } = require("../server/repository-state-service");
 const {
   extractSelectedLinePatch,
@@ -158,6 +161,25 @@ test("branch service protects configured trunk names case-insensitively", () => 
   assert.equal(branches.isProtectedBranchName("feature/main"), false);
 });
 
+test("repository branch display reads the worktree HEAD file before spawning Git", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-head-read-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const repoPath = path.join(root, "repo");
+  await fs.mkdir(path.join(repoPath, ".git"), { recursive: true });
+  await fs.writeFile(path.join(repoPath, ".git", "HEAD"), "ref: refs/heads/feature/direct-head\n", "utf8");
+  let gitReads = 0;
+  const repository = createRepositoryServiceForTest({
+    repoPath,
+    git: async () => {
+      gitReads += 1;
+      return "fallback";
+    },
+  });
+
+  assert.equal(await repository.readBranchDisplayName(repoPath), "feature/direct-head");
+  assert.equal(gitReads, 0);
+});
+
 test("repository state helpers clamp history pages and select graph mode", () => {
   const state = createRepositoryStateService({
     getCurrentRepo: () => null,
@@ -183,6 +205,13 @@ test("repository state helpers clamp history pages and select graph mode", () =>
 
 test("repository core state skips deferred Git readers and enrichers", async () => {
   const gitCalls = [];
+  const headSha = "a".repeat(40);
+  const remoteSha = "b".repeat(40);
+  const combinedBranchOutput = [
+    `refs/heads/main\tmain\t${headSha}\t${headSha.slice(0, 7)}\t2 hours ago\t1730000000\t2 hours ago\tcommit\torigin/main\t\tlatest`,
+    `refs/heads/feature/test\tfeature/test\t${headSha}\t${headSha.slice(0, 7)}\t3 hours ago\t1729990000\t3 hours ago\tcommit\t\t\tfeature`,
+    `refs/remotes/origin/main\torigin/main\t${remoteSha}\t${remoteSha.slice(0, 7)}\t4 hours ago\t1729980000\t4 hours ago\tcommit\t\t\tremote`,
+  ].join("\n");
   let submoduleConfigChecks = 0;
   let worktreeEnrichCalls = 0;
   let submoduleEnrichCalls = 0;
@@ -190,8 +219,9 @@ test("repository core state skips deferred Git readers and enrichers", async () 
   const state = createRepositoryStateService({
     git: async (_repoPath, args) => {
       gitCalls.push(args);
-      if (args[0] === "rev-parse") return "a".repeat(40);
-      if (args[0] === "branch" && args.includes("--all")) return "refs/heads/main\nrefs/heads/feature/test";
+      if (args[0] === "rev-parse") return headSha;
+      if (args[0] === "branch" && args.includes("--all")) return combinedBranchOutput;
+      if (args[0] === "remote" && args.length === 1) return "origin";
       if (args[0] === "worktree") return `worktree ${repoPath}\nHEAD ${"a".repeat(40)}\nbranch refs/heads/main\n`;
       return "";
     },
@@ -214,13 +244,13 @@ test("repository core state skips deferred Git readers and enrichers", async () 
       sha256Json: () => "snapshot",
     },
     readBranchDisplayName: async () => "main",
-    parseRemoteNames: () => [],
+    parseRemoteNames: () => ["origin"],
     parseRemoteDetails: () => [],
-    isKnownRemoteBranch: () => false,
+    isKnownRemoteBranch: (value) => value === "origin/main",
     parseBranchTracking: () => ({ main: {} }),
     mergeBranchInfo: (...sources) => Object.assign({}, ...sources),
     parseBranchCleanupMeta: () => ({}),
-    parseRemoteBranchInfo: () => ({}),
+    parseRemoteBranchInfo: () => ({ "origin/main": { sha: remoteSha, short: remoteSha.slice(0, 7) } }),
     parseSimpleLines: () => [],
     buildBranchCleanup: () => [],
     parseTags: () => [],
@@ -242,13 +272,275 @@ test("repository core state skips deferred Git readers and enrichers", async () 
   assert.equal(core.submodules, undefined);
   assert.equal(core.stashes, undefined);
   assert.equal(core.recoveryPoints, undefined);
+  assert.deepEqual(core.branches, ["main", "feature/test"]);
+  assert.deepEqual(core.remotes, ["origin/main"]);
+  assert.equal(core.remoteInfo["origin/main"].sha, remoteSha);
   assert.equal(submoduleConfigChecks, 0);
   assert.equal(worktreeEnrichCalls, 0);
   assert.equal(submoduleEnrichCalls, 0);
   assert.equal(gitCalls.some((args) => args[0] === "stash"), false);
   assert.equal(gitCalls.some((args) => args[0] === "submodule"), false);
   assert.equal(gitCalls.some((args) => args[0] === "branch" && args.includes("--merged")), false);
+  assert.equal(gitCalls.filter((args) => args[0] === "branch" && args.includes("--all")).length, 1);
+  assert.equal(gitCalls.some((args) => args[0] === "for-each-ref" && ["refs/heads", "refs/remotes"].includes(args[1])), false);
   assert.equal(gitCalls.some((args) => args[0] === "for-each-ref" && args[1] === "refs/forkline/recovery"), false);
+});
+
+test("progressive repository open reuses branch and remote snapshots", async () => {
+  const headSha = "a".repeat(40);
+  const upstreamSha = "b".repeat(40);
+  const combinedBranchOutput = [
+    `refs/heads/main\tmain\t${headSha}\t${headSha.slice(0, 7)}\t2 hours ago\t1730000000\t2 hours ago\tcommit\torigin/main\t[ahead 2, behind 1]\tlatest`,
+    `refs/remotes/origin/main\torigin/main\t${upstreamSha}\t${upstreamSha.slice(0, 7)}\t3 hours ago\t1729990000\t3 hours ago\tcommit\t\t\tremote latest`,
+  ].join("\n");
+  const repoPath = path.resolve("repository-root");
+  const gitCalls = [];
+  let branchReads = 0;
+  let syncOptions = null;
+  let trackingInput = "";
+  let remoteMetaInput = "";
+  const state = createRepositoryStateService({
+    git: async (_repoPath, args) => {
+      gitCalls.push(args);
+      if (args[0] === "rev-parse") return headSha;
+      if (args[0] === "branch") return combinedBranchOutput;
+      if (args[0] === "remote" && args.length === 1) return "origin";
+      if (args[0] === "remote") return "origin\thttps://example.invalid/repo.git (fetch)\norigin\thttps://example.invalid/repo.git (push)";
+      return "";
+    },
+    getCurrentRepo: () => repoPath,
+    submoduleService: {
+      buildWorktreePruneSnapshot: () => "",
+      enrichSubmodules: async () => [],
+      enrichWorktreeList: async () => [],
+      parseSubmodules: () => [],
+      parseWorktreeBranches: () => ({}),
+      parseWorktreeList: () => [],
+      repoHasSubmoduleConfig: () => false,
+      submoduleConfigArgs: () => [],
+    },
+    worktreeService: {
+      parseLog: () => [],
+      parseStashList: () => [],
+      readCachedWorkingStatus: async () => ({ files: [], snapshot: "" }),
+      readCurrentSyncDetails: async (_repoPath, options) => {
+        syncOptions = options;
+        return { upstream: options.upstream, upstreamSha: options.upstreamSha, ahead: 0, behind: 0 };
+      },
+      readWorkingStatus: async () => ({ files: [], snapshot: "" }),
+      sha256Json: () => "",
+    },
+    readBranchDisplayName: async () => {
+      branchReads += 1;
+      return "main";
+    },
+    parseRemoteNames: () => ["origin"],
+    parseRemoteDetails: () => [],
+    isKnownRemoteBranch: (value) => value === "origin/main",
+    parseBranchTracking: (output) => {
+      trackingInput = output;
+      return { main: { upstream: "origin/main", ahead: 2, behind: 1, upstreamGone: false } };
+    },
+    mergeBranchInfo: (...sources) => Object.assign({}, ...sources),
+    parseBranchCleanupMeta: () => ({}),
+    parseRemoteBranchInfo: (output) => {
+      remoteMetaInput = output;
+      return { "origin/main": { sha: upstreamSha, short: upstreamSha.slice(0, 7) } };
+    },
+    parseSimpleLines: () => [],
+    buildBranchCleanup: () => [],
+    parseTags: () => [],
+    parseRecoveryPoints: () => [],
+    detectRepoOperation: () => null,
+    recoveryRefPrefix: "refs/forkline/recovery",
+    defaultHistoryLimit: 120,
+    maxHistoryLimit: 5000,
+    refCommitLogFormat: "%H",
+    laneColors: ["#00aabb"],
+    operationLog: [],
+    listRunningOperations: () => [],
+  });
+
+  const opened = await state.readOpenState();
+
+  assert.equal(branchReads, 1);
+  assert.equal(opened.repo.branch, "main");
+  assert.equal(opened.repo.selectedRef, "main");
+  assert.deepEqual(opened.branches, ["main"]);
+  assert.deepEqual(opened.remotes, ["origin/main"]);
+  assert.equal(syncOptions.branch, "main");
+  assert.equal(syncOptions.upstream, "origin/main");
+  assert.equal(syncOptions.upstreamSha, upstreamSha);
+  assert.equal(syncOptions.ahead, 2);
+  assert.equal(syncOptions.behind, 1);
+  assert.equal(syncOptions.upstreamGone, false);
+  assert.equal(trackingInput, "main\torigin/main\t[ahead 2, behind 1]");
+  assert.equal(remoteMetaInput, `origin/main\t${upstreamSha}\t${upstreamSha.slice(0, 7)}`);
+  assert.equal(gitCalls.filter((args) => args[0] === "branch").length, 1);
+  assert.equal(gitCalls.some((args) => args[0] === "for-each-ref"), false);
+});
+
+test("repository open details only read data missing from the progressive response", async () => {
+  const gitCalls = [];
+  const branchSha = "a".repeat(40);
+  const tagSha = "b".repeat(40);
+  const combinedRefOutput = [
+    `refs/heads/main\tmain\t${branchSha}\t${branchSha.slice(0, 7)}\t2 hours ago\t1730000000\t2 hours ago\tcommit\torigin/main\t[ahead 2, behind 1]\tlatest\tmessage`,
+    `refs/tags/v1.0.0\tv1.0.0\t${tagSha}\t${tagSha.slice(0, 7)}\t\t0\t3 days ago\ttag\t\t\tRelease\tv1`,
+  ].join("\n");
+  let statusOptions = null;
+  let branchReads = 0;
+  let cachedWorkingReads = 0;
+  let directWorkingReads = 0;
+  let syncReads = 0;
+  let trackingInput = "";
+  let branchMetaInput = "";
+  let tagInput = "";
+  const repoPath = path.resolve("repository-root");
+  const state = createRepositoryStateService({
+    git: async (_repoPath, args, commandOptions) => {
+      gitCalls.push(args);
+      if (args[0] === "for-each-ref") return combinedRefOutput;
+      if (args[0] === "worktree") return `worktree ${repoPath}\nHEAD ${"a".repeat(40)}\nbranch refs/heads/main\n`;
+      if (args[0] === "status") statusOptions = commandOptions;
+      return "";
+    },
+    getCurrentRepo: () => repoPath,
+    submoduleService: {
+      buildWorktreePruneSnapshot: () => "prune-snapshot",
+      enrichSubmodules: async () => [],
+      enrichWorktreeList: async () => [],
+      parseSubmodules: () => [],
+      parseWorktreeBranches: () => ({ main: { worktreePath: repoPath } }),
+      parseWorktreeList: () => [],
+      repoHasSubmoduleConfig: () => false,
+      submoduleConfigArgs: () => [],
+    },
+    worktreeService: {
+      parseLog: () => [],
+      parseStashList: () => [],
+      readCachedWorkingStatus: async () => {
+        cachedWorkingReads += 1;
+        return { files: [{ file: "draft.txt" }], snapshot: "worktree-snapshot" };
+      },
+      readCurrentSyncDetails: async () => { syncReads += 1; return {}; },
+      readWorkingStatus: async () => {
+        directWorkingReads += 1;
+        return { files: [{ file: "draft.txt" }], snapshot: "worktree-snapshot" };
+      },
+      sha256Json: () => "snapshot",
+    },
+    readBranchDisplayName: async () => { branchReads += 1; return "main"; },
+    parseRemoteNames: () => [],
+    parseRemoteDetails: () => [],
+    isKnownRemoteBranch: () => false,
+    parseBranchTracking: (output) => {
+      trackingInput = output;
+      return { main: { upstream: "origin/main" } };
+    },
+    mergeBranchInfo: (...sources) => sources.reduce((merged, source) => {
+      for (const [branch, info] of Object.entries(source || {})) {
+        merged[branch] = { ...(merged[branch] || {}), ...info };
+      }
+      return merged;
+    }, {}),
+    parseBranchCleanupMeta: (output) => {
+      branchMetaInput = output;
+      return { main: { message: "latest" } };
+    },
+    parseRemoteBranchInfo: () => ({}),
+    parseSimpleLines: () => [],
+    buildBranchCleanup: () => [],
+    parseTags: (output) => {
+      tagInput = output;
+      return [{ name: "v1.0.0" }];
+    },
+    parseRecoveryPoints: () => [],
+    detectRepoOperation: () => null,
+    recoveryRefPrefix: "refs/forkline/recovery",
+    defaultHistoryLimit: 120,
+    maxHistoryLimit: 5000,
+    refCommitLogFormat: "%H",
+    laneColors: ["#00aabb"],
+    operationLog: [],
+    listRunningOperations: () => [],
+  });
+
+  const details = await state.readOpenDetails();
+
+  assert.deepEqual(details.repo, { operation: null });
+  assert.deepEqual(details.workingFiles, [{ file: "draft.txt" }]);
+  assert.equal(details.worktreeSnapshot, "worktree-snapshot");
+  assert.equal(details.worktreePruneSnapshot, "prune-snapshot");
+  assert.deepEqual(details.tags, [{ name: "v1.0.0" }]);
+  assert.equal(details.branchInfo.main.upstream, "origin/main");
+  assert.equal(details.branchInfo.main.message, "latest");
+  assert.equal(branchReads, 0);
+  assert.equal(cachedWorkingReads, 1);
+  assert.equal(directWorkingReads, 0);
+  assert.equal(syncReads, 0);
+  assert.equal(gitCalls.some((args) => args[0] === "rev-parse"), false);
+  assert.equal(gitCalls.some((args) => args[0] === "branch"), false);
+  assert.equal(gitCalls.some((args) => args[0] === "remote"), false);
+  assert.equal(gitCalls.some((args) => args[0] === "log"), false);
+  assert.deepEqual(gitCalls.map((args) => args[0]), ["for-each-ref", "worktree", "status"]);
+  assert.equal(trackingInput, "main\torigin/main\t[ahead 2, behind 1]");
+  assert.equal(branchMetaInput, `main\t${branchSha}\t${branchSha.slice(0, 7)}\t2 hours ago\t1730000000\tlatest\tmessage`);
+  assert.equal(tagInput, `v1.0.0\t${tagSha}\t${tagSha.slice(0, 7)}\t3 days ago\tRelease\tv1\ttag`);
+  assert.deepEqual(statusOptions, {
+    stdoutOnly: true,
+    env: { GIT_OPTIONAL_LOCKS: "0" },
+  });
+});
+
+test("repository switches preserve the bounded absolute-path file snapshot cache", async () => {
+  const repoA = path.resolve("repository-a");
+  const repoB = path.resolve("repository-b");
+  let currentRepo = repoA;
+  const worktreeFileSnapshotCache = new Map([
+    [path.join(repoA, "draft.txt"), { fingerprint: "a", snapshot: "snapshot-a" }],
+    [path.join(repoB, "draft.txt"), { fingerprint: "b", snapshot: "snapshot-b" }],
+  ]);
+  const git = async (repoPath, args) => {
+    if (args[0] === "rev-parse" && args[1] === "--show-toplevel") return path.resolve(repoPath);
+    if (args[0] === "symbolic-ref") return "main";
+    if (args[0] === "rev-parse" && args.includes("--verify")) return "a".repeat(40);
+    if (args[0] === "branch" && args.includes("--all")) return "refs/heads/main";
+    return "";
+  };
+  const repository = createRepositoryService({
+    git,
+    gitStandalone: git,
+    getCurrentRepo: () => currentRepo,
+    setManagedRepo: (repoPath) => { currentRepo = repoPath; },
+    operationLog: [],
+    listRunningOperations: () => [],
+    recoveryRefPrefix: "refs/forkline/recovery",
+    worktreeDiffContext: 8,
+    fileEditorDiffContext: 0,
+    defaultHistoryLimit: 120,
+    maxHistoryLimit: 5000,
+    protectedBranchNames: new Set(["main"]),
+    branchStaleDays: 30,
+    worktreeSnapshotCacheLimit: 8192,
+    untrackedDiffHunkSize: 200,
+    gitLogFieldSeparator: "\u001f",
+    refCommitLogFormat: "%H",
+    laneColors: ["#00aabb"],
+    authDiagnosticsCacheTtlMs: 60000,
+    authDiagnosticsCacheLimit: 12,
+    authDiagnosticsCache: new Map(),
+    registerOwnedProcess: () => () => {},
+    worktreeFileSnapshotCache,
+  });
+
+  await repository.openRepo(repoB, { progressive: true });
+
+  assert.equal(currentRepo, repoB);
+  assert.deepEqual([...worktreeFileSnapshotCache.keys()], [
+    path.join(repoA, "draft.txt"),
+    path.join(repoB, "draft.txt"),
+  ]);
 });
 
 function recoveryPoint(ref, branch, timestamp) {
@@ -262,4 +554,34 @@ function recoveryPoint(ref, branch, timestamp) {
     actionLabel: "测试",
     time: timestamp,
   };
+}
+
+function createRepositoryServiceForTest(overrides = {}) {
+  let currentRepo = overrides.repoPath || null;
+  const git = overrides.git || (async () => "");
+  return createRepositoryService({
+    git,
+    gitStandalone: git,
+    getCurrentRepo: () => currentRepo,
+    setManagedRepo: (repoPath) => { currentRepo = repoPath; },
+    operationLog: [],
+    listRunningOperations: () => [],
+    recoveryRefPrefix: "refs/forkline/recovery",
+    worktreeDiffContext: 8,
+    fileEditorDiffContext: 0,
+    defaultHistoryLimit: 120,
+    maxHistoryLimit: 5000,
+    protectedBranchNames: new Set(["main"]),
+    branchStaleDays: 30,
+    worktreeSnapshotCacheLimit: 8192,
+    untrackedDiffHunkSize: 200,
+    gitLogFieldSeparator: "\u001f",
+    refCommitLogFormat: "%H",
+    laneColors: ["#00aabb"],
+    authDiagnosticsCacheTtlMs: 60000,
+    authDiagnosticsCacheLimit: 12,
+    authDiagnosticsCache: new Map(),
+    registerOwnedProcess: () => () => {},
+    worktreeFileSnapshotCache: new Map(),
+  });
 }

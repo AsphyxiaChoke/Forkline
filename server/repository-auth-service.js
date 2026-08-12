@@ -40,6 +40,8 @@ function createRepositoryAuthService(options) {
 
     authDiagnosticsCache,
 
+    registerOwnedProcess = (child) => child,
+
     platform = process.platform,
 
     launchSystemCredentialManager = launchWindowsCredentialManager,
@@ -326,7 +328,7 @@ function createRepositoryAuthService(options) {
 
   function runProbe(file, args = [], options = {}) {
     return new Promise((resolve) => {
-      execFile(
+      const child = execFile(
         file,
         args,
         {
@@ -339,6 +341,7 @@ function createRepositoryAuthService(options) {
           resolve({ ok: !error, stdout: stdout || "", stderr: stderr || "", message: error?.message || "" });
         }
       );
+      registerOwnedProcess(child);
     });
   }
 

@@ -310,6 +310,7 @@ async function runAction(action) {
     if (action === "commit") {
       els.commitSummary.value = "";
       els.commitBody.value = "";
+      reportDesktopRecoveryState();
     }
     if (worktreeOnly) {
       const data = await api("/api/worktree");
@@ -326,8 +327,8 @@ async function runAction(action) {
       return;
     }
     state.commitDetails.clear();
-    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
@@ -410,8 +411,8 @@ async function runRepoOperation(action, button) {
     toast(result.output || t("操作已完成"));
     state.commitDetails.clear();
     state.selectedChanges.clear();
-    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
@@ -618,8 +619,8 @@ async function runRemoteAction(action, remoteName = "", button = null) {
     }
     toast(result.output || t("远端操作完成"));
     state.commitDetails.clear();
-    const data = await api(`/api/state?ref=${encodeURIComponent(state.selectedRef)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
+    const data = await loadStateForRepoPath(repoPath);
+    if (!data) return;
     state.data = data;
     state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
     state.selectedTab = "sync";
@@ -989,4 +990,23 @@ function countFiles(files) {
     { M: 0, A: 0, D: 0, R: 0, C: 0 }
   );
 }
+
+globalThis.ForklineGitActions = {
+  selectRef,
+  checkoutBranch,
+  checkoutRemoteBranch,
+  mergeBranchRef,
+  rebaseOntoRef,
+  runAction,
+  runRepoOperation,
+  fillLatestCommitMessage,
+  runUpstreamAction,
+  runRemoteAction,
+  runRemoteMenuAction,
+  createStashFromSelection,
+  ignoreWorktreePath,
+  runSingleFileAction,
+  runFileBatchAction,
+  rewordSelectedCommit,
+};
 

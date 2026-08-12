@@ -2,6 +2,8 @@
 
 const path = require("path");
 
+const REPOSITORY_REF_FORMAT = "%(refname)\t%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(creatordate:relative)\t%(objecttype)\t%(upstream:short)\t%(upstream:track)\t%(subject)";
+
 function createRepositoryStateService(options) {
   const {
     git,
@@ -44,6 +46,7 @@ function createRepositoryStateService(options) {
   const {
     parseLog,
     parseStashList,
+    readCachedWorkingStatus,
     readCurrentSyncDetails,
     readWorkingStatus,
     sha256Json,
@@ -401,13 +404,10 @@ function createRepositoryStateService(options) {
     const selectedRef = String(ref || "").trim();
     const includeDeferredDetails = options.details !== "core";
     const hasSubmoduleConfig = includeDeferredDetails && repoHasSubmoduleConfig(repoPath);
-    const [branch, headShaOutput, branchOutput, trackingOutput, branchMetaOutput, remoteMetaOutput, mergedBranchOutput, remoteOutput, remoteVerboseOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
+    const [branch, headShaOutput, branchRefOutput, mergedBranchOutput, remoteOutput, remoteVerboseOutput, tagOutput, worktreeOutput, submoduleConfigOutput, submoduleStatusOutput, statusOutput, stashOutput, recoveryOutput, logOutput] = await Promise.all([
       readBranchDisplayName(repoPath),
       git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
-      git(repoPath, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
-      git(repoPath, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
-      git(repoPath, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)\t%(committerdate:relative)\t%(committerdate:unix)\t%(subject)"]).catch(() => ""),
-      git(repoPath, ["for-each-ref", "refs/remotes", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)"]).catch(() => ""),
+      git(repoPath, ["branch", "--all", `--format=${REPOSITORY_REF_FORMAT}`]).catch(() => ""),
       includeDeferredDetails ? git(repoPath, ["branch", "--merged", "HEAD", "--format=%(refname:short)"]).catch(() => "") : "",
       git(repoPath, ["remote"]).catch(() => ""),
       git(repoPath, ["remote", "-v"]).catch(() => ""),
@@ -415,11 +415,16 @@ function createRepositoryStateService(options) {
       git(repoPath, ["worktree", "list", "--porcelain"]).catch(() => ""),
       hasSubmoduleConfig ? git(repoPath, submoduleConfigArgs()).catch(() => "") : "",
       hasSubmoduleConfig ? git(repoPath, ["submodule", "status", "--recursive"]).catch(() => "") : "",
-      git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+      git(repoPath, ["status", "--short", "-z", "--untracked-files=all"], {
+        stdoutOnly: true,
+        env: { GIT_OPTIONAL_LOCKS: "0" },
+      }).catch(() => ""),
       includeDeferredDetails ? git(repoPath, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%cr"]).catch(() => "") : "",
       includeDeferredDetails ? git(repoPath, ["for-each-ref", RECOVERY_REF_PREFIX, "--sort=-refname", "--format=%(refname)\t%(objectname)\t%(objectname:short)\t%(subject)"]).catch(() => "") : "",
       git(repoPath, logArgs(selectedRef, historyLimit)).catch(() => ""),
     ]);
+
+    const { branchOutput, trackingOutput, branchMetaOutput, remoteMetaOutput } = splitRepositoryRefDetails(branchRefOutput);
 
     const remoteNames = parseRemoteNames(remoteOutput);
     const { branches, remotes } = parseBranchRefs(branchOutput, remoteNames);
@@ -450,7 +455,13 @@ function createRepositoryStateService(options) {
       localBranches: branches,
       remoteNames,
     };
-    if (branchTracking[currentBranch]) syncOptions.upstream = branchTracking[currentBranch].upstream;
+    if (branchTracking[currentBranch]) {
+      syncOptions.upstream = branchTracking[currentBranch].upstream;
+      syncOptions.ahead = branchTracking[currentBranch].ahead;
+      syncOptions.behind = branchTracking[currentBranch].behind;
+      syncOptions.upstreamGone = branchTracking[currentBranch].upstreamGone;
+      if (remoteInfo[syncOptions.upstream]?.sha) syncOptions.upstreamSha = remoteInfo[syncOptions.upstream].sha;
+    }
     const [worktrees, submodules, working, sync] = await Promise.all([
       includeDeferredDetails ? enrichWorktreeList(worktreeRows, { repoPath, statusOutput }) : [],
       includeDeferredDetails ? enrichSubmodules(parseSubmodules(submoduleConfigOutput, submoduleStatusOutput), repoPath) : [],
@@ -493,6 +504,93 @@ function createRepositoryStateService(options) {
       });
     }
     return result;
+  }
+
+  async function readOpenDetails() {
+    if (!currentRepo) {
+      const sample = sampleState();
+      return {
+        repo: { operation: sample.repo?.operation || null },
+        branchInfo: sample.branchInfo || {},
+        workingFiles: sample.workingFiles || [],
+        worktreeSnapshot: sample.worktreeSnapshot || "",
+        worktreePruneSnapshot: sample.worktreePruneSnapshot || "",
+        tags: sample.tags || [],
+      };
+    }
+    const repoPath = currentRepo;
+    const refOutputPromise = git(repoPath, [
+      "for-each-ref",
+      "refs/heads",
+      "refs/tags",
+      "--sort=-creatordate",
+      `--format=${REPOSITORY_REF_FORMAT}`,
+    ]).catch(() => "");
+    const worktreeOutputPromise = git(repoPath, ["worktree", "list", "--porcelain"]).catch(() => "");
+    const statusOutputPromise = git(repoPath, ["status", "--short", "-z", "--untracked-files=all"], {
+        stdoutOnly: true,
+        env: { GIT_OPTIONAL_LOCKS: "0" },
+      }).catch(() => "");
+    const [refOutput, worktreeOutput, working] = await Promise.all([
+      refOutputPromise,
+      worktreeOutputPromise,
+      statusOutputPromise.then((statusOutput) => readCachedWorkingStatus(repoPath, statusOutput)),
+    ]);
+    const { trackingOutput, branchMetaOutput, tagOutput } = splitRepositoryRefDetails(refOutput);
+    const worktreeRows = parseWorktreeList(worktreeOutput, repoPath);
+    return {
+      repo: { operation: detectRepoOperation(repoPath) },
+      branchInfo: mergeBranchInfo(
+        parseBranchTracking(trackingOutput),
+        parseBranchCleanupMeta(branchMetaOutput),
+        parseWorktreeBranches(worktreeOutput, repoPath)
+      ),
+      workingFiles: working.files,
+      worktreeSnapshot: working.snapshot,
+      worktreePruneSnapshot: buildWorktreePruneSnapshot(worktreeRows),
+      tags: parseTags(tagOutput),
+    };
+  }
+
+  function splitRepositoryRefDetails(output) {
+    const branchRefLines = [];
+    const trackingLines = [];
+    const branchMetaLines = [];
+    const remoteMetaLines = [];
+    const tagLines = [];
+    for (const line of String(output || "").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const parts = line.split("\t");
+      const fullRef = parts[0]?.trim() || "";
+      const name = parts[1]?.trim() || "";
+      if (!name) continue;
+      const object = parts[2] || "";
+      const short = parts[3] || "";
+      const updated = parts[4] || "";
+      const updatedUnix = parts[5] || "";
+      const created = parts[6] || "";
+      const type = parts[7] || "";
+      const upstream = parts[8] || "";
+      const tracking = parts[9] || "";
+      const subject = parts.slice(10).join("\t");
+      if (fullRef.startsWith("refs/heads/")) {
+        branchRefLines.push(fullRef);
+        trackingLines.push([name, upstream, tracking].join("\t"));
+        branchMetaLines.push([name, object, short, updated, updatedUnix, subject].join("\t"));
+      } else if (fullRef.startsWith("refs/remotes/")) {
+        branchRefLines.push(fullRef);
+        remoteMetaLines.push([name, object, short].join("\t"));
+      } else if (fullRef.startsWith("refs/tags/")) {
+        tagLines.push([name, object, short, created, subject, type].join("\t"));
+      }
+    }
+    return {
+      branchOutput: branchRefLines.join("\n"),
+      trackingOutput: trackingLines.join("\n"),
+      branchMetaOutput: branchMetaLines.join("\n"),
+      remoteMetaOutput: remoteMetaLines.join("\n"),
+      tagOutput: tagLines.join("\n"),
+    };
   }
 
   async function readStateDetails(section) {
@@ -538,7 +636,10 @@ function createRepositoryStateService(options) {
     if (requestedSection === "worktrees") {
       const [worktreeOutput, statusOutput] = await Promise.all([
         git(repoPath, ["worktree", "list", "--porcelain"]).catch(() => ""),
-        git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+        git(repoPath, ["status", "--short", "-z", "--untracked-files=all"], {
+          stdoutOnly: true,
+          env: { GIT_OPTIONAL_LOCKS: "0" },
+        }).catch(() => ""),
       ]);
       const worktreeRows = parseWorktreeList(worktreeOutput, repoPath);
       return {
@@ -593,7 +694,7 @@ function createRepositoryStateService(options) {
     const currentBranch = String(await readBranchDisplayName(repoPath).catch(() => "")).trim();
     const selectedRef = currentBranch && currentBranch !== "detached HEAD" ? currentBranch : "";
     const [syncState, logOutput] = await Promise.all([
-      readSyncState({ includeBranches: true }),
+      readSyncState({ includeBranches: true, branch: currentBranch }),
       git(repoPath, logArgs(selectedRef, historyLimit)).catch(() => ""),
     ]);
     const commitPage = historyPage(parseLog(logOutput), historyLimit);
@@ -635,20 +736,23 @@ function createRepositoryStateService(options) {
       };
     }
     const repoPath = currentRepo;
-    const [branch, headShaOutput, branchOutput, trackingOutput, remoteMetaOutput, remoteOutput, remoteVerboseOutput] = await Promise.all([
-      readBranchDisplayName(repoPath),
+    const branchPromise = options.branch !== undefined
+      ? Promise.resolve(String(options.branch || ""))
+      : readBranchDisplayName(repoPath);
+    const [branch, headShaOutput, refOutput, remoteOutput, remoteVerboseOutput] = await Promise.all([
+      branchPromise,
       git(repoPath, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
-      git(repoPath, ["branch", "--all", "--format=%(refname)"]).catch(() => ""),
-      git(repoPath, ["for-each-ref", "refs/heads", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)"]).catch(() => ""),
-      git(repoPath, ["for-each-ref", "refs/remotes", "--format=%(refname:short)\t%(objectname)\t%(objectname:short)"]).catch(() => ""),
+      git(repoPath, ["branch", "--all", `--format=${REPOSITORY_REF_FORMAT}`]).catch(() => ""),
       git(repoPath, ["remote"]).catch(() => ""),
       git(repoPath, ["remote", "-v"]).catch(() => ""),
     ]);
+    const { branchOutput, trackingOutput, remoteMetaOutput } = splitRepositoryRefDetails(refOutput);
     const remoteNames = parseRemoteNames(remoteOutput);
     const { branches, remotes } = parseBranchRefs(branchOutput, remoteNames);
     const currentBranch = branch.trim();
     if (currentBranch && currentBranch !== "detached HEAD" && !branches.includes(currentBranch)) branches.unshift(currentBranch);
     const branchTracking = parseBranchTracking(trackingOutput);
+    const remoteInfo = parseRemoteBranchInfo(remoteMetaOutput, remoteNames);
     const syncOptions = {
       branch: currentBranch,
       hasCommit: Boolean(headShaOutput.trim()),
@@ -656,7 +760,13 @@ function createRepositoryStateService(options) {
       localBranches: branches,
       remoteNames,
     };
-    if (branchTracking[currentBranch]) syncOptions.upstream = branchTracking[currentBranch].upstream;
+    if (branchTracking[currentBranch]) {
+      syncOptions.upstream = branchTracking[currentBranch].upstream;
+      syncOptions.ahead = branchTracking[currentBranch].ahead;
+      syncOptions.behind = branchTracking[currentBranch].behind;
+      syncOptions.upstreamGone = branchTracking[currentBranch].upstreamGone;
+      if (remoteInfo[syncOptions.upstream]?.sha) syncOptions.upstreamSha = remoteInfo[syncOptions.upstream].sha;
+    }
     const sync = await readCurrentSyncDetails(repoPath, syncOptions);
     const branchInfo = currentBranch && currentBranch !== "detached HEAD"
       ? {
@@ -681,7 +791,7 @@ function createRepositoryStateService(options) {
       ...(options.includeBranches ? { branches } : {}),
       branchInfo,
       remotes,
-      remoteInfo: parseRemoteBranchInfo(remoteMetaOutput, remoteNames),
+      remoteInfo,
       sync,
     };
   }
@@ -784,6 +894,7 @@ function createRepositoryStateService(options) {
     normalizeHistoryLimit,
     readRefState,
     readReflogState,
+    readOpenDetails,
     readOpenState,
     readState,
     readStateDetails,

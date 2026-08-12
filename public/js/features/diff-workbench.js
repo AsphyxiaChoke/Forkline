@@ -1,15 +1,6 @@
-// Worktree diff loading, feedback, hunk actions, and modal lifecycle.
+// Worktree diff loading, feedback, hunk actions, and modal rendering loaded on first use.
 const WORK_DIFF_TARGET_HIGHLIGHT_DURATION = 1800;
 const WORK_DIFF_TARGET_HIGHLIGHT_TTL = 4000;
-
-function renderWorkDiffEmpty(message) {
-  resetDiffLineSelection(false);
-  setActiveDiff(null);
-  els.workDiffTitle.textContent = t("变更对照");
-  els.workDiffPath.textContent = "";
-  els.workDiffView.className = "work-diff-view empty";
-  els.workDiffView.textContent = t(message);
-}
 
 async function loadWorkingDiff(filePath) {
   if (!filePath) {
@@ -54,6 +45,10 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
   setActiveDiff({ source: "worktree", title, path: filePath, diff, scope, emptyText: t("没有可显示的差异") });
   els.workDiffTitle.textContent = title;
   els.workDiffPath.textContent = filePath;
+  if (!workDiffInlineVisible()) {
+    clearWorkDiffInline();
+    return;
+  }
   if (!diff.length) {
     els.workDiffView.className = "work-diff-view empty";
     els.workDiffView.textContent = t("没有可显示的差异");
@@ -65,33 +60,13 @@ function renderWorkDiff(filePath, diff, scope = "unstaged") {
   updateDiffLineSelectionToolbar();
 }
 
-function setActiveDiff(payload) {
-  state.activeDiff = payload;
-  state.diffModalRenderLimit = SIDE_DIFF_INITIAL_RENDER_LINES;
-  if (els.editWorktreeFile) {
-    els.editWorktreeFile.disabled = !(payload?.source === "worktree" && payload?.path && !state.data?.repo?.isSample);
-  }
-  if (els.maximizeDiff) els.maximizeDiff.disabled = !payload?.diff?.length;
+function workDiffInlineVisible() {
+  return !els.workDiffView?.closest?.("[hidden]");
 }
 
-function selectedWorkingFileInfo(filePath = state.selectedFile, scope = state.workDiffScope) {
-  if (!filePath) return null;
-  const matches = (state.data?.workingFiles || []).filter((file) => file.file === filePath);
-  if (scope === "staged") return matches.find((file) => file.staged) || matches[0] || null;
-  if (scope === "unstaged" || scope === "untracked") return matches.find((file) => file.unstaged) || matches[0] || null;
-  return matches[0] || null;
-}
-
-function fileChangeFlags(fileInfo) {
-  if (!fileInfo) return { hasUnstaged: false, hasStaged: false };
-  return {
-    hasUnstaged: Boolean(fileInfo?.unstaged || (!fileInfo?.staged && fileInfo?.unstaged !== false)),
-    hasStaged: Boolean(fileInfo?.staged),
-  };
-}
-
-function isUntrackedFile(fileInfo) {
-  return Boolean(fileInfo && fileInfo.indexStatus === "?" && fileInfo.worktreeStatus === "?");
+function clearWorkDiffInline() {
+  els.workDiffView.className = "work-diff-view";
+  els.workDiffView.replaceChildren();
 }
 
 function setWorkDiffFeedback(file, message, options = {}) {
@@ -217,21 +192,6 @@ function scheduleWorkDiffTargetClear(root) {
   }, WORK_DIFF_TARGET_HIGHLIGHT_DURATION);
 }
 
-function preferredWorkDiffScope(fileInfo) {
-  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
-  if (hasUnstaged) return "unstaged";
-  if (hasStaged) return "staged";
-  return "unstaged";
-}
-
-function normalizeWorkDiffScopeChoice(scope, fileInfo) {
-  const requested = scope === "staged" ? "staged" : "unstaged";
-  const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
-  if (requested === "staged" && hasStaged) return "staged";
-  if (requested === "unstaged" && hasUnstaged) return "unstaged";
-  return preferredWorkDiffScope(fileInfo);
-}
-
 function fallbackWorkDiffScope(scope, fileInfo, diff) {
   if (diff?.length) return "";
   const requested = scope === "staged" ? "staged" : "unstaged";
@@ -305,11 +265,4 @@ function renderDiffModalBody() {
   });
   scheduleWorkDiffTargetClear(els.diffModalBody);
   syncDiffLineSelectionRows();
-}
-
-function closeDiffModal() {
-  els.diffModal.classList.remove("show");
-  els.diffModal.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("modal-open");
-  els.diffModalBody.replaceChildren();
 }

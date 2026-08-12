@@ -7,6 +7,16 @@
 | 内容 | 代码位置 | 说明 |
 | --- | --- | --- |
 | 主题与语义 Token | `public/styles.css` 顶部 `:root` 和 `html[data-theme]` | 颜色、字体、阴影、布局尺寸和 Diff 状态 |
+| 提交历史编辑样式 | `public/commit-actions.css` | 预检计划、影响提交、队列项和改信息表单；首次使用完整提交操作时按需载入 |
+| 右键菜单样式 | `public/context-menu.css` | 提交、分支、文件、Tag、远端、reflog 和编辑器菜单布局；首次右键或首次打开文件编辑器时按需载入并复用 |
+| Diff 工作台样式 | `public/diff-workbench.css` | 最大化对照、逐行/按块操作、反馈和高亮布局；首次显式查看对照时按需载入 |
+| 文件编辑器组件样式 | `public/file-editor.css` | 浮窗、CodeMirror 覆盖和编辑器窄屏规则；首次打开文件时按需载入 |
+| 文件追踪组件样式 | `public/file-insights.css` | 文件历史、状态标记和逐行归属布局；首次打开文件历史或逐行追踪时按需载入 |
+| 目录与命令组件样式 | `public/folder-command.css` | 目录选择器和命令面板内层布局；首次打开任一入口时与完整实现并行载入 |
+| 操作日志组件样式 | `public/logs.css` | Git 操作日志、运行中操作和界面诊断布局；首次打开操作日志时按需载入 |
+| 仓库工具面板样式 | `public/repository-panels.css` | 储藏、Tag、恢复点、同步认证和分支比较的共享布局；首次打开任一对应页签时按需载入并跨页复用 |
+| 设置页组件样式 | `public/settings.css` | 设置卡片、更新状态、主题预览和窄右栏规则；首次打开设置页时按需载入 |
+| 工作区管理组件样式 | `public/workspaces.css` | 分支整理、工作树和子模块的摘要、列表与状态；首次打开任一对应页签时按需载入 |
 | 主题目录与预览色 | `public/js/app/layout-utils.js` | 主题 ID、名称、说明和设置页色板 |
 | 基础结构 | `public/index.html` | 顶栏、三栏工作区、底部工作台、菜单和通用弹窗 |
 | 动态组件 | `public/js/features/`、`public/js/panels/` | 提交、分支、文件树、Diff 和右侧面板 |

@@ -198,6 +198,7 @@ async function submitCloneForm(event) {
     { source, target: targetPath }
   );
   if (!confirm(message)) return;
+  if (openAfter && !confirmRepositorySwitch(targetPath)) return;
 
   setCloneOperationPending(true);
   const openRequestId = openAfter ? ++state.openRepoRequestId : 0;
@@ -312,6 +313,7 @@ async function submitInitForm(event) {
   const openAfter = els.initOpenToggle.checked;
   const message = t("确认初始化 Git 仓库？\n\n位置：{path}\n\n命令：git init <文件夹>", { path: targetPath });
   if (!confirm(message)) return;
+  if (openAfter && !confirmRepositorySwitch(targetPath)) return;
 
   els.initSubmit.disabled = true;
   const openRequestId = openAfter ? ++state.openRepoRequestId : 0;
@@ -359,7 +361,7 @@ async function applyOpenedRepoData(data, requestId = 0) {
   els.searchInput.value = "";
   renderAll();
   const hydrationPromise = data.progressive
-    ? hydrateOpenedRepoData(requestId, state.data.repo.path, state.selectedRef)
+    ? hydrateOpenedRepoData(requestId, state.data.repo.path)
     : null;
   if (state.selectedSha) {
     await loadCommit(state.selectedSha);
@@ -369,41 +371,69 @@ async function applyOpenedRepoData(data, requestId = 0) {
   return true;
 }
 
-async function hydrateOpenedRepoData(requestId, repoPath, openedRef) {
+async function hydrateOpenedRepoData(requestId, repoPath) {
   try {
-    const data = await api(`/api/state?ref=${encodeURIComponent(openedRef || "")}&details=core`);
+    const data = await api("/api/open-details");
     if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
-    const viewedRef = state.selectedRef;
-    const viewedCommits = state.data.commits || [];
-    const viewedHistory = state.data.history || {};
-    const selectedSha = state.selectedSha;
-    state.data = {
-      ...data,
-      repo: { ...(data.repo || {}), selectedRef: viewedRef },
-      commits: viewedCommits,
-      history: viewedHistory,
-      progressive: false,
-      progressiveError: "",
-    };
-    state.selectedRef = viewedRef;
-    state.selectedSha = viewedCommits.some((commit) => commit.sha === selectedSha)
-      ? selectedSha
-      : viewedCommits[0]?.sha || "";
-    state.repoHydrating = false;
-    renderRepo();
-    renderBranches();
-    renderStage();
-    updateAmendMode();
+    applyHydratedRepoData(data);
     return true;
   } catch (error) {
     if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
-    state.data.progressive = false;
-    state.data.progressiveError = String(error?.message || error || t("未知错误"));
-    state.repoHydrating = true;
-    renderStage();
-    toast(t("仓库已打开，但工作区详情加载失败：{message}", { message: state.data.progressiveError }));
+    try {
+      const viewedRef = state.selectedRef;
+      const localData = await api(`/api/state?ref=${encodeURIComponent(viewedRef)}&details=core`);
+      if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
+      const warning = t("详情请求暂时失败，已使用本地 Git 数据打开仓库");
+      applyHydratedRepoData(localData, { warning });
+      toast(warning);
+    } catch (fallbackError) {
+      if (requestId !== state.openRepoRequestId || !isCurrentRepoPath(repoPath)) return false;
+      state.data.progressive = false;
+      state.data.progressiveError = localRepositoryLoadError(fallbackError);
+      state.repoHydrating = true;
+      renderStage();
+      toast(t("提交历史已打开，但工作区详情暂时不可用：{message}", { message: state.data.progressiveError }));
+    }
     return true;
   }
+}
+
+function applyHydratedRepoData(data, options = {}) {
+  const viewedRef = state.selectedRef;
+  const viewedCommits = state.data.commits || [];
+  const viewedHistory = state.data.history || {};
+  const selectedSha = state.selectedSha;
+  const openedData = { ...state.data };
+  for (const field of ["branchCleanup", "worktrees", "submodules", "stashes", "recoveryPoints", "progressive", "progressiveError", "progressiveWarning"]) {
+    delete openedData[field];
+  }
+  state.data = {
+    ...openedData,
+    ...data,
+    repo: { ...(openedData.repo || {}), ...(data.repo || {}), selectedRef: viewedRef },
+    branchInfo: { ...(openedData.branchInfo || {}), ...(data.branchInfo || {}) },
+    commits: viewedCommits,
+    history: viewedHistory,
+    progressive: false,
+    progressiveError: "",
+    progressiveWarning: String(options.warning || ""),
+  };
+  state.selectedRef = viewedRef;
+  state.selectedSha = viewedCommits.some((commit) => commit.sha === selectedSha)
+    ? selectedSha
+    : viewedCommits[0]?.sha || "";
+  state.repoHydrating = false;
+  renderRepo();
+  renderBranches();
+  renderStage();
+  updateAmendMode();
+}
+
+function localRepositoryLoadError(error) {
+  const message = String(error?.message || error || "").trim();
+  return /failed to fetch|networkerror|network request failed|load failed/i.test(message)
+    ? t("无法连接 Forkline 本地服务")
+    : message || t("未知错误");
 }
 
 const repoDetailFields = {
@@ -566,7 +596,7 @@ function clearRepoScopedActionState() {
     modal.setAttribute?.("aria-hidden", "true");
   }
   if (els.mainlineOptions) els.mainlineOptions.innerHTML = "";
-  resetFileEditorSearchUi();
+  if (typeof resetFileEditorSearchUi === "function") resetFileEditorSearchUi();
   if (els.fileEditorOldText) els.fileEditorOldText.value = "";
   if (els.fileEditorText) els.fileEditorText.value = "";
   for (const menu of [els.commitContextMenu, els.branchContextMenu, els.fileContextMenu, els.fileEditorContextMenu, els.tagContextMenu, els.remoteContextMenu, els.reflogContextMenu]) {
@@ -576,12 +606,58 @@ function clearRepoScopedActionState() {
   if (closedModal) document.body.classList.remove("modal-open");
 }
 
+function repositorySwitchUnsavedItems() {
+  const items = [];
+  const pendingRecoveryFile = typeof pendingDesktopRecoveryFileDraft === "object"
+    ? pendingDesktopRecoveryFileDraft
+    : null;
+  const editorDirty = Boolean(
+    (typeof fileEditorDirty === "function" && fileEditorDirty())
+    || state.fileEditor?.recoverySnapshotChanged
+    || pendingRecoveryFile
+  );
+  if (editorDirty) {
+    const file = String(state.fileEditor?.file || pendingRecoveryFile?.file || "").trim();
+    items.push(file ? t("文件编辑器：{file}", { file }) : t("文件编辑器"));
+  }
+  const commitDraft = typeof desktopRecoveryCommitDraft === "function"
+    ? desktopRecoveryCommitDraft()
+    : String(els.commitSummary?.value || "").trim() || String(els.commitBody?.value || "").trim();
+  if (commitDraft) {
+    items.push(t("提交信息草稿"));
+  }
+  return items;
+}
+
+function repositorySwitchTargetsCurrentRepo(repoPath) {
+  const target = String(repoPath || "").trim();
+  const current = repoPathSnapshot();
+  if (!target || !current) return false;
+  if (isCurrentRepoPath(target)) return true;
+  const windowsDrivePath = /^[A-Za-z]:[\\/]/;
+  return windowsDrivePath.test(target)
+    && windowsDrivePath.test(current)
+    && normalizeRecentRepoPath(target) === normalizeRecentRepoPath(current);
+}
+
+function confirmRepositorySwitch(repoPath) {
+  const target = String(repoPath || "").trim();
+  if (!target || repositorySwitchTargetsCurrentRepo(target)) return true;
+  const items = repositorySwitchUnsavedItems();
+  if (!items.length) return true;
+  return confirm(t("打开仓库 {path} 会丢失以下未保存内容：\n\n{items}\n\n确认继续？", {
+    path: target,
+    items: items.map((item) => `- ${item}`).join("\n"),
+  }));
+}
+
 async function openRepo(pathOverride = "") {
   const repoPath = typeof pathOverride === "string" && pathOverride ? pathOverride.trim() : els.repoInput.value.trim();
   if (!repoPath) {
     toast(t("请输入仓库路径"));
-    return;
+    return false;
   }
+  if (!confirmRepositorySwitch(repoPath)) return false;
   const requestId = ++state.openRepoRequestId;
   state.repoHydrating = true;
   try {
@@ -592,13 +668,15 @@ async function openRepo(pathOverride = "") {
     if (!opened) return;
     saveRecentRepo(state.data.repo);
     if (!state.data.progressiveError) {
-      toast(t("已打开 {name}", { name: state.data.repo.name }));
+      if (!state.data.progressiveWarning) toast(t("已打开 {name}", { name: state.data.repo.name }));
       await maybeRestoreCheckoutStash(state.data.repo.branch);
     }
+    return true;
   } catch (error) {
     if (requestId !== state.openRepoRequestId) return;
     state.repoHydrating = false;
     toast(error.message);
+    return false;
   } finally {
     if (requestId === state.openRepoRequestId) els.openRepo.disabled = false;
   }

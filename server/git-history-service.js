@@ -89,7 +89,7 @@ function createGitHistoryService(options) {
     const operation = detectRepoOperation(repoPath);
     if (operation) blockers.push(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
 
-    const statusOutput = await git(repoPath, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+    const statusOutput = await git(repoPath, ["status", "--porcelain", "--untracked-files=all"], { stdoutOnly: true }).catch(() => "");
     const dirtyCount = parseStatus(statusOutput).length;
     if (statusOutput.trim()) blockers.push(`当前还有 ${dirtyCount || "未提交"} 个未提交改动。请先提交、储藏或丢弃后再编辑历史。`);
 
@@ -194,7 +194,7 @@ function createGitHistoryService(options) {
     const operation = detectRepoOperation(repoPath);
     if (operation) blockers.push(`仓库还有未完成操作：${operation.label}。请先继续或中止后再编辑历史。`);
 
-    const statusOutput = await git(repoPath, ["status", "--porcelain", "--untracked-files=all"]).catch(() => "");
+    const statusOutput = await git(repoPath, ["status", "--porcelain", "--untracked-files=all"], { stdoutOnly: true }).catch(() => "");
     const dirtyCount = parseStatus(statusOutput).length;
     if (statusOutput.trim()) blockers.push(`当前还有 ${dirtyCount || "未提交"} 个未提交改动。请先提交、储藏或丢弃后再编辑历史。`);
 
@@ -334,7 +334,7 @@ function createGitHistoryService(options) {
   async function rewordCommit(body) {
     const sha = normalizeSha(body.sha);
     const { summary, body: detail } = normalizeCommitMessageInput(body.summary, body.body);
-    const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+    const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"], { stdoutOnly: true });
     if (statusOutput.trim()) throw new Error("修改历史提交信息前，请先提交、暂存或还原工作区改动");
     const target = (await git(currentRepo, ["rev-parse", "--verify", `${sha}^{commit}`])).trim();
     await git(currentRepo, ["merge-base", "--is-ancestor", target, "HEAD"]).catch(() => {

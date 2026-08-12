@@ -25,6 +25,7 @@ function createUpdateService(options) {
     readJson,
     sendJson,
     scheduleShutdown,
+    selfUpdateRuntime = null,
   } = options;
   const readAppUpdate = createAppUpdateChecker({
     currentVersion: process.env.FORKLINE_APP_VERSION || packageInfo.version,
@@ -59,6 +60,7 @@ function createUpdateService(options) {
       throw new Error("页面中的目标版本已经过期，请刷新后重新检查更新。");
     }
     const managedRepo = getManagedRepo() || "";
+    const runtimeParentPid = Number(selfUpdateRuntime?.parentPid);
     return prepareSelfUpdate({
       repoDir: appDir,
       gitBin,
@@ -66,8 +68,13 @@ function createUpdateService(options) {
       targetVersion: update.latestVersion,
       tagName: update.tagName,
       port,
-      parentPid: process.pid,
+      parentPid: Number.isInteger(runtimeParentPid) && runtimeParentPid > 0
+        ? runtimeParentPid
+        : process.pid,
       managedRepo,
+      restartMode: selfUpdateRuntime?.restartMode,
+      electronExecPath: selfUpdateRuntime?.electronExecPath,
+      electronAppPath: selfUpdateRuntime?.electronAppPath,
       onFetchProgress: (progress) => onFetchProgress?.({
         ...progress,
         currentVersion: update.currentVersion,
@@ -118,7 +125,7 @@ function createUpdateService(options) {
       });
       const runnerPid = await launchSelfUpdateRunner(plan);
       sendJson(res, 200, { ok: true, restarting: true, targetVersion: plan.targetVersion, runnerPid });
-      scheduleShutdown();
+      scheduleShutdown(plan);
     } catch (error) {
       updateInProgress = false;
       if (plan) await cleanupCandidateRef(plan);

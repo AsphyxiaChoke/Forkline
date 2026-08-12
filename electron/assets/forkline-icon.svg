@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Forkline">
+  <defs>
+    <linearGradient id="forkline-gradient" x1="35" y1="30" x2="222" y2="226" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22d3c3"/>
+      <stop offset="1" stop-color="#ff826f"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="60" fill="url(#forkline-gradient)"/>
+  <path d="M88 64V192" fill="none" stroke="#0b0f15" stroke-width="22" stroke-linecap="round"/>
+  <path d="M88 126C113 126 121 92 166 92" fill="none" stroke="#0b0f15" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="88" cy="64" r="25" fill="#0b0f15"/>
+  <circle cx="88" cy="192" r="25" fill="#0b0f15"/>
+  <circle cx="176" cy="92" r="25" fill="#0b0f15"/>
+</svg>

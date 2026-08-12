@@ -8,6 +8,7 @@ const { createGitOperationsService } = require("./server/git-operations-service"
 const { OPERATION_OUTPUT_LIMIT, createGitRuntime } = require("./server/git-runtime");
 const { createRepositoryHistoryService } = require("./server/repository-history");
 const { createRepositoryService } = require("./server/repository-service");
+const { createServerShutdownController } = require("./server/shutdown-controller");
 const { createUpdateService } = require("./server/update-service");
 
 const PORT = Number(process.env.PORT || 5177);
@@ -19,6 +20,8 @@ const {
   gitBuffer,
   gitStandalone,
   isOperationCancelledError,
+  registerOwnedProcess,
+  shutdown: shutdownGitRuntime,
   terminateOperationProcess,
 } = gitRuntime;
 const RECOVERY_REF_PREFIX = "refs/forkline/recovery";
@@ -37,6 +40,7 @@ const REF_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%D%x00%P";
 const AUTH_DIAGNOSTICS_CACHE_TTL_MS = 60 * 1000;
 const AUTH_DIAGNOSTICS_CACHE_LIMIT = 12;
 const LOCAL_REQUEST_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1"]);
+const ELECTRON_SELF_UPDATE_READY_MESSAGE = "forkline:self-update-ready";
 const CANCELLABLE_ACTIONS = new Set([
   "cloneRepository",
   "fetch",
@@ -51,6 +55,7 @@ const CANCELLABLE_ACTIONS = new Set([
 let currentRepo = null;
 let repoSwitchInProgress = false;
 let gitOperationsService = null;
+let serverShutdownController = null;
 const activeOperations = new Map();
 const operationLog = [];
 const authDiagnosticsCache = new Map();
@@ -224,11 +229,13 @@ const repositoryService = createRepositoryService({
   authDiagnosticsCacheTtlMs: AUTH_DIAGNOSTICS_CACHE_TTL_MS,
   authDiagnosticsCacheLimit: AUTH_DIAGNOSTICS_CACHE_LIMIT,
   authDiagnosticsCache,
+  registerOwnedProcess,
   worktreeFileSnapshotCache,
 });
 const {
   openRepo,
   readBranchDisplayName,
+  readOpenDetails,
   readState,
   readStateDetails,
   readSyncState,
@@ -338,6 +345,7 @@ const {
   sampleState,
 } = repositoryService;
 
+let repositoryHistoryService;
 const fileEditorService = createFileEditorService({
   git,
   gitBuffer,
@@ -350,6 +358,8 @@ const fileEditorService = createFileEditorService({
   normalizeSha,
   isPathInside: repositoryService.isPathInside,
   decodeUtf8Strict: repositoryService.decodeUtf8Strict,
+  readCachedCommitParent: (...args) => repositoryHistoryService?.readCachedCommitParent(...args),
+  rememberCommitParent: (...args) => repositoryHistoryService?.rememberCommitParent(...args),
 });
 const {
   readEditableCommitFile,
@@ -357,7 +367,7 @@ const {
   saveEditableWorktreeFile,
 } = fileEditorService;
 
-const repositoryHistoryService = createRepositoryHistoryService({
+repositoryHistoryService = createRepositoryHistoryService({
   git,
   getCurrentRepo: () => currentRepo,
   sampleState: repositoryService.sampleState,
@@ -422,14 +432,38 @@ const {
   actionLabel,
 } = gitOperationsService;
 
-function scheduleSelfUpdateShutdown() {
+function readSelfUpdateRuntime(env = process.env) {
+  if (env.FORKLINE_RUNTIME_SHELL !== "electron") return null;
+  const parentPid = Number(env.FORKLINE_ELECTRON_PARENT_PID);
+  if (!Number.isInteger(parentPid) || parentPid <= 0) return null;
+  return {
+    restartMode: "electron",
+    parentPid,
+    electronExecPath: String(env.FORKLINE_ELECTRON_EXEC_PATH || ""),
+    electronAppPath: String(env.FORKLINE_ELECTRON_APP_PATH || ""),
+    electronPackaged: env.FORKLINE_ELECTRON_PACKAGED === "1",
+  };
+}
+
+function scheduleSelfUpdateShutdown(plan = {}) {
   setTimeout(() => {
-    const forceExit = setTimeout(() => process.exit(0), 2000);
-    server.close(() => {
-      clearTimeout(forceExit);
-      process.exit(0);
-    });
-    server.closeIdleConnections?.();
+    if (plan.restartMode === "electron") {
+      if (typeof process.send === "function" && process.connected) {
+        try {
+          process.send({ type: ELECTRON_SELF_UPDATE_READY_MESSAGE }, (error) => {
+            if (error) console.warn(`[Forkline desktop] 无法通知主进程退出：${error.message}`);
+          });
+        } catch (error) {
+          console.warn(`[Forkline desktop] 无法通知主进程退出：${error.message}`);
+        }
+      }
+      return;
+    }
+    if (serverShutdownController) {
+      void serverShutdownController.requestExit("self-update");
+      return;
+    }
+    process.exit(0);
   }, 250);
 }
 
@@ -1105,6 +1139,7 @@ const updateService = createUpdateService({
   readJson,
   sendJson,
   scheduleShutdown: scheduleSelfUpdateShutdown,
+  selfUpdateRuntime: readSelfUpdateRuntime(),
 });
 
 const server = http.createServer(async (req, res) => {
@@ -1121,6 +1156,11 @@ const server = http.createServer(async (req, res) => {
         parsed.searchParams.get("limit") || "",
         { details }
       ));
+      return;
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/open-details") {
+      ensureRequestRepoMatchesCurrent(req);
+      sendJson(res, 200, await readOpenDetails());
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/state-details") {
@@ -1253,7 +1293,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree") {
       ensureRequestRepoMatchesCurrent(req);
-      sendJson(res, 200, await readWorktree({ includeStashes: parsed.searchParams.get("stashes") === "1" }));
+      sendJson(res, 200, await readWorktree({
+        includeStashes: parsed.searchParams.get("stashes") === "1",
+        expectedSnapshot: parsed.searchParams.get("expectedSnapshot") || "",
+      }));
       return;
     }
     if (req.method === "GET" && parsed.pathname === "/api/worktree-diff") {
@@ -1311,6 +1354,12 @@ const server = http.createServer(async (req, res) => {
     sendError(res, error);
   }
 });
+
+serverShutdownController = createServerShutdownController({
+  server,
+  stopOwnedProcesses: shutdownGitRuntime,
+});
+serverShutdownController.attach();
 
 server.listen(PORT, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${PORT}`;

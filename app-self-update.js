@@ -55,6 +55,11 @@ function selfUpdateStatusFile(repoDir) {
   return path.join(os.tmpdir(), `forkline-self-update-${key}.json`);
 }
 
+function electronUpdateHealthFile(repoDir) {
+  const key = crypto.createHash("sha256").update(path.resolve(repoDir).toLowerCase()).digest("hex").slice(0, 20);
+  return path.join(os.tmpdir(), `forkline-electron-update-${key}.json`);
+}
+
 function writeSelfUpdateStatus(statusFile, value) {
   fs.writeFileSync(statusFile, JSON.stringify({ ...value, updatedAt: new Date().toISOString() }), "utf8");
 }
@@ -340,6 +345,21 @@ async function prepareSelfUpdate(options) {
     parentPid: Number(options.parentPid),
     managedRepo: String(options.managedRepo || ""),
   };
+  if (options.restartMode === "electron") {
+    const electronExecPath = path.resolve(String(options.electronExecPath || ""));
+    const electronAppPath = path.resolve(String(options.electronAppPath || ""));
+    const relativeAppPath = path.relative(local.repoDir, electronAppPath);
+    if (!options.electronExecPath || !fs.existsSync(electronExecPath)) {
+      throw new Error("Electron 可执行文件不存在，不能自动重启桌面版。");
+    }
+    if (!options.electronAppPath || relativeAppPath.startsWith("..") || path.isAbsolute(relativeAppPath)) {
+      throw new Error("Electron 应用入口不在 Forkline 仓库中，不能自动更新桌面版。");
+    }
+    plan.restartMode = "electron";
+    plan.electronExecPath = electronExecPath;
+    plan.electronAppPath = electronAppPath;
+    plan.electronHealthFile = electronUpdateHealthFile(local.repoDir);
+  }
 
   try {
     const fetchResult = await fetchReleaseCandidate(plan, options);
@@ -481,6 +501,40 @@ function startServerProcess(plan) {
   });
 }
 
+function startElectronProcess(plan) {
+  clearElectronUpdateHealth(plan);
+  const env = {
+    ...process.env,
+    FORKLINE_ELECTRON_UPDATE_HEALTH_FILE: plan.electronHealthFile,
+    FORKLINE_ELECTRON_UPDATE_TARGET_VERSION: plan.targetVersion,
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.FORKLINE_NO_OPEN;
+  delete env.PORT;
+  delete env.FORKLINE_RUNTIME_SHELL;
+  delete env.FORKLINE_ELECTRON_PARENT_PID;
+  delete env.FORKLINE_ELECTRON_EXEC_PATH;
+  delete env.FORKLINE_ELECTRON_APP_PATH;
+  delete env.FORKLINE_ELECTRON_PACKAGED;
+  const args = [plan.electronAppPath];
+  if (plan.managedRepo) args.push(plan.managedRepo);
+  return new Promise((resolve, reject) => {
+    const child = spawn(plan.electronExecPath, args, {
+      cwd: plan.repoDir,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+      env,
+    });
+    child.once("error", reject);
+    child.once("spawn", () => resolve(child));
+  });
+}
+
+function startApplicationProcess(plan) {
+  return plan.restartMode === "electron" ? startElectronProcess(plan) : startServerProcess(plan);
+}
+
 function serverResponds(port) {
   return new Promise((resolve) => {
     const request = http.get({ host: "127.0.0.1", port, path: "/", timeout: 1000 }, (response) => {
@@ -505,8 +559,62 @@ async function waitForServer(port, timeoutMs = 20000) {
   throw new Error("更新后的 Forkline 服务没有正常启动。");
 }
 
+function readElectronUpdateHealth(plan) {
+  try {
+    return JSON.parse(fs.readFileSync(plan.electronHealthFile, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function clearElectronUpdateHealth(plan) {
+  if (!plan?.electronHealthFile) return;
+  try {
+    fs.rmSync(plan.electronHealthFile, { force: true });
+  } catch {}
+}
+
+function processIsRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForElectron(plan, child, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const health = readElectronUpdateHealth(plan);
+    if (health?.ready
+      && Number(health.pid) === Number(child?.pid)
+      && normalizeVersion(health.targetVersion) === normalizeVersion(plan.targetVersion)) {
+      return;
+    }
+    if (!child?.pid || child.exitCode !== null || !processIsRunning(child.pid)) {
+      throw new Error("更新后的 Forkline 桌面版没有正常启动。");
+    }
+    await wait(200);
+  }
+  throw new Error("更新后的 Forkline 桌面版没有正常启动。");
+}
+
+function waitForApplication(plan, child, options = {}) {
+  if (plan.restartMode === "electron") {
+    return waitForElectron(plan, child, options.applicationTimeoutMs || 20000);
+  }
+  return waitForServer(plan.port, options.serverTimeoutMs || 20000);
+}
+
 async function stopServerProcess(child) {
   if (!child?.pid) return;
+  if (process.platform === "win32") {
+    await new Promise((resolve) => {
+      execFile("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, () => resolve());
+    });
+    return;
+  }
   try {
     process.kill(child.pid);
   } catch {}
@@ -533,11 +641,12 @@ async function runSelfUpdatePlan(plan, options = {}) {
     });
     currentStage = "restarting";
     writeSelfUpdateProgress(plan, "restarting", "正在启动新版本");
-    startedServer = await startServerProcess(plan);
+    startedServer = await startApplicationProcess(plan);
     currentStage = "checking";
     writeSelfUpdateProgress(plan, "checking", "正在确认新版本可以正常使用", { serverPid: startedServer.pid });
-    await waitForServer(plan.port, options.serverTimeoutMs || 20000);
+    await waitForApplication(plan, startedServer, options);
     await cleanupCandidateRef(plan, options);
+    clearElectronUpdateHealth(plan);
     writeSelfUpdateProgress(plan, "complete", `Forkline 已更新到 v${plan.targetVersion}`, {
       serverPid: startedServer.pid,
     });
@@ -564,8 +673,8 @@ async function runSelfUpdatePlan(plan, options = {}) {
         recovery = { state: "failed", message: `自动回退检查失败：${recoveryError.message}` };
       }
       try {
-        const fallbackServer = await startServerProcess(plan);
-        await waitForServer(plan.port, options.serverTimeoutMs || 20000);
+        const fallbackServer = await startApplicationProcess(plan);
+        await waitForApplication(plan, fallbackServer, options);
         fallbackServerPid = fallbackServer.pid;
         fallbackServer.unref();
         serviceState = "restored";
@@ -576,6 +685,7 @@ async function runSelfUpdatePlan(plan, options = {}) {
       }
     }
     await cleanupCandidateRef(plan, options);
+    clearElectronUpdateHealth(plan);
     const rolledBack = recovery.state === "complete";
     const outcomeText = recovery.state === "complete"
       ? "，已恢复到更新前版本"
@@ -632,6 +742,7 @@ module.exports = {
   assertLocalUpdateSafety,
   cleanupCandidateRef,
   clearSelfUpdateStatus,
+  electronUpdateHealthFile,
   isOfficialForklineRemote,
   launchSelfUpdateRunner,
   normalizeRepositoryRemote,

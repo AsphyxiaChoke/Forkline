@@ -1,0 +1,292 @@
+.history-plan.blocked {
+  border-color: rgba(240, 184, 91, 0.38);
+  background: color-mix(in srgb, var(--field) 88%, var(--amber) 12%);
+}
+
+.history-plan-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-plan-head strong,
+.history-plan-head span,
+.history-plan-grid strong,
+.history-plan-commit strong,
+.history-plan-commit em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-plan-head span {
+  color: var(--quiet);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.history-plan-effect,
+.history-plan-ok {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.history-plan-ok {
+  color: var(--teal);
+}
+
+.history-plan-grid {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 7px 10px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.history-plan-grid span {
+  color: var(--quiet);
+  font-weight: 800;
+}
+
+.history-plan-grid strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.history-plan-alert,
+.history-plan-warnings {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.history-plan-alert {
+  color: var(--amber);
+}
+
+.history-plan-warnings {
+  color: var(--quiet);
+}
+
+.history-plan-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-plan-commit {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 2px 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.history-plan-commit span {
+  grid-row: span 2;
+  align-self: center;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.history-plan-commit.target {
+  border-color: rgba(35, 199, 183, 0.55);
+}
+
+.history-plan-commit.danger {
+  border-color: rgba(240, 99, 99, 0.45);
+}
+
+.history-plan-commit.target span {
+  color: var(--teal);
+}
+
+.history-plan-commit.danger span {
+  color: var(--danger);
+}
+
+.history-plan-commit strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.history-plan-commit em {
+  color: var(--quiet);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.history-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-plan-actions .mini-btn {
+  min-height: 28px;
+  height: auto;
+}
+
+.history-queue-item {
+  grid-template-columns: minmax(108px, 0.42fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.history-queue-mode-cell,
+.history-queue-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-queue-mode-cell span {
+  grid-row: auto;
+  align-self: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-queue-mode-cell select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  outline: none;
+  background: var(--field);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.history-queue-mode-cell select:focus {
+  border-color: rgba(35, 199, 183, 0.65);
+  box-shadow: 0 0 0 2px rgba(35, 199, 183, 0.14);
+}
+
+.history-queue-copy strong,
+.history-queue-copy em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-queue-reword {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.history-queue-reword label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-queue-reword span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.history-queue-reword input,
+.history-queue-reword textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  outline: none;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.history-queue-reword input {
+  height: 30px;
+  padding: 0 9px;
+}
+
+.history-queue-reword textarea {
+  min-height: 62px;
+  max-height: 160px;
+  padding: 8px 9px;
+  resize: vertical;
+}
+
+.history-queue-reword input:focus,
+.history-queue-reword textarea:focus {
+  border-color: rgba(35, 199, 183, 0.65);
+  box-shadow: 0 0 0 2px rgba(35, 199, 183, 0.14);
+}
+
+.history-queue-buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-queue-buttons .mini-btn {
+  flex: 1 1 54px;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 9px;
+}
+
+.history-queue-preview-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.history-queue-preview-title strong,
+.history-queue-preview-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-queue-preview-title strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.history-queue-preview-title span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 800;
+}

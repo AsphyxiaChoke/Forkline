@@ -133,7 +133,7 @@ function createGitWorktreeService(options) {
   async function createStash(body) {
     const message = normalizeStashMessage(body.message);
     const files = normalizeStashFiles(body.files);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
     if (!statusOutput.trim()) throw new Error("没有可储藏的未提交更改");
     if (!(await hasHeadCommit(currentRepo))) {
       throw new Error("当前分支还没有任何提交，不能创建储藏。请先创建首个提交，或使用“丢弃全部”清理这些未跟踪文件。");
@@ -293,7 +293,7 @@ function createGitWorktreeService(options) {
   async function ignoreWorktreePath(body) {
     const file = normalizeRepoFile(body.file);
     const mode = normalizeIgnoreMode(body.mode);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, "untracked");
     if (!target || target.indexStatus !== "?" || target.worktreeStatus !== "?") {
       throw new Error("只能把未跟踪文件加入 .gitignore。已跟踪文件需要先从 Git 索引中移除后才能忽略。");
@@ -369,7 +369,7 @@ function createGitWorktreeService(options) {
   async function discardWorktreeFile(body) {
     const file = normalizeRepoFile(body.file);
     await ensureNotSubmoduleDiscardTarget(file);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, "unstaged");
     if (!target?.unstaged) throw new Error("这个文件没有可丢弃的工作区改动");
     if (target.indexStatus === "?") {
@@ -391,7 +391,7 @@ function createGitWorktreeService(options) {
 
   async function unstageFile(body) {
     const file = normalizeRepoFile(body.file);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, "staged");
     if (!target?.staged) throw new Error("这个文件没有可取消暂存的改动");
     const paths = target.previousFile ? [target.previousFile, file] : [file];
@@ -401,7 +401,7 @@ function createGitWorktreeService(options) {
   async function discardStagedFile(body) {
     const file = normalizeRepoFile(body.file);
     await ensureNotSubmoduleDiscardTarget(file, `路径 ${file} 是独立 Git 子模块，不能从父仓库丢弃它的已暂存修改。请使用“取消暂存”仅撤销 gitlink 暂存，或进入子模块处理后再更新父仓库记录。`);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
     const statusFiles = parseStatus(statusOutput);
     const target = selectStatusFile(statusFiles, file, "staged");
     if (!target?.staged) throw new Error("这个文件没有可丢弃的已暂存改动");
@@ -425,7 +425,7 @@ function createGitWorktreeService(options) {
   async function resolveConflictFile(body) {
     const file = normalizeRepoFile(body.file);
     const side = normalizeConflictSide(body.side);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, "conflict");
     if (!target?.conflict) throw new Error("这个文件当前没有未解决冲突。");
     await git(currentRepo, ["checkout", `--${side}`, "--", file], { timeout: 60000 });
@@ -437,7 +437,7 @@ function createGitWorktreeService(options) {
     const file = normalizeRepoFile(body.file);
     const hunkIndex = normalizeHunkIndex(body.hunkIndex);
     const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, worktreeActionTargetScope(kind, requestedScope));
     if (!target) throw new Error("这个文件当前没有可操作的改动。");
     if (target.conflict) throw new Error("冲突文件暂不支持按块操作，请先解决冲突。");
@@ -481,7 +481,7 @@ function createGitWorktreeService(options) {
     const file = normalizeRepoFile(body.file);
     const selectedLines = normalizeDiffLineSelections(body.lines);
     const requestedScope = String(body.scope || "unstaged").trim().toLowerCase();
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, requestedScope === "untracked" ? "untracked" : "unstaged");
     if (!target) throw new Error("这个文件当前没有可操作的改动。");
     if (target.conflict) throw new Error("冲突文件暂不支持按行暂存，请先解决冲突。");
@@ -508,7 +508,7 @@ function createGitWorktreeService(options) {
   async function unstageSelectedLines(body) {
     const file = normalizeRepoFile(body.file);
     const selectedLines = normalizeDiffLineSelections(body.lines);
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const target = selectStatusFile(parseStatus(statusOutput), file, "staged");
     if (!target) throw new Error("这个文件当前没有可操作的改动。");
     if (target.conflict) throw new Error("冲突文件暂不支持按行取消暂存，请先解决冲突。");

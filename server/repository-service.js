@@ -31,6 +31,7 @@ function createRepositoryService(options) {
     authDiagnosticsCacheTtlMs: AUTH_DIAGNOSTICS_CACHE_TTL_MS,
     authDiagnosticsCacheLimit: AUTH_DIAGNOSTICS_CACHE_LIMIT,
     authDiagnosticsCache,
+    registerOwnedProcess,
     worktreeFileSnapshotCache,
   } = options;
   let currentRepo = getCurrentRepo();
@@ -83,6 +84,7 @@ function createRepositoryService(options) {
     authDiagnosticsCacheTtlMs: AUTH_DIAGNOSTICS_CACHE_TTL_MS,
     authDiagnosticsCacheLimit: AUTH_DIAGNOSTICS_CACHE_LIMIT,
     authDiagnosticsCache,
+    registerOwnedProcess,
   });
   const { openSystemCredentialManager, readCachedAuthDiagnostics, readPullRequestLink } = authService;
   const worktreeService = createRepositoryWorktreeService({
@@ -167,6 +169,7 @@ function createRepositoryService(options) {
     historyPage,
     logArgs,
     normalizeHistoryLimit,
+    readOpenDetails,
     readOpenState,
     readRefState,
     readReflogState,
@@ -550,17 +553,32 @@ function createRepositoryService(options) {
       throw new Error("请输入仓库路径");
     }
     const root = (await git(repoPath, ["rev-parse", "--show-toplevel"])).trim();
-    if (!currentRepo || !sameFsPath(currentRepo, root)) worktreeFileSnapshotCache.clear();
     setCurrentRepo(root);
     return options.progressive ? readOpenState() : readState();
   }
 
   async function readBranchDisplayName(repoPath) {
+    const headBranch = readBranchFromHeadFile(repoPath);
+    if (headBranch) return headBranch;
     const symbolic = (await git(repoPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => "")).trim();
     if (symbolic) return symbolic;
     const branch = (await git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
     if (!branch || branch === "HEAD") return "detached HEAD";
     return branch;
+  }
+
+  function readBranchFromHeadFile(repoPath) {
+    const gitDir = resolveGitDirSync(repoPath);
+    if (!gitDir) return "";
+    try {
+      const head = fs.readFileSync(path.join(gitDir, "HEAD"), "utf8").trim();
+      const branch = head.match(/^ref:\s+refs\/heads\/(.+)$/)?.[1];
+      if (branch) return branch;
+      if (/^[0-9a-f]{40,64}$/i.test(head)) return "detached HEAD";
+    } catch {
+      return "";
+    }
+    return "";
   }
 
   async function ensureRemoteBranchStillExists(remoteRef, parsed = null, repoPath = currentRepo) {
@@ -890,6 +908,7 @@ function createRepositoryService(options) {
     formatLocalTime,
     openRepo,
     readBranchDisplayName,
+    readOpenDetails,
     readState,
     readStateDetails,
     readSyncState,

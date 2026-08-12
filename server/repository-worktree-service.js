@@ -11,6 +11,7 @@ const path = require("path");
 const INDEX_PATHSPEC_MAX_CHARS = 24 * 1024;
 const INDEX_QUERY_CONCURRENCY = 4;
 const WORKTREE_SNAPSHOT_CONCURRENCY = 32;
+const WORKTREE_WATCH_RESCAN_MS = 60 * 1000;
 
 
 
@@ -54,19 +55,202 @@ function createRepositoryWorktreeService(options) {
 
     worktreeFileSnapshotCache,
 
+    now = Date.now,
+
+    watchWorktree = (repoPath, listener) => fs.watch(repoPath, { recursive: true, persistent: false }, listener),
+
   } = options;
 
   const { isPathInside, sameFsPath } = browseService;
 
   const { readPullRequestLink } = authService;
 
+  const readStatusFileSnapshot = options.statusFileSnapshot || statusFileSnapshot;
+
+  const WORKTREE_WATCH_CACHE_LIMIT = 2;
+
   let currentRepo = getCurrentRepo();
+
+  const worktreeWatchStates = new Map();
 
 
 
   function setCurrentRepo(repoPath) {
 
     currentRepo = repoPath || null;
+
+    if (!currentRepo) closeAllWorktreeWatchers();
+
+  }
+
+
+
+  function worktreeWatchStateKey(repoPath) {
+
+    const resolved = path.resolve(String(repoPath || ""));
+
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+
+  }
+
+
+
+  function closeWorktreeWatchState(state) {
+
+    if (!state) return;
+
+    if (worktreeWatchStates.get(state.key) === state) worktreeWatchStates.delete(state.key);
+
+    const watcher = state.watcher;
+
+    state.watcher = null;
+
+    state.changedPaths.clear();
+
+    state.needsFullScan = false;
+
+    state.readCache = null;
+
+    try {
+
+      watcher?.close();
+
+    } catch {}
+
+  }
+
+
+
+  function closeAllWorktreeWatchers() {
+
+    for (const state of [...worktreeWatchStates.values()]) closeWorktreeWatchState(state);
+
+  }
+
+
+
+  function touchWorktreeWatchState(state) {
+
+    if (worktreeWatchStates.get(state.key) !== state) return;
+
+    worktreeWatchStates.delete(state.key);
+
+    worktreeWatchStates.set(state.key, state);
+
+  }
+
+
+
+  function trimWorktreeWatchStates() {
+
+    while (worktreeWatchStates.size > WORKTREE_WATCH_CACHE_LIMIT) {
+
+      closeWorktreeWatchState(worktreeWatchStates.values().next().value);
+
+    }
+
+  }
+
+
+
+  function worktreeWatchPathKey(fileName) {
+
+    const value = String(fileName || "")
+      .replaceAll("\\", "/")
+      .replace(/^\.\/+/, "")
+      .replace(/\/{2,}/g, "/");
+
+    if (!value || value === "." || path.isAbsolute(value) || value.split("/").includes("..")) return "";
+
+    return process.platform === "win32" ? value.toLowerCase() : value;
+
+  }
+
+
+
+  function recordWorktreeWatchChange(state, fileName) {
+
+    if (worktreeWatchStates.get(state.key) !== state) return;
+
+    const watchedPath = worktreeWatchPathKey(fileName);
+
+    if (!watchedPath || watchedPath === ".git" || watchedPath === ".git/index" || watchedPath === ".git/index.lock") {
+
+      state.needsFullScan = true;
+
+    } else if (watchedPath.startsWith(".git/")) {
+
+      return;
+
+    } else {
+
+      state.changedPaths.add(watchedPath);
+
+    }
+
+    state.generation += 1;
+
+  }
+
+
+
+  function ensureWorktreeWatcher(repoPath) {
+
+    const key = worktreeWatchStateKey(repoPath);
+
+    const existing = worktreeWatchStates.get(key);
+
+    if (existing?.watcher) {
+
+      touchWorktreeWatchState(existing);
+
+      return existing;
+
+    }
+
+    try {
+
+      const state = {
+
+        key,
+
+        repoPath,
+
+        watcher: null,
+
+        generation: 0,
+
+        changedPaths: new Set(),
+
+        needsFullScan: false,
+
+        readCache: null,
+
+      };
+
+      const watcher = watchWorktree(repoPath, (_eventType, fileName) => recordWorktreeWatchChange(state, fileName));
+
+      if (!watcher || typeof watcher.close !== "function") return null;
+
+      state.watcher = watcher;
+
+      worktreeWatchStates.set(key, state);
+
+      trimWorktreeWatchStates();
+
+      watcher.on?.("error", () => {
+
+        if (worktreeWatchStates.get(key) === state) closeWorktreeWatchState(state);
+
+      });
+
+      return state;
+
+    } catch {
+
+      return null;
+
+    }
 
   }
 
@@ -128,17 +312,47 @@ function createRepositoryWorktreeService(options) {
     const upstream = options.upstream !== undefined
       ? String(options.upstream || "").trim()
       : (await git(repoPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")).trim();
+    const knownUpstreamSha = options.upstreamSha !== undefined ? String(options.upstreamSha || "").trim() : null;
+    const knownUpstreamGone = typeof options.upstreamGone === "boolean" ? options.upstreamGone : null;
+    const knownAhead = options.ahead !== undefined && Number.isFinite(Number(options.ahead))
+      ? Math.max(0, Number(options.ahead))
+      : null;
+    const knownBehind = options.behind !== undefined && Number.isFinite(Number(options.behind))
+      ? Math.max(0, Number(options.behind))
+      : null;
     const hasCommit = typeof options.hasCommit === "boolean" ? options.hasCommit : await hasHeadCommit(repoPath);
     if (!hasCommit) {
-      const upstreamSha = upstream ? (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim() : "";
+      let upstreamSha = "";
+      if (upstream && knownUpstreamGone !== true) {
+        upstreamSha = knownUpstreamSha !== null
+          ? knownUpstreamSha
+          : (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
+      }
       return { branch, detached: false, unborn: true, upstream, upstreamSha, upstreamGone: Boolean(upstream && !upstreamSha), ahead: 0, behind: 0 };
     }
     if (!upstream) {
       return { branch, detached: false, unborn: false, upstream: "", upstreamSha: "", upstreamGone: false, ahead: 0, behind: 0 };
     }
-    const upstreamSha = (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
+    if (knownUpstreamGone === true) {
+      return { branch, detached: false, unborn: false, upstream, upstreamSha: "", upstreamGone: true, ahead: 0, behind: 0 };
+    }
+    const upstreamSha = knownUpstreamSha !== null
+      ? knownUpstreamSha
+      : (await git(repoPath, ["rev-parse", "--verify", `${upstream}^{commit}`]).catch(() => "")).trim();
     if (!upstreamSha) {
       return { branch, detached: false, unborn: false, upstream, upstreamSha: "", upstreamGone: true, ahead: 0, behind: 0 };
+    }
+    if (knownAhead !== null && knownBehind !== null) {
+      return {
+        branch,
+        detached: false,
+        unborn: false,
+        upstream,
+        upstreamSha,
+        upstreamGone: false,
+        behind: knownBehind,
+        ahead: knownAhead,
+      };
     }
     const counts = (await git(repoPath, ["rev-list", "--left-right", "--count", `${upstream}...HEAD`]).catch(() => "0\t0")).trim().split(/\s+/);
     return {
@@ -277,6 +491,60 @@ function createRepositoryWorktreeService(options) {
     return files;
   }
 
+  function compactWorktreeChangedPaths(changedPaths) {
+    const paths = [...changedPaths];
+    return paths.filter((candidate) => !paths.some((other) => (
+      other !== candidate && other.startsWith(`${candidate}/`)
+    )));
+  }
+
+  function changedStatusFileIndexes(files, changedPaths) {
+    const indexes = new Set();
+    for (const changedPath of compactWorktreeChangedPaths(changedPaths)) {
+      for (let index = 0; index < files.length; index += 1) {
+        const filePaths = [files[index].file, files[index].previousFile]
+          .filter(Boolean)
+          .map(worktreeWatchPathKey)
+          .filter(Boolean);
+        if (filePaths.some((filePath) => (
+          filePath === changedPath
+          || filePath.startsWith(`${changedPath}/`)
+          || changedPath.startsWith(`${filePath}/`)
+        ))) {
+          indexes.add(index);
+        }
+      }
+    }
+    return [...indexes];
+  }
+
+  async function refreshCachedWorkingStatus(repoPath, cachedFiles, changedPaths) {
+    const changedIndexes = changedStatusFileIndexes(cachedFiles, changedPaths);
+    if (!changedIndexes.length) {
+      return {
+        files: cachedFiles,
+        snapshot: combinedWorktreeSnapshot(cachedFiles),
+      };
+    }
+    const changedFiles = changedIndexes.map((index) => cachedFiles[index]);
+    const paths = [...new Set(changedFiles.flatMap((file) => (
+      file.indexStatus === "?" ? [] : [file.file, file.previousFile].filter(Boolean)
+    )))];
+    const indexEntries = await readIndexSnapshotEntries(repoPath, paths);
+    const refreshedFiles = await mapWithConcurrency(changedFiles, WORKTREE_SNAPSHOT_CONCURRENCY, async (file) => {
+      const snapshot = await readStatusFileSnapshot(repoPath, file, indexEntries);
+      return { ...file, snapshot };
+    });
+    const files = cachedFiles.slice();
+    changedIndexes.forEach((index, changedIndex) => {
+      files[index] = refreshedFiles[changedIndex];
+    });
+    return {
+      files,
+      snapshot: combinedWorktreeSnapshot(files),
+    };
+  }
+
   async function readWorkingStatus(repoPath, statusOutput) {
     const files = parseStatus(statusOutput);
     const paths = [...new Set(files.flatMap((file) => (
@@ -284,13 +552,77 @@ function createRepositoryWorktreeService(options) {
     )))];
     const indexEntries = await readIndexSnapshotEntries(repoPath, paths);
     const enriched = await mapWithConcurrency(files, WORKTREE_SNAPSHOT_CONCURRENCY, async (file) => {
-      const snapshot = await statusFileSnapshot(repoPath, file, indexEntries);
+      const snapshot = await readStatusFileSnapshot(repoPath, file, indexEntries);
       return { ...file, snapshot };
     });
     return {
       files: enriched,
       snapshot: combinedWorktreeSnapshot(enriched),
     };
+  }
+
+  async function readCachedWorkingStatus(repoPath, statusOutput, options = {}) {
+    const forceScan = Boolean(options.forceScan);
+    const watchState = ensureWorktreeWatcher(repoPath);
+    if (!watchState) return readWorkingStatus(repoPath, statusOutput);
+
+    const cachedGeneration = watchState.generation;
+    const cachedWorktree = watchState.readCache;
+    const cacheMatchesStatus = cachedWorktree?.repoPath === repoPath
+      && cachedWorktree.statusOutput === statusOutput
+      && now() - cachedWorktree.scannedAt <= WORKTREE_WATCH_RESCAN_MS;
+    if (
+      !forceScan
+      && cacheMatchesStatus
+      && cachedWorktree.generation === cachedGeneration
+      && !watchState.needsFullScan
+    ) {
+      await new Promise((resolve) => setImmediate(resolve));
+      if (
+        worktreeWatchStates.get(watchState.key) === watchState
+        && watchState.readCache === cachedWorktree
+        && watchState.generation === cachedGeneration
+        && !watchState.needsFullScan
+      ) {
+        return {
+          files: cachedWorktree.files,
+          snapshot: cachedWorktree.snapshot,
+        };
+      }
+    }
+
+    const scanGeneration = watchState.generation;
+    const scanCache = watchState.readCache;
+    const changedPaths = new Set(watchState.changedPaths);
+    const canRefreshIncrementally = !forceScan
+      && scanCache?.repoPath === repoPath
+      && scanCache.statusOutput === statusOutput
+      && scanCache.generation !== scanGeneration
+      && Array.isArray(scanCache.files)
+      && changedPaths.size > 0
+      && !watchState.needsFullScan
+      && now() - scanCache.scannedAt <= WORKTREE_WATCH_RESCAN_MS;
+    const working = canRefreshIncrementally
+      ? await refreshCachedWorkingStatus(repoPath, scanCache.files, changedPaths)
+      : await readWorkingStatus(repoPath, statusOutput);
+    if (
+      worktreeWatchStates.get(watchState.key) === watchState
+      && scanGeneration === watchState.generation
+    ) {
+      watchState.readCache = {
+        repoPath,
+        statusOutput,
+        files: working.files,
+        snapshot: working.snapshot,
+        generation: watchState.generation,
+        scannedAt: canRefreshIncrementally ? scanCache.scannedAt : now(),
+      };
+      watchState.changedPaths.clear();
+      watchState.needsFullScan = false;
+    } else if (worktreeWatchStates.get(watchState.key) === watchState) {
+      watchState.readCache = null;
+    }
+    return working;
   }
 
   async function readIndexSnapshotEntries(repoPath, files) {
@@ -368,21 +700,33 @@ function createRepositoryWorktreeService(options) {
     const fullPath = path.resolve(repoRoot, normalizeRepoFile(file));
     if (!sameFsPath(repoRoot, fullPath) && !isPathInside(repoRoot, fullPath)) return "outside";
     const cacheKey = process.platform === "win32" ? fullPath.toLowerCase() : fullPath;
+    const cached = worktreeFileSnapshotCache.get(cacheKey);
     try {
-      const stat = await fs.promises.stat(fullPath, { bigint: true });
+      let stat;
+      let content = null;
+      if (cached) {
+        stat = await fs.promises.stat(fullPath, { bigint: true });
+      } else {
+        const handle = await fs.promises.open(fullPath, "r");
+        try {
+          stat = await handle.stat({ bigint: true });
+          if (stat.isFile()) content = await handle.readFile();
+        } finally {
+          await handle.close();
+        }
+      }
       if (!stat.isFile()) {
         worktreeFileSnapshotCache.delete(cacheKey);
         return stat.isDirectory() ? "directory" : "other";
       }
       const fingerprint = [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(":");
-      const cached = worktreeFileSnapshotCache.get(cacheKey);
       if (cached?.fingerprint === fingerprint) {
         worktreeFileSnapshotCache.delete(cacheKey);
         worktreeFileSnapshotCache.set(cacheKey, cached);
         return cached.snapshot;
       }
       const hash = crypto.createHash("sha256");
-      hash.update(await fs.promises.readFile(fullPath));
+      hash.update(content ?? await fs.promises.readFile(fullPath));
       const snapshot = `file:${stat.size}:${hash.digest("hex")}`;
       worktreeFileSnapshotCache.delete(cacheKey);
       worktreeFileSnapshotCache.set(cacheKey, { fingerprint, snapshot });
@@ -619,6 +963,8 @@ function createRepositoryWorktreeService(options) {
 
   async function readWorktree(options = {}) {
     const includeStashes = Boolean(options.includeStashes);
+    const rawExpectedSnapshot = String(options.expectedSnapshot || "").trim().toLowerCase();
+    const expectedSnapshot = /^[a-f0-9]{64}$/.test(rawExpectedSnapshot) ? rawExpectedSnapshot : "";
     if (!currentRepo) {
       const sample = sampleState();
       return {
@@ -629,14 +975,25 @@ function createRepositoryWorktreeService(options) {
     }
     const repoPath = currentRepo;
     const [statusOutput, stashOutput] = await Promise.all([
-      git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => ""),
+      git(repoPath, ["status", "--short", "-z", "--untracked-files=all"], {
+        stdoutOnly: true,
+        env: { GIT_OPTIONAL_LOCKS: "0" },
+      }).catch(() => ""),
       includeStashes ? git(repoPath, ["stash", "list", "--format=%gd%x00%H%x00%gs%x00%cr"]).catch(() => "") : "",
     ]);
-    const working = await readWorkingStatus(repoPath, statusOutput);
+    const working = await readCachedWorkingStatus(repoPath, statusOutput, { forceScan: includeStashes });
+    const operation = detectRepoOperation(repoPath);
+    if (!includeStashes && expectedSnapshot && working.snapshot === expectedSnapshot) {
+      return {
+        unchanged: true,
+        worktreeSnapshot: working.snapshot,
+        operation,
+      };
+    }
     return {
       workingFiles: working.files,
       worktreeSnapshot: working.snapshot,
-      operation: detectRepoOperation(repoPath),
+      operation,
       ...(includeStashes ? { stashes: parseStashList(stashOutput) } : {}),
     };
   }
@@ -696,7 +1053,7 @@ function createRepositoryWorktreeService(options) {
   }
 
   async function readStatusFileForDiff(file, scope = "any", repoPath = currentRepo) {
-    const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+    const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true }).catch(() => "");
     return selectStatusFile(parseStatus(statusOutput), file, scope);
   }
 
@@ -773,6 +1130,8 @@ function createRepositoryWorktreeService(options) {
     readStash,
 
     readStatusFileForDiff,
+
+    readCachedWorkingStatus,
 
     readWorkingDiff,
 

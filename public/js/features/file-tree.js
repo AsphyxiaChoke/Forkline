@@ -40,8 +40,9 @@ function treeNodeHtml(node, depth, options = {}, parentPath = "") {
     .map((dir) => {
       const directoryPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
       const count = options.directoryCounts?.get(directoryPath) || treeFileCount(dir);
+      const intrinsicBlockSize = Math.max(58, (count + 1) * 29);
       return `
-        <div class="tree-group" data-tree-path="${escapeAttr(directoryPath)}" style="--depth:${depth}">
+        <div class="tree-group" data-tree-path="${escapeAttr(directoryPath)}" style="--depth:${depth};--tree-intrinsic-block-size:${intrinsicBlockSize}px">
           <button class="tree-head" type="button">
             <span class="tree-caret"></span>
             <span class="tree-folder" title="${escapeAttr(dir.name)}">${escapeHtml(dir.name)}</span>
@@ -200,7 +201,7 @@ function handleFileTreeContextMenu(root, binding, event) {
   if (!row) return;
   event.preventDefault();
   event.stopPropagation();
-  showFileContextMenu(event, row.dataset.file || "", row.dataset.scope || "");
+  showFileContextMenuLazy(event, row.dataset.file || "", row.dataset.scope || "").catch((error) => toast(error.message));
 }
 
 function handleFileTreeScroll(root, binding) {
@@ -227,7 +228,7 @@ function selectChangeFile(filePath, scope, event) {
   }
   refreshChangeSelectionUi();
   if (selected) {
-    loadWorkingDiff(filePath);
+    setActiveDiff(null);
     openSelectedFileInspector(filePath);
   }
   else renderWorkDiffEmpty("未选择文件");
@@ -274,7 +275,7 @@ function selectWorkingFile(filePath) {
   setInspectorContext("file", inspectorTabs.file.includes(state.selectedTab) ? state.selectedTab : "fileHistory");
   state.workDiffScope = preferredWorkDiffScope(selectedWorkingFileInfo(filePath));
   markSelectedFile();
-  loadWorkingDiff(filePath);
+  setActiveDiff(null);
   openSelectedFileInspector(filePath);
 }
 

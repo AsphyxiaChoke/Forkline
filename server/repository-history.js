@@ -2,6 +2,7 @@
 
 const GIT_LOG_FIELD_SEPARATOR = "\0";
 const BASIC_COMMIT_LOG_FORMAT = "%H%x00%h%x00%an%x00%ar%x00%s%x00%P";
+const COMMIT_DETAIL_FORMAT = `${BASIC_COMMIT_LOG_FORMAT}%x00%B%x00`;
 
 function createRepositoryHistoryService(options) {
   const {
@@ -19,6 +20,7 @@ function createRepositoryHistoryService(options) {
     parseDiff,
     formatLocalTime,
   } = options;
+  const commitParentCache = new Map();
 
   async function readCommit(sha, readOptions = {}) {
     const includeDiff = Boolean(readOptions.includeDiff);
@@ -29,29 +31,23 @@ function createRepositoryHistoryService(options) {
       return { ...commit, files: commit.files, diff: includeDiff ? commit.diff : [], diffLoaded: includeDiff };
     }
     const repoPath = currentRepo;
-    const parentLine = (await git(repoPath, ["rev-list", "--parents", "-n", "1", sha]).catch(() => "")).trim();
-    const parents = parentLine.split(/\s+/).slice(1).filter(Boolean);
-    const diffBase = parents.length > 1 ? parents[0] : "";
     const diffPromise = includeDiff
-      ? diffBase
-        ? git(repoPath, ["diff", "--find-renames", "--unified=8", "--no-ext-diff", diffBase, sha], { maxBuffer: 1024 * 1024 * 5 })
-        : git(repoPath, ["show", "--format=", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 })
+      ? git(repoPath, ["show", "--first-parent", "--format=", "--find-renames", "--unified=8", "--no-ext-diff", sha], { maxBuffer: 1024 * 1024 * 5 })
       : Promise.resolve("");
-    const [filesOutput, messageOutput, basicCommit, diffOutput] = await Promise.all([
-      diffBase
-        ? git(repoPath, ["diff", "--name-status", "--find-renames", diffBase, sha], { maxBuffer: 1024 * 1024 * 2 })
-        : git(repoPath, ["show", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
-      git(repoPath, ["show", "-s", "--format=%B", sha], { maxBuffer: 1024 * 256 }),
-      readBasicCommit(sha, repoPath),
+    const [detailOutput, filesOutput, diffOutput] = await Promise.all([
+      git(repoPath, ["show", "-s", "--date=relative", `--format=${COMMIT_DETAIL_FORMAT}`, sha], { maxBuffer: 1024 * 1024 }),
+      git(repoPath, ["show", "--first-parent", "--name-status", "--format=", "--find-renames", sha], { maxBuffer: 1024 * 1024 * 2 }),
       diffPromise,
     ]);
+    const detail = parseCommitDetail(detailOutput, sha);
+    rememberCommitParent(detail.commit.sha, detail.commit.parents[0] || "", repoPath);
     return {
-      ...basicCommit,
-      summary: basicCommit.message,
+      ...detail.commit,
+      summary: detail.commit.message,
       files: parseNameStatus(filesOutput),
       diff: parseDiff(diffOutput),
       diffLoaded: includeDiff,
-      message: messageOutput.trimEnd(),
+      message: detail.message,
     };
   }
 
@@ -204,7 +200,7 @@ function createRepositoryHistoryService(options) {
 
   async function resolveBlameFileForRef(file, ref, repoPath = getCurrentRepo()) {
     const resolved = await resolveRefFileForWorktreePath(file, ref, repoPath);
-    if (await refContainsFile(ref, resolved.file, repoPath)) return { ...resolved, ref };
+    if (resolved.existsAtRef) return { ...resolved, ref };
     const parentRef = await findParentRefContainingFile(ref, resolved.file, repoPath);
     if (parentRef) return { ...resolved, ref: parentRef };
     return { ...resolved, ref };
@@ -212,14 +208,14 @@ function createRepositoryHistoryService(options) {
 
   async function resolveRefFileForWorktreePath(file, ref, repoPath = getCurrentRepo()) {
     const currentFile = normalizeRepoFile(file);
-    if (await refContainsFile(ref, currentFile, repoPath)) return { file: currentFile, previousFile: "" };
-    const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"]).catch(() => "");
+    if (await refContainsFile(ref, currentFile, repoPath)) return { file: currentFile, previousFile: "", existsAtRef: true };
+    const statusOutput = await git(repoPath, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true }).catch(() => "");
     const target = selectStatusFile(parseStatus(statusOutput), currentFile, "any");
     const previousFile = target?.previousFile ? normalizeRepoFile(target.previousFile) : "";
     if (previousFile && await refContainsFile(ref, previousFile, repoPath)) {
-      return { file: previousFile, previousFile };
+      return { file: previousFile, previousFile, existsAtRef: true };
     }
-    return { file: currentFile, previousFile: "" };
+    return { file: currentFile, previousFile: "", existsAtRef: false };
   }
 
   async function refContainsFile(ref, file, repoPath = getCurrentRepo()) {
@@ -258,8 +254,12 @@ function createRepositoryHistoryService(options) {
       };
     }
     const repoPath = currentRepo;
-    const currentBranch = (await readBranchDisplayName(repoPath).catch(() => "HEAD")).trim() || "HEAD";
-    const unborn = currentBranch !== "detached HEAD" && !(await hasHeadCommit(repoPath));
+    const [currentBranchOutput, headExists] = await Promise.all([
+      readBranchDisplayName(repoPath).catch(() => "HEAD"),
+      hasHeadCommit(repoPath),
+    ]);
+    const currentBranch = currentBranchOutput.trim() || "HEAD";
+    const unborn = currentBranch !== "detached HEAD" && !headExists;
     if (unborn && !baseInput) {
       throw new Error(`当前分支 ${currentBranch} 还没有任何提交，不能作为比较基准。请先创建首个提交，或手动选择一个已有提交的分支作为基准。`);
     }
@@ -268,17 +268,18 @@ function createRepositoryHistoryService(options) {
     if (unborn && (base === currentBranch || base === "HEAD" || head === currentBranch || head === "HEAD")) {
       throw new Error("当前分支还没有任何提交，不能参与分支比较。请先创建首个提交，或选择两个已有提交的引用。");
     }
-    const [baseSha, headSha] = await Promise.all([resolveCommitRef(base, "比较基准", repoPath), resolveCommitRef(head, "比较目标", repoPath)]);
-    const mergeBase = (await git(repoPath, ["merge-base", base, head]).catch(() => "")).trim();
-    const counts = (await git(repoPath, ["rev-list", "--left-right", "--count", `${base}...${head}`]).catch(() => "0\t0")).trim().split(/\s+/);
+    const { baseSha, headSha, mergeBase } = await resolveCompareSnapshot(base, head, repoPath);
+    const diffRange = compareDiffRange(baseSha, headSha, mergeBase);
+    const [countsOutput, baseOnlyOutput, headOnlyOutput, filesOutput, diffOutput] = await Promise.all([
+      git(repoPath, ["rev-list", "--left-right", "--count", `${baseSha}...${headSha}`]).catch(() => "0\t0"),
+      git(repoPath, compareLogArgs(`${headSha}..${baseSha}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
+      git(repoPath, compareLogArgs(`${baseSha}..${headSha}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
+      git(repoPath, ["diff", "--name-status", "--find-renames", diffRange], { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
+      git(repoPath, ["diff", "--unified=8", "--no-ext-diff", diffRange], { maxBuffer: 1024 * 1024 * 8 }).catch(() => ""),
+    ]);
+    const counts = countsOutput.trim().split(/\s+/);
     const baseOnlyCount = Number(counts[0] || 0);
     const headOnlyCount = Number(counts[1] || 0);
-    const [baseOnlyOutput, headOnlyOutput, filesOutput, diffOutput] = await Promise.all([
-      baseOnlyCount ? git(repoPath, compareLogArgs(`${head}..${base}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
-      headOnlyCount ? git(repoPath, compareLogArgs(`${base}..${head}`), { maxBuffer: 1024 * 1024 * 2 }).catch(() => "") : "",
-      git(repoPath, ["diff", "--name-status", "--find-renames", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 2 }).catch(() => ""),
-      git(repoPath, ["diff", "--unified=8", "--no-ext-diff", compareDiffRange(base, head, mergeBase)], { maxBuffer: 1024 * 1024 * 8 }).catch(() => ""),
-    ]);
     return {
       ok: true,
       base,
@@ -325,6 +326,29 @@ function createRepositoryHistoryService(options) {
     })).trim();
   }
 
+  async function resolveCompareSnapshot(base, head, repoPath = getCurrentRepo()) {
+    try {
+      const output = await git(
+        repoPath,
+        ["rev-parse", `${base}^{commit}`, `${head}^{commit}`, `${base}...${head}`],
+        { timeout: 60000, stdoutOnly: true }
+      );
+      const lines = output.trim().split(/\r?\n/).filter(Boolean);
+      const baseSha = lines[0] || "";
+      const headSha = lines[1] || "";
+      if (!/^[0-9a-f]{40,64}$/i.test(baseSha) || !/^[0-9a-f]{40,64}$/i.test(headSha)) throw new Error("比较快照解析失败");
+      const mergeBaseLine = lines.slice(2).find((line) => /^\^[0-9a-f]{40,64}$/i.test(line));
+      return { baseSha, headSha, mergeBase: mergeBaseLine ? mergeBaseLine.slice(1) : "" };
+    } catch {
+      const [baseSha, headSha] = await Promise.all([
+        resolveCommitRef(base, "比较基准", repoPath),
+        resolveCommitRef(head, "比较目标", repoPath),
+      ]);
+      const mergeBase = (await git(repoPath, ["merge-base", baseSha, headSha]).catch(() => "")).trim();
+      return { baseSha, headSha, mergeBase };
+    }
+  }
+
   function compareLogArgs(range) {
     return ["log", "--max-count=40", "--date=relative", `--format=${BASIC_COMMIT_LOG_FORMAT}`, range];
   }
@@ -340,7 +364,27 @@ function createRepositoryHistoryService(options) {
 
   async function readBasicCommit(sha, repoPath = getCurrentRepo()) {
     const output = await git(repoPath, ["show", "-s", "--date=relative", `--format=${BASIC_COMMIT_LOG_FORMAT}`, sha], { maxBuffer: 1024 * 256 });
-    return parseBasicCommits(output)[0] || { sha, short: sha.slice(0, 7), author: "", time: "", message: "", parents: [] };
+    const commit = parseBasicCommits(output)[0] || { sha, short: sha.slice(0, 7), author: "", time: "", message: "", parents: [] };
+    rememberCommitParent(commit.sha, commit.parents[0] || "", repoPath);
+    return commit;
+  }
+
+  function rememberCommitParent(sha, parent, repoPath = getCurrentRepo()) {
+    const commit = String(sha || "").trim();
+    if (!repoPath || !/^[0-9a-f]{40,64}$/i.test(commit)) return;
+    const key = `${repoPath}\0${commit}`;
+    commitParentCache.delete(key);
+    commitParentCache.set(key, String(parent || "").trim());
+    while (commitParentCache.size > 512) commitParentCache.delete(commitParentCache.keys().next().value);
+  }
+
+  function readCachedCommitParent(sha, repoPath = getCurrentRepo()) {
+    const key = `${repoPath || ""}\0${String(sha || "").trim()}`;
+    if (!commitParentCache.has(key)) return undefined;
+    const parent = commitParentCache.get(key);
+    commitParentCache.delete(key);
+    commitParentCache.set(key, parent);
+    return parent;
   }
 
   return {
@@ -350,6 +394,8 @@ function createRepositoryHistoryService(options) {
     readFileBlame,
     readCompare,
     readBasicCommit,
+    readCachedCommitParent,
+    rememberCommitParent,
     parseBasicCommits,
   };
 }
@@ -370,6 +416,23 @@ function parseBasicCommits(output) {
       };
     })
     .filter(Boolean);
+}
+
+function parseCommitDetail(output, fallbackSha) {
+  const parts = String(output || "").split(GIT_LOG_FIELD_SEPARATOR);
+  const sha = String(parts[0] || fallbackSha || "").trim();
+  const summary = parts[4] || "(无提交信息)";
+  return {
+    commit: {
+      sha,
+      short: parts[1] || sha.slice(0, 7),
+      author: parts[2] || "unknown",
+      time: parts[3] || "",
+      message: summary,
+      parents: parts[5] ? parts[5].split(" ").filter(Boolean) : [],
+    },
+    message: parts.length > 6 ? String(parts[6] || "").trimEnd() : summary,
+  };
 }
 
 function parseFileHistoryLog(output, trackedFile) {

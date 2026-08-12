@@ -13,6 +13,7 @@ const state = {
   selectedRef: "",
   theme: "dark",
   locale: "zh-CN",
+  desktopZoom: null,
   appUpdate: {
     status: "loading",
     currentVersion: "",
@@ -113,8 +114,10 @@ function isCurrentRepoPath(repoPath) {
 }
 
 async function loadStateForRepoPath(repoPath, ref = state.selectedRef) {
-  const data = await api(`/api/state?ref=${encodeURIComponent(ref)}`);
+  const data = await api(`/api/state?ref=${encodeURIComponent(ref)}&details=core`);
   if (!isCurrentRepoPath(repoPath)) return null;
+  state.repoDetailRequestId += 1;
+  state.repoDetailLoads = {};
   return data;
 }
 
@@ -321,4 +324,153 @@ window.Forkline = {
   state,
   els,
 };
+
+const DESKTOP_RECOVERY_DRAFT_SAVE_DELAY_MS = 600;
+let lastDesktopRecoveryStateSignature = "";
+let lastDesktopRecoveryDraftSignature = "";
+let desktopRecoveryDraftReady = false;
+let desktopRecoveryDraftSaveTimer = 0;
+let pendingDesktopRecoveryFileDraft = null;
+
+function desktopRecoveryCommitDraft() {
+  const summary = String(els.commitSummary?.value || "");
+  const body = String(els.commitBody?.value || "");
+  const amend = Boolean(els.amendToggle?.checked);
+  return summary.trim() || body.trim() || amend ? { summary, body, amend } : null;
+}
+
+function desktopRecoveryFileDraft() {
+  const editor = state.fileEditor;
+  const editorDirty = typeof fileEditorDirty === "function" && fileEditorDirty();
+  const recoverySnapshotChanged = Boolean(editor?.recoverySnapshotChanged);
+  if (
+    editor
+    && !editor.loading
+    && editor.repoPath === repoPathSnapshot()
+    && editor.file
+    && (editorDirty || recoverySnapshotChanged)
+  ) {
+    const view = typeof captureFileEditorView === "function" ? captureFileEditorView(editor) : null;
+    return {
+      file: String(editor.file || ""),
+      previousFile: String(editor.previousFile || ""),
+      snapshot: String(editor.recoveryDraftSnapshot || editor.snapshot || ""),
+      content: typeof fileEditorValue === "function" ? fileEditorValue() : String(els.fileEditorText?.value || ""),
+      ...(view ? { view } : {}),
+    };
+  }
+  return pendingDesktopRecoveryFileDraft;
+}
+
+function captureDesktopRecoveryDraft() {
+  const repoPath = repoPathSnapshot();
+  if (!repoPath || state.data?.repo?.isSample) return null;
+  const commit = desktopRecoveryCommitDraft();
+  const fileEditor = desktopRecoveryFileDraft();
+  if (!commit && !fileEditor) return null;
+  return {
+    repoPath,
+    ...(commit ? { commit } : {}),
+    ...(fileEditor ? { fileEditor } : {}),
+  };
+}
+
+async function saveDesktopRecoveryDraft() {
+  const bridge = window.forklineDesktop;
+  if (!desktopRecoveryDraftReady || typeof bridge?.saveRecoveryDraft !== "function") return;
+  const draft = captureDesktopRecoveryDraft();
+  const signature = JSON.stringify(draft);
+  if (signature === lastDesktopRecoveryDraftSignature) return;
+  try {
+    const saved = await bridge.saveRecoveryDraft(draft);
+    if (saved !== false) lastDesktopRecoveryDraftSignature = signature;
+  } catch {}
+}
+
+function scheduleDesktopRecoveryDraftSave() {
+  if (!desktopRecoveryDraftReady || desktopRecoveryDraftSaveTimer) return;
+  if (typeof window.forklineDesktop?.saveRecoveryDraft !== "function") return;
+  desktopRecoveryDraftSaveTimer = setTimeout(() => {
+    desktopRecoveryDraftSaveTimer = 0;
+    saveDesktopRecoveryDraft();
+  }, DESKTOP_RECOVERY_DRAFT_SAVE_DELAY_MS);
+}
+
+async function restoreDesktopRecoveryDraft() {
+  const bridge = window.forklineDesktop;
+  if (typeof bridge?.readRecoveryDraft !== "function") {
+    desktopRecoveryDraftReady = true;
+    return false;
+  }
+
+  let draft = null;
+  try {
+    draft = await bridge.readRecoveryDraft();
+  } catch {}
+  if (!draft) {
+    desktopRecoveryDraftReady = true;
+    lastDesktopRecoveryDraftSignature = JSON.stringify(null);
+    reportDesktopRecoveryState();
+    return false;
+  }
+  if (String(draft.repoPath || "") !== repoPathSnapshot()) {
+    toast(t("检测到其他仓库的页面恢复草稿，未自动应用到当前仓库。"));
+    return false;
+  }
+
+  lastDesktopRecoveryDraftSignature = JSON.stringify(draft);
+  let restored = false;
+  if (draft.commit) {
+    els.commitSummary.value = String(draft.commit.summary || "");
+    els.commitBody.value = String(draft.commit.body || "");
+    els.amendToggle.checked = Boolean(draft.commit.amend);
+    updateAmendMode();
+    restored = true;
+  }
+
+  pendingDesktopRecoveryFileDraft = draft.fileEditor || null;
+  if (draft.fileEditor?.file) {
+    try {
+      const opened = await openFileEditorLazy(
+        draft.fileEditor.file,
+        draft.fileEditor.previousFile || "",
+        { force: true, recoveryDraft: draft.fileEditor, restoreView: draft.fileEditor.view || null }
+      );
+      if (opened) {
+        pendingDesktopRecoveryFileDraft = null;
+        restored = true;
+      }
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  desktopRecoveryDraftReady = true;
+  reportDesktopRecoveryState();
+  if (restored) toast(t("已恢复页面停止前的未保存内容"));
+  return restored;
+}
+
+function reportDesktopRecoveryState() {
+  if (!desktopRecoveryDraftReady) return;
+  scheduleDesktopRecoveryDraftSave();
+  const bridge = window.forklineDesktop;
+  if (typeof bridge?.reportRecoveryState !== "function") return;
+  const editorDirty = Boolean(
+    (typeof fileEditorDirty === "function" && fileEditorDirty())
+    || state.fileEditor?.recoverySnapshotChanged
+  );
+  const value = {
+    repoPath: repoPathSnapshot(),
+    fileEditorDirty: editorDirty,
+    fileEditorFile: editorDirty ? String(state.fileEditor?.file || pendingDesktopRecoveryFileDraft?.file || "") : "",
+    commitDraftDirty: Boolean(desktopRecoveryCommitDraft()),
+  };
+  const signature = JSON.stringify(value);
+  if (signature === lastDesktopRecoveryStateSignature) return;
+  lastDesktopRecoveryStateSignature = signature;
+  try {
+    bridge.reportRecoveryState(value);
+  } catch {}
+}
 

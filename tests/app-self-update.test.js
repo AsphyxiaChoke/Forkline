@@ -214,7 +214,7 @@ test("self update API keeps JSON confirmation and avoids destructive reset modes
   assert.match(updateServiceSource, /const managedRepo = getManagedRepo\(\) \|\| "";[\s\S]*?managedRepo,/);
   assert.match(updateServiceSource, /failedStage: "preflight"/);
   assert.match(serverSource, /error\?\.updateStatus/);
-  assert.match(updateServiceSource, /scheduleShutdown\(\)/);
+  assert.match(updateServiceSource, /scheduleShutdown\(plan\)/);
   assert.match(updaterSource, /\["merge", "--ff-only", plan\.targetSha\]/);
   assert.match(updaterSource, /\["reset", "--keep", plan\.expectedHead\]/);
   assert.doesNotMatch(updaterSource, /reset", "--hard/);
@@ -329,6 +329,117 @@ test("self update runner rolls back and restarts the old service when the new se
   }
 });
 
+test("Electron self update restarts the desktop entry under the Electron supervisor", async () => {
+  const fixture = createUpdateFixture(1, { electronEntry: true });
+  const repoDir = fixture.clones[0];
+  const allowRemote = localRemoteGuard(fixture.remote);
+  const blocker = await startBlockingProcess();
+  let desktopPid = 0;
+  let plan = null;
+  try {
+    plan = await prepareSelfUpdate({
+      repoDir,
+      currentVersion: "0.2.0",
+      targetVersion: "0.3.0",
+      tagName: "v0.3.0",
+      gitBin: "git",
+      port: 5177,
+      parentPid: blocker.pid,
+      managedRepo: repoDir,
+      restartMode: "electron",
+      electronExecPath: process.execPath,
+      electronAppPath: path.join(repoDir, "electron-main.js"),
+      allowRemote,
+    });
+    assert.equal(plan.restartMode, "electron");
+    assert.equal(plan.electronExecPath, process.execPath);
+    assert.equal(plan.electronAppPath, path.join(repoDir, "electron-main.js"));
+    setTimeout(() => {
+      try {
+        process.kill(blocker.pid);
+      } catch {}
+    }, 300);
+
+    const result = await runSelfUpdatePlan(plan, { allowRemote, applicationTimeoutMs: 3000 });
+    const status = readSelfUpdateStatus(plan.statusFile);
+    desktopPid = Number(status?.serverPid || 0);
+
+    assert.equal(result.ok, true);
+    assert.equal(status?.state, "success");
+    assert.equal(status?.targetVersion, "0.3.0");
+    assert.ok(desktopPid > 0);
+    assert.equal(processIsRunning(desktopPid), true);
+    assert.equal(git(repoDir, ["rev-parse", "HEAD"]), fixture.targetSha);
+  } finally {
+    try {
+      process.kill(blocker.pid);
+    } catch {}
+    if (!desktopPid && plan?.statusFile) desktopPid = Number(readSelfUpdateStatus(plan.statusFile)?.serverPid || 0);
+    if (desktopPid) {
+      try {
+        process.kill(desktopPid);
+      } catch {}
+    }
+    if (plan?.statusFile) fs.rmSync(plan.statusFile, { force: true });
+    fixture.cleanup();
+  }
+});
+
+test("Electron self update rolls back and restarts the previous desktop entry after startup failure", async () => {
+  const fixture = createUpdateFixture(1, { electronEntry: true, brokenTargetElectron: true });
+  const repoDir = fixture.clones[0];
+  const allowRemote = localRemoteGuard(fixture.remote);
+  const blocker = await startBlockingProcess();
+  let desktopPid = 0;
+  let plan = null;
+  try {
+    plan = await prepareSelfUpdate({
+      repoDir,
+      currentVersion: "0.2.0",
+      targetVersion: "0.3.0",
+      tagName: "v0.3.0",
+      gitBin: "git",
+      port: 5177,
+      parentPid: blocker.pid,
+      managedRepo: repoDir,
+      restartMode: "electron",
+      electronExecPath: process.execPath,
+      electronAppPath: path.join(repoDir, "electron-main.js"),
+      allowRemote,
+    });
+    setTimeout(() => {
+      try {
+        process.kill(blocker.pid);
+      } catch {}
+    }, 300);
+
+    const result = await runSelfUpdatePlan(plan, { allowRemote, applicationTimeoutMs: 1200 });
+    const status = readSelfUpdateStatus(plan.statusFile);
+    desktopPid = Number(status?.serverPid || 0);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.rolledBack, true);
+    assert.equal(status?.failedStage, "checking");
+    assert.equal(status?.rollbackState, "complete");
+    assert.equal(status?.serviceState, "restored");
+    assert.ok(desktopPid > 0);
+    assert.equal(processIsRunning(desktopPid), true);
+    assert.equal(git(repoDir, ["rev-parse", "HEAD"]), fixture.oldSha);
+  } finally {
+    try {
+      process.kill(blocker.pid);
+    } catch {}
+    if (!desktopPid && plan?.statusFile) desktopPid = Number(readSelfUpdateStatus(plan.statusFile)?.serverPid || 0);
+    if (desktopPid) {
+      try {
+        process.kill(desktopPid);
+      } catch {}
+    }
+    if (plan?.statusFile) fs.rmSync(plan.statusFile, { force: true });
+    fixture.cleanup();
+  }
+});
+
 function createUpdateFixture(cloneCount, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "forkline-self-update-"));
   const remote = path.join(root, "remote.git");
@@ -339,6 +450,7 @@ function createUpdateFixture(cloneCount, options = {}) {
   configureIdentity(source);
   fs.writeFileSync(path.join(source, "package.json"), JSON.stringify({ name: "forkline", version: "0.2.0", private: true }, null, 2) + "\n", "utf8");
   fs.writeFileSync(path.join(source, "server.js"), testServerSource("0.2.0"), "utf8");
+  if (options.electronEntry) fs.writeFileSync(path.join(source, "electron-main.js"), testElectronSource("0.2.0"), "utf8");
   git(source, ["add", "."]);
   git(source, ["commit", "-m", "v0.2.0"]);
   const oldSha = git(source, ["rev-parse", "HEAD"]);
@@ -355,6 +467,13 @@ function createUpdateFixture(cloneCount, options = {}) {
 
   fs.writeFileSync(path.join(source, "package.json"), JSON.stringify({ name: "forkline", version: "0.3.0", private: true }, null, 2) + "\n", "utf8");
   fs.writeFileSync(path.join(source, "server.js"), options.brokenTargetServer ? "process.exit(1);\n" : testServerSource("0.3.0"), "utf8");
+  if (options.electronEntry) {
+    fs.writeFileSync(
+      path.join(source, "electron-main.js"),
+      options.brokenTargetElectron ? "process.exit(1);\n" : testElectronSource("0.3.0"),
+      "utf8"
+    );
+  }
   git(source, ["add", "."]);
   git(source, ["commit", "-m", "v0.3.0"]);
   git(source, ["tag", "-a", "v0.3.0", "-m", "v0.3.0"]);
@@ -385,6 +504,10 @@ function testServerSource(version) {
   return `"use strict";\nconst http = require("http");\nconst port = Number(process.env.PORT);\nhttp.createServer((_req, res) => {\n  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });\n  res.end("<title>Forkline</title>Forkline v${version}");\n}).listen(port, "127.0.0.1");\n`;
 }
 
+function testElectronSource(version) {
+  return `"use strict";\nconst fs = require("fs");\nconst healthFile = process.env.FORKLINE_ELECTRON_UPDATE_HEALTH_FILE;\nfs.writeFileSync(healthFile, JSON.stringify({ ready: true, version: "${version}", targetVersion: process.env.FORKLINE_ELECTRON_UPDATE_TARGET_VERSION, pid: process.pid }), "utf8");\nsetInterval(() => {}, 1000);\n`;
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -402,6 +525,15 @@ function startBlockingProcess() {
     child.once("error", reject);
     child.once("spawn", () => resolve(child));
   });
+}
+
+function processIsRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readUrl(port) {

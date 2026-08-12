@@ -1,44 +1,52 @@
 // Loads the file editor only when a file is opened for the first time.
 const fileEditorStyleResources = [
+  "./file-editor.css",
   "./vendor/codemirror/lib/codemirror.css",
   "./vendor/codemirror/addon/merge/merge.css",
 ];
 
-const fileEditorScriptResources = [
-  "./vendor/codemirror/diff-match-patch.js",
-  "./vendor/codemirror/lib/codemirror.js",
-  "./vendor/codemirror/addon/search/searchcursor.js",
-  "./vendor/codemirror/addon/edit/closebrackets.js",
-  "./vendor/codemirror/addon/edit/matchbrackets.js",
-  "./vendor/codemirror/addon/selection/active-line.js",
-  "./vendor/codemirror/addon/mode/simple.js",
-  "./vendor/codemirror/mode/xml/xml.js",
-  "./vendor/codemirror/mode/javascript/javascript.js",
-  "./vendor/codemirror/mode/jsx/jsx.js",
-  "./vendor/codemirror/mode/css/css.js",
-  "./vendor/codemirror/mode/htmlmixed/htmlmixed.js",
-  "./vendor/codemirror/mode/clike/clike.js",
-  "./vendor/codemirror/mode/markdown/markdown.js",
-  "./vendor/codemirror/mode/python/python.js",
-  "./vendor/codemirror/mode/shell/shell.js",
-  "./vendor/codemirror/mode/sql/sql.js",
-  "./vendor/codemirror/mode/yaml/yaml.js",
-  "./vendor/codemirror/mode/properties/properties.js",
-  "./vendor/codemirror/mode/diff/diff.js",
-  "./vendor/codemirror/mode/powershell/powershell.js",
-  "./vendor/codemirror/mode/dockerfile/dockerfile.js",
-  "./vendor/codemirror/mode/cmake/cmake.js",
-  "./vendor/codemirror/mode/go/go.js",
-  "./vendor/codemirror/mode/rust/rust.js",
-  "./vendor/codemirror/mode/toml/toml.js",
-  "./vendor/codemirror/mode/php/php.js",
-  "./vendor/codemirror/addon/merge/merge.js",
-  "./js/features/file-editor-utils.js",
-  "./js/features/file-editor-actions.js",
-  "./js/features/file-editor-window.js",
-  "./js/features/file-editor-search.js",
-  "./js/features/file-editor.js",
+const fileEditorScriptResourceGroups = [
+  [
+    "./vendor/codemirror/diff-match-patch.js",
+    "./vendor/codemirror/lib/codemirror.js",
+  ],
+  [
+    "./vendor/codemirror/addon/search/searchcursor.js",
+    "./vendor/codemirror/addon/edit/closebrackets.js",
+    "./vendor/codemirror/addon/edit/matchbrackets.js",
+    "./vendor/codemirror/addon/selection/active-line.js",
+    "./vendor/codemirror/addon/mode/simple.js",
+    "./vendor/codemirror/mode/xml/xml.js",
+    "./vendor/codemirror/mode/javascript/javascript.js",
+    "./vendor/codemirror/mode/css/css.js",
+    "./vendor/codemirror/mode/clike/clike.js",
+    "./vendor/codemirror/mode/python/python.js",
+    "./vendor/codemirror/mode/shell/shell.js",
+    "./vendor/codemirror/mode/sql/sql.js",
+    "./vendor/codemirror/mode/yaml/yaml.js",
+    "./vendor/codemirror/mode/properties/properties.js",
+    "./vendor/codemirror/mode/diff/diff.js",
+    "./vendor/codemirror/mode/powershell/powershell.js",
+    "./vendor/codemirror/mode/cmake/cmake.js",
+    "./vendor/codemirror/mode/go/go.js",
+    "./vendor/codemirror/mode/rust/rust.js",
+    "./vendor/codemirror/mode/toml/toml.js",
+    "./vendor/codemirror/addon/merge/merge.js",
+  ],
+  [
+    "./vendor/codemirror/mode/jsx/jsx.js",
+    "./vendor/codemirror/mode/htmlmixed/htmlmixed.js",
+    "./vendor/codemirror/mode/markdown/markdown.js",
+    "./vendor/codemirror/mode/dockerfile/dockerfile.js",
+  ],
+  ["./vendor/codemirror/mode/php/php.js"],
+  ["./js/features/file-editor-utils.js"],
+  ["./js/features/file-editor-actions.js"],
+  ["./js/features/file-editor-window.js"],
+  ["./js/features/file-editor-search.js"],
+  ["./js/features/file-editor.js"],
 ];
+const fileEditorScriptResources = fileEditorScriptResourceGroups.flat();
 
 let fileEditorLoadPromise = null;
 let fileEditorEventsBound = false;
@@ -98,8 +106,13 @@ async function ensureFileEditorLoaded() {
   }
   if (!fileEditorLoadPromise) {
     fileEditorLoadPromise = (async () => {
-      await Promise.all(fileEditorStyleResources.map(loadFileEditorStyle));
-      for (const resource of fileEditorScriptResources) await loadFileEditorScript(resource);
+      await Promise.all([
+        ensureContextMenuStyleLoaded(),
+        ...fileEditorStyleResources.map(loadFileEditorStyle),
+      ]);
+      for (const group of fileEditorScriptResourceGroups) {
+        await Promise.all(group.map(loadFileEditorScript));
+      }
       if (!fileEditorResourcesLoaded()) throw new Error(t("文件编辑器资源加载失败，请重试。"));
       bindFileEditorEvents();
     })();
@@ -152,17 +165,23 @@ function bindFileEditorEvents() {
 }
 
 async function openFileEditorLazy(filePath, previousFilePath = "", options = {}) {
+  const repoPath = repoPathSnapshot();
   await ensureFileEditorLoaded();
+  if (!isCurrentRepoPath(repoPath)) return false;
   return openFileEditor(filePath, previousFilePath, options);
 }
 
 async function openCommitFileViewerLazy(filePath, previousFilePath = "", commitSha = "") {
+  const repoPath = repoPathSnapshot();
   await ensureFileEditorLoaded();
+  if (!isCurrentRepoPath(repoPath)) return false;
   return openCommitFileViewer(filePath, previousFilePath, commitSha);
 }
 
 async function switchOpenFileEditorLazy(filePath, previousFilePath = "") {
   if (!els.fileEditorModal.classList.contains("show")) return true;
+  const repoPath = repoPathSnapshot();
   await ensureFileEditorLoaded();
+  if (!isCurrentRepoPath(repoPath)) return false;
   return switchOpenFileEditor(filePath, previousFilePath);
 }

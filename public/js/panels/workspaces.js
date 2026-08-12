@@ -1,4 +1,17 @@
 // Branch cleanup, worktree, and submodule panels.
+function renderWorkspaceTab() {
+  if (state.selectedTab === "branches") {
+    const commit = state.data?.commits.find((item) => item.sha === state.selectedSha) || state.data?.commits?.[0] || null;
+    renderBranchesTab(commit);
+    return;
+  }
+  if (state.selectedTab === "worktrees") {
+    renderWorktreesTab();
+    return;
+  }
+  if (state.selectedTab === "submodules") renderSubmodulesTab();
+}
+
 function renderBranchesTab(commit) {
   if (renderRepoDetailPlaceholder("branchCleanup", "分支整理", "var(--teal)")) return;
   const rows = branchCleanupRows();

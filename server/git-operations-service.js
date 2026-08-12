@@ -792,7 +792,7 @@ function createGitOperationsService(options) {
   }
 
   async function ensureCleanWorktree(message) {
-    const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"]);
+    const statusOutput = await git(currentRepo, ["status", "--porcelain", "--untracked-files=all"], { stdoutOnly: true });
     if (statusOutput.trim()) throw new Error(message);
   }
 
@@ -1098,7 +1098,7 @@ function createGitOperationsService(options) {
     const action = String(body.action || "");
     if (!WORKTREE_SNAPSHOT_ACTIONS.has(action)) return;
     const expected = normalizeExpectedSnapshot(body.expectedWorktreeSnapshot, "工作区状态已过期，请刷新后重新执行这个操作。");
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
     const working = await readWorkingStatus(currentRepo, statusOutput);
     if (working.snapshot !== expected) {
       throw new Error("工作区状态已经变化。为避免旧页面操作到新的文件内容，请刷新后重新操作。");
@@ -1110,11 +1110,11 @@ function createGitOperationsService(options) {
     if (!FILE_SNAPSHOT_ACTIONS.has(action)) return;
     const file = normalizeRepoFile(body.file);
     const expected = normalizeExpectedSnapshot(body.expectedFileSnapshot, "文件状态已过期，请刷新后重新执行这个操作。");
-    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file]);
+    const statusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all", "--", file], { stdoutOnly: true });
     const working = await readWorkingStatus(currentRepo, statusOutput);
     let target = selectStatusFile(working.files, file, fileSnapshotScope(body));
     if (!target || target.snapshot !== expected) {
-      const fullStatusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"]);
+      const fullStatusOutput = await git(currentRepo, ["status", "--short", "-z", "--untracked-files=all"], { stdoutOnly: true });
       const fullWorking = await readWorkingStatus(currentRepo, fullStatusOutput);
       target = selectStatusFile(fullWorking.files, file, fileSnapshotScope(body));
     }

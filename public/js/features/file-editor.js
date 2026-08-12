@@ -11,6 +11,9 @@ async function openCommitFileViewer(filePath, previousFilePath = "", commitSha =
 async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   const source = options.source === "commit" ? "commit" : "worktree";
   const commit = source === "commit" ? String(options.commit || "").trim() : "";
+  const recoveryDraft = source === "worktree" && options.recoveryDraft && typeof options.recoveryDraft === "object"
+    ? options.recoveryDraft
+    : null;
   const file = String(filePath || "");
   const previousFile = String(previousFilePath || "");
   if (!file) {
@@ -58,7 +61,11 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     repoPath,
     snapshot: "",
     originalContent: "",
+    initialContent: "",
     oldContent: "",
+    recoveryDraftRestored: false,
+    recoveryDraftSnapshot: recoveryDraft ? String(recoveryDraft.snapshot || "") : "",
+    recoverySnapshotChanged: false,
     loading: true,
     saving: false,
     operating: false,
@@ -83,11 +90,17 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     resizeObserver: null,
     buttonObserver: null,
     resizeFrame: 0,
+    diffUpdateHandler: null,
+    changeMarkerRails: [],
+    changeMarkers: [],
+    changeMarkerFrame: 0,
     searchMarks: [],
     searchMatches: [],
     searchTimer: null,
   };
   state.fileEditor = editor;
+  els.fileEditorModal.classList.remove("show", "is-preparing");
+  els.fileEditorModal.setAttribute("aria-hidden", "true");
   updateFileEditorModeUi(editor);
   els.fileEditorOldLabel.textContent = t(editor.readOnly ? "父提交 · 正在读取" : "暂存区 · 正在读取");
   els.fileEditorNewLabel.textContent = t(editor.readOnly ? "此提交 · 正在读取" : "工作区");
@@ -96,9 +109,6 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
   els.fileEditorFallback.hidden = true;
   els.fileEditorOldText.value = "";
   els.fileEditorText.value = "";
-  els.fileEditorModal.classList.add("show");
-  els.fileEditorModal.setAttribute("aria-hidden", "false");
-  prepareFileEditorWindow();
   updateFileEditorStatus();
 
   try {
@@ -114,6 +124,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.parent = data.parent || "";
     editor.exists = data.exists !== false;
     editor.originalContent = normalizeFileEditorContent(data.content || "");
+    editor.initialContent = editor.originalContent;
     editor.oldContent = normalizeFileEditorContent(data.oldContent || "");
     editor.oldFile = data.oldFile || previousFile || file;
     editor.previousFile = data.previousFile || previousFile;
@@ -132,6 +143,7 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.canStage = Boolean(data.canStage && editor.diffScope && editor.diff.length);
     editor.conflict = Boolean(data.conflict);
     editor.conflictVersions = normalizeFileEditorConflictVersions(data.conflictVersions);
+    applyFileEditorRecoveryDraft(editor, recoveryDraft);
     const lightweightCompare = editor.conflict
       ? editor.largeFile
         ? { enabled: true, reason: "size" }
@@ -142,9 +154,9 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
           false
         )
       : detectFileEditorLightweightCompare(
-        editor.source,
+        editor.recoverySnapshotChanged ? "commit" : editor.source,
         editor.oldContent,
-        editor.originalContent,
+        editor.initialContent,
         editor.largeFile
       );
     editor.lightweightCompare = lightweightCompare.enabled;
@@ -157,11 +169,19 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     editor.fileSnapshot = editor.readOnly ? null : fileSnapshotPayload(editor.file, editor.diffScope);
     editor.mode = fileEditorMode(file);
     editor.loading = false;
+    els.fileEditorModal.classList.add("show", "is-preparing");
+    els.fileEditorModal.setAttribute("aria-hidden", "true");
+    prepareFileEditorWindow();
     updateFileEditorModeUi(editor);
     createFileEditorWithPerformanceGuard(editor);
     setFileEditorControlsDisabled(false);
     updateFileEditorCompareLabels(editor);
     updateFileEditorStatus();
+    await waitForFileEditorPaint();
+    if (!isCurrentRepoPath(repoPath) || state.fileEditor !== editor) return false;
+    els.fileEditorModal.classList.remove("is-preparing");
+    els.fileEditorModal.setAttribute("aria-hidden", "false");
+    refreshFileEditorCodeMirror(editor);
     fileEditorFocus();
     return true;
   } catch (error) {
@@ -170,6 +190,32 @@ async function openFileEditor(filePath, previousFilePath = "", options = {}) {
     toast(error.message);
     return false;
   }
+}
+
+function waitForFileEditorPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+function applyFileEditorRecoveryDraft(editor, recoveryDraft) {
+  if (!recoveryDraft) return;
+  editor.initialContent = normalizeFileEditorContent(recoveryDraft.content || "");
+  editor.recoveryDraftSnapshot = String(recoveryDraft.snapshot || "");
+  editor.recoveryDraftRestored = true;
+  editor.canStage = false;
+  if (editor.snapshot === recoveryDraft.snapshot) {
+    editor.feedbackMessage = "已恢复页面停止前的未保存内容";
+    return;
+  }
+  editor.recoverySnapshotChanged = true;
+  editor.readOnly = true;
+  editor.oldContent = editor.originalContent;
+  editor.conflict = false;
+  editor.conflictVersions = normalizeFileEditorConflictVersions();
+  editor.diffScope = "";
+  editor.diff = [];
+  editor.feedbackMessage = "文件已在外部发生变化；左侧是磁盘当前版本，右侧是恢复草稿。请复制需要的内容后重新打开文件。";
 }
 
 async function switchOpenFileEditor(filePath, previousFilePath = "") {
@@ -186,7 +232,17 @@ function updateFileEditorModeUi(editor) {
   els.fileEditorForm.classList.toggle("is-lightweight-compare", Boolean(editor.lightweightCompare));
   els.fileEditorForm.classList.toggle("is-conflict-editor", Boolean(editor.conflict));
   els.fileEditorForm.classList.toggle("is-line-aligned", commitView && !lightweightCompare && editor.compareMode === "align");
-  els.fileEditorTitle.textContent = t(commitView ? "历史文件对照" : editor.conflict ? "解决冲突文件" : editor.largeFile ? "大文件只读对照" : "编辑文件");
+  els.fileEditorTitle.textContent = t(
+    commitView
+      ? "历史文件对照"
+      : editor.recoverySnapshotChanged
+        ? "恢复文件草稿"
+        : editor.conflict
+          ? "解决冲突文件"
+          : editor.largeFile
+            ? "大文件只读对照"
+            : "编辑文件"
+  );
   els.fileEditorPath.textContent = commitView && editor.previousFile && editor.previousFile !== editor.file
     ? `${editor.previousFile} -> ${editor.file}`
     : editor.file;
@@ -290,17 +346,18 @@ async function submitFileEditor(event) {
 }
 
 function closeFileEditor(force = false) {
-  if (!els.fileEditorModal.classList.contains("show")) return true;
+  if (!els.fileEditorModal.classList.contains("show") && !state.fileEditor) return true;
   if ((state.fileEditor?.saving || state.fileEditor?.operating) && !force) return false;
   if (!force && fileEditorDirty() && !confirm(t("文件还有未保存的修改，确认关闭编辑器？"))) return false;
   destroyFileEditorInstance();
   state.fileEditor = null;
-  els.fileEditorModal.classList.remove("show");
+  els.fileEditorModal.classList.remove("show", "is-preparing");
   els.fileEditorModal.setAttribute("aria-hidden", "true");
   els.fileEditorOldText.value = "";
   els.fileEditorText.value = "";
   setFileEditorControlsDisabled(false);
   hideFileEditorContextMenu();
+  reportDesktopRecoveryState();
   return true;
 }
 
@@ -338,7 +395,7 @@ function createFileEditorInstance(editor) {
     els.fileEditorMerge.hidden = true;
     els.fileEditorFallback.hidden = false;
     els.fileEditorOldText.value = editor.oldContent;
-    els.fileEditorText.value = editor.originalContent;
+    els.fileEditorText.value = editor.initialContent;
     els.fileEditorText.disabled = false;
     els.fileEditorText.readOnly = editor.readOnly;
     return;
@@ -347,7 +404,7 @@ function createFileEditorInstance(editor) {
   els.fileEditorMerge.hidden = false;
   els.fileEditorFallback.hidden = true;
   const codeMirrorOptions = {
-    value: editor.originalContent,
+    value: editor.initialContent,
     mode: editor.mode.mode,
     lineNumbers: true,
     lineWrapping: false,
@@ -412,6 +469,7 @@ function createFileEditorInstance(editor) {
       },
     });
     editor.codeMirror = editor.mergeView.editor();
+    observeFileEditorChangeMarkers(editor);
     if (editor.canStage) observeFileEditorStageButtons(editor);
   }
   editor.changeHandler = () => {

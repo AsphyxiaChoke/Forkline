@@ -1,0 +1,254 @@
+.file-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--field) 90%, var(--surface));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028);
+}
+
+.file-history-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-history-head strong,
+.file-history-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-head span {
+  color: var(--quiet);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-history-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.file-history-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.state-pill {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--badge-text);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.state-pill.modified {
+  background: var(--blue);
+}
+
+.state-pill.added {
+  background: var(--green);
+}
+
+.state-pill.deleted {
+  background: var(--danger);
+}
+
+.state-pill.renamed {
+  background: var(--amber);
+  color: var(--on-amber);
+}
+
+.file-history-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.file-history-main strong,
+.file-history-main span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-main strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.file-history-main span {
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-history-rename {
+  font-family: Consolas, "SFMono-Regular", monospace;
+}
+
+.file-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-history-actions .mini-btn {
+  min-height: 26px;
+  height: auto;
+}
+
+.file-blame-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.file-blame-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-blame-head strong,
+.file-blame-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-blame-head span {
+  color: var(--quiet);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.file-blame-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.blame-truncated {
+  align-self: center;
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.file-blame-list {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+  scrollbar-color: var(--scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.file-blame-row {
+  display: grid;
+  grid-template-columns: 92px 42px minmax(360px, max-content);
+  align-items: stretch;
+  width: max-content;
+  min-width: 100%;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.file-blame-row:last-child {
+  border-bottom: 0;
+}
+
+.file-blame-row.grouped .blame-commit {
+  border-top-color: transparent;
+}
+
+.blame-commit {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 7px;
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.blame-commit:hover {
+  background: var(--panel-3);
+}
+
+.blame-commit strong,
+.blame-commit span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blame-commit span {
+  color: var(--quiet);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.blame-line {
+  display: grid;
+  place-items: center end;
+  padding: 0 8px;
+  border-right: 1px solid var(--line-soft);
+  color: var(--quiet);
+  background: var(--field);
+  font-weight: 800;
+}
+
+.file-blame-row code {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+  padding: 5px 9px;
+  color: var(--text);
+  white-space: pre;
+}

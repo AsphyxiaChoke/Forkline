@@ -7,6 +7,7 @@ function renderSettingsTab() {
     ? t("示例仓库不保存策略")
     : t("仅应用于当前仓库：{name}", { name: state.data?.repo?.name || t("当前仓库") });
   const appUpdate = settingsAppUpdateView();
+  const desktopZoomCard = settingsDesktopZoomCard();
   els.detailTitle.textContent = t("设置");
   els.detailSub.textContent = t("本机偏好和界面行为");
   els.detailNode.style.borderColor = "var(--violet)";
@@ -67,6 +68,8 @@ function renderSettingsTab() {
           ${themeCatalog.map(settingsThemeButton).join("")}
         </div>
       </section>
+
+      ${desktopZoomCard}
 
       <section class="settings-card">
         <div class="settings-card-head">
@@ -132,6 +135,40 @@ function renderSettingsTab() {
       </section>
     </div>
   `;
+  refreshDesktopZoomState().catch(() => {});
+}
+
+function settingsDesktopZoomCard() {
+  const desktop = window.forklineDesktop;
+  if (!desktop?.getZoomFactor || !desktop?.setZoomFactor) return "";
+  const factors = Array.isArray(desktop.zoomFactors) ? desktop.zoomFactors : [0.75, 0.8, 0.9, 1, 1.1];
+  const current = Number(state.desktopZoom) || 0.9;
+  return `
+    <section class="settings-card electron-zoom-card">
+      <div class="settings-card-head">
+        <div>
+          <strong>${t("界面缩放")}</strong>
+          <span>${t("仅影响 Electron 桌面窗口，选择后自动保存。")}</span>
+        </div>
+      </div>
+      <div class="settings-choice-row settings-zoom-grid">
+        ${factors.map((factor) => `
+          <button class="settings-choice settings-zoom-choice ${Math.abs(current - Number(factor)) < 0.001 ? "active" : ""}" data-settings-zoom="${escapeAttr(factor)}" type="button">
+            <strong>${Math.round(Number(factor) * 100)}%</strong>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+async function refreshDesktopZoomState() {
+  const desktop = window.forklineDesktop;
+  if (!desktop?.getZoomFactor) return;
+  const zoomFactor = Number(await desktop.getZoomFactor());
+  if (!Number.isFinite(zoomFactor) || Math.abs(Number(state.desktopZoom) - zoomFactor) < 0.001) return;
+  state.desktopZoom = zoomFactor;
+  if (state.selectedTab === "settings") renderInspector();
 }
 
 function settingsAppUpdateView() {

@@ -22,13 +22,21 @@ function createFileEditorService(options) {
     normalizeSha,
     isPathInside,
     decodeUtf8Strict,
+    readCachedCommitParent = () => undefined,
+    rememberCommitParent = () => {},
   } = options;
 
   async function readEditableCommitFile(sha, filePath, previousFilePath = "", repoPath = getCurrentRepo()) {
     const file = validateEditableRepoFile(filePath);
     const oldFile = previousFilePath ? validateEditableRepoFile(previousFilePath) : file;
     const target = normalizeSha(sha);
-    const [commit, parent = ""] = (await git(repoPath, ["rev-list", "--parents", "-n", "1", `${target}^{commit}`])).trim().split(/\s+/);
+    const cachedParent = readCachedCommitParent(target, repoPath);
+    let commit = target;
+    let parent = cachedParent;
+    if (cachedParent === undefined) {
+      [commit, parent = ""] = (await git(repoPath, ["rev-list", "--parents", "-n", "1", `${target}^{commit}`])).trim().split(/\s+/);
+      rememberCommitParent(commit, parent, repoPath);
+    }
     const [current, old] = await Promise.all([
       readEditableCommitBlob(commit, file, "此提交", repoPath),
       parent ? readEditableCommitBlob(parent, oldFile, "父提交", repoPath) : emptyEditableCommitBlob(),

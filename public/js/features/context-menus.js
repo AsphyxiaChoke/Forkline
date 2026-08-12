@@ -1,14 +1,4 @@
 // Context menus for commits, branches, files, tags, remotes, and reflog entries.
-async function selectCommit(sha) {
-  if (!sha) return;
-  if (state.historyPlan?.sha !== sha) state.historyPlan = null;
-  setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
-  state.selectedSha = sha;
-  if (!updateCommitSelection(sha)) renderCommits({ inspector: "never" });
-  await loadCommit(sha);
-  renderInspector();
-}
-
 function showCommitContextMenu(event, commit) {
   hideBranchContextMenu();
   hideFileContextMenu();
@@ -74,21 +64,6 @@ function showCommitContextMenu(event, commit) {
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
   positionContextMenu(menu, event, 340);
-}
-
-function positionContextMenu(menu, event, fallbackHeight = 220) {
-  const width = menu.offsetWidth || 230;
-  const height = menu.offsetHeight || fallbackHeight;
-  const x = clamp(event.clientX, 8, window.innerWidth - width - 8);
-  const y = clamp(event.clientY, 8, window.innerHeight - height - 8);
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-}
-
-function hideCommitContextMenu() {
-  els.commitContextMenu.classList.remove("show");
-  els.commitContextMenu.setAttribute("aria-hidden", "true");
-  state.contextCommitSha = "";
 }
 
 function showBranchContextMenu(event, branch, options = {}) {
@@ -216,12 +191,6 @@ function showBranchContextMenu(event, branch, options = {}) {
   positionContextMenu(menu, event, 330);
 }
 
-function hideBranchContextMenu() {
-  els.branchContextMenu.classList.remove("show");
-  els.branchContextMenu.setAttribute("aria-hidden", "true");
-  state.contextBranch = null;
-}
-
 function showFileContextMenu(event, filePath, scope = "") {
   hideCommitContextMenu();
   hideBranchContextMenu();
@@ -272,12 +241,6 @@ function contextWorkingFileInfo(filePath, scope = "") {
   return matches.find((file) => file.unstaged || (!file.staged && file.unstaged !== false)) || matches.find((file) => file.staged) || matches[0] || null;
 }
 
-function hideFileContextMenu() {
-  els.fileContextMenu.classList.remove("show");
-  els.fileContextMenu.setAttribute("aria-hidden", "true");
-  state.contextFile = null;
-}
-
 function showTagContextMenu(event, tag) {
   hideCommitContextMenu();
   hideBranchContextMenu();
@@ -293,12 +256,6 @@ function showTagContextMenu(event, tag) {
   menu.classList.add("show");
   menu.setAttribute("aria-hidden", "false");
   positionContextMenu(menu, event, 230);
-}
-
-function hideTagContextMenu() {
-  els.tagContextMenu.classList.remove("show");
-  els.tagContextMenu.setAttribute("aria-hidden", "true");
-  state.contextTag = null;
 }
 
 function showRemoteContextMenu(event, remote) {
@@ -324,12 +281,6 @@ function showRemoteContextMenu(event, remote) {
   positionContextMenu(menu, event, 210);
 }
 
-function hideRemoteContextMenu() {
-  els.remoteContextMenu.classList.remove("show");
-  els.remoteContextMenu.setAttribute("aria-hidden", "true");
-  state.contextRemote = null;
-}
-
 function showReflogContextMenu(event, entry) {
   hideCommitContextMenu();
   hideBranchContextMenu();
@@ -347,12 +298,6 @@ function showReflogContextMenu(event, entry) {
   positionContextMenu(menu, event, 190);
 }
 
-function hideReflogContextMenu() {
-  els.reflogContextMenu.classList.remove("show");
-  els.reflogContextMenu.setAttribute("aria-hidden", "true");
-  state.contextReflogEntry = null;
-}
-
 async function runFileContextAction(action) {
   const context = state.contextFile;
   hideFileContextMenu();
@@ -364,8 +309,8 @@ async function runFileContextAction(action) {
   if (action === "diff") {
     state.selectedFile = context.file;
     if (context.scope) state.workDiffScope = context.scope === "staged" ? "staged" : "unstaged";
-    await loadWorkingDiff(context.file);
-    if (state.activeDiff?.source === "worktree" && state.activeDiff.path === context.file) openDiffModal();
+    await loadWorkingDiffLazy(context.file);
+    if (state.activeDiff?.source === "worktree" && state.activeDiff.path === context.file) await openDiffModalLazy();
     return;
   }
   if (action === "history") {
