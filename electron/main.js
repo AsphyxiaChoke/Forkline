@@ -27,6 +27,11 @@ const { createInstallerUpdateController } = require("./installer-update-controll
 const { createForklineAutoUpdater } = require("./installer-update-accelerator");
 const { shutdownServerProcess } = require("./server-process-shutdown");
 const { findStartupRepository } = require("./startup-repository");
+const {
+  migrateLegacyRecentRepositories,
+  readRecentRepositoryStore,
+  writeRecentRepositoryStore,
+} = require("./recent-repository-store");
 
 const LOOPBACK_HOST = "127.0.0.1";
 const SERVER_START_TIMEOUT_MS = 15000;
@@ -52,6 +57,7 @@ let rendererWasUnresponsive = false;
 let rendererRecoveryRiskSignature = "";
 let selfUpdateQuitRequested = false;
 let installerUpdateController = null;
+let recentRepositoryMigrationActive = false;
 const autoUpdater = process.platform === "win32" ? createForklineAutoUpdater() : electronUpdater.autoUpdater;
 const rendererDraftStore = createRendererDraftStore();
 
@@ -376,6 +382,76 @@ function desktopWindowStatePath() {
   return path.join(app.getPath("userData"), "desktop-window-state.json");
 }
 
+function desktopRecentRepositoryPath() {
+  return path.join(app.getPath("userData"), "desktop-recent-repositories.json");
+}
+
+function legacyLocalStoragePath() {
+  return path.join(app.getPath("userData"), "Local Storage", "leveldb");
+}
+
+function registerDesktopRecentRepositories() {
+  ipcMain.handle("forkline:desktop-recent-repositories:read", (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return [];
+    return readRecentRepositoryStore(desktopRecentRepositoryPath()).records;
+  });
+  ipcMain.handle("forkline:desktop-recent-repositories:write", (event, value) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return [];
+    return writeRecentRepositoryStore(desktopRecentRepositoryPath(), value);
+  });
+}
+
+async function readLegacyRecentRepositories(window, origin) {
+  const port = Number(new URL(origin).port);
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    response.end("<!doctype html><title>Forkline migration</title>");
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, LOOPBACK_HOST, resolve);
+  });
+  try {
+    await window.loadURL(`${origin}/`);
+    const value = await window.webContents.executeJavaScript('localStorage.getItem("forkline-recent-repos")');
+    return value ? JSON.parse(value) : [];
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+async function migrateDesktopRecentRepositories() {
+  let migrationWindow = null;
+  recentRepositoryMigrationActive = true;
+  try {
+    const result = await migrateLegacyRecentRepositories({
+      filePath: desktopRecentRepositoryPath(),
+      leveldbPath: legacyLocalStoragePath(),
+      readOriginRecords: async (origin) => {
+        migrationWindow ||= new BrowserWindow({
+          show: false,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
+        });
+        return readLegacyRecentRepositories(migrationWindow, origin);
+      },
+    });
+    if (result.migrated) {
+      console.log(`[Forkline desktop] 已迁移 ${result.records.length} 条最近仓库记录`);
+    }
+  } catch (error) {
+    console.warn(`[Forkline desktop] 无法迁移最近仓库记录：${error.message}`);
+  } finally {
+    if (migrationWindow && !migrationWindow.isDestroyed()) migrationWindow.destroy();
+  }
+}
+
 function saveDesktopWindowState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   desktopWindowState = {
@@ -537,9 +613,12 @@ if (hasSingleInstanceLock) {
       registerDesktopZoom();
       registerDesktopTitleBarTheme();
       registerRendererRecoveryState();
+      registerDesktopRecentRepositories();
       registerInstallerUpdates();
+      await migrateDesktopRecentRepositories();
       await startServer();
       createWindow();
+      recentRepositoryMigrationActive = false;
       startRendererReload();
     } catch (error) {
       dialog.showErrorBox("Forkline Electron 启动失败", error?.stack || error?.message || String(error));
@@ -548,6 +627,7 @@ if (hasSingleInstanceLock) {
   });
 
   app.on("window-all-closed", () => {
+    if (recentRepositoryMigrationActive) return;
     app.quit();
   });
   app.on("before-quit", (event) => {

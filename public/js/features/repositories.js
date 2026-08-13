@@ -4,12 +4,48 @@ function applyFilter(value) {
   renderCommits();
 }
 
+let desktopRecentRepoRecords = null;
+
+async function initRecentRepoStorage() {
+  const readRecentRepositories = window.forklineDesktop?.readRecentRepositories;
+  if (typeof readRecentRepositories !== "function") return;
+  try {
+    const records = await readRecentRepositories();
+    desktopRecentRepoRecords = sanitizeRecentRepoRecords(records);
+  } catch {
+    desktopRecentRepoRecords = [];
+  }
+}
+
 function recentRepos() {
+  if (desktopRecentRepoRecords !== null) return desktopRecentRepoRecords.slice();
   try {
     const data = JSON.parse(localStorage.getItem(recentRepoStorageKey) || "[]");
-    return Array.isArray(data) ? data.filter((item) => item?.path).slice(0, 12) : [];
+    return sanitizeRecentRepoRecords(data);
   } catch {
     return [];
+  }
+}
+
+function sanitizeRecentRepoRecords(value) {
+  return Array.isArray(value) ? value.filter((item) => item?.path).slice(0, 10) : [];
+}
+
+function persistRecentRepoRecords(records) {
+  const normalized = sanitizeRecentRepoRecords(records);
+  if (desktopRecentRepoRecords !== null) {
+    desktopRecentRepoRecords = normalized;
+    const writeRecentRepositories = window.forklineDesktop?.writeRecentRepositories;
+    if (typeof writeRecentRepositories === "function") {
+      Promise.resolve(writeRecentRepositories(normalized)).catch(() => toast(t("无法保存最近仓库记录")));
+    }
+    return true;
+  }
+  try {
+    localStorage.setItem(recentRepoStorageKey, JSON.stringify(normalized));
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -23,11 +59,7 @@ function saveRecentRepo(repo) {
     branch: repo.branch || "",
     lastOpened: new Date().toISOString(),
   });
-  try {
-    localStorage.setItem(recentRepoStorageKey, JSON.stringify(records.slice(0, 10)));
-  } catch {
-    return;
-  }
+  if (!persistRecentRepoRecords(records)) return;
   renderRecentRepos();
 }
 
@@ -71,7 +103,13 @@ async function openRecentRepo() {
 
 function clearRecentRepos() {
   if (!recentRepos().length) return;
-  if (!confirm(t("确认清除最近仓库列表？\n\n这只会清除当前浏览器里的 Forkline 记录，不会删除任何本地仓库。"))) return;
+  if (!confirm(t("确认清除最近仓库列表？\n\n这只会清除 Forkline 的最近记录，不会删除任何本地仓库。"))) return;
+  if (desktopRecentRepoRecords !== null) {
+    if (!persistRecentRepoRecords([])) return;
+    renderRecentRepos();
+    toast(t("最近仓库已清除"));
+    return;
+  }
   try {
     localStorage.removeItem(recentRepoStorageKey);
   } catch {

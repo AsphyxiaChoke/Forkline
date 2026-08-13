@@ -9889,3 +9889,42 @@
 - `docs/CONTINUE.md`、`docs/PACKAGING.md`：记录首轮失败证据、产品/测试边界和不可变标签策略。
 - `progress.md`：仅在末尾追加本轮诊断、验证计划、文件清单和回滚信息。
 - 回滚方式：提交前只恢复本节列出的六个文件；提交后执行 `git revert <workflow-fix-commit>`。不得移动 `v0.4.3` 或其他既有标签，不得清理受保护异常未跟踪文件。
+
+## 2026-08-13 - Task: 修复 Electron 最近仓库跨重启丢失并准备 v0.4.4
+
+### What was done
+
+- 确认随机回环端口让 Electron 每次启动进入不同浏览器来源，而最近仓库此前保存在来源隔离的 `localStorage` 中；旧记录仍存在于用户 LevelDB，并非仓库或用户数据被删除。
+- 为 Electron 增加稳定最近仓库文件、首次旧来源迁移和固定受限 IPC；记录按时间合并、路径去重并限制为 `10` 条。Web 和 Web 便携版继续使用原 `localStorage`，现有菜单、Git 语义和更新分流不变。
+- 将版本升至 `0.4.4`，补齐存储、迁移、Electron 壳、启动顺序、布局与安装器契约回归，并恢复本机构建验证后遗留的根 `package.json` 临时精简状态，只保留版本差异。
+- 完成 `D:\Forkline` 覆盖安装、最近仓库迁移、随机端口重启、普通工作区文件打开、快捷方式、当前用户卸载登记、卸载保留用户数据和重装终验；最终保留可用的 v0.4.4 安装版。
+
+### Testing
+
+- 最近仓库、Electron 壳、布局和安装器专项 `91/91` 通过；最终完整 `npm.cmd test` 为 `347/347`，0 失败、0 跳过，耗时约 `108.4` 秒。`git diff --check` 在文档修改前通过，提交前将再次复核。
+- 首次正式用户数据迁移生成 `%APPDATA%\forkline\desktop-recent-repositories.json`，恢复 `4` 条真实仓库记录；首次服务端口 `65214`，重启后端口 `59745`，路径和分支集合及界面下拉记录仍完整。
+- 真实安装版打开普通修改文件 `配置文件5 (2) - 副本.txt` 用时 `234 ms`，`conflict === false`、编辑器完成显示、内容长度 `104`，无页面错误；验证了 v0.4.3 普通文件修复没有回归。
+- 安装前 `%APPDATA%\forkline` 与备份 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.4-preinstall-backup-835ed3f3825a4639878d4ce8dfdde4ef` 均为 `1945` 个文件、`41,163,416` 字节。卸载后程序目录、桌面/开始菜单快捷方式和 HKCU 登记均移除，稳定 JSON SHA-256 仍为 `bdb869af1e5c72933e77629e19217632ab24ca405be6ac538c527d56c7146922` 且保留 `4` 条记录；重装后文件/产品版本、登记、快捷方式和仓库恢复均正确，退出后进程与端口为 0。
+- 本机 EXE 为 `100,600,510` 字节，SHA-256 `22566fbc3b815df033d582627ab7fd21bd5cad8bce193f70ced7ae32a86948fe`，SHA-512 `xu8Por6RG4THQnBKFZK7WLBAU+QwbiMOj2t0uRYYh62Pbmc57rJyANC9WJe0vCeYoDZ8ykRZrzZ1cF/gPLSUPA==`，签名状态 `NotSigned`；blockmap 为 `105,720` 字节、SHA-256 `8b2e89fb948687a9951e908e8de8594c57297632d2f37b67ee9353448c962275`；`latest.yml` 为 `369` 字节、SHA-256 `06f18a93ef228ef24e89b1425bab18869533ac6d78852e074cc0af620e46d24e`，其中 SHA-512 与 EXE 一致。
+- 本地 `win-unpacked` 和最终 `D:\Forkline\resources\app.asar` 的版本、入口、`electron-updater` 依赖及稳定存储模块均核对通过。受保护异常文件仍为 0 字节，SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `electron/recent-repository-store.js`：新增稳定记录规范化、文件读写、旧随机端口来源发现和一次性迁移。
+- `electron/main.js`：登记最近仓库固定 IPC，在后台服务启动前执行迁移，并保护隐藏迁移窗口关闭时的应用生命周期。
+- `electron/preload.js`：只新增固定的桌面最近仓库读取和写入接口。
+- `public/js/features/repositories.js`：Electron 使用稳定记录，Web 继续使用 `localStorage`，并统一最多 `10` 条和清除提示。
+- `public/js/bootstrap.js`：在仓库恢复前等待桌面最近记录初始化。
+- `public/js/i18n-catalog.js`：同步最近仓库清除和保存失败的英文文案。
+- `tests/recent-repository-store.test.js`：覆盖随机端口持久化、Web 边界、记录规范化和旧来源迁移。
+- `tests/electron-shell.test.js`：固定稳定文件、受限 IPC、迁移期生命周期和启动顺序。
+- `tests/layout-ui.test.js`：为异步最近记录初始化补齐布局测试上下文。
+- `tests/installer-package.test.js`：固定发布版本为 `0.4.4`。
+- `package.json`：发布版本升至 `0.4.4`，保留完整脚本、开发依赖和 NSIS 构建配置。
+- `package-lock.json`：同步根包版本为 `0.4.4`。
+- `docs/ELECTRON_DESKTOP.md`：说明稳定文件、首次迁移、安全边界和 Web 行为不变。
+- `docs/ARCHITECTURE.md`：记录稳定存储模块、主进程/preload 接口和初始化顺序。
+- `docs/PACKAGING.md`：追加 v0.4.4 本机产物、安装/卸载验收和正式工作流边界。
+- `docs/CONTINUE.md`：追加 v0.4.4 发布续接状态、真实记录和剩余远端验证。
+- `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
+- 回滚方式：提交前只恢复本节列出的 17 个任务文件；发布提交后执行 `git revert <v0.4.4-release-commit>` 创建后续修复提交。不得移动既有标签，不得使用 `git clean`、`git add .`，不得触碰受保护异常文件；如需恢复安装前用户数据，可先关闭 Forkline，再从上述备份目录按原路径复制回 `%APPDATA%\forkline`。

@@ -39,6 +39,7 @@ function initDesktopInstallerUpdates() {
 async function startForkline() {
   state.recoveryPolicy = defaultRecoveryPolicy();
   await initLocale();
+  await initRecentRepoStorage();
   initTheme();
   initLayoutResizers();
   initCommandHints();

@@ -69,17 +69,18 @@
 
 ## Electron 桌面壳层
 
-- `electron/main.js`：单实例、随机回环端口后台服务、窗口生命周期、缩放、窗口位置、外部链接、渲染器健康事件和受监督自更新退出的编排。第二实例收到的参数不能直接改后台仓库，必须交给当前页面走现有切仓流程；自更新退出消息只接受当前后台子进程。
+- `electron/main.js`：单实例、随机回环端口后台服务、窗口生命周期、缩放、窗口位置、外部链接、渲染器健康事件、稳定最近仓库迁移和受监督自更新退出的编排。第二实例收到的参数不能直接改后台仓库，必须交给当前页面走现有切仓流程；自更新退出消息只接受当前后台子进程。首次迁移期间即使隐藏读取窗口关闭，也不能触发应用提前退出。
+- `electron/recent-repository-store.js`：规范化桌面最近仓库记录，按时间排序、Windows 路径形式去重并限制为 `10` 条；稳定文件无效或不存在时，只从旧 LevelDB 定位随机回环来源，再由主进程提供的 Chromium 来源读取器获取固定 `localStorage` 键。原始 LevelDB 不在 Node 中直接解析或改写。
 - `electron/server-process-shutdown.js`：通过 IPC 请求后台服务优雅退出并等待进程结束；超时后只使用当前 Electron 实例持有的服务进程句柄做有界兜底。
 - `electron/self-update-health.js`：只允许新 Electron 实例在系统临时目录写入限定名称的更新健康标记，记录目标版本和当前 PID。
 - `electron/startup-repository.js`：从首次或后续启动参数中识别本机目录，并排除 Electron 应用根目录。
 - `electron/repository-open-coordinator.js`：保存页面尚未就绪时的最新仓库请求；只有渲染器完成加载后才通过受限通道交付，连续请求按最新路径合并。
 - `electron/renderer-health.js`：区分短暂无响应与渲染进程停止；只有用户在无响应弹窗中明确放弃时先清草稿再重载，崩溃后的普通重载保留草稿供页面恢复。
 - `electron/renderer-draft-store.js`：规范化并复制单份渲染器恢复草稿，限制为当前仓库、提交信息和工作区文件字段，总量不超过 `8 MiB`；仅保存在主进程内存，不落盘。
-- `electron/preload.js`：在上下文隔离和沙箱开启的前提下，只暴露缩放、未保存状态上报、草稿读写和仓库路径接收接口；主进程只接受当前 `mainWindow.webContents` 的调用，不提供任意 IPC 通道。
+- `electron/preload.js`：在上下文隔离和沙箱开启的前提下，只暴露缩放、未保存状态上报、草稿读写、最近仓库读写和仓库路径接收接口；主进程只接受当前 `mainWindow.webContents` 的调用，不提供任意 IPC 通道。
 - `public/js/core.js`：以固定 `600 ms` 节流采集提交信息和文件编辑器草稿；文件草稿保留原始快照与查看位置，快照变化时继续保存旧快照，避免后续重载把草稿误判为可覆盖的新版本。
-- `public/js/bootstrap.js`：在异步应用初始化前登记桌面仓库路径监听；`init()` 完成并恢复当前仓库后先读取 Electron 草稿，再允许第二实例路径切仓。初始化完成前只保留最新路径，完成后串行调用 `openRepo`。
-- `public/js/features/repositories.js`：所有实际切仓继续由 `openRepo` 执行；文件编辑器或提交信息框有未保存内容时先确认。克隆和初始化勾选“完成后打开”时复用同一保护。
+- `public/js/bootstrap.js`：在异步应用初始化前登记桌面仓库路径监听，并在 `init()` 恢复最近仓库前先读取 Electron 稳定记录；初始化完成后读取 Electron 草稿，再允许第二实例路径切仓。初始化完成前只保留最新路径，完成后串行调用 `openRepo`。
+- `public/js/features/repositories.js`：Electron 环境从受限桌面接口读写稳定记录，普通 Web 环境继续使用当前来源的 `localStorage`；两者共用过滤、最多 `10` 条、切仓和清除界面。所有实际切仓继续由 `openRepo` 执行；文件编辑器或提交信息框有未保存内容时先确认。克隆和初始化勾选“完成后打开”时复用同一保护。
 - `server/shutdown-controller.js`：统一桌面 IPC、自更新、父进程断开和终止信号的关闭流程，先关闭 HTTP 接入并清理 Git 运行时，再退出服务进程。
 - `server/git-runtime.js`：除操作日志中的可取消命令外，还登记普通文本和二进制 Git 查询；关闭期间拒绝新命令，并只终止本运行时持有的子进程。
 
@@ -218,6 +219,7 @@
 - 执行 `npm test`，使用 Node 内置测试运行器，并按测试文件串行运行。
 - `tests/git-api.test.js` 在随机本地端口启动真实 Forkline 子进程，并使用临时 Git 仓库驱动 HTTP API。
 - `tests/app-self-update.test.js` 使用真实本地 Git 远端验证快进、回退、Web 服务重启、Electron 桌面入口重启和桌面启动失败恢复，并覆盖 Release fetch 字节进度解析、瞬时网络错误重试和准备状态契约；`tests/electron-shell.test.js` 固定主进程元数据、退出消息来源和健康标记边界；`tests/layout-ui.test.js` 固定准备阶段轮询与中文进度显示。
+- `tests/recent-repository-store.test.js` 固定随机端口变化后的桌面记录持久化、Web `localStorage` 边界、记录规范化以及旧回环来源的一次性迁移；`tests/electron-shell.test.js` 同时固定受限 IPC、迁移期窗口生命周期和启动顺序。
 - 测试夹具隔离全局/系统 Git 配置，使用仓库级身份和子模块设置，并在测试后清理临时目录。
 - 认证测试覆盖 `/api/state` 不执行本机认证探测、诊断接口要求仓库上下文、缓存命中、手动刷新、远端 URL 变化后的缓存失效、托管平台识别，以及 Windows/非 Windows 系统凭据入口边界。
 - 状态优化测试覆盖 upstream、领先/落后、脏工作树、游离 HEAD、无提交分支、空子模块列表、远端离线时读取本地 remote-tracking ref，以及真实子模块安全流程。

@@ -117,6 +117,7 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `npm.cmd test`、`node --check` 和 `git diff --check` 全部通过。
 - ASAR 内 `package.json` 版本和入口正确，更新控制器及设置页内容与发布源码一致。
 - 本机验证当前用户安装、目录选择、桌面/开始菜单快捷方式、启动、版本显示、后台服务退出和卸载。
+- 从既有 `%APPDATA%\forkline` 升级时，确认 `desktop-recent-repositories.json` 生成且最近仓库在回环端口变化后仍保留；卸载应移除程序、快捷方式和卸载登记，但继续保留该用户数据文件。
 - `Get-AuthenticodeSignature` 应如实记录签名状态；未签名版本不得写成已受信任。
 - Release 工作流完成后重新下载全部附件，校验安装器 SHA-256 与 `.sha256` 内容一致，并核对 `latest.yml` 的版本、文件名、大小和 SHA-512。
 - 通过加速 URL 下载正式 EXE 与 blockmap，确认响应对应白名单资产，并按官方 `latest.yml` 的 SHA-512 复核 EXE；再验证代理失败会回退官方完整下载、用户取消不会回退。
@@ -193,3 +194,11 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 本机离线验证只在命令行临时指定 `node_modules/electron/dist`，没有将本机路径或下载镜像写入 `package.json`。正式 Release 仍由 GitHub Windows runner 在不可变 `v0.4.3` 标签上重新测试和构建，正式附件以远端工作流产物为准。
 
 `v0.4.3` Release 首次安装器 Run `31676525204` 为 `341/342`，唯一失败是共享 runner 上普通小文件的首次 MergeView 构建触发既有 `250 ms` 自动降级，而新增回归只接受 MergeView。修正后的测试接受 MergeView 或两个轻量 CodeMirror 窗格，但仍固定普通文件成功打开、非冲突状态和原 TypeError 不再出现；不会修改产品保护阈值或发布标签。手动重跑会临时借用默认分支修正测试，随后恢复不可变 `v0.4.3` 标签的测试文件再构建产品。
+
+## v0.4.4 发布准备
+
+- `v0.4.4` 修复 Electron 每次启动选择不同回环端口时，最近仓库因浏览器来源变化而看似丢失的问题。Electron 改用 `%APPDATA%\forkline\desktop-recent-repositories.json`，首次升级会从既有 LevelDB 中定位旧随机端口并通过沙箱化 Chromium 来源读取固定记录；Web 和 Web 便携版继续使用原 `localStorage`，Git 与更新语义不变。
+- 完整 `npm.cmd test` 为 `347/347`，0 失败、0 跳过；专项 `91/91` 覆盖稳定存储、迁移、Electron 受限 IPC、启动顺序、布局和安装器契约。安装后的普通工作区文件在真实 Electron 页面中 `234 ms` 完整打开，保持 `conflict === false`，没有捕获到页面错误。
+- 本机 NSIS 安装器 `Forkline-Setup-0.4.4-windows-x64.exe` 为 `100,600,510` 字节，SHA-256 `22566fbc3b815df033d582627ab7fd21bd5cad8bce193f70ced7ae32a86948fe`，SHA-512 `xu8Por6RG4THQnBKFZK7WLBAU+QwbiMOj2t0uRYYh62Pbmc57rJyANC9WJe0vCeYoDZ8ykRZrzZ1cF/gPLSUPA==`，签名状态为 `NotSigned`。blockmap 为 `105,720` 字节、SHA-256 `8b2e89fb948687a9951e908e8de8594c57297632d2f37b67ee9353448c962275`；`latest.yml` 为 `369` 字节、SHA-256 `06f18a93ef228ef24e89b1425bab18869533ac6d78852e074cc0af620e46d24e`，版本、文件名、大小和 SHA-512 与 EXE 一致。
+- 本机从 v0.4.3 覆盖安装到 `D:\Forkline` 后迁移出 `4` 条真实最近仓库；服务端口从 `65214` 变为 `59745` 后，路径与分支集合仍完整。卸载移除了安装目录、桌面/开始菜单快捷方式和 HKCU 登记，同时稳定 JSON 的 SHA-256 保持 `bdb869af1e5c72933e77629e19217632ab24ca405be6ac538c527d56c7146922` 且仍有 `4` 条记录；重新安装后版本、登记、快捷方式、仓库恢复和退出无残留均通过，最终保留 `D:\Forkline` v0.4.4。
+- 本地 `win-unpacked` 和最终安装目录的 ASAR 均为 `0.4.4`，入口为 `electron/main.js`，保留 `electron-updater ^6.8.9`；稳定存储模块与源码在换行归一化后完全一致。正式 Release 仍必须由不可变 `v0.4.4` 标签触发两条 Windows 工作流，远端附件需重新下载并校验；本机产物不能替代正式工作流产物。

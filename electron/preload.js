@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("forklineDesktop", {
   reportRecoveryState: (value) => ipcRenderer.send("forkline:desktop-recovery-state", value),
   saveRecoveryDraft: (value) => ipcRenderer.invoke("forkline:desktop-recovery-draft:save", value),
   readRecoveryDraft: () => ipcRenderer.invoke("forkline:desktop-recovery-draft:read"),
+  readRecentRepositories: () => ipcRenderer.invoke("forkline:desktop-recent-repositories:read"),
+  writeRecentRepositories: (value) => ipcRenderer.invoke("forkline:desktop-recent-repositories:write", value),
   getInstallerUpdateState: () => ipcRenderer.invoke("forkline:installer-update:get-state"),
   checkInstallerUpdate: () => ipcRenderer.invoke("forkline:installer-update:check"),
   installInstallerUpdate: (version) => ipcRenderer.invoke("forkline:installer-update:install", String(version || "")),

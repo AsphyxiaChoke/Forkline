@@ -505,6 +505,7 @@ test("desktop repository handoff waits for startup and keeps the latest pending 
     state: {},
     defaultRecoveryPolicy: () => ({}),
     initLocale: async () => {},
+    initRecentRepoStorage: async () => {},
     initTheme: () => {},
     initLayoutResizers: () => {},
     initCommandHints: () => {},

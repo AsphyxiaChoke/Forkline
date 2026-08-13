@@ -89,6 +89,28 @@ test("Electron exposes only fixed installer-update IPC and preserves source upda
   assert.match(settings, /api\("\/api\/app-update\/install"/);
 });
 
+test("Electron keeps recent repositories outside random-port browser storage", () => {
+  const main = read("electron/main.js");
+  const preload = read("electron/preload.js");
+  const repositories = read("public/js/features/repositories.js");
+  const bootstrap = read("public/js/bootstrap.js");
+
+  assert.match(main, /desktop-recent-repositories\.json/);
+  assert.match(main, /forkline:desktop-recent-repositories:read/);
+  assert.match(main, /forkline:desktop-recent-repositories:write/);
+  assert.match(main, /event\.sender !== mainWindow\.webContents/);
+  assert.match(main, /migrateDesktopRecentRepositories/);
+  assert.match(main, /recentRepositoryMigrationActive = true/);
+  assert.match(main, /if \(recentRepositoryMigrationActive\) return;[\s\S]*app\.quit\(\)/);
+  assert.match(main, /createWindow\(\);[\s\S]*recentRepositoryMigrationActive = false/);
+  assert.match(preload, /readRecentRepositories/);
+  assert.match(preload, /writeRecentRepositories/);
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\([^"']/);
+  assert.match(repositories, /desktopRecentRepoRecords/);
+  assert.match(repositories, /window\.forklineDesktop\?\.readRecentRepositories/);
+  assert.match(bootstrap, /await initRecentRepoStorage\(\)[\s\S]*await init\(\)/);
+});
+
 test("Electron uses the Forkline brand mark for its desktop icon", () => {
   const main = read("electron/main.js");
   const styles = read("public/styles.css");
