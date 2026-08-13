@@ -154,3 +154,16 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 手动重跑不可变 `v0.4.1` 时，工作流签出该 Tag 后只从当前工作流提交借用修正后的 `tests/browser-performance.test.js` 执行回归，测试结束立即把该文件恢复为 Tag 内容，再构建安装器。产品源码、打包输入和 `v0.4.1` 标签均不改变；后续新版本的 Tag 应直接包含修正后的测试，不走此兼容步骤。
 
 安装器使用 GitHub 共享 Windows runner，Git 与磁盘冷路径会比固定本机明显波动。该工作流显式设置 `FORKLINE_BROWSER_PERFORMANCE_SCALE=3`，只缩放浏览器回归中五个依赖 Git/磁盘调度的严格计时预算；正常开发和本机回归继续使用 `1x` 原门限。功能结果、文件数、DOM 上限、响应体大小、UI 主线程卡顿和自动降级断言均不缩放。
+
+## v0.4.1 正式发布验收
+
+- Release：[Forkline v0.4.1](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.1)，当前为 Latest，且不是草稿或预发布版本。
+- 安装器工作流：[GitHub Actions 31663989923](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31663989923)，完整自动回归 `336/336` 通过；测试后恢复不可变 `v0.4.1` Tag 的测试文件，再构建并上传产品附件。
+- `Forkline-Setup-0.4.1-windows-x64.exe`：`100,594,372` 字节，SHA-256 `e376110142f8a1b5b96eeb5db8e815cc988f90c8112fa7bff3572a3819c313ce`。
+- `Forkline-Setup-0.4.1-windows-x64.exe.blockmap`：`105,783` 字节，SHA-256 `d257df1d0f90786cb43de4b1bfc0f8fedad7815373c770d9d85d4f668c9e0697`。
+- `Forkline-Setup-0.4.1-windows-x64.exe.sha256`：`102` 字节，SHA-256 `def6f3aff8db326c801369dcb83bb65975debc7ca3fcc0633da774e1d11369e0`。
+- `Forkline-v0.4.1-windows-x64.zip`：`36,583,817` 字节，SHA-256 `a91a2c0129d43d99f540968676372e3258aa68cf11b22c62b28883c622ac30ee`。
+- `Forkline-v0.4.1-windows-x64.zip.sha256`：`99` 字节，SHA-256 `a41c240ec0f996b649a0a1eeb52f476003d88c0f46777b14118956e68f770e97`。
+- `latest.yml`：`369` 字节，SHA-256 `b0d45ee8146b348d151c2673399ee972cea1858c36e1555a42334350b470ecf3`；其中版本为 `0.4.1`、文件名为安装器名称、大小为 `100594372`，SHA-512 `yQqFzGao5RTW95tMd4FRZrln/c5fkRCjVCWR74Zht0rx2qcesgBLGbFcRUr8ZGbNjt9JkOCydO5huIyIV88Nhw==` 与重新下载的 EXE 逐字节计算值一致。
+- 六个附件均从正式 Release 重新下载；本机 SHA-256 与 GitHub digest 全部一致，EXE/ZIP 也分别与附件中的 `.sha256` 内容一致。安装器 Authenticode 状态如实为 `NotSigned`。
+- `D:\Forkline` 最终保留当前用户安装版；设置页显示“已是最新版本”，当前版本与最新版本均为 `v0.4.1`。通过窗口关闭按钮退出后，Forkline/Electron/后台服务进程和监听端口均为 0。

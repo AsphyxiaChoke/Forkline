@@ -9751,3 +9751,28 @@
 - `docs/CONTINUE.md`：追加第三阶段失败证据、修复方式和下一验证点。
 - `progress.md`：仅在末尾追加本轮诊断、变更和验证证据。
 - 回滚方式：提交前仅恢复本节列出的六个文件增量；提交后执行 `git revert <this-task-commit>`。不得移动 `v0.4.1`、`v0.4.0` 或清理异常未跟踪文件。
+
+## 2026-08-13 - Task: 完成 Forkline v0.4.1 正式发布验收
+
+### What was done
+
+- 确认安装器工作流 `31663989923` 成功完成 `336/336` 自动回归、Tag 测试文件恢复、NSIS 构建、校验文件生成以及 Release 附件上传。
+- 从 GitHub 正式 Release 重新下载全部六个附件，逐项核对大小、GitHub digest、附件校验文件和 `latest.yml`；如实保留未签名风险。
+- 启动最终保留在 `D:\Forkline` 的安装版，设置页确认当前和最新版本均为 `v0.4.1`，没有触发更新安装；通过窗口关闭按钮正常退出。
+- 明确国内下载加速不能修改不可变 `v0.4.1`，后续补丁版本需保持官方元数据和 SHA-512 为信任根，国内节点只传输安装器并在失败时回退官方源。
+
+### Testing
+
+- Release 为 Latest、非草稿、非预发布，六个附件齐全；本机重新下载后的 SHA-256 均与 GitHub digest 一致。
+- EXE `100,594,372` 字节，SHA-256 `e376110142f8a1b5b96eeb5db8e815cc988f90c8112fa7bff3572a3819c313ce`；ZIP `36,583,817` 字节，SHA-256 `a91a2c0129d43d99f540968676372e3258aa68cf11b22c62b28883c622ac30ee`，两者均匹配各自 `.sha256` 内容。
+- blockmap、EXE 校验文件、ZIP 校验文件和 `latest.yml` 的 SHA-256 分别为 `d257df1d0f90786cb43de4b1bfc0f8fedad7815373c770d9d85d4f668c9e0697`、`def6f3aff8db326c801369dcb83bb65975debc7ca3fcc0633da774e1d11369e0`、`a41c240ec0f996b649a0a1eeb52f476003d88c0f46777b14118956e68f770e97`、`b0d45ee8146b348d151c2673399ee972cea1858c36e1555a42334350b470ecf3`。
+- `latest.yml` 的版本、文件名、大小和 SHA-512 与下载 EXE 一致；`Get-AuthenticodeSignature` 返回 `NotSigned`。
+- 安装版设置页显示“已是最新版本”，当前版本和最新版本均为 `v0.4.1`；关闭后 Forkline/Electron/后台服务进程、监听端口和本仓库 Node 测试进程均为 0，`D:\Forkline` 安装及 HKCU 卸载登记继续保留。
+- `v0.4.1` 与 `v0.4.0` 目标提交未移动；受保护异常文件仍为 0 字节，SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.1 正式工作流、六附件哈希、`latest.yml`、签名和安装版验收结果。
+- `docs/CONTINUE.md`：追加最终发布状态、不可变标签、D 盘现场以及后续国内更新加速的安全边界。
+- `progress.md`：仅在末尾追加本轮发布验收证据。
+- 回滚方式：对本轮文档提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.1`、`v0.4.0`，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。
