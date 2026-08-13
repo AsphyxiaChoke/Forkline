@@ -37,6 +37,8 @@ function initDesktopInstallerUpdates() {
 }
 
 async function startForkline() {
+  await window.ForklinePreferenceStorage?.init?.();
+  initializeUiDiagnostics();
   state.recoveryPolicy = defaultRecoveryPolicy();
   await initLocale();
   await initRecentRepoStorage();

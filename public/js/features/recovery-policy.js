@@ -29,7 +29,8 @@ function recoveryPolicyRepoKey(value) {
 
 function readRecoveryPolicyPreferences() {
   try {
-    const stored = JSON.parse(localStorage.getItem(recoveryPolicyStorageKey) || "{}");
+    const storage = (typeof window === "object" && window.ForklinePreferenceStorage?.storage) || localStorage;
+    const stored = JSON.parse(storage.getItem(recoveryPolicyStorageKey) || "{}");
     return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
   } catch {
     return {};
@@ -70,7 +71,8 @@ function saveRecoveryPolicyPreference() {
       maxPerBranch: state.recoveryPolicy?.maxPerBranch || "",
       autoPrune: Boolean(state.recoveryPolicy?.autoPrune),
     };
-    localStorage.setItem(recoveryPolicyStorageKey, JSON.stringify({ version: 2, repositories }));
+    const storage = (typeof window === "object" && window.ForklinePreferenceStorage?.storage) || localStorage;
+    storage.setItem(recoveryPolicyStorageKey, JSON.stringify({ version: 2, repositories }));
     return true;
   } catch {
     return false;

@@ -13,10 +13,12 @@ const actionsSource = fs.readFileSync(path.join(root, "public", "js", "features"
 const logsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "logs.js"), "utf8");
 const eventsSource = fs.readFileSync(path.join(root, "public", "js", "app", "events.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+const bootstrapSource = fs.readFileSync(path.join(root, "public", "js", "bootstrap.js"), "utf8");
 
 test("UI diagnostics persist errors and long tasks and build a copyable report", () => {
   const context = createDiagnosticsContext();
   vm.runInContext(diagnosticsSource, context);
+  context.initializeUiDiagnostics();
 
   context.__listeners.get("error")({ message: "render failed", error: { stack: "stack line" } });
   context.__listeners.get("unhandledrejection")({ reason: { message: "request failed", stack: "async stack" } });
@@ -39,9 +41,48 @@ test("UI diagnostics persist errors and long tasks and build a copyable report",
   assert.match(report, /275\.4ms/);
 });
 
+test("UI diagnostics capture startup errors before stable desktop preferences finish loading", () => {
+  const stableStorage = createStorage({
+    "forkline-ui-diagnostics-v1": JSON.stringify([
+      { id: "persisted", type: "error", time: "2026-08-12T08:00:00.000Z", message: "older failure", context: {} },
+    ]),
+  });
+  const context = createDiagnosticsContext();
+  context.window.ForklinePreferenceStorage = { storage: stableStorage };
+  vm.runInContext(diagnosticsSource, context);
+
+  context.__listeners.get("error")({ message: "startup failure", error: { stack: "startup stack" } });
+  assert.equal(context.localStorage.getItem("forkline-ui-diagnostics-v1"), null);
+  assert.doesNotMatch(stableStorage.getItem("forkline-ui-diagnostics-v1"), /startup failure/);
+
+  context.initializeUiDiagnostics();
+  assert.deepEqual(JSON.parse(JSON.stringify(context.getUiDiagnostics().map((entry) => entry.message))), ["startup failure", "older failure"]);
+  assert.match(stableStorage.getItem("forkline-ui-diagnostics-v1"), /startup failure/);
+});
+
+test("UI diagnostics keep the newest records within the desktop preference byte limit", () => {
+  const context = createDiagnosticsContext();
+  vm.runInContext(diagnosticsSource, context);
+  context.initializeUiDiagnostics();
+
+  for (let index = 0; index < 40; index += 1) {
+    context.__listeners.get("error")({
+      message: `${index}-${"中".repeat(2000)}`,
+      error: { stack: "栈".repeat(6000) },
+    });
+  }
+
+  const serialized = context.localStorage.getItem("forkline-ui-diagnostics-v1");
+  const persisted = JSON.parse(serialized);
+  assert.ok(Buffer.byteLength(serialized, "utf8") <= 128 * 1024);
+  assert.match(persisted[0].message, /^39-/);
+  assert.equal(persisted.some((entry) => /^0-/.test(entry.message)), false);
+});
+
 test("slow editor keys survive reloads for the same repository and file snapshot", () => {
   const first = createDiagnosticsContext();
   vm.runInContext(diagnosticsSource, first);
+  first.initializeUiDiagnostics();
   const editor = sampleEditor();
   assert.equal(first.shouldUseRememberedFileEditorLightweight(editor), false);
   first.rememberSlowFileEditor(editor, 420.2);
@@ -49,6 +90,7 @@ test("slow editor keys survive reloads for the same repository and file snapshot
 
   const second = createDiagnosticsContext({ sessionValues: first.sessionStorage.values });
   vm.runInContext(diagnosticsSource, second);
+  second.initializeUiDiagnostics();
   assert.equal(second.shouldUseRememberedFileEditorLightweight(editor), true);
   assert.match(second.sessionStorage.getItem("forkline-slow-file-editors-v1"), /main\.c/);
 });
@@ -66,6 +108,7 @@ test("file editor and operation logs wire automatic downgrade and diagnostic con
   assert.match(logsSource, /data-ui-diagnostics-clear/);
   assert.match(eventsSource, /copyUiDiagnosticReport\(\)/);
   assert.match(eventsSource, /clearUiDiagnostics\(\)/);
+  assert.match(bootstrapSource, /ForklinePreferenceStorage\?\.init\?\.\(\)[\s\S]*initializeUiDiagnostics\(\)[\s\S]*initLocale\(\)/);
 });
 
 function createDiagnosticsContext(options = {}) {
@@ -79,6 +122,7 @@ function createDiagnosticsContext(options = {}) {
     Math,
     Set,
     Map,
+    TextEncoder,
     localStorage,
     sessionStorage,
     navigator: { userAgent: "Forkline Test Browser" },

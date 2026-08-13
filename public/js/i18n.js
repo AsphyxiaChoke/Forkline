@@ -27,7 +27,7 @@ function tt(strings, ...values) {
 
 async function initLocale() {
   captureStaticLocaleEntries();
-  const storedLocale = localStorage.getItem(localeStorageKey);
+  const storedLocale = (window.ForklinePreferenceStorage?.storage || localStorage).getItem(localeStorageKey);
   const normalized = normalizeLocale(storedLocale) || forklineI18nCatalog().defaultLocale;
   try {
     await ensureLocaleCatalog(normalized);
@@ -54,7 +54,7 @@ function applyLocale(locale, persist = true) {
   state.locale = normalized;
   document.documentElement.lang = normalized;
   document.documentElement.dataset.locale = normalized;
-  if (persist) localStorage.setItem(localeStorageKey, normalized);
+  if (persist) (window.ForklinePreferenceStorage?.storage || localStorage).setItem(localeStorageKey, normalized);
   applyStaticLocaleEntries();
   return normalized;
 }

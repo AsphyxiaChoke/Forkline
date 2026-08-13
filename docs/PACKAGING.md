@@ -213,3 +213,15 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 六个正式附件的本机 SHA-256 与 GitHub digest 全部一致，EXE/ZIP 也分别匹配各自校验文件；便携 ZIP 已检查包含 `.git`、`runtime`、源码、文档和启动脚本，继续保留现有 Git 快进更新形态。
 - `ghfast.top` 下载的正式 EXE 和 blockmap 分别与官方附件逐字节校验一致；正式 EXE 文件版本为 `0.4.4`、产品版本为 `0.4.4`，Authenticode 状态为 `NotSigned`。发布说明已明确“未知发布者”和 SmartScreen 风险，用户仍应只信任官方 Release 元数据与校验值。
 - 最终本机保留 `D:\Forkline` v0.4.4，当前无 Forkline/Electron/后台服务进程或监听端口；HKCU 卸载项为 `Forkline 0.4.4`。稳定最近仓库文件仍含 `4` 条迁移记录，软件重启或后续更新不会再因随机回环端口变化而读取到空列表。
+
+## v0.4.5 发布准备
+
+- `v0.4.5` 修复 Electron 每次启动使用不同随机回环端口时，主题、语言、侧栏/详情栏/底栏尺寸、历史列宽、恢复点策略、签出储藏记录和界面诊断因浏览器来源变化而看似丢失的问题。安装版改用 `%APPDATA%\forkline\desktop-ui-preferences.json` 保存上述 `9` 个固定键；Web 和 Web 便携版继续使用当前来源的原生 `localStorage`。
+- 主进程和 preload 只提供当前主窗口可调用的固定读取、写入和删除 IPC，不接受文件路径、任意 IPC 名称或任意偏好键。单个值限制按 UTF-8 实际字节数计算为 `128 KiB`，不再按 JavaScript 字符数误放行较大的中文内容。
+- 稳定文件首次创建时，仅在某个旧回环来源具有唯一最新的最近仓库或界面诊断业务时间证据时迁移普通偏好；界面诊断从全部来源按时间合并去重。任一来源读取失败时不固化部分结果，下一次启动仍可完整重试。
+- 界面诊断仍最多保留最新 `40` 条；当较大的中文记录整体超过 `128 KiB` 时按 UTF-8 字节数裁掉最旧记录，优先保存最新诊断，避免渲染进程提交的完整值被主进程拒绝。
+- 提交前稳定偏好、Electron 壳、布局和诊断专项为 `97/97`，完整 `npm.cmd test` 为 `356/356`，0 失败、0 跳过；真实 Chromium 中复杂历史文件首次打开约 `197.3 ms`，4000 文件冷扫描约 `334.6 ms`，仍低于 `350 ms` 门限。依赖审计为 0 个已知漏洞，Electron `43.3.0`、electron-builder `26.15.3`、electron-updater `6.8.9` 均完整。
+- 本机 NSIS 安装器 `Forkline-Setup-0.4.5-windows-x64.exe` 为 `100,602,897` 字节，SHA-256 `5e3b305a16642de99499966ef6fc761a0401fff46fab1df555cf4daa32ac6989`，SHA-512 `9ejiZp4fvwKYobJ4gUEa2WrdUu/LcSkxfMijglEonY7RojOUJ1YdTSNYAcBg+aB0zlSBLfwJ+hY+UG84CQnslA==`，签名状态为 `NotSigned`。blockmap 为 `105,810` 字节、SHA-256 `f27d0a28b85d638a9518e1814cd078a39e361033d71cad8eea33825e1e5505e2`；`latest.yml` 为 `369` 字节、SHA-256 `d1af6313f083201220bd2783c1b3dbc3dd340e871df979ed53a10e3122267638`，版本、文件名、大小和 SHA-512 与 EXE 一致。
+- 本机构建首次停在 GitHub Electron ZIP 的 0 字节下载，随后只在当前命令行临时设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后成功；没有把国内构建镜像或本机缓存路径写入正式配置。安装版运行时更新继续由官方 `latest.yml` 和 SHA-512 作为信任根，并按既有白名单优先使用 `ghfast.top`、失败后回退 GitHub 官方完整 EXE。
+- v0.4.5 已在 `D:\Forkline` 完成当前用户安装、目录选择、桌面/开始菜单快捷方式、覆盖安装、启动、随机端口重启、正常退出、卸载保留用户数据和重装验证。服务端口从 `61975` 变为 `53882` 后，中文、深色、`75%` 缩放和 `4` 条最近仓库仍保留；普通文件 `配置文件5 (2) - 副本.txt` 可正常打开，未再出现 `Cannot read properties of null (reading 'ours')`。最终安装版文件版本为 `0.4.5`、产品版本为 `0.4.5.0`，当前无 Forkline 或后台服务进程残留。
+- 正式 Release 仍必须由新的不可变 `v0.4.5` 注释标签触发安装器与便携包工作流；本机产物只作为本机验收证据，不能上传冒充正式附件。发布说明继续明确安装器未签名、未知发布者和 SmartScreen 风险。

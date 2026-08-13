@@ -111,12 +111,32 @@ test("Electron keeps recent repositories outside random-port browser storage", (
   assert.match(bootstrap, /await initRecentRepoStorage\(\)[\s\S]*await init\(\)/);
 });
 
+test("Electron keeps UI preferences outside random-port browser storage", () => {
+  const main = read("electron/main.js");
+  const preload = read("electron/preload.js");
+  const bootstrap = read("public/js/bootstrap.js");
+
+  assert.match(main, /desktop-ui-preferences\.json/);
+  assert.match(main, /forkline:desktop-preferences:read/);
+  assert.match(main, /forkline:desktop-preferences:write/);
+  assert.match(main, /forkline:desktop-preferences:remove/);
+  assert.match(main, /migrateDesktopPreferences/);
+  assert.match(main, /event\.sender !== mainWindow\.webContents/);
+  assert.match(preload, /readPreferences/);
+  assert.match(preload, /writePreference/);
+  assert.match(preload, /removePreference/);
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\([^"']/);
+  assert.match(bootstrap, /await window\.ForklinePreferenceStorage\?\.init\?\.\(\)[\s\S]*initLocale\(\)[\s\S]*initTheme\(\)/);
+});
+
 test("Electron uses the Forkline brand mark for its desktop icon", () => {
   const main = read("electron/main.js");
   const styles = read("public/styles.css");
   const svg = read("electron/assets/forkline-icon.svg");
   const png = fs.readFileSync(path.join(root, "electron/assets/forkline-icon.png"));
   const ico = fs.readFileSync(path.join(root, "electron/assets/forkline-icon.ico"));
+  const html = read("public/index.html");
+  const favicon = read("public/favicon.svg");
 
   assert.match(main, /const DESKTOP_ICON_PATH = path\.join\(__dirname, "assets", process\.platform === "win32" \? "forkline-icon\.ico" : "forkline-icon\.png"\)/);
   assert.match(main, /icon:\s*DESKTOP_ICON_PATH/);
@@ -131,6 +151,8 @@ test("Electron uses the Forkline brand mark for its desktop icon", () => {
   assert.equal(ico.readUInt16LE(0), 0);
   assert.equal(ico.readUInt16LE(2), 1);
   assert.equal(ico.readUInt16LE(4), 9);
+  assert.match(html, /<link rel="icon" href="\.\/favicon\.svg" type="image\/svg\+xml" \/>/);
+  assert.match(favicon, /aria-label="Forkline"/);
   assert.deepEqual(Array.from({ length: 9 }, (_, index) => {
     const size = ico[6 + (index * 16)];
     return size || 256;

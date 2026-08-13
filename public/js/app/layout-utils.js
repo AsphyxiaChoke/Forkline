@@ -22,7 +22,7 @@ function laneColor(index) {
 
 function initTheme() {
   const queryTheme = new URLSearchParams(window.location.search).get("theme");
-  const storedTheme = localStorage.getItem("forkline-theme");
+  const storedTheme = (window.ForklinePreferenceStorage?.storage || localStorage).getItem("forkline-theme");
   const theme = normalizeTheme(queryTheme) || normalizeTheme(storedTheme) || "dark";
   applyTheme(theme, false);
 }
@@ -39,7 +39,7 @@ function applyTheme(theme, persist = true) {
   const next = themeCatalog[(currentIndex + 1) % themeCatalog.length];
   state.theme = selected;
   document.documentElement.dataset.theme = selected;
-  if (persist) localStorage.setItem("forkline-theme", selected);
+  if (persist) (window.ForklinePreferenceStorage?.storage || localStorage).setItem("forkline-theme", selected);
   els.themeToggle.textContent = t(current.label);
   els.themeToggle.title = t("当前配色：{current}；点击切换到：{next}", { current: t(current.label), next: t(next.label) });
   syncDesktopTitleBarTheme();
@@ -100,13 +100,13 @@ function resetLayoutPreferences() {
     ["forkline-stage-h", "--stage-h"],
   ].forEach(([store, variable]) => {
     try {
-      localStorage.removeItem(store);
+      (window.ForklinePreferenceStorage?.storage || localStorage).removeItem(store);
     } catch {
     }
     document.documentElement.style.removeProperty(variable);
   });
   try {
-    localStorage.removeItem(historyColumnStorageKey);
+    (window.ForklinePreferenceStorage?.storage || localStorage).removeItem(historyColumnStorageKey);
   } catch {
   }
   historyColumnPreferences = {};
@@ -140,7 +140,7 @@ function initLayoutResizers() {
       };
       const onUp = () => {
         const current = numericCssVar(config.varName);
-        localStorage.setItem(config.store, String(current));
+        (window.ForklinePreferenceStorage?.storage || localStorage).setItem(config.store, String(current));
         applyHistoryColumnPreferences();
         document.body.classList.remove("resizing");
         document.removeEventListener("pointermove", onMove);
@@ -317,7 +317,7 @@ function historyMessageMinimumWidth() {
 
 function loadHistoryColumnPreferences() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(historyColumnStorageKey) || "{}");
+    const parsed = JSON.parse((window.ForklinePreferenceStorage?.storage || localStorage).getItem(historyColumnStorageKey) || "{}");
     return Object.fromEntries(Object.entries(parsed).filter(([name, width]) => historyColumnVariables[name] && Number.isFinite(width)));
   } catch {
     return {};
@@ -325,7 +325,7 @@ function loadHistoryColumnPreferences() {
 }
 
 function saveHistoryColumnPreferences() {
-  localStorage.setItem(historyColumnStorageKey, JSON.stringify(historyColumnPreferences));
+  (window.ForklinePreferenceStorage?.storage || localStorage).setItem(historyColumnStorageKey, JSON.stringify(historyColumnPreferences));
 }
 
 function clampLayoutVars(configs) {
@@ -336,7 +336,7 @@ function clampLayoutVars(configs) {
 }
 
 function preferredLayoutSize(config) {
-  const storedValue = localStorage.getItem(config.store);
+  const storedValue = (window.ForklinePreferenceStorage?.storage || localStorage).getItem(config.store);
   const stored = Number(storedValue);
   return storedValue !== null && Number.isFinite(stored) ? stored : config.preferred;
 }

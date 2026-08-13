@@ -149,12 +149,14 @@ function rememberCheckoutStash(stash) {
   if (!stash?.message || !state.data?.repo?.path) return;
   const records = checkoutStashRecords().filter((item) => item.message !== stash.message);
   records.unshift({ ...stash, repoPath: state.data.repo.path });
-  localStorage.setItem("forkline-checkout-stashes", JSON.stringify(records.slice(0, 12)));
+  const storage = (typeof window === "object" && window.ForklinePreferenceStorage?.storage) || localStorage;
+  storage.setItem("forkline-checkout-stashes", JSON.stringify(records.slice(0, 12)));
 }
 
 function checkoutStashRecords() {
   try {
-    const data = JSON.parse(localStorage.getItem("forkline-checkout-stashes") || "[]");
+    const storage = (typeof window === "object" && window.ForklinePreferenceStorage?.storage) || localStorage;
+    const data = JSON.parse(storage.getItem("forkline-checkout-stashes") || "[]");
     return Array.isArray(data) ? data.filter((item) => item?.message && item?.branch) : [];
   } catch {
     return [];
@@ -164,7 +166,8 @@ function checkoutStashRecords() {
 function forgetCheckoutStash(stash) {
   if (!stash?.message) return;
   const records = checkoutStashRecords().filter((item) => item.message !== stash.message);
-  localStorage.setItem("forkline-checkout-stashes", JSON.stringify(records));
+  const storage = (typeof window === "object" && window.ForklinePreferenceStorage?.storage) || localStorage;
+  storage.setItem("forkline-checkout-stashes", JSON.stringify(records));
 }
 
 async function maybeRestoreCheckoutStash(branch) {

@@ -9955,3 +9955,51 @@
 - `docs/CONTINUE.md`：把 v0.4.4 从发布准备更新为正式发布验收完成，并记录后续不可变标签边界。
 - `progress.md`：仅在末尾追加本轮发布操作、正式验收证据、文件清单和回滚方式。
 - 回滚方式：对本轮文档验收提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.4` 及任何既有标签，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。
+
+## 2026-08-13 - Task: 修复 Electron 界面偏好跨随机端口丢失并准备 v0.4.5
+
+### What was done
+
+- 确认 Electron 每次启动使用不同回环端口时，主题、语言、布局、恢复策略、签出储藏记录和界面诊断仍保存在来源隔离的 `localStorage`，因此更新或重启后会读取到另一来源；旧数据并未被删除。
+- 为安装版增加 `%APPDATA%\forkline\desktop-ui-preferences.json`、固定白名单键、保守旧来源迁移和当前主窗口限定 IPC；Web 和 Web 便携版继续使用原生 `localStorage`，现有菜单、Git 语义和更新分流不变。
+- 修正单值上限必须按 UTF-8 实际字节而非 JavaScript 字符数计算的问题，并让较大的中文诊断集合按字节裁掉最旧记录、优先保存最新诊断，避免主进程拒绝整个值。
+- 将版本升至 `0.4.5`，补齐稳定存储、迁移、启动期诊断、Electron 壳、布局、favicon 和安装器契约回归；完成本机构建以及 `D:\Forkline` 覆盖安装、随机端口重启、卸载保留用户数据和重装终验。
+
+### Testing
+
+- 稳定偏好、Electron 壳、布局和诊断专项 `97/97` 通过；最终完整 `npm.cmd test` 为 `356/356`，0 失败、0 跳过，耗时约 `115.2` 秒。
+- 真实 Chromium 复杂历史文件首次打开约 `197.3 ms`；4000 文件冷扫描约 `334.6 ms`，仍低于 `350 ms` 门限。原普通文件查看回归继续通过，未出现 `Cannot read properties of null (reading 'ours')`。
+- `npm.cmd audit --audit-level=low` 为 0 个已知漏洞；`npm.cmd ls --depth=0` 正常，Electron `43.3.0`、electron-builder `26.15.3`、electron-updater `6.8.9` 均完整。全部本轮 JavaScript 文件通过 `node --check`，`package.json`、`package-lock.json` 和根包版本均为 `0.4.5`。
+- 本机 EXE 为 `100,602,897` 字节、SHA-256 `5e3b305a16642de99499966ef6fc761a0401fff46fab1df555cf4daa32ac6989`、SHA-512 `9ejiZp4fvwKYobJ4gUEa2WrdUu/LcSkxfMijglEonY7RojOUJ1YdTSNYAcBg+aB0zlSBLfwJ+hY+UG84CQnslA==`，签名状态 `NotSigned`；blockmap 为 `105,810` 字节、SHA-256 `f27d0a28b85d638a9518e1814cd078a39e361033d71cad8eea33825e1e5505e2`；`latest.yml` 为 `369` 字节、SHA-256 `d1af6313f083201220bd2783c1b3dbc3dd340e871df979ed53a10e3122267638`，版本、文件名、大小和 SHA-512 与 EXE 一致。
+- 本机构建只在当前命令行临时使用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 解决官方 Electron ZIP 0 字节下载，没有写入正式配置。安装后 `D:\Forkline\Forkline.exe` 文件版本 `0.4.5`、产品版本 `0.4.5.0`；随机端口 `61975 → 53882` 后中文、深色、`75%`、`4` 条最近仓库和普通文件查看均保留，退出后无 Forkline 或后台服务进程残留。
+- 提交前差异检查、保护文件索引检查和既有标签位置将在本条日志追加后再次单独复核。受保护异常文件当前仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `electron/desktop-preference-store.js`：新增稳定偏好白名单、UTF-8 字节限制、文件读写、保守旧来源迁移和诊断合并。
+- `electron/main.js`：登记当前主窗口限定的固定偏好 IPC，并在正常主窗口启动前完成旧来源迁移。
+- `electron/preload.js`：只新增固定的偏好读取、写入和删除接口。
+- `public/js/desktop-preference-storage.js`：为 Electron 提供稳定偏好读写门面，并让普通 Web 环境继续使用原 `localStorage`。
+- `public/js/bootstrap.js`：在语言、主题、布局、恢复策略和诊断初始化前等待稳定偏好读取。
+- `public/js/app/layout-utils.js`：让主题、布局尺寸和历史列宽通过稳定偏好门面读写。
+- `public/js/app/performance-diagnostics.js`：保留启动期诊断，初始化后合并历史，并按 UTF-8 字节裁掉最旧的大记录。
+- `public/js/features/git-actions-loader.js`：让首屏签出储藏记录使用稳定偏好门面。
+- `public/js/features/git-actions.js`：让完整 Git 动作实现中的签出储藏记录使用稳定偏好门面。
+- `public/js/features/recovery-policy.js`：让按仓库恢复点策略使用稳定偏好门面。
+- `public/js/i18n.js`：让语言恢复和切换使用稳定偏好门面。
+- `public/index.html`：在既有启动顺序中加入桌面偏好门面，并声明 Forkline favicon。
+- `public/favicon.svg`：新增复用三节点分叉品牌标识的浏览器图标。
+- `tests/desktop-preference-store.test.js`：覆盖白名单、UTF-8 大小边界、唯一时间证据迁移和失败重试。
+- `tests/desktop-preference-storage.test.js`：覆盖随机回环来源变化后的稳定偏好和 Web `localStorage` 边界。
+- `tests/electron-shell.test.js`：固定受限偏好 IPC、迁移调用、启动顺序和 favicon 契约。
+- `tests/ui-diagnostics.test.js`：覆盖启动错误合并及较大中文诊断按字节保留最新记录。
+- `tests/layout-ui.test.js`：补齐稳定诊断初始化后的启动布局测试上下文。
+- `tests/installer-package.test.js`：固定安装器发布版本为 `0.4.5`。
+- `package.json`：将应用和安装器发布版本升至 `0.4.5`。
+- `package-lock.json`：同步根包与锁文件版本为 `0.4.5`。
+- `docs/ELECTRON_DESKTOP.md`：说明稳定偏好文件、安全边界、迁移规则和 Web 行为不变。
+- `docs/ARCHITECTURE.md`：记录稳定偏好模块、主进程/preload 接口、加载顺序和诊断持久化边界。
+- `docs/PACKAGING.md`：追加 v0.4.5 本机构建、安装/卸载终验、国内构建镜像和正式发布边界。
+- `docs/CONTINUE.md`：追加 v0.4.5 当前完成状态、验证证据和不可变标签续接点。
+- `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
+- 回滚方式：发布提交后执行 `git revert <v0.4.5-release-commit>` 创建后续回滚提交；不得移动或覆盖 `v0.4.5` 及任何既有标签，不得使用 `git clean`、`git add .`，不得触碰受保护异常未跟踪文件。若只需回滚本机安装，可在关闭 Forkline 后使用 `D:\Forkline\Uninstall Forkline.exe` 卸载程序，用户数据默认继续保留。

@@ -5,10 +5,12 @@ const UI_DIAGNOSTIC_LIMIT = 40;
 const SLOW_FILE_EDITOR_LIMIT = 40;
 const UI_LONG_TASK_MIN_MS = 200;
 const FILE_EDITOR_SLOW_RENDER_LIMIT_MS = 250;
+const UI_DIAGNOSTIC_STORAGE_MAX_BYTES = 128 * 1024;
 
-const uiDiagnostics = readDiagnosticStorage(localStorage, UI_DIAGNOSTIC_STORAGE_KEY);
+const uiDiagnostics = [];
 const slowFileEditorKeys = new Set(readDiagnosticStorage(sessionStorage, SLOW_FILE_EDITOR_STORAGE_KEY));
 let uiDiagnosticSequence = 0;
+let uiDiagnosticsInitialized = false;
 
 function readDiagnosticStorage(storage, key) {
   try {
@@ -27,6 +29,43 @@ function writeDiagnosticStorage(storage, key, value) {
   }
 }
 
+function uiDiagnosticStorage() {
+  return window.ForklinePreferenceStorage?.storage || localStorage;
+}
+
+function uiDiagnosticIdentity(entry) {
+  return entry?.id ? `id:${entry.id}` : `entry:${JSON.stringify(entry)}`;
+}
+
+function trimUiDiagnosticsToStorageLimit() {
+  while (
+    uiDiagnostics.length &&
+    new TextEncoder().encode(JSON.stringify(uiDiagnostics)).byteLength > UI_DIAGNOSTIC_STORAGE_MAX_BYTES
+  ) {
+    uiDiagnostics.pop();
+  }
+}
+
+function initializeUiDiagnostics() {
+  if (uiDiagnosticsInitialized) return getUiDiagnostics();
+  const captured = uiDiagnostics.slice();
+  const stored = readDiagnosticStorage(uiDiagnosticStorage(), UI_DIAGNOSTIC_STORAGE_KEY);
+  const identities = new Set();
+  uiDiagnostics.length = 0;
+  [...captured, ...stored].forEach((entry) => {
+    const identity = uiDiagnosticIdentity(entry);
+    if (identities.has(identity)) return;
+    identities.add(identity);
+    uiDiagnostics.push(entry);
+  });
+  uiDiagnostics.sort((left, right) => Date.parse(right?.time) - Date.parse(left?.time));
+  if (uiDiagnostics.length > UI_DIAGNOSTIC_LIMIT) uiDiagnostics.length = UI_DIAGNOSTIC_LIMIT;
+  trimUiDiagnosticsToStorageLimit();
+  uiDiagnosticsInitialized = true;
+  writeDiagnosticStorage(uiDiagnosticStorage(), UI_DIAGNOSTIC_STORAGE_KEY, uiDiagnostics);
+  return getUiDiagnostics();
+}
+
 function recordUiDiagnostic(type, details = {}) {
   const normalizedType = String(type || "info");
   const durationMs = Math.max(0, Number(details.durationMs || 0));
@@ -43,7 +82,8 @@ function recordUiDiagnostic(type, details = {}) {
   };
   uiDiagnostics.unshift(entry);
   if (uiDiagnostics.length > UI_DIAGNOSTIC_LIMIT) uiDiagnostics.length = UI_DIAGNOSTIC_LIMIT;
-  writeDiagnosticStorage(localStorage, UI_DIAGNOSTIC_STORAGE_KEY, uiDiagnostics);
+  trimUiDiagnosticsToStorageLimit();
+  if (uiDiagnosticsInitialized) writeDiagnosticStorage(uiDiagnosticStorage(), UI_DIAGNOSTIC_STORAGE_KEY, uiDiagnostics);
   return { ...entry, context: { ...entry.context, editor: entry.context.editor ? { ...entry.context.editor } : null } };
 }
 
@@ -57,7 +97,7 @@ function getUiDiagnostics() {
 function clearUiDiagnostics() {
   uiDiagnostics.length = 0;
   try {
-    localStorage.removeItem(UI_DIAGNOSTIC_STORAGE_KEY);
+    uiDiagnosticStorage().removeItem(UI_DIAGNOSTIC_STORAGE_KEY);
   } catch {
     // Storage may be unavailable in restricted browser profiles.
   }

@@ -28,10 +28,17 @@ const { createForklineAutoUpdater } = require("./installer-update-accelerator");
 const { shutdownServerProcess } = require("./server-process-shutdown");
 const { findStartupRepository } = require("./startup-repository");
 const {
+  findLegacyRecentRepositoryOrigins,
   migrateLegacyRecentRepositories,
   readRecentRepositoryStore,
   writeRecentRepositoryStore,
 } = require("./recent-repository-store");
+const {
+  DESKTOP_PREFERENCE_KEYS,
+  migrateLegacyDesktopPreferences,
+  readDesktopPreferenceStore,
+  updateDesktopPreferenceStore,
+} = require("./desktop-preference-store");
 
 const LOOPBACK_HOST = "127.0.0.1";
 const SERVER_START_TIMEOUT_MS = 15000;
@@ -386,6 +393,25 @@ function desktopRecentRepositoryPath() {
   return path.join(app.getPath("userData"), "desktop-recent-repositories.json");
 }
 
+function desktopPreferenceStorePath() {
+  return path.join(app.getPath("userData"), "desktop-ui-preferences.json");
+}
+
+function registerDesktopPreferences() {
+  ipcMain.handle("forkline:desktop-preferences:read", (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return {};
+    return readDesktopPreferenceStore(desktopPreferenceStorePath()).preferences;
+  });
+  ipcMain.handle("forkline:desktop-preferences:write", (event, key, value) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false;
+    return updateDesktopPreferenceStore(desktopPreferenceStorePath(), String(key || ""), value);
+  });
+  ipcMain.handle("forkline:desktop-preferences:remove", (event, key) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false;
+    return updateDesktopPreferenceStore(desktopPreferenceStorePath(), String(key || ""), null);
+  });
+}
+
 function legacyLocalStoragePath() {
   return path.join(app.getPath("userData"), "Local Storage", "leveldb");
 }
@@ -401,7 +427,7 @@ function registerDesktopRecentRepositories() {
   });
 }
 
-async function readLegacyRecentRepositories(window, origin) {
+async function readLegacyLocalStorage(window, origin, expression) {
   const port = Number(new URL(origin).port);
   const server = http.createServer((_request, response) => {
     response.writeHead(200, {
@@ -416,11 +442,33 @@ async function readLegacyRecentRepositories(window, origin) {
   });
   try {
     await window.loadURL(`${origin}/`);
-    const value = await window.webContents.executeJavaScript('localStorage.getItem("forkline-recent-repos")');
-    return value ? JSON.parse(value) : [];
+    return await window.webContents.executeJavaScript(expression);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+}
+
+async function readLegacyRecentRepositories(window, origin) {
+  const value = await readLegacyLocalStorage(window, origin, 'localStorage.getItem("forkline-recent-repos")');
+  return value ? JSON.parse(value) : [];
+}
+
+async function readLegacyDesktopPreferenceSnapshot(window, origin) {
+  const value = await readLegacyLocalStorage(window, origin, `(() => {
+    const preferences = {};
+    for (const key of ${JSON.stringify(DESKTOP_PREFERENCE_KEYS)}) {
+      const stored = localStorage.getItem(key);
+      if (stored !== null) preferences[key] = stored;
+    }
+    return { preferences, recentRepositories: localStorage.getItem("forkline-recent-repos") };
+  })()`);
+  let recentRepositories = [];
+  try {
+    const parsed = JSON.parse(value?.recentRepositories || "[]");
+    if (Array.isArray(parsed)) recentRepositories = parsed;
+  } catch {
+  }
+  return { preferences: value?.preferences || {}, recentRepositories };
 }
 
 async function migrateDesktopRecentRepositories() {
@@ -447,6 +495,35 @@ async function migrateDesktopRecentRepositories() {
     }
   } catch (error) {
     console.warn(`[Forkline desktop] 无法迁移最近仓库记录：${error.message}`);
+  } finally {
+    if (migrationWindow && !migrationWindow.isDestroyed()) migrationWindow.destroy();
+  }
+}
+
+async function migrateDesktopPreferences() {
+  let migrationWindow = null;
+  try {
+    const result = await migrateLegacyDesktopPreferences({
+      filePath: desktopPreferenceStorePath(),
+      origins: findLegacyRecentRepositoryOrigins(legacyLocalStoragePath()),
+      readOriginSnapshot: async (origin) => {
+        migrationWindow ||= new BrowserWindow({
+          show: false,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
+        });
+        return readLegacyDesktopPreferenceSnapshot(migrationWindow, origin);
+      },
+    });
+    if (result.migrated) {
+      const selected = result.selectedOrigin ? `，来源 ${result.selectedOrigin}` : "";
+      console.log(`[Forkline desktop] 已迁移 ${Object.keys(result.preferences).length} 项界面偏好${selected}`);
+    }
+  } catch (error) {
+    console.warn(`[Forkline desktop] 无法迁移界面偏好：${error.message}`);
   } finally {
     if (migrationWindow && !migrationWindow.isDestroyed()) migrationWindow.destroy();
   }
@@ -613,9 +690,11 @@ if (hasSingleInstanceLock) {
       registerDesktopZoom();
       registerDesktopTitleBarTheme();
       registerRendererRecoveryState();
+      registerDesktopPreferences();
       registerDesktopRecentRepositories();
       registerInstallerUpdates();
       await migrateDesktopRecentRepositories();
+      await migrateDesktopPreferences();
       await startServer();
       createWindow();
       recentRepositoryMigrationActive = false;
