@@ -10003,3 +10003,29 @@
 - `docs/CONTINUE.md`：追加 v0.4.5 当前完成状态、验证证据和不可变标签续接点。
 - `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
 - 回滚方式：发布提交后执行 `git revert <v0.4.5-release-commit>` 创建后续回滚提交；不得移动或覆盖 `v0.4.5` 及任何既有标签，不得使用 `git clean`、`git add .`，不得触碰受保护异常未跟踪文件。若只需回滚本机安装，可在关闭 Forkline 后使用 `D:\Forkline\Uninstall Forkline.exe` 卸载程序，用户数据默认继续保留。
+
+## 2026-08-13 - Task: 完成 Forkline v0.4.5 正式发布与远端附件验收
+
+### What was done
+
+- 将 v0.4.5 发布提交推送到 `origin/main`，创建固定指向该提交的远端注释标签并发布 GitHub Release；没有移动或覆盖任何既有标签，也没有上传本机验证产物冒充正式附件。
+- 等待安装器和便携包两条 Release 工作流完成，确认它们均从不可变标签提交构建；核对正式六附件、GitHub digest、两个校验文件、`latest.yml`、安装器版本和未签名状态。
+- 通过 `ghfast.top` 下载正式 EXE、blockmap 和便携 ZIP，确认国内节点内容与 GitHub 官方 digest 一致；保留官方 Release 元数据、SHA-512 和校验文件作为信任根。
+- 最终保留 `D:\Forkline` v0.4.5 与既有稳定用户数据，应用和后台服务均已退出；受保护异常未跟踪文件继续原样保留。
+
+### Testing
+
+- `main`、`origin/main` 和 `v0.4.5` 均解引用到 `dec62991b1768e3970e754aef334223acd609894`；远端注释标签对象为 `ebb92b8dc6f27a3e4d8ae9eef39dd0898bca9e8e`。`v0.4.0` 至 `v0.4.4` 标签未移动。
+- Release <https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.5> 为 Latest、非草稿、非预发布。安装器 Run `31705019886` 和便携包 Run `31705019861` 均为 `success`，`headSha` 均为发布提交；安装器工作流自动测试为 `356/356`，0 失败、0 跳过，耗时约 `132.7` 秒。
+- 正式 EXE 为 `100,599,666` 字节、SHA-256 `12a13f9d9e021486d66da05ec46816e37808f7bf8e46e538068a4295ff2fa34b`；blockmap 为 `105,744` 字节、SHA-256 `b73ccd0fc0289c1b8f1d1941ef14e40b980e324b285abc1ee5932b44007f05f2`；便携 ZIP 为 `36,675,747` 字节、SHA-256 `f02bf39c9261f773b33d6b8cc2c9455a71745feab53792ca14c47c32d0335750`。
+- EXE 校验文件、ZIP 校验文件和 `latest.yml` 分别为 `102`、`99`、`369` 字节，SHA-256 分别为 `8b933cd6d4f3033ba02b87841a36fa05e686f36be999a2e65cf272094fc8b2b2`、`c56cc9b744f8b77a85bd9fb470c63d64a9b510d9a3aad13d33bfbed5568039f2`、`9e14bf1b7e82b9f2efdd941d130420098d50f2e881577bafff21eb46440f37ec`。六附件全部匹配 GitHub digest，EXE/ZIP 也分别匹配各自校验文件。
+- `latest.yml` 的版本、文件名、`100599666` 字节大小和 SHA-512 `MxWpKFYAXIO585TJ/tkPb5XqmlFCgj9Dh9gTLXDwWYlSvRUHX8FQpGZMukPcVRTpXxB1V/BgGR3f3rEKIvWm/g==` 与正式 EXE 一致；EXE 文件版本和产品版本均为 `0.4.5`，Authenticode 为 `NotSigned`。
+- 国内节点完整 EXE、blockmap 和便携 ZIP 的大小与 SHA-256 均匹配官方 digest；便携 ZIP 可正常列目录并包含 `.git`、`runtime`、源码、文档和启动脚本，继续保留 Web 便携版 Git 快进更新形态。
+- 文档提交前受保护异常文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.5 正式工作流、六附件、校验链、国内节点、未签名风险和最终安装状态边界。
+- `docs/CONTINUE.md`：把 v0.4.5 从发布准备更新为正式发布验收完成，并记录 Git 传输失败时使用官方 Git Data API 创建同等注释标签的证据。
+- `progress.md`：仅在末尾追加本轮发布操作、正式验收证据、文件清单和回滚方式。
+- 回滚方式：对本轮文档验收提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.5` 及任何既有标签，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。

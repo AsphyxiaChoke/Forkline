@@ -225,3 +225,14 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 本机构建首次停在 GitHub Electron ZIP 的 0 字节下载，随后只在当前命令行临时设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后成功；没有把国内构建镜像或本机缓存路径写入正式配置。安装版运行时更新继续由官方 `latest.yml` 和 SHA-512 作为信任根，并按既有白名单优先使用 `ghfast.top`、失败后回退 GitHub 官方完整 EXE。
 - v0.4.5 已在 `D:\Forkline` 完成当前用户安装、目录选择、桌面/开始菜单快捷方式、覆盖安装、启动、随机端口重启、正常退出、卸载保留用户数据和重装验证。服务端口从 `61975` 变为 `53882` 后，中文、深色、`75%` 缩放和 `4` 条最近仓库仍保留；普通文件 `配置文件5 (2) - 副本.txt` 可正常打开，未再出现 `Cannot read properties of null (reading 'ours')`。最终安装版文件版本为 `0.4.5`、产品版本为 `0.4.5.0`，当前无 Forkline 或后台服务进程残留。
 - 正式 Release 仍必须由新的不可变 `v0.4.5` 注释标签触发安装器与便携包工作流；本机产物只作为本机验收证据，不能上传冒充正式附件。发布说明继续明确安装器未签名、未知发布者和 SmartScreen 风险。
+
+## v0.4.5 正式发布验收
+
+- Release：[Forkline v0.4.5](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.5) 为 Latest，且不是草稿或预发布版本；远端注释标签对象 `ebb92b8dc6f27a3e4d8ae9eef39dd0898bca9e8e` 固定解引用到发布提交 `dec62991b1768e3970e754aef334223acd609894`。
+- 安装器工作流：[GitHub Actions 31705019886](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31705019886)；便携包工作流：[GitHub Actions 31705019861](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31705019861)。两条工作流均在 `v0.4.5@dec6299` 上成功；安装器工作流完整自动回归为 `356/356`，0 失败、0 跳过，耗时约 `132.7` 秒。
+- `Forkline-Setup-0.4.5-windows-x64.exe`：`100,599,666` 字节，SHA-256 `12a13f9d9e021486d66da05ec46816e37808f7bf8e46e538068a4295ff2fa34b`；`Forkline-Setup-0.4.5-windows-x64.exe.blockmap`：`105,744` 字节，SHA-256 `b73ccd0fc0289c1b8f1d1941ef14e40b980e324b285abc1ee5932b44007f05f2`。
+- `Forkline-Setup-0.4.5-windows-x64.exe.sha256`：`102` 字节，SHA-256 `8b933cd6d4f3033ba02b87841a36fa05e686f36be999a2e65cf272094fc8b2b2`；`Forkline-v0.4.5-windows-x64.zip`：`36,675,747` 字节，SHA-256 `f02bf39c9261f773b33d6b8cc2c9455a71745feab53792ca14c47c32d0335750`；ZIP 校验文件为 `99` 字节，SHA-256 `c56cc9b744f8b77a85bd9fb470c63d64a9b510d9a3aad13d33bfbed5568039f2`。
+- `latest.yml`：`369` 字节，SHA-256 `9e14bf1b7e82b9f2efdd941d130420098d50f2e881577bafff21eb46440f37ec`；版本 `0.4.5`、文件名、`100599666` 字节大小和 SHA-512 `MxWpKFYAXIO585TJ/tkPb5XqmlFCgj9Dh9gTLXDwWYlSvRUHX8FQpGZMukPcVRTpXxB1V/BgGR3f3rEKIvWm/g==` 均与正式 EXE 一致。
+- 六个附件均匹配 GitHub Release 提供的 digest，EXE/ZIP 也分别匹配各自 `.sha256` 内容。正式 EXE 文件版本与产品版本均为 `0.4.5`，Authenticode 状态为 `NotSigned`；Release 已明确未知发布者和 SmartScreen 风险。
+- GitHub 大文件直连在本机出现长时间低速与连接重置；通过 `ghfast.top` 重新取得的正式 EXE、blockmap 和便携 ZIP 的大小与 SHA-256 均匹配 GitHub 官方 digest。官方 `latest.yml`、SHA-512 和 Release digest 继续作为信任根，国内节点只承担受限白名单资产传输。
+- 便携 ZIP 已确认包含 `.git`、`runtime`、源码、文档和启动脚本，继续保留现有 Git 快进更新形态。当前 `D:\Forkline` 仍保留已通过覆盖安装、随机端口重启、卸载保留数据和重装终验的 v0.4.5 安装版；正式远端附件未被本机验证产物替代。

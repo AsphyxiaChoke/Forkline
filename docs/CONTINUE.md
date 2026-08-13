@@ -1187,3 +1187,12 @@
 - 本机安装器 EXE 为 `100,602,897` 字节、SHA-256 `5e3b305a16642de99499966ef6fc761a0401fff46fab1df555cf4daa32ac6989`，blockmap SHA-256 为 `f27d0a28b85d638a9518e1814cd078a39e361033d71cad8eea33825e1e5505e2`，`latest.yml` SHA-256 为 `d1af6313f083201220bd2783c1b3dbc3dd340e871df979ed53a10e3122267638`；元数据与 EXE 一致，签名状态为 `NotSigned`。本地下载 Electron 只临时使用 `npmmirror`，未修改正式配置。
 - `D:\Forkline` 已完成当前用户安装、覆盖安装、卸载保留用户数据和重装终验。随机端口 `61975 → 53882` 后，中文、深色、`75%`、`4` 条最近仓库和普通工作区文件查看均正常；最终安装版为 `0.4.5`，当前应用与后台服务已退出。
 - 下一步只显式暂存本轮目标文件，确认受保护异常文件 `n+fs.statSync(p.join('public'` 不在索引后提交并推送 `main`；再创建新的不可变注释标签 `v0.4.5` 和正式 Release，等待安装器/便携包工作流成功并重新下载六个正式附件核验。不得移动 `v0.4.4` 或任何既有标签，本机验证产物不得冒充正式附件。
+
+## 2026-08-13 Forkline v0.4.5 正式发布验收完成
+
+- 发布提交 `dec62991b1768e3970e754aef334223acd609894` 已推送；Git HTTPS 推送标签时连续遇到连接重置，随后通过 GitHub 官方 Git Data API 创建同等注释标签。远端标签对象 `ebb92b8dc6f27a3e4d8ae9eef39dd0898bca9e8e` 的名称、标签者、时间和说明均正确，并固定解引用到发布提交，没有移动任何既有标签。
+- 正式 Release <https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.5> 为 Latest、非草稿、非预发布。安装器 Run `31705019886` 与便携包 Run `31705019861` 均在 `v0.4.5@dec6299` 上成功；安装器远端自动回归为 `356/356`，0 失败、0 跳过。
+- 正式 EXE 为 `100,599,666` 字节、SHA-256 `12a13f9d9e021486d66da05ec46816e37808f7bf8e46e538068a4295ff2fa34b`；blockmap 为 `105,744` 字节、SHA-256 `b73ccd0fc0289c1b8f1d1941ef14e40b980e324b285abc1ee5932b44007f05f2`；便携 ZIP 为 `36,675,747` 字节、SHA-256 `f02bf39c9261f773b33d6b8cc2c9455a71745feab53792ca14c47c32d0335750`。
+- 两个校验文件和 `latest.yml` 均匹配 GitHub digest；`latest.yml` 的版本、文件名、大小和 SHA-512 `MxWpKFYAXIO585TJ/tkPb5XqmlFCgj9Dh9gTLXDwWYlSvRUHX8FQpGZMukPcVRTpXxB1V/BgGR3f3rEKIvWm/g==` 与正式 EXE 一致。正式安装器为 `NotSigned`，发布说明中的未知发布者和 SmartScreen 风险继续有效。
+- `ghfast.top` 下载的正式 EXE、blockmap 和便携 ZIP 与 GitHub 官方 digest 一致；大文件 GitHub 直连在本机低速或重置不影响验真，因为官方 Release digest、两个校验文件和 `latest.yml` 仍是信任根。
+- v0.4.5 发布闭环已经完成。后续代码修改必须升新补丁版本并创建新提交、新标签和新 Release；禁止移动 `v0.4.5` 或任何既有标签，受保护异常未跟踪文件继续原样保留。
