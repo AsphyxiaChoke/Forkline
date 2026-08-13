@@ -940,6 +940,10 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.match(scattered.status, /复杂文件轻量模式 · 差异较复杂/);
   assert.equal(await countWindowListeners(cdp, "resize"), warmedResizeListeners);
 
+  await evaluate(cdp, `(() => {
+    globalThis.__forklineBrowserTestPerformanceGuard = createFileEditorWithPerformanceGuard;
+    createFileEditorWithPerformanceGuard = createFileEditorInstance;
+  })()`);
   const preparedOpen = await evaluate(cdp, `(async () => {
     const originalFetch = window.fetch;
     let releaseRequest;
@@ -1096,6 +1100,10 @@ test("real Chromium keeps historical file comparison responsive", {
     `small open ${smallOpened.openMs.toFixed(1)} ms, eight switches ${switches.elapsed.toFixed(1)} ms, resize listeners ${baselineResizeListeners} -> ${warmedResizeListeners} -> ${smallResizeListeners} -> ${switchedResizeListeners} -> ${finalResizeListeners}`
   );
 
+  await evaluate(cdp, `(() => {
+    createFileEditorWithPerformanceGuard = globalThis.__forklineBrowserTestPerformanceGuard;
+    delete globalThis.__forklineBrowserTestPerformanceGuard;
+  })()`);
   const slowEditorFallback = await evaluate(cdp, `(async () => {
     const originalMergeView = CodeMirror.MergeView;
     CodeMirror.MergeView = function (node, options) {

@@ -9699,3 +9699,29 @@
 - `docs/CONTINUE.md`：记录首次失败证据、不可变标签边界和既有标签重跑方案。
 - `progress.md`：仅在末尾追加本轮诊断与修复记录。
 - 回滚方式：对本轮工作流修复提交执行 `git revert <workflow-fix-commit>`；不得移动 `v0.4.1` 或 `v0.4.0` 标签，也不得删除已上传的便携包附件。异常未跟踪文件仍须保持未暂存、未提交。
+
+## 2026-08-13 - Task: 修复 v0.4.1 安装器重跑的浏览器性能测试竞态
+
+### What was done
+
+- 复核安装器工作流 `31661932844` 的首次运行和失败重试；两次均为 `335/336`，唯一失败稳定在小文件历史对照的 MergeView 数量断言，确认上一轮 Windows 临时路径修复已经生效。
+- 收敛根因：GitHub runner 上首次 MergeView 构建超过产品既有 `250 ms` 保护阈值，Forkline 正确自动降级为轻量双栏，但正常交互测试没有隔离该机器性能分支。
+- 修正真实 Chromium 测试夹具：正常 MergeView 交互段临时绕开自动降级，随后恢复真实保护，并继续用注入 `300 ms` 延迟的既有场景验证自动降级、诊断记录和记忆重开；没有修改产品阈值或运行时行为。
+- 安装器工作流仅在手动重跑不可变 `v0.4.1` 时借用默认分支的修正测试文件，测试结束立即恢复 Tag 内容，再继续构建；产品源码、打包输入及 `v0.4.1`、`v0.4.0` 标签均保持不变。
+
+### Testing
+
+- 安装器工作流 `31661932844` attempt 1 与 attempt 2 均稳定复现同一失败：`tests/browser-performance.test.js:977` 的 `0 !== 1`；其余 `335` 项通过，构建与附件步骤均未执行。
+- 修正后 `tests/installer-package.test.js` 为 `2/2` 通过，浏览器性能专项为 `1/1` 通过；专项同时确认正常 MergeView、慢构建自动降级、诊断记录和记忆重开。
+- 修正后完整 `npm.cmd test` 为 `336/336` 通过，0 项失败、0 项跳过，耗时约 `105.0` 秒；`node --check` 与 `git diff --check` 通过。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节，未删除、未修改、未暂存、未提交；发布标签仍分别指向 `v0.4.1@7ccf2d1` 与 `v0.4.0@ba897f0`。
+
+### Notes
+
+- `.github/workflows/release-installer.yml`：为不可变 `v0.4.1` 手动重跑增加测试夹具借用与测试后恢复步骤。
+- `tests/browser-performance.test.js`：隔离正常 MergeView 交互与慢构建自动降级两条真实行为。
+- `tests/installer-package.test.js`：固定既有标签重跑必须只借用测试文件并在构建前恢复 Tag 内容。
+- `docs/PACKAGING.md`：记录失败根因、测试边界和不可变标签重跑方式。
+- `docs/CONTINUE.md`：追加第二阶段诊断、当前验证结果与下一发布落点。
+- `progress.md`：仅在末尾追加本轮诊断、修复和验证证据。
+- 回滚方式：提交前仅对上述六个文件执行 `git restore --source=HEAD --worktree -- <file>`；提交后执行 `git revert <this-task-commit>`。不得使用整仓库清理，不得移动发布标签或触碰异常未跟踪文件。

@@ -47,11 +47,21 @@ jobs:
       - name: Install dependencies
         run: npm.cmd ci
 
+      - name: Use corrected v0.4.1 browser regression harness
+        if: github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.1'
+        shell: pwsh
+        run: git restore --source='${{ github.sha }}' --worktree -- tests/browser-performance.test.js
+
       - name: Run automated tests
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
         run: npm.cmd test
+
+      - name: Restore release-tag browser regression harness
+        if: always() && github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.1'
+        shell: pwsh
+        run: git restore --worktree -- tests/browser-performance.test.js
 
       - name: Build unsigned Windows x64 installer
         shell: pwsh

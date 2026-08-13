@@ -144,3 +144,11 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 自动构建：[GitHub Actions 31575254040](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31575254040)
 - Release 下载：[Forkline v0.4.0](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.0)
 - 验收：工作流成功，ZIP 与 SHA256 附件均已上传；重新下载 ZIP 后计算的 SHA256 与附件内容一致。
+
+## v0.4.1 既有标签安装器重跑
+
+`v0.4.1` 发布后发现 GitHub Windows runner 会让正常的小文件 MergeView 首次构建超过 `250 ms`，产品按设计自动切换为轻量双栏，但旧浏览器性能测试仍固定要求存在一个 MergeView，因此安装器工作流连续两次以 `335/336` 失败。该结果不是安装器构建失败，也不是产品自动降级失效。
+
+默认分支中的修正测试把两条行为明确隔离：正常 MergeView 交互段临时绕开自动降级，随后恢复真实保护，并继续通过注入 `300 ms` 构建延迟验证自动降级、诊断记录和记忆重开。不得通过提高产品阈值、跳过真实 Chromium 回归或重试掩盖此问题。
+
+手动重跑不可变 `v0.4.1` 时，工作流签出该 Tag 后只从当前工作流提交借用修正后的 `tests/browser-performance.test.js` 执行回归，测试结束立即把该文件恢复为 Tag 内容，再构建安装器。产品源码、打包输入和 `v0.4.1` 标签均不改变；后续新版本的 Tag 应直接包含修正后的测试，不走此兼容步骤。
