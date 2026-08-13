@@ -170,3 +170,16 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `latest.yml`：`369` 字节，SHA-256 `b0d45ee8146b348d151c2673399ee972cea1858c36e1555a42334350b470ecf3`；其中版本为 `0.4.1`、文件名为安装器名称、大小为 `100594372`，SHA-512 `yQqFzGao5RTW95tMd4FRZrln/c5fkRCjVCWR74Zht0rx2qcesgBLGbFcRUr8ZGbNjt9JkOCydO5huIyIV88Nhw==` 与重新下载的 EXE 逐字节计算值一致。
 - 六个附件均从正式 Release 重新下载；本机 SHA-256 与 GitHub digest 全部一致，EXE/ZIP 也分别与附件中的 `.sha256` 内容一致。安装器 Authenticode 状态如实为 `NotSigned`。
 - `D:\Forkline` 最终保留当前用户安装版；设置页显示“已是最新版本”，当前版本与最新版本均为 `v0.4.1`。通过窗口关闭按钮退出后，Forkline/Electron/后台服务进程和监听端口均为 0。
+
+## v0.4.2 正式发布与安装验收
+
+- Release：[Forkline v0.4.2](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.2)，当前为 Latest，且不是草稿或预发布版本；不可移动的注释标签 `v0.4.2` 固定指向发布提交 `125e65b2efb38806b43a00e38613a63b63df86e7`。
+- 安装器工作流：[GitHub Actions 31670594368](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31670594368)；便携包工作流：[GitHub Actions 31670594400](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31670594400)。两条工作流均在 `v0.4.2` 标签提交上成功完成。
+- `Forkline-Setup-0.4.2-windows-x64.exe`：`100,595,414` 字节，SHA-256 `a01deabc74b1f3b0b9a9506fee8b17cdec99567f8ec48c6b6fd6cfebf10fb1ac`；`Forkline-Setup-0.4.2-windows-x64.exe.blockmap`：`105,775` 字节，SHA-256 `3aa3cf7e9724cc0fd9dd97c024c78585471b6192adad89b0c36d2a4cd9653777`。
+- `Forkline-Setup-0.4.2-windows-x64.exe.sha256`：`102` 字节，SHA-256 `5043f944124e118a45b33d2adf313cb29dce5ad4969f76c93c555fd503015752`；`Forkline-v0.4.2-windows-x64.zip`：`36,612,928` 字节，SHA-256 `69208264366207f2f3cf320fb0c964e7a16ef0138888b635e5b950baa64fefb0`；ZIP 校验文件为 `99` 字节，SHA-256 `9f0e39237ba77c03c496644cb2a25cb69695c631c50272c87fe277bda2eb0a50`。
+- `latest.yml`：`369` 字节，SHA-256 `fd1454bbf138f39d2793b8cd062a59a0c35f267fb9644465fb1075d7d0b56bdd`；版本、文件名、`100595414` 字节大小和 SHA-512 `+Z5Wptfey84ZbBrWZRMedT4ZOxLBR9HdTvQjxeVfarCYHOg1w4lyNDoczTjH7xGHxK/OsmcVUWCppWEMlwsNbQ==` 均与正式 EXE 一致。
+- 六个附件均从正式 Release 重新下载，本机 SHA-256 与 GitHub digest 全部一致，EXE/ZIP 也分别匹配各自校验文件。国内代理完整 EXE、blockmap 和 ZIP 的校验值与官方附件一致；正式 blockmap 的代理复核文件 SHA-256 同为 `3aa3cf7e9724cc0fd9dd97c024c78585471b6192adad89b0c36d2a4cd9653777`。安装器 Authenticode 状态为 `NotSigned`，发布说明中的未知发布者和 SmartScreen 风险继续有效。
+- 最终安装版由用户从正式安装器安装到 `D:\Forkline`。`Forkline.exe` 文件版本为 `0.4.2`、产品版本为 `0.4.2.0`；HKCU 卸载项为 `Forkline 0.4.2`，桌面和开始菜单快捷方式的目标与工作目录均指向 `D:\Forkline`，`%APPDATA%\forkline` 用户数据保留。
+- 安装后的 `app.asar` 版本为 `0.4.2`，保留 `electron-updater` 运行依赖并包含国内加速模块；主进程、preload、安装更新控制器和加速器与 `v0.4.2` 标签源码在换行归一化后逐字节一致。
+- 设置页联网显示“已是最新版本”，当前版本与最新版本均为 `v0.4.2`。通过窗口关闭按钮退出后，Forkline/Electron/后台服务进程和监听端口均为 0，D 盘安装、快捷方式、用户数据和卸载登记继续保留。
+- 当前没有 `v0.4.3`，因此本机没有伪造一次不存在的加速升级；软件内加速能力以自动专项、官方元数据 SHA-512、正式代理附件一致性和失败回退验证为依据。从已安装的 `v0.4.2` 开始，后续 NSIS 更新才优先使用国内加速，源码与便携版的 Git 更新语义不变。

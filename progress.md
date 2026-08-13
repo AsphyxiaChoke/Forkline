@@ -9807,3 +9807,31 @@
 - `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`：记录用户更新方式、信任边界、发布验证和续接状态。
 - `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
 - 回滚方式：提交前仅恢复本节列出的源码、测试、版本和文档文件；提交后执行 `git revert <v0.4.2-release-commit>` 创建后续修复提交。不得移动 `v0.4.0` 或 `v0.4.1` 标签，不得使用 `git clean`、`git add .` 或触碰受保护异常文件。
+
+## 2026-08-13 - Task: 完成 Forkline v0.4.2 正式发布与 D 盘安装终验
+
+### What was done
+
+- 确认 `v0.4.2` 正式 Release 为 Latest、非草稿、非预发布，安装器和便携包工作流均在不可变标签提交上成功；重新核对正式六附件、GitHub digest、校验文件、`latest.yml` 和未签名状态。
+- 核对国内代理的正式 EXE、blockmap 和便携 ZIP 与官方附件一致；保留官方 `latest.yml` 与 SHA-512 作为信任根，未把当前不存在的 `v0.4.3` 虚构为一次实际软件内升级。
+- 用户把正式安装器安装到 `D:\Forkline` 后，完成当前用户卸载登记、桌面/开始菜单快捷方式、用户数据保留、安装后 ASAR、设置页版本状态以及正常退出无残留终验。
+- 最终保留可用的 `D:\Forkline` v0.4.2 安装版；源码克隆、Electron 源码版和 Web 便携版仍沿用原 Git 快进更新，后续 NSIS 应用内更新才优先使用国内加速。
+
+### Testing
+
+- GitHub Release <https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.2> 为 Latest，安装器工作流 `31670594368` 和便携包工作流 `31670594400` 均为 `success`，两者 `headSha` 均为 `125e65b2efb38806b43a00e38613a63b63df86e7`。
+- 正式 EXE 为 `100,595,414` 字节、SHA-256 `a01deabc74b1f3b0b9a9506fee8b17cdec99567f8ec48c6b6fd6cfebf10fb1ac`；blockmap 为 `105,775` 字节、SHA-256 `3aa3cf7e9724cc0fd9dd97c024c78585471b6192adad89b0c36d2a4cd9653777`；便携 ZIP 为 `36,612,928` 字节、SHA-256 `69208264366207f2f3cf320fb0c964e7a16ef0138888b635e5b950baa64fefb0`。
+- EXE 校验文件和 ZIP 校验文件的 SHA-256 分别为 `5043f944124e118a45b33d2adf313cb29dce5ad4969f76c93c555fd503015752`、`9f0e39237ba77c03c496644cb2a25cb69695c631c50272c87fe277bda2eb0a50`；`latest.yml` 为 `369` 字节、SHA-256 `fd1454bbf138f39d2793b8cd062a59a0c35f267fb9644465fb1075d7d0b56bdd`。六个本机文件与 GitHub digest 一致，EXE/ZIP 计算值匹配各自校验文件。
+- `latest.yml` 的版本、文件名、大小和 SHA-512 `+Z5Wptfey84ZbBrWZRMedT4ZOxLBR9HdTvQjxeVfarCYHOg1w4lyNDoczTjH7xGHxK/OsmcVUWCppWEMlwsNbQ==` 与正式 EXE 一致；`Get-AuthenticodeSignature` 返回 `NotSigned`。国内代理完整附件校验通过，其中代理 blockmap SHA-256 与官方值相同。
+- `D:\Forkline\Forkline.exe` 文件版本 `0.4.2`、产品版本 `0.4.2.0`；HKCU 卸载项显示 `Forkline 0.4.2`，命令为 `"D:\Forkline\Uninstall Forkline.exe" /currentuser`；`D:\桌面\Forkline.lnk` 和开始菜单 `Forkline.lnk` 的目标、工作目录及图标均指向 `D:\Forkline`。
+- `%APPDATA%\forkline` 保留，关键文件 `desktop-preferences.json`、`desktop-window-state.json`、`.updaterId` 和 `Preferences` 仍存在；其中既有偏好、更新器 ID 和 Preferences 的 SHA-256 与安装前记录一致。
+- 安装后 `D:\Forkline\resources\app.asar` 的 `package.json` 版本为 `0.4.2`，入口为 `electron/main.js`，保留 `electron-updater ^6.8.9`；加速器包含固定 `https://ghfast.top/` 白名单前缀和 `ForklineNsisUpdater`。主进程、preload、安装更新控制器和加速器与 `v0.4.2` 标签源码在换行归一化后逐字节一致。
+- 设置页显示“已是最新版本”，当前版本和最新版本均为 `v0.4.2`；正常点击窗口关闭后，Forkline/Electron/后台服务进程和监听端口均为 0，原回环端口只剩无所属进程的 `TIME_WAIT`，安装目录和 HKCU 登记继续保留。
+- 文档落账前 `main`、`origin/main` 和 `v0.4.2` 均指向 `125e65b2efb38806b43a00e38613a63b63df86e7`；`v0.4.1` 与 `v0.4.0` 仍分别指向 `7ccf2d145b8d78cc3c5b01c59dc2650dfd299df9`、`ba897f0d67a53b7c67437a4ae195c1447e211d53`。受保护异常文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.2 正式工作流、六附件校验、国内代理证据、未签名风险和 D 盘安装终验。
+- `docs/CONTINUE.md`：把 v0.4.2 状态从发布准备更新为正式发布与本机验收完成，并保留后续版本和不可变标签边界。
+- `progress.md`：仅在末尾追加本轮正式发布、D 盘安装、设置页和退出验收证据。
+- 回滚方式：对本轮文档验收提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.2`、`v0.4.1`、`v0.4.0`，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。
