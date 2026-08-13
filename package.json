@@ -1,16 +1,74 @@
 {
   "name": "forkline",
-  "version": "0.4.0",
+  "version": "0.4.1",
+  "description": "中文 Git 可视化管理工具",
+  "author": "AsphyxiaChoke",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
     "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
+    "build:installer": "electron-builder --win nsis --x64 --publish never",
     "desktop": "electron .",
     "desktop:dev": "electron . --watch-renderer",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "test:browser": "node --test --test-concurrency=1 tests/browser-performance.test.js"
   },
   "devDependencies": {
-    "electron": "^43.3.0"
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "build": {
+    "appId": "io.github.asphyxiachoke.forkline",
+    "productName": "Forkline",
+    "asar": true,
+    "directories": {
+      "output": "dist/installer"
+    },
+    "files": [
+      "app-self-update.js",
+      "app-update.js",
+      "self-update-runner.js",
+      "server.js",
+      "server/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "vendor/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/assets/forkline-icon.ico",
+      "artifactName": "Forkline-Setup-${version}-windows-x64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "include": "electron/installer.nsh",
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Forkline",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AsphyxiaChoke",
+        "repo": "Forkline",
+        "releaseType": "release"
+      }
+    ]
   }
 }

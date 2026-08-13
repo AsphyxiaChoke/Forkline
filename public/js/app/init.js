@@ -77,7 +77,8 @@ async function checkForAppUpdate() {
     indicator.removeAttribute("href");
   }
   try {
-    const update = await api("/api/app-update");
+    const installerUpdate = await checkForInstallerUpdate();
+    const update = installerUpdate || await api("/api/app-update");
     const lastResult = state.appUpdate?.lastResult || null;
     state.appUpdate = {
       status: update?.available ? "available" : update?.latestVersion ? "current" : "unavailable",
@@ -85,12 +86,14 @@ async function checkForAppUpdate() {
       latestVersion: String(update?.latestVersion || ""),
       url: String(update?.url || ""),
       installSupported: Boolean(update?.installSupported),
+      installMode: String(update?.installMode || "git"),
       installing: false,
       installError: "",
       installState: "",
       installMessage: "",
       installStep: 0,
-      installTotal: 6,
+      installTotal: Math.max(1, Number(update?.installTotal) || 6),
+      downloadPercent: Math.max(0, Math.min(100, Number(update?.downloadPercent) || 0)),
       lastResult,
     };
     if (!indicator || !update?.available || !update.url) return;
@@ -105,6 +108,45 @@ async function checkForAppUpdate() {
   } finally {
     if (state.data && state.selectedTab === "settings") renderInspector();
   }
+}
+
+async function checkForInstallerUpdate() {
+  const desktop = typeof window === "object" ? window.forklineDesktop : null;
+  if (typeof desktop?.checkInstallerUpdate !== "function") return null;
+  const update = await desktop.checkInstallerUpdate();
+  if (!update || update.status === "unsupported") return null;
+  return {
+    available: update.status === "available",
+    currentVersion: update.currentVersion,
+    latestVersion: update.latestVersion,
+    url: update.url,
+    installSupported: Boolean(update.installSupported),
+    installMode: "nsis",
+    installTotal: update.installTotal,
+    downloadPercent: update.downloadPercent,
+  };
+}
+
+function applyInstallerUpdateState(update) {
+  if (!update || update.status === "unsupported") return;
+  const previous = state.appUpdate || {};
+  state.appUpdate = {
+    ...previous,
+    status: update.status || previous.status || "loading",
+    currentVersion: String(update.currentVersion || previous.currentVersion || ""),
+    latestVersion: String(update.latestVersion || previous.latestVersion || ""),
+    url: String(update.url || previous.url || ""),
+    installSupported: Boolean(update.installSupported),
+    installMode: "nsis",
+    installing: Boolean(update.installing),
+    installError: String(update.installError || ""),
+    installState: String(update.installState || ""),
+    installMessage: String(update.installMessage || ""),
+    installStep: Number(update.installStep) || 0,
+    installTotal: Math.max(1, Number(update.installTotal) || 4),
+    downloadPercent: Math.max(0, Math.min(100, Number(update.downloadPercent) || 0)),
+  };
+  if (state.data && state.selectedTab === "settings") renderInspector();
 }
 
 async function readSelfUpdateResult(consume = false) {

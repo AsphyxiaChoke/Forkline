@@ -180,7 +180,9 @@ function settingsAppUpdateView() {
   const installError = installErrorSource ? t(installErrorSource) : "";
   const installTotal = Math.max(1, Number(update.installTotal) || 6);
   const installStep = Math.min(installTotal, Math.max(0, Number(update.installStep) || 0));
-  const installProgress = Math.round((installStep / installTotal) * 100);
+  const installProgress = update.installState === "downloading" && Number.isFinite(Number(update.downloadPercent))
+    ? Math.max(0, Math.min(100, Math.round(Number(update.downloadPercent))))
+    : Math.round((installStep / installTotal) * 100);
   const rollbackState = String(lastResult?.rollbackState || "");
   const recoveryText = lastResult ? selfUpdateRecoveryText(lastResult) : "";
   const recoveryClass = ["complete", "not-needed"].includes(rollbackState)
@@ -249,11 +251,27 @@ async function installAppUpdate() {
   state.appUpdate.installing = true;
   state.appUpdate.installError = "";
   state.appUpdate.installState = "preparing";
-  state.appUpdate.installMessage = t("正在检查版本和本地更新条件");
+  state.appUpdate.installMessage = update.installMode === "nsis"
+    ? t("正在检查并下载安装版更新")
+    : t("正在检查版本和本地更新条件");
   state.appUpdate.installStep = 1;
-  state.appUpdate.installTotal = 6;
+  state.appUpdate.installTotal = update.installMode === "nsis" ? 4 : 6;
   state.appUpdate.lastResult = null;
   renderInspector();
+  if (update.installMode === "nsis") {
+    try {
+      await window.forklineDesktop.installInstallerUpdate(update.latestVersion);
+    } catch (error) {
+      state.appUpdate = {
+        ...state.appUpdate,
+        installing: false,
+        installError: String(error.message || error),
+      };
+      if (state.selectedTab === "settings") renderInspector();
+      toast(error.message || String(error));
+    }
+    return;
+  }
   let stopPreparationPolling = false;
   const preparationPoll = watchSelfUpdatePreparation(() => stopPreparationPolling);
   try {

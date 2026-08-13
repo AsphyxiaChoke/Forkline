@@ -1,0 +1,86 @@
+name: Build Windows installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to package
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'release') { '${{ github.event.release.tag_name }}' } else { '${{ inputs.tag }}' }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: npm
+
+      - name: Verify tag and package version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          if ('v' + $version -ne '${{ steps.release.outputs.tag }}') {
+            throw "Tag ${{ steps.release.outputs.tag }} does not match package.json v$version"
+          }
+
+      - name: Install dependencies
+        run: npm.cmd ci
+
+      - name: Run automated tests
+        run: npm.cmd test
+
+      - name: Build unsigned Windows x64 installer
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm.cmd run build:installer
+
+      - name: Generate installer checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist/installer/Forkline-Setup-*-windows-x64.exe -File -ErrorAction Stop
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content -Encoding ascii -NoNewline -LiteralPath "$($installer.FullName).sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Forkline-windows-installer
+          path: |
+            dist/installer/Forkline-Setup-*-windows-x64.exe
+            dist/installer/Forkline-Setup-*-windows-x64.exe.blockmap
+            dist/installer/Forkline-Setup-*-windows-x64.exe.sha256
+            dist/installer/latest.yml
+
+      - name: Attach installer and updater metadata to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload '${{ steps.release.outputs.tag }}' `
+            dist/installer/Forkline-Setup-*-windows-x64.exe `
+            dist/installer/Forkline-Setup-*-windows-x64.exe.blockmap `
+            dist/installer/Forkline-Setup-*-windows-x64.exe.sha256 `
+            dist/installer/latest.yml `
+            --clobber

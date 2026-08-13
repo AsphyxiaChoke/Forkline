@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -34,6 +35,7 @@ const {
 } = require("../electron/renderer-draft-store");
 const { createRepositoryOpenCoordinator } = require("../electron/repository-open-coordinator");
 const { reportElectronUpdateReady } = require("../electron/self-update-health");
+const { createInstallerUpdateController } = require("../electron/installer-update-controller");
 const { shutdownServerProcess } = require("../electron/server-process-shutdown");
 
 const root = path.resolve(__dirname, "..");
@@ -59,6 +61,31 @@ test("Electron reuses the web app behind an isolated desktop shell", () => {
   assert.match(main, /event\.preventDefault\(\)/);
   assert.match(main, /setWindowOpenHandler/);
   assert.match(preload, /dataset\.shell\s*=\s*"electron"/);
+});
+
+test("Electron exposes only fixed installer-update IPC and preserves source updates", () => {
+  const main = read("electron/main.js");
+  const preload = read("electron/preload.js");
+  const init = read("public/js/app/init.js");
+  const settings = read("public/js/panels/settings.js");
+
+  assert.equal(typeof createInstallerUpdateController, "function");
+  assert.match(main, /supported:\s*app\.isPackaged && process\.platform === "win32"/);
+  assert.match(main, /prepareInstall:\s*prepareInstallerInstall/);
+  assert.match(main, /requestJson\(`\$\{serverUrl\}\/api\/operations`\)[\s\S]*?runningOperations\?\.length[\s\S]*?Forkline 还有操作正在执行，请等待完成后再更新。/);
+  assert.match(main, /await ensureInstallerUpdateIdle\(\)[\s\S]*?quitting = true[\s\S]*?const result = await stopServer\(\{ allowForce: false \}\)[\s\S]*?\["already-exited", "graceful"\][\s\S]*?rendererHealthController\?\.dispose\(\)[\s\S]*?quitReady = true/);
+  assert.match(main, /forkline:installer-update:get-state/);
+  assert.match(main, /forkline:installer-update:check/);
+  assert.match(main, /forkline:installer-update:install/);
+  assert.match(preload, /getInstallerUpdateState/);
+  assert.match(preload, /checkInstallerUpdate/);
+  assert.match(preload, /installInstallerUpdate/);
+  assert.match(preload, /onInstallerUpdateState/);
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\([^"']/);
+  assert.match(init, /const installerUpdate = await checkForInstallerUpdate\(\)/);
+  assert.match(init, /const update = installerUpdate \|\| await api\("\/api\/app-update"\)/);
+  assert.match(settings, /update\.installMode === "nsis"/);
+  assert.match(settings, /api\("\/api\/app-update\/install"/);
 });
 
 test("Electron uses the Forkline brand mark for its desktop icon", () => {
@@ -168,6 +195,30 @@ test("Electron falls back only to its owned server process when graceful shutdow
 
   assert.deepEqual(terminated, [6200]);
   assert.equal(result.mode, "terminated");
+});
+
+test("installer shutdown never force-kills the server when graceful shutdown times out", async () => {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.connected = true;
+  child.send = () => {};
+  let terminateCalls = 0;
+  let killCalls = 0;
+  child.kill = () => { killCalls += 1; };
+
+  const result = await shutdownServerProcess(child, {
+    allowForce: false,
+    gracefulTimeoutMs: 5,
+    forceTimeoutMs: 5,
+    terminateProcess: async () => { terminateCalls += 1; },
+  });
+
+  assert.deepEqual(result, { mode: "timeout" });
+  assert.equal(terminateCalls, 0);
+  assert.equal(killCalls, 0);
+  assert.equal(child.exitCode, null);
+  assert.equal(child.signalCode, null);
 });
 
 test("Electron enables renderer reload only for the unpackaged development command", () => {

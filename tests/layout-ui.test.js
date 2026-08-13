@@ -222,6 +222,23 @@ test("settings makes the current update state explicit", () => {
 
   state.appUpdate = {
     status: "available",
+    currentVersion: "0.4.0",
+    latestVersion: "0.4.1",
+    installSupported: true,
+    installMode: "nsis",
+    installing: true,
+    installState: "downloading",
+    installMessage: "正在下载安装版更新",
+    installStep: 2,
+    installTotal: 4,
+    downloadPercent: 73.6,
+  };
+  view = vm.runInContext("settingsAppUpdateView()", context);
+  assert.equal(view.statusText, "正在下载安装版更新");
+  assert.equal(view.installProgress, 74);
+
+  state.appUpdate = {
+    status: "available",
     currentVersion: "0.2.0",
     latestVersion: "0.3.0",
     installSupported: true,

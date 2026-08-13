@@ -2,6 +2,7 @@
 let desktopRepositoryOpenReady = false;
 let desktopRepositoryOpenBusy = false;
 let pendingDesktopRepository = "";
+let stopInstallerUpdateState = null;
 
 async function flushDesktopRepositoryOpen() {
   if (!desktopRepositoryOpenReady || desktopRepositoryOpenBusy || !pendingDesktopRepository) return;
@@ -28,6 +29,13 @@ function initDesktopRepositoryOpen() {
   });
 }
 
+function initDesktopInstallerUpdates() {
+  const bridge = window.forklineDesktop;
+  if (typeof bridge?.onInstallerUpdateState !== "function") return;
+  stopInstallerUpdateState = bridge.onInstallerUpdateState(applyInstallerUpdateState);
+  window.addEventListener("beforeunload", () => stopInstallerUpdateState?.(), { once: true });
+}
+
 async function startForkline() {
   state.recoveryPolicy = defaultRecoveryPolicy();
   await initLocale();
@@ -43,5 +51,6 @@ async function startForkline() {
 }
 
 initDesktopRepositoryOpen();
+initDesktopInstallerUpdates();
 window.Forkline.start = startForkline;
 startForkline().catch((error) => toast(error.message));

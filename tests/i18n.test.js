@@ -32,6 +32,15 @@ test("known translations preserve repository data and raw Git output", () => {
   assert.equal(catalog.translateFragment("en", "  天  "), "  days  ");
 });
 
+test("installer update states have fixed English translations", () => {
+  assert.equal(catalog.translateKnown("en", "正在检查并下载安装版更新"), "Checking and downloading the installer update");
+  assert.equal(catalog.translateKnown("en", "正在检查安装版更新"), "Checking for an installer update");
+  assert.equal(catalog.translateKnown("en", "正在下载安装版更新"), "Downloading the installer update");
+  assert.equal(catalog.translateKnown("en", "安装包下载完成，正在停止 Forkline 后台服务"), "Installer download complete; stopping Forkline's background service");
+  assert.equal(catalog.translateKnown("en", "正在启动安装程序并重启 Forkline"), "Starting the installer and restarting Forkline");
+  assert.match(catalog.translateKnown("en", "Forkline 后台服务未能优雅停止，安装已取消。请关闭并重新打开 Forkline 后重试。"), /installation was cancelled/);
+});
+
 test("locale switching persists in browser storage and restores on reload", async () => {
   const storage = new Map();
   const first = createRuntime(storage);

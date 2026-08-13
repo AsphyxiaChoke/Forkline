@@ -1083,3 +1083,14 @@
 - Windows 便携包工作流 `31575254040` 在约 `47` 秒内成功完成构建、工作流附件上传和 Release 附件上传：<https://github.com/AsphyxiaChoke/Forkline/actions/runs/31575254040>。
 - Release 附件为 `Forkline-v0.4.0-windows-x64.zip`（`36,486,187` 字节）与 `Forkline-v0.4.0-windows-x64.zip.sha256`（`99` 字节）。ZIP SHA256 为 `8df2ba3da1c32be4fa5653cc72d447bfaaae67c4e31add36c54d59d18cd43343`；重新下载 ZIP 后本机计算值与校验文件一致。
 - 本次 Release 自动附件仍是 Web 便携包；Electron 源码桌面版随源码发布，Electron 安装包、代码签名和安装器级自动更新仍未发布。后续修复应创建新提交和新版本，不得移动 `v0.4.0` 标签。
+
+## 2026-08-12 Forkline v0.4.1 Windows x64 安装版发布准备
+
+- `package.json` 版本已升至 `0.4.1`，新增 Electron Builder、Electron Updater 与 Windows x64 NSIS 构建配置。安装器是带向导的当前用户安装，允许选择目录，不允许切换到全局安装或请求提权；默认创建桌面和开始菜单快捷方式，卸载时保留 `%APPDATA%\forkline` 用户数据。
+- 正式安装版使用 `electron-updater` 检查 GitHub 正式 Release。主进程和 preload 只暴露固定的状态读取、检查、安装和状态订阅 IPC；页面不能传入下载地址、可执行文件路径或任意 IPC 名称。源码 Electron、Web 源码克隆和 Web 便携版继续使用原有 Git 快进更新，不改变现有 Git 语义。
+- 用户点击设置页“立即更新并重启”后才下载安装包。安装前先读取 `/api/operations`；仍有 Git 操作时取消安装，空闲时才请求后台服务优雅关闭。服务端停止接受新请求并结束其登记的 Git/SSH 子进程；安装更新等待超时或停服失败时直接取消，不会强制终止服务。只有用户普通关闭 Forkline 时，才会对当前 Electron 实例持有的服务进程树执行有界兜底，不按进程名扫描用户的其他 Git/SSH 进程。
+- 新增 `.github/workflows/release-installer.yml`：正式 Release 发布后签出不可变 Tag，校验 Tag 与应用版本一致，执行完整测试，构建未签名安装器并上传 EXE、blockmap、SHA256 和 `latest.yml`。便携包仍由原工作流独立构建，两个附件集合名称不冲突。
+- 当前最终本机构建物 `Forkline-Setup-0.4.1-windows-x64.exe` 为 `100,683,489` 字节，SHA-256 为 `e3cc3224423828738b2014c8fc9b6477cff4b59f15aa7099c32757f6fe83aae9`；blockmap SHA-256 为 `76f7b54aaa8a179099f71ac63c0bc7ba17aba2002565b4082c215503c8573ca3`，`latest.yml` SHA-256 为 `4faf37ca4799de382f443eb5ba3a89643a4c047f76fd8abb661cb5a9e2e18933`。安装器文件版本和产品版本均为 `0.4.1`，签名状态为 `NotSigned`；`latest.yml` 中的文件大小和 SHA-512 与安装器逐字节核验一致。
+- 最终自动验证为完整 `336/336` 通过，0 项失败、0 项跳过，耗时约 `112.6` 秒；`npm audit --audit-level=low` 为 0 个已知漏洞，`npm ls --depth=0` 正常，JavaScript 语法、JSON/YAML、差异空白和打包内容检查通过。测试后没有 Forkline 测试端口、临时夹具或应用进程残留。
+- 真实本机验收已完整通过：旧 C 盘验证版已卸载，最终安装器从普通文件资源管理器安装到 `D:\Forkline`；真实 HKCU 登记、桌面与开始菜单快捷方式均指向 D 盘，设置页显示 `v0.4.1`，远端尚未发布时正确显示“暂时无法检查更新”。随后卸载 D 盘版本，确认安装目录、真实快捷方式和 HKCU 登记全部移除，同时 `%APPDATA%\forkline` 用户数据与独立 SSH 隧道保持不变；再从普通文件资源管理器重装到 `D:\Forkline`，启动与正常退出均通过，退出后 Forkline 全部进程和监听端口消失，最终保留可用的 D 盘安装状态。验收期间未出现 SmartScreen、Windows Security、未知发布者或权限安全界面。
+- `v0.4.1` 只有在真实安装/启动/退出/卸载验收完成、文档追加真实结果、发布提交推送、不可移动注释标签创建、正式 Release 和两个 Windows 工作流成功、全部附件重新下载并核验后才算发布完成。不得移动或覆盖 `v0.4.0`；发布后发现的问题必须用新的修复提交和补丁版本处理。

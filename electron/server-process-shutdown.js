@@ -49,10 +49,12 @@ async function shutdownServerProcess(child, options = {}) {
     ? Math.max(0, options.forceTimeoutMs)
     : DEFAULT_FORCE_TIMEOUT_MS;
   const terminateProcess = options.terminateProcess || terminateOperationProcess;
+  const allowForce = options.allowForce !== false;
 
   if (requestGracefulShutdown(child) && await waitForProcessExit(child, gracefulTimeoutMs)) {
     return { mode: "graceful" };
   }
+  if (!allowForce) return { mode: "timeout" };
 
   try {
     await terminateProcess(child);

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const { fork } = require("node:child_process");
 const http = require("node:http");
 const net = require("node:net");
@@ -22,6 +23,7 @@ const { createRendererHealthController } = require("./renderer-health");
 const { createRendererDraftStore } = require("./renderer-draft-store");
 const { createRepositoryOpenCoordinator } = require("./repository-open-coordinator");
 const { reportElectronUpdateReady } = require("./self-update-health");
+const { createInstallerUpdateController } = require("./installer-update-controller");
 const { shutdownServerProcess } = require("./server-process-shutdown");
 const { findStartupRepository } = require("./startup-repository");
 
@@ -48,6 +50,7 @@ let rendererHealthController = null;
 let rendererWasUnresponsive = false;
 let rendererRecoveryRiskSignature = "";
 let selfUpdateQuitRequested = false;
+let installerUpdateController = null;
 const rendererDraftStore = createRendererDraftStore();
 
 const repositoryOpenCoordinator = createRepositoryOpenCoordinator({
@@ -193,19 +196,68 @@ async function startServer() {
   }
 }
 
-function stopServer() {
+function stopServer(options = {}) {
   const child = serverProcess;
   if (!child) return Promise.resolve({ mode: "already-exited" });
   if (stopServerPromise) return stopServerPromise;
-  stopServerPromise = shutdownServerProcess(child)
+  stopServerPromise = shutdownServerProcess(child, options)
     .catch((error) => {
       console.warn(`[Forkline desktop] 后台服务关闭异常：${error?.message || error}`);
       return { mode: "error" };
     })
     .finally(() => {
-      if (serverProcess === child) serverProcess = null;
+      if (serverProcess === child && (child.exitCode !== null || child.signalCode !== null)) serverProcess = null;
+      stopServerPromise = null;
     });
   return stopServerPromise;
+}
+
+function sendInstallerUpdateState(state) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  mainWindow.webContents.send("forkline:installer-update:state", state);
+}
+
+async function ensureInstallerUpdateIdle() {
+  const operations = await requestJson(`${serverUrl}/api/operations`);
+  if (operations?.runningOperations?.length) {
+    throw new Error("Forkline 还有操作正在执行，请等待完成后再更新。");
+  }
+}
+
+async function prepareInstallerInstall() {
+  await ensureInstallerUpdateIdle();
+  quitting = true;
+  flushDesktopWindowState();
+  const result = await stopServer({ allowForce: false });
+  if (!["already-exited", "graceful"].includes(result.mode)) {
+    quitting = false;
+    throw new Error("Forkline 后台服务未能优雅停止，安装已取消。请关闭并重新打开 Forkline 后重试。");
+  }
+  rendererHealthController?.dispose();
+  stopRendererReloadWatcher();
+  quitReady = true;
+}
+
+function registerInstallerUpdates() {
+  installerUpdateController = createInstallerUpdateController({
+    updater: autoUpdater,
+    supported: app.isPackaged && process.platform === "win32",
+    currentVersion: app.getVersion(),
+    prepareInstall: prepareInstallerInstall,
+    onState: sendInstallerUpdateState,
+  });
+  ipcMain.handle("forkline:installer-update:get-state", (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return null;
+    return installerUpdateController.getState();
+  });
+  ipcMain.handle("forkline:installer-update:check", (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return null;
+    return installerUpdateController.checkForUpdates();
+  });
+  ipcMain.handle("forkline:installer-update:install", (event, version) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return null;
+    return installerUpdateController.install(String(version || ""));
+  });
 }
 
 function startRendererReload() {
@@ -457,6 +509,7 @@ function createWindow() {
     if (desktopWindowState.isMaximized) mainWindow.maximize();
     mainWindow.show();
     reportElectronUpdateReady();
+    void installerUpdateController?.checkForUpdates();
   });
   mainWindow.on("move", scheduleDesktopWindowStateSave);
   mainWindow.on("resize", scheduleDesktopWindowStateSave);
@@ -482,6 +535,7 @@ if (hasSingleInstanceLock) {
       registerDesktopZoom();
       registerDesktopTitleBarTheme();
       registerRendererRecoveryState();
+      registerInstallerUpdates();
       await startServer();
       createWindow();
       startRendererReload();

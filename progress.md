@@ -9543,3 +9543,134 @@
 - `progress.md`：仅在末尾追加本轮正式发布闭环与验证证据。
 - 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍未删除、未暂存、未提交，也未进入 Release。
 - 回滚方式：发布结果记录提交可执行 `git revert <documentation-commit>`；发布版本本身不得移动或删除 `v0.4.0` 标签，代码问题应从 `main` 创建修复提交并发布新版本。
+
+## 2026-08-12 - Task: 收口 Forkline v0.4.1 当前用户安装与安全更新边界
+
+### What was done
+
+- Windows x64 NSIS 安装器固定为当前用户安装，保留安装向导和目录选择，不允许切换到全局安装或请求提权；桌面和开始菜单快捷方式仍默认创建，卸载继续保留 Forkline 用户数据。
+- 安装版继续通过固定 GitHub provider 和受限 IPC 检查、下载、安装正式 Release；源码 Electron、Web 源码克隆和 Web 便携版继续使用原有 Git 快进更新。
+- 安装包下载完成后，主进程先读取后台服务的权威操作状态；仍有 Git 操作时取消安装，空闲时才优雅停止后台服务及其持有的 Git/SSH 子进程，避免在推送、变基或仓库写入中途强制中断。
+- 重新构建并核对安装器、blockmap、`latest.yml`、ASAR 内容和 GitHub 更新 provider；本机 D 盘安装、启动、关闭和卸载验收仍等待旧 C 盘验证安装的卸载许可，未提前记为完成。
+
+### Testing
+
+- 当前用户安装契约先在旧配置上稳定失败，加入 NSIS `customInstallMode` 后 `tests/installer-package.test.js` 为 `2/2` 通过；安装更新专项与 Electron 外壳合计 `39/39` 通过。
+- 完整 `npm.cmd test` 为 `335/335` 通过，0 项失败、0 项跳过；`npm.cmd audit --audit-level=low` 为 0 个已知漏洞。
+- `node --check` 覆盖 Electron 主进程、preload、安装更新控制器和相关页面脚本；`package.json`、`package-lock.json`、Release 工作流 YAML 解析和 `git diff --check` 均通过。
+- 最终本机构建产物为 `Forkline-Setup-0.4.1-windows-x64.exe`，大小 `100,683,225` 字节，SHA-256 为 `b5f03c77dd9b1b1bafcca960c32566eaa2fd72af55a6c3a2bc0aaf05e12bb3d4`；blockmap SHA-256 为 `c672053c46e07e12ccd277e564ee02890d2b35d2da9ad7a40f87e99a57bcc611`，`latest.yml` SHA-256 为 `a7e7f21a3eafe1b011772b19e9da76390060a0d28577329306d14858ceca7df1`。
+- ASAR 内版本为 `0.4.1`、入口为 `electron/main.js`，源码与打包后的主进程 SHA-256 一致；`app-update.yml` 固定 `AsphyxiaChoke/Forkline` GitHub provider。安装器签名状态如实为 `NotSigned`。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 的 SHA-256 仍为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `package.json`：加入 Electron 安装器依赖、构建与 GitHub 发布配置，并固定当前用户 NSIS 安装模式。
+- `package-lock.json`：锁定 Electron Builder 与 Electron Updater 依赖树。
+- `.github/workflows/release-installer.yml`：新增正式 Release 后的 Windows x64 安装器构建、测试、校验与附件上传流程。
+- `electron/installer.nsh`：通过 NSIS 宏强制当前用户安装。
+- `electron/installer-update-controller.js`：实现可单测的安装版检查、下载、停服与安装状态机。
+- `electron/main.js`：接入安装更新控制器、受限 IPC、活跃 Git 操作门禁与后台服务安全停止。
+- `electron/preload.js`：只暴露固定的安装更新状态、检查、安装和订阅接口。
+- `public/js/app/init.js`、`public/js/bootstrap.js`、`public/js/core.js`、`public/js/panels/settings.js`：按运行形态分流安装版与 Git 更新，并复用设置页更新入口和进度展示。
+- `public/js/i18n-catalog.js`：补充安装更新状态和失败提示的英文词条。
+- `tests/installer-package.test.js`、`tests/installer-update-controller.test.js`、`tests/electron-shell.test.js`、`tests/i18n.test.js`、`tests/layout-ui.test.js`：覆盖安装器配置、更新状态机、IPC、停服门禁、翻译和设置页行为。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`：记录安装、更新、未签名风险、Release 附件和验证边界。
+- `progress.md`：仅在末尾追加本轮已完成实现和当前待验收状态。
+- 提交前回滚时只应逆向移除本节列出的 v0.4.1 安装器、更新控制器、页面分流、测试和文档增量，不得使用整仓库清理或触碰异常未跟踪文件。提交后应执行 `git revert <v0.4.1-release-commit>` 创建后续修复提交；不得移动或覆盖 `v0.4.0` 或之后发布的不可变标签。
+
+## 2026-08-12 - Task: 补齐 Forkline v0.4.1 续做文档与发布前复核
+
+### What was done
+
+- 在续做文档末尾追加 v0.4.1 Windows x64 当前用户安装版的实现边界、安装更新停服顺序、Release 工作流、未签名风险和不可变版本规则。
+- 明确真实本机验收尚未完成：旧 C 盘验证版仍保留，最终目标为 `D:\Forkline`；没有把自动测试、打包检查或旧安装现场替代为真实 D 盘安装、启动、退出和卸载结论。
+- 重新核对当前工作区、安装器版本与签名、异常未跟踪文件、测试残留和 GitHub 发布边界；没有删除旧安装、没有运行安全界面、没有提交、推送、打标签或创建 Release。
+
+### Testing
+
+- 安装器、安装更新控制器与 Electron 外壳专项 `41/41` 通过；完整 `npm.cmd test` `335/335` 通过，0 项失败、0 项跳过，耗时约 `105.7` 秒。
+- `npm.cmd audit --audit-level=low` 返回 0 个已知漏洞；Electron 主进程、preload、安装更新控制器和更新页面脚本均通过 `node --check`，`git diff --check` 无空白错误。
+- 安装器文件版本与产品版本均为 `0.4.1`，SHA-256 仍为 `b5f03c77dd9b1b1bafcca960c32566eaa2fd72af55a6c3a2bc0aaf05e12bb3d4`，签名状态仍为 `NotSigned`。
+- 测试后常用 Forkline 测试端口均无监听，没有浏览器性能夹具、测试临时目录或 Forkline 应用进程残留；`D:\Forkline` 仍不存在，证明本轮没有提前执行安装。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节，SHA-256 仍为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/CONTINUE.md`：追加 v0.4.1 实现事实、构建证据、D 盘真实验收门槛和发布后新补丁版本边界。
+- `progress.md`：仅在末尾追加本轮文档补齐与复核记录。
+- 下一验证点：取得用户对卸载 `C:\Users\Administrator\AppData\Local\Programs\Forkline` 旧验证版的明确许可后，保留 `%APPDATA%\forkline`，再把最终安装版装到 `D:\Forkline` 完成 GUI 闭环。
+- 回滚方式：仅反向删除本轮在 `docs/CONTINUE.md` 与 `progress.md` 末尾新增的两个章节；不得使用 `git clean`、整仓库回退或触碰异常未跟踪文件。
+
+## 2026-08-13 - Task: 复核 Forkline v0.4.1 最终安装器并更正发布证据
+
+### What was done
+
+- 重新审计安装版更新控制器、受限 IPC、当前用户 NSIS 配置、Release 工作流和安装前停服边界；确认安装更新只在后台服务优雅退出后继续，超时或失败时取消安装，普通关闭仍保留仅针对当前实例进程树的有界清理。
+- 将续做文档中的旧安装器大小、SHA-256、blockmap、`latest.yml` 以及过时停服描述更正为最终构建事实，没有把尚未完成的 D 盘安装验收写成成功。
+- 核对 GitHub 当前仍以 `v0.4.0` 为 Latest，远端不存在 `v0.4.1` 标签，`origin/main` 仍停留在本轮基线；没有提交、推送、创建标签或 Release。
+
+### Testing
+
+- `npm.cmd test` 完整运行 `336/336` 通过，0 项失败、0 项跳过、0 项取消，耗时约 `104.9` 秒；覆盖真实 Chromium 性能、Electron 外壳、安装更新状态机、真实 Git 工作流和关停清理。
+- `npm.cmd audit --audit-level=low` 返回 0 个已知漏洞；相关 Electron/页面脚本通过 `node --check`，`package.json` 与 `package-lock.json` 通过 Node JSON 解析，`npm.cmd ls --depth=0` 正常，`git diff --check` 无空白错误。
+- 最终安装器为 `100,683,489` 字节，SHA-256 `e3cc3224423828738b2014c8fc9b6477cff4b59f15aa7099c32757f6fe83aae9`，签名状态 `NotSigned`；blockmap SHA-256 为 `76f7b54aaa8a179099f71ac63c0bc7ba17aba2002565b4082c215503c8573ca3`，`latest.yml` SHA-256 为 `4faf37ca4799de382f443eb5ba3a89643a4c047f76fd8abb661cb5a9e2e18933`，其中安装器大小和 SHA-512 与文件逐字节一致。
+- 测试后没有 Forkline 应用或本仓库 Node 测试进程残留，`D:\Forkline` 仍不存在，独立 SSH 隧道 PID `24996` 仍运行。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节，SHA-256 仍为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/CONTINUE.md`：更正最终构建哈希、大小和安装更新停服边界，继续保留 D 盘真实验收门槛。
+- `progress.md`：仅在末尾追加本轮发布前审计、验证和未完成边界。
+- 下一验证点：经用户即时确认后卸载 `C:\Users\Administrator\AppData\Local\Programs\Forkline` 旧验证版，保留 `%APPDATA%\forkline`，再把最终安装版装到 `D:\Forkline` 完成安装、启动、退出和卸载闭环。
+- 回滚方式：仅反向删除本轮在 `docs/CONTINUE.md` 中更正的两条发布准备说明及本节追加记录；不得使用 `git clean`、整仓库回退或触碰异常未跟踪文件。提交后应使用 `git revert <v0.4.1-release-commit>` 创建后续修复提交，不得移动任何已发布标签。
+
+## 2026-08-13 - Task: 验证 Forkline v0.4.1 安装到 D 盘并正常启动退出
+
+### What was done
+
+- 经用户确认卸载 C 盘旧验证版，并核对 `%APPDATA%\forkline` 用户数据及关键文件哈希保持不变。
+- 从普通文件资源管理器启动最终安装器，覆盖安装到 `D:\Forkline`；确认真实用户桌面、开始菜单快捷方式和 HKCU 卸载登记均指向 D 盘安装目录。
+- 启动最终安装版并打开设置页，确认版本、更新状态和高 DPI 最大化布局；随后通过窗口关闭按钮正常退出，验证后台服务和 Electron 进程完成清理。
+- 首次由 Codex 应用上下文直接启动安装器时，Windows 将开始菜单入口虚拟化到 Codex 私有目录；没有把该结果误报为真实用户安装，改从 Explorer 重新覆盖安装后才通过验收。Codex 私有目录中的测试快捷方式尚未删除，避免超出删除授权。
+
+### Testing
+
+- `D:\Forkline\Forkline.exe` 文件版本为 `0.4.1`、产品版本为 `0.4.1.0`；真实 HKCU 卸载项显示 `Forkline 0.4.1`，卸载命令为 `"D:\Forkline\Uninstall Forkline.exe" /currentuser`。
+- `D:\桌面\Forkline.lnk` 与 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Forkline.lnk` 的目标、工作目录和图标均指向 `D:\Forkline`。
+- 主窗口正常渲染，高 DPI 最大化状态下无可见文字重叠或横向溢出；设置页显示当前版本 `v0.4.1`，远端尚无 v0.4.1 时正确显示“暂时无法检查更新”。
+- 运行时后台服务在随机回环端口监听；正常关闭后 `D:\Forkline\Forkline.exe` 进程和对应监听端口全部消失，真实 HKCU 登记及安装目录仍保留。
+- `%APPDATA%\forkline` 中 `desktop-preferences.json`、`desktop-window-state.json`、`.updaterId` 和 `Preferences` 的 SHA-256 与卸载前一致；独立 SSH 隧道当前 PID `8592` 全程保持运行。
+
+### Notes
+
+- `docs/CONTINUE.md`：更新真实 D 盘安装、启动、更新状态和正常退出的当前验收事实，并明确卸载验证仍未完成。
+- `progress.md`：仅在末尾追加本轮实机安装与退出验证记录。
+- 下一验证点：经用户即时确认后卸载 `D:\Forkline`，确认安装目录、快捷方式和 HKCU 登记被移除且 `%APPDATA%\forkline` 保留；若需最终保留，再经确认从 Explorer 重装到 `D:\Forkline`。
+- 回滚方式：仅反向删除本轮在 `docs/CONTINUE.md` 中更新的验收说明及本节追加记录；不得清理安装现场、异常未跟踪文件或其他用户数据。提交后应使用 `git revert <v0.4.1-release-commit>` 创建后续修复提交，不得移动已发布标签。
+
+## 2026-08-13 - Task: 完成 Forkline v0.4.1 卸载与重装实机闭环
+
+### What was done
+
+- 经用户即时授权并由用户完成 `D:\Forkline` 验证版卸载，确认程序目录、真实用户桌面和开始菜单快捷方式、HKCU 卸载登记均已移除。
+- 核对卸载没有删除 `%APPDATA%\forkline` 用户数据，也没有影响独立 SSH 隧道或仓库中的受保护异常未跟踪文件。
+- 经用户即时授权后，从普通文件资源管理器启动最终安装器并重新安装到 `D:\Forkline`；确认当前用户安装登记、快捷方式、版本和运行状态均正确。
+- 重装后启动主窗口并通过窗口关闭按钮正常退出，最终保留可用的 D 盘安装状态，没有自动处理或绕过任何 Windows 安全界面。
+
+### Testing
+
+- 卸载后 `D:\Forkline`、`D:\桌面\Forkline.lnk`、真实开始菜单 `Forkline.lnk` 和 Forkline HKCU 卸载项均不存在，Forkline 进程数为 0。
+- 卸载后 `%APPDATA%\forkline` 仍存在；`desktop-preferences.json`、`desktop-window-state.json`、`.updaterId` 和 `Preferences` 的 SHA-256 分别保持为 `326886b370dc6365ba8016545bcac8fa99362fcc510294f30c269fd43370797d`、`ecf2fc3578912b36f92960edbab8a59685fc504051fc1611963e5ac142150ebf`、`c07fea97aa9c6ca163b062cd682f5f3c0bee4958e257d16cd2733e088aef0731`、`7dae01d1517b257d3859e625eee32f48765fa9c620c4c4cc6fae8eac0299aa07`。
+- 重装后 `D:\Forkline\Forkline.exe` 文件版本为 `0.4.1`、产品版本为 `0.4.1.0`；HKCU 卸载命令为 `"D:\Forkline\Uninstall Forkline.exe" /currentuser`，桌面和开始菜单快捷方式的目标、工作目录与图标均指向 `D:\Forkline`。
+- 重装启动时后台服务在 `127.0.0.1:50597` 监听；正常关闭后全部 D 盘 Forkline 进程和该监听端口消失，安装目录、真实 HKCU 登记与快捷方式继续保留。
+- 独立 SSH 隧道 PID `8592` 在卸载、重装、启动和退出后均保持运行；异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节，SHA-256 仍为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+- 实机闭环后再次执行完整 `npm.cmd test`，最终结果为 `336/336` 通过，0 项失败、0 项跳过，耗时约 `112.6` 秒；`npm.cmd audit --audit-level=low` 为 0 个已知漏洞，`npm.cmd ls --depth=0` 正常，相关 JavaScript、JSON、YAML 和 `git diff --check` 全部通过。
+- `latest.yml` 通过 YAML 结构化解析核验：版本 `0.4.1`、安装器文件名、`100,683,489` 字节和 SHA-512 均与最终 EXE 一致；EXE SHA-256 仍为 `e3cc3224423828738b2014c8fc9b6477cff4b59f15aa7099c32757f6fe83aae9`，签名状态仍为 `NotSigned`。
+- `D:\Forkline\resources\app.asar` 与 `dist\installer\win-unpacked\resources\app.asar` 的 SHA-256 均为 `65187bcaad734da9aac155eebc9bef8925e181af507034fe4de21582a09dde95`；ASAR 内版本、入口、依赖元数据正确，Electron 主进程、preload、停服逻辑、安装更新控制器、NSIS 脚本及相关页面脚本与当前源码逐字节一致。
+
+### Notes
+
+- `docs/CONTINUE.md`：将 v0.4.1 真实本机验收状态更新为卸载、数据保留、重装、启动与退出完整通过。
+- `progress.md`：仅在末尾追加本轮卸载与重装实机闭环证据。
+- 最终现场保留 `D:\Forkline` 当前用户安装版；未删除 Codex 私有目录中的既有测试快捷方式，避免超出本轮安装与卸载目标范围。
+- 回滚方式：仅反向恢复 `docs/CONTINUE.md` 中本轮验收状态文字并删除 `progress.md` 末尾本节；不得卸载最终保留的 D 盘应用、清理用户数据或触碰异常未跟踪文件。提交后应使用 `git revert <v0.4.1-release-commit>` 创建后续修复提交，不得移动任何已发布标签。

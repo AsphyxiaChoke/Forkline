@@ -8,6 +8,15 @@ contextBridge.exposeInMainWorld("forklineDesktop", {
   reportRecoveryState: (value) => ipcRenderer.send("forkline:desktop-recovery-state", value),
   saveRecoveryDraft: (value) => ipcRenderer.invoke("forkline:desktop-recovery-draft:save", value),
   readRecoveryDraft: () => ipcRenderer.invoke("forkline:desktop-recovery-draft:read"),
+  getInstallerUpdateState: () => ipcRenderer.invoke("forkline:installer-update:get-state"),
+  checkInstallerUpdate: () => ipcRenderer.invoke("forkline:installer-update:check"),
+  installInstallerUpdate: (version) => ipcRenderer.invoke("forkline:installer-update:install", String(version || "")),
+  onInstallerUpdateState: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, state) => handler(state && typeof state === "object" ? { ...state } : null);
+    ipcRenderer.on("forkline:installer-update:state", listener);
+    return () => ipcRenderer.removeListener("forkline:installer-update:state", listener);
+  },
   onOpenRepository: (handler) => {
     if (typeof handler !== "function") return () => {};
     const listener = (_event, repository) => handler(String(repository || ""));
