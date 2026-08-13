@@ -11,7 +11,7 @@ const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "releas
 const installerInclude = fs.readFileSync(path.join(root, "electron", "installer.nsh"), "utf8");
 
 test("Windows installer is per-user, assisted, x64, and creates standard shortcuts", () => {
-  assert.equal(pkg.version, "0.4.2");
+  assert.equal(pkg.version, "0.4.3");
   assert.equal(pkg.description, "中文 Git 可视化管理工具");
   assert.equal(pkg.author, "AsphyxiaChoke");
   assert.equal(pkg.scripts["build:installer"], "electron-builder --win nsis --x64 --publish never");

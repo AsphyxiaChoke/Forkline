@@ -922,6 +922,41 @@ test("real Chromium keeps historical file comparison responsive", {
     `CodeMirror warm-up changed resize listeners from ${baselineResizeListeners} to ${warmedResizeListeners}`
   );
 
+  await fs.appendFile(path.join(repo, "small.c"), "int ordinary_worktree_change = 1;\n", "utf8");
+  const ordinaryWorktreeEditor = await evaluate(cdp, `(async () => {
+    await refreshWorktree(false);
+    const row = document.querySelector('#changeList [data-select-file][data-file="small.c"]');
+    const toastBefore = document.querySelector("#toast")?.textContent?.trim() || "";
+    row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      if (state.fileEditor?.file === "small.c" && state.fileEditor?.loading === false) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const result = {
+      rowFound: Boolean(row),
+      opened: Boolean(
+        state.fileEditor?.file === "small.c" &&
+        state.fileEditor?.source === "worktree" &&
+        state.fileEditor?.loading === false &&
+        document.querySelector("#fileEditorModal")?.classList.contains("show")
+      ),
+      conflict: state.fileEditor?.conflict,
+      mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+      toastBefore,
+      toastAfter: document.querySelector("#toast")?.textContent?.trim() || "",
+    };
+    closeFileEditor(true);
+    return result;
+  })()`);
+  assert.equal(ordinaryWorktreeEditor.rowFound, true);
+  assert.equal(ordinaryWorktreeEditor.opened, true);
+  assert.equal(ordinaryWorktreeEditor.conflict, false);
+  assert.equal(ordinaryWorktreeEditor.mergeViews, 1);
+  assert.doesNotMatch(ordinaryWorktreeEditor.toastAfter, /Cannot read properties of null/);
+  await git(repo, ["checkout", "--", "small.c"]);
+  await evaluate(cdp, "refreshWorktree(false)");
+
   const scattered = await evaluate(cdp, `(async () => {
     const opened = await openCommitFileViewerLazy("scattered.c", "", ${JSON.stringify(head)});
     const result = {

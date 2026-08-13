@@ -9835,3 +9835,33 @@
 - `docs/CONTINUE.md`：把 v0.4.2 状态从发布准备更新为正式发布与本机验收完成，并保留后续版本和不可变标签边界。
 - `progress.md`：仅在末尾追加本轮正式发布、D 盘安装、设置页和退出验收证据。
 - 回滚方式：对本轮文档验收提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.2`、`v0.4.1`、`v0.4.0`，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。
+
+## 2026-08-13 - Task: 修复 Forkline 普通工作区文件无法查看并准备 v0.4.3
+
+### What was done
+
+- 通过工具函数红测和真实 Chromium 场景稳定复现普通工作区文件双击后出现 `Cannot read properties of null (reading 'ours')`，确认非冲突文件的合法 `conflictVersions: null` 被前端直接解引用是唯一根因。
+- 以最小改动让冲突版本归一化兼容显式 `null`，并将应用版本升至 `0.4.3`；未改变文件内容、Git 操作、冲突编辑、Web 菜单、便携版 Git 更新或 NSIS 更新语义。
+- 新增工具函数与真实浏览器回归，完成专项、完整自动测试、依赖审计、语法/差异检查和本机 NSIS 构建；本机 ASAR 已确认包含修复且与源码一致。
+- 保留 `v0.4.0`、`v0.4.1`、`v0.4.2` 不可变标签和受保护异常未跟踪文件，未执行破坏性 Git 清理或无差别暂存。
+
+### Testing
+
+- 文件编辑器与安装器契约专项 `36/36` 通过；完整 `npm.cmd test` 为 `342/342`，0 失败、0 跳过，耗时约 `105.9` 秒。真实 Chromium 回归确认普通工作区文件编辑窗打开、`conflict === false`、MergeView 正常且无原 TypeError。
+- `npm.cmd audit --audit-level=low` 为 0 个已知漏洞；`npm.cmd ls --depth=0` 正常，Electron `43.3.0`、electron-builder `26.15.3`、electron-updater `6.8.9` 均完整。
+- `node --check`、版本一致性、`git diff --check` 通过；`v0.4.0`、`v0.4.1`、`v0.4.2` 仍分别指向 `ba897f0d67a53b7c67437a4ae195c1447e211d53`、`7ccf2d145b8d78cc3c5b01c59dc2650dfd299df9`、`125e65b2efb38806b43a00e38613a63b63df86e7`。
+- 本机构建的 EXE 为 `100,684,036` 字节，文件/产品版本均为 `0.4.3`，SHA-256 `557b02835430ef1b489a7424a5f71c1f3ef40eda4b86d2b4540cdeac650532f5`，SHA-512 `Ur2w8Z+465eyhp4z8jvuzbEZTDGJzxL7FP4TisUD6i7vhWDqpepmB73NnL1RuDhCwk9eVfcGZd9QR/OoSSvSKA==`，签名状态 `NotSigned`。
+- blockmap 为 `105,574` 字节、SHA-256 `126077949fcc2b0224da88a53f623d98a06344a7e937b1c0d6332e08c05355bd`；`latest.yml` 为 `369` 字节、SHA-256 `9c2ee4710117029e452dc282b0de694aee5ae34e1038bdfeb0f50b20883ebde6`，其中版本、文件名、大小和 SHA-512 与 EXE 一致。
+- ASAR 内 `package.json` 版本为 `0.4.3`，入口为 `electron/main.js`，保留 `electron-updater ^6.8.9`；`file-editor-utils.js` 包含空值修复，并与源码在换行归一化后完全一致。
+- 官方 Electron CDN 首次本机构建连接后临时文件持续为 0 字节；终止已核实的本轮构建进程后，仅用 electron-builder 命令行临时指定现有 Electron 运行时成功构建，未改正式配置。受保护异常文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `public/js/features/file-editor-utils.js`：兼容 API 对普通文件返回的显式空冲突版本。
+- `tests/file-editor-ui.test.js`：增加 `null` 冲突版本的工具函数回归。
+- `tests/browser-performance.test.js`：增加真实 Chromium 双击普通工作区文件并打开编辑器的回归。
+- `package.json`、`package-lock.json`：发布版本同步为 `0.4.3`。
+- `tests/installer-package.test.js`：固定安装器发布版本契约为 `0.4.3`。
+- `docs/CONTINUE.md`、`docs/PACKAGING.md`：记录根因、边界、验证结果和发布续接点。
+- `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
+- 回滚方式：提交前只恢复本节列出的九个任务文件；提交后执行 `git revert <v0.4.3-release-commit>` 创建后续修复提交。不得移动既有标签，不得使用 `git clean`、`git add .` 或触碰受保护异常未跟踪文件。

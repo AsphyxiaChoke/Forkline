@@ -1144,3 +1144,11 @@
 - 设置页已联网确认“已是最新版本”，当前版本和最新版本均为 `v0.4.2`。通过窗口关闭按钮正常退出后，Forkline/Electron/后台服务进程和监听端口均为 0；最终现场保留可用的 `D:\Forkline` 安装版。
 - 文档验收提交前 `main` 与 `origin/main` 均为 `125e65b2efb38806b43a00e38613a63b63df86e7`；`v0.4.2`、`v0.4.1`、`v0.4.0` 标签分别保持在 `125e65b2`、`7ccf2d14`、`ba897f0d`。受保护异常未跟踪文件仍为 0 字节且未暂存、未提交。
 - 本任务已经闭环。后续发布必须创建新的提交和新版本，禁止移动既有标签；从已安装的 `v0.4.2` 起，后续 NSIS 应用内更新优先使用国内加速，源码克隆、Electron 源码版和 Web 便携版继续使用原 Git 快进更新。
+
+## 2026-08-13 Forkline v0.4.3 普通工作区文件查看修复准备
+
+- 已稳定复现安装版双击普通工作区文件时报错 `Cannot read properties of null (reading 'ours')`。后端对非冲突文件合法返回 `conflictVersions: null`，前端归一化函数却直接读取 `value.ours` 与 `value.theirs`，这是本次故障的唯一根因。
+- 修复只让冲突版本归一化兼容显式 `null`，不改变文件内容、Git 操作、冲突编辑、Web 菜单、源码/便携版 Git 快进更新或 NSIS 国内加速语义。应用版本升至 `0.4.3`，既有 `v0.4.0`、`v0.4.1`、`v0.4.2` 标签保持不动。
+- 新增工具函数回归和真实 Chromium 回归：制造普通工作区修改后双击文件行，确认编辑窗打开、`conflict === false`、MergeView 正常且不再出现该 TypeError。完整自动回归 `342/342` 通过，0 失败、0 跳过。
+- 本机构建生成 `Forkline-Setup-0.4.3-windows-x64.exe`：`100,684,036` 字节，SHA-256 `557b02835430ef1b489a7424a5f71c1f3ef40eda4b86d2b4540cdeac650532f5`，SHA-512 `Ur2w8Z+465eyhp4z8jvuzbEZTDGJzxL7FP4TisUD6i7vhWDqpepmB73NnL1RuDhCwk9eVfcGZd9QR/OoSSvSKA==`，签名状态为 `NotSigned`。ASAR 内版本为 `0.4.3`，修复文件与源码在换行归一化后完全一致。
+- 官方 Electron CDN 本机构建连接建立后下载持续为 0 字节；最终仅通过 electron-builder 命令行临时指定已安装的 Electron `43.3.0` 运行时完成离线验证，没有把本机路径或镜像写入正式配置。下一步为提交、推送并创建新的 `v0.4.3` Release，再验证正式六附件与现有 `D:\Forkline` v0.4.2 的软件内国内加速升级。

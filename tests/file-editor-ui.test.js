@@ -629,6 +629,17 @@ test("conflict file editor uses current, result, and incoming panes", () => {
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-3pane \.CodeMirror-merge-pane/);
 });
 
+test("ordinary worktree files accept null conflict versions from the API", () => {
+  const context = vm.createContext({});
+  vm.runInContext(editorUtils, context);
+
+  const normalized = vm.runInContext("normalizeFileEditorConflictVersions(null)", context);
+  assert.equal(normalized.ours.exists, false);
+  assert.equal(normalized.ours.content, "");
+  assert.equal(normalized.theirs.exists, false);
+  assert.equal(normalized.theirs.content, "");
+});
+
 test("two-pane file comparison shows clickable change markers beside both scrollbars", () => {
   assert.match(editorActions, /function observeFileEditorChangeMarkers\(/);
   assert.match(editorActions, /editor\.mergeView\.leftChunks\(\)/);

@@ -183,3 +183,11 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 安装后的 `app.asar` 版本为 `0.4.2`，保留 `electron-updater` 运行依赖并包含国内加速模块；主进程、preload、安装更新控制器和加速器与 `v0.4.2` 标签源码在换行归一化后逐字节一致。
 - 设置页联网显示“已是最新版本”，当前版本与最新版本均为 `v0.4.2`。通过窗口关闭按钮退出后，Forkline/Electron/后台服务进程和监听端口均为 0，D 盘安装、快捷方式、用户数据和卸载登记继续保留。
 - 当前没有 `v0.4.3`，因此本机没有伪造一次不存在的加速升级；软件内加速能力以自动专项、官方元数据 SHA-512、正式代理附件一致性和失败回退验证为依据。从已安装的 `v0.4.2` 开始，后续 NSIS 更新才优先使用国内加速，源码与便携版的 Git 更新语义不变。
+
+## v0.4.3 发布准备
+
+- `v0.4.3` 修复普通工作区文件的 API 合法返回 `conflictVersions: null` 时，前端文件编辑器读取 `ours` 导致无法打开文件的问题。修复不改变冲突文件、Git 或更新语义。
+- 工具函数回归、真实 Chromium 双击普通工作区文件回归和完整自动回归均通过；完整结果为 `342/342`，0 失败、0 跳过。
+- 本机 NSIS 产物 `Forkline-Setup-0.4.3-windows-x64.exe` 为 `100,684,036` 字节，SHA-256 `557b02835430ef1b489a7424a5f71c1f3ef40eda4b86d2b4540cdeac650532f5`；blockmap 为 `105,574` 字节，SHA-256 `126077949fcc2b0224da88a53f623d98a06344a7e937b1c0d6332e08c05355bd`。
+- 本机 `latest.yml` 为 `369` 字节，SHA-256 `9c2ee4710117029e452dc282b0de694aee5ae34e1038bdfeb0f50b20883ebde6`；版本、文件名、`100684036` 字节大小和 SHA-512 `Ur2w8Z+465eyhp4z8jvuzbEZTDGJzxL7FP4TisUD6i7vhWDqpepmB73NnL1RuDhCwk9eVfcGZd9QR/OoSSvSKA==` 与 EXE 一致。安装器仍为 `NotSigned`。
+- 本机离线验证只在命令行临时指定 `node_modules/electron/dist`，没有将本机路径或下载镜像写入 `package.json`。正式 Release 仍由 GitHub Windows runner 在不可变 `v0.4.3` 标签上重新测试和构建，正式附件以远端工作流产物为准。

@@ -9,8 +9,8 @@ function normalizeFileEditorContent(value) {
 
 function normalizeFileEditorConflictVersions(value = {}) {
   return {
-    ours: normalizeFileEditorConflictVersion(value.ours),
-    theirs: normalizeFileEditorConflictVersion(value.theirs),
+    ours: normalizeFileEditorConflictVersion(value?.ours),
+    theirs: normalizeFileEditorConflictVersion(value?.theirs),
   };
 }
 
