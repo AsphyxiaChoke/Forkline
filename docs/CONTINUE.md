@@ -1152,3 +1152,9 @@
 - 新增工具函数回归和真实 Chromium 回归：制造普通工作区修改后双击文件行，确认编辑窗打开、`conflict === false`、MergeView 正常且不再出现该 TypeError。完整自动回归 `342/342` 通过，0 失败、0 跳过。
 - 本机构建生成 `Forkline-Setup-0.4.3-windows-x64.exe`：`100,684,036` 字节，SHA-256 `557b02835430ef1b489a7424a5f71c1f3ef40eda4b86d2b4540cdeac650532f5`，SHA-512 `Ur2w8Z+465eyhp4z8jvuzbEZTDGJzxL7FP4TisUD6i7vhWDqpepmB73NnL1RuDhCwk9eVfcGZd9QR/OoSSvSKA==`，签名状态为 `NotSigned`。ASAR 内版本为 `0.4.3`，修复文件与源码在换行归一化后完全一致。
 - 官方 Electron CDN 本机构建连接建立后下载持续为 0 字节；最终仅通过 electron-builder 命令行临时指定已安装的 Electron `43.3.0` 运行时完成离线验证，没有把本机路径或镜像写入正式配置。下一步为提交、推送并创建新的 `v0.4.3` Release，再验证正式六附件与现有 `D:\Forkline` v0.4.2 的软件内国内加速升级。
+
+## 2026-08-13 Forkline v0.4.3 安装器工作流首轮诊断
+
+- Release 触发的安装器 Run `31676525204` 在自动测试阶段为 `341/342`，唯一失败是新增普通工作区文件回归固定要求一个 MergeView；共享 runner 上首次构建合法超过 `250 ms`，产品按既有保护自动切换为两个轻量 CodeMirror 窗格，因此断言得到 `0 !== 1`。同轮工具函数回归、文件打开状态、非冲突状态及其余测试均正常，尚未构建或上传安装器。
+- 回归现同时接受两种产品允许的正常结果：一个 MergeView，或慢构建保护产生的两个轻量 CodeMirror 窗格；仍必须确认普通文件已打开、`conflict === false` 且没有原 TypeError，未提高产品阈值、未跳过真实 Chromium 场景。
+- `v0.4.3` 注释标签继续固定在发布提交 `76fc807e94c9d4dd46afdb36721867180de4cd91`，不会移动。安装器工作流手动重跑时只借用默认分支修正后的浏览器测试，测试后恢复标签内容再构建，确保产品安装包仍来自不可变标签。

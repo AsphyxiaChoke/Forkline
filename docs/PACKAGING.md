@@ -191,3 +191,5 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 本机 NSIS 产物 `Forkline-Setup-0.4.3-windows-x64.exe` 为 `100,684,036` 字节，SHA-256 `557b02835430ef1b489a7424a5f71c1f3ef40eda4b86d2b4540cdeac650532f5`；blockmap 为 `105,574` 字节，SHA-256 `126077949fcc2b0224da88a53f623d98a06344a7e937b1c0d6332e08c05355bd`。
 - 本机 `latest.yml` 为 `369` 字节，SHA-256 `9c2ee4710117029e452dc282b0de694aee5ae34e1038bdfeb0f50b20883ebde6`；版本、文件名、`100684036` 字节大小和 SHA-512 `Ur2w8Z+465eyhp4z8jvuzbEZTDGJzxL7FP4TisUD6i7vhWDqpepmB73NnL1RuDhCwk9eVfcGZd9QR/OoSSvSKA==` 与 EXE 一致。安装器仍为 `NotSigned`。
 - 本机离线验证只在命令行临时指定 `node_modules/electron/dist`，没有将本机路径或下载镜像写入 `package.json`。正式 Release 仍由 GitHub Windows runner 在不可变 `v0.4.3` 标签上重新测试和构建，正式附件以远端工作流产物为准。
+
+`v0.4.3` Release 首次安装器 Run `31676525204` 为 `341/342`，唯一失败是共享 runner 上普通小文件的首次 MergeView 构建触发既有 `250 ms` 自动降级，而新增回归只接受 MergeView。修正后的测试接受 MergeView 或两个轻量 CodeMirror 窗格，但仍固定普通文件成功打开、非冲突状态和原 TypeError 不再出现；不会修改产品保护阈值或发布标签。手动重跑会临时借用默认分支修正测试，随后恢复不可变 `v0.4.3` 标签的测试文件再构建产品。

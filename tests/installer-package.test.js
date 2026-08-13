@@ -34,9 +34,9 @@ test("installer release workflow publishes updater metadata and checksums", () =
   assert.match(workflow, /release:\s*\r?\n\s*types:\s*\[published\]/);
   assert.match(workflow, /ref:\s*\$\{\{ steps\.release\.outputs\.tag \}\}/);
   assert.match(workflow, /npm\.cmd ci/);
-  assert.match(workflow, /name:\s*Use corrected v0\.4\.1 browser regression harness[\s\S]*?github\.event_name == 'workflow_dispatch' && steps\.release\.outputs\.tag == 'v0\.4\.1'[\s\S]*?git restore --source='\$\{\{ github\.sha \}\}' --worktree -- tests\/browser-performance\.test\.js/);
+  assert.match(workflow, /name:\s*Use corrected release browser regression harness[\s\S]*?github\.event_name == 'workflow_dispatch' && \(steps\.release\.outputs\.tag == 'v0\.4\.1' \|\| steps\.release\.outputs\.tag == 'v0\.4\.3'\)[\s\S]*?git restore --source='\$\{\{ github\.sha \}\}' --worktree -- tests\/browser-performance\.test\.js/);
   assert.match(workflow, /name:\s*Run automated tests[\s\S]*?TEMP:\s*\$\{\{ runner\.temp \}\}[\s\S]*?TMP:\s*\$\{\{ runner\.temp \}\}[\s\S]*?FORKLINE_BROWSER_PERFORMANCE_SCALE:\s*'3'[\s\S]*?npm\.cmd test/);
-  assert.match(workflow, /name:\s*Restore release-tag browser regression harness[\s\S]*?always\(\)[\s\S]*?git restore --worktree -- tests\/browser-performance\.test\.js/);
+  assert.match(workflow, /name:\s*Restore release-tag browser regression harness[\s\S]*?always\(\)[\s\S]*?steps\.release\.outputs\.tag == 'v0\.4\.3'[\s\S]*?git restore --worktree -- tests\/browser-performance\.test\.js/);
   assert.match(workflow, /npm\.cmd test/);
   assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY/);
   assert.match(workflow, /npm\.cmd run build:installer/);

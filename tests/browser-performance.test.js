@@ -943,6 +943,7 @@ test("real Chromium keeps historical file comparison responsive", {
       ),
       conflict: state.fileEditor?.conflict,
       mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+      codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
       toastBefore,
       toastAfter: document.querySelector("#toast")?.textContent?.trim() || "",
     };
@@ -952,7 +953,11 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(ordinaryWorktreeEditor.rowFound, true);
   assert.equal(ordinaryWorktreeEditor.opened, true);
   assert.equal(ordinaryWorktreeEditor.conflict, false);
-  assert.equal(ordinaryWorktreeEditor.mergeViews, 1);
+  assert.ok(
+    (ordinaryWorktreeEditor.mergeViews === 1 && ordinaryWorktreeEditor.codeMirrors >= 2) ||
+      (ordinaryWorktreeEditor.mergeViews === 0 && ordinaryWorktreeEditor.codeMirrors === 2),
+    `ordinary worktree editor rendered ${ordinaryWorktreeEditor.mergeViews} MergeViews and ${ordinaryWorktreeEditor.codeMirrors} CodeMirror panes`
+  );
   assert.doesNotMatch(ordinaryWorktreeEditor.toastAfter, /Cannot read properties of null/);
   await git(repo, ["checkout", "--", "small.c"]);
   await evaluate(cdp, "refreshWorktree(false)");

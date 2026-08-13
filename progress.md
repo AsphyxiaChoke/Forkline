@@ -9865,3 +9865,27 @@
 - `docs/CONTINUE.md`、`docs/PACKAGING.md`：记录根因、边界、验证结果和发布续接点。
 - `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
 - 回滚方式：提交前只恢复本节列出的九个任务文件；提交后执行 `git revert <v0.4.3-release-commit>` 创建后续修复提交。不得移动既有标签，不得使用 `git clean`、`git add .` 或触碰受保护异常未跟踪文件。
+
+## 2026-08-13 - Task: 修正 v0.4.3 安装器工作流的普通文件浏览器回归
+
+### What was done
+
+- 诊断正式安装器 Run `31676525204` 的唯一失败：共享 runner 上普通小文件首次 MergeView 构建触发既有慢构建保护，产品正确降级为两个轻量 CodeMirror 窗格，但新增测试只允许一个 MergeView。
+- 将回归收紧到真实业务结果：普通工作区文件必须成功打开、保持非冲突状态、没有原空值 TypeError，并允许 MergeView 或产品既有的轻量双栏两种正常渲染。
+- 扩展手动安装器工作流兼容路径，在不移动 `v0.4.3` 标签的前提下，测试阶段借用默认分支修正后的浏览器测试，测试后恢复标签内容再构建产品。
+
+### Testing
+
+- 与 GitHub 工作流一致的 `FORKLINE_BROWSER_PERFORMANCE_SCALE=3` 真实 Chromium 专项通过；本机严格 `1x` 首轮唯一失败是既有 4000 文件冷扫描 `407.8 ms` 超过 `350 ms`，未修改产品或门限，严格复跑以 `286.8 ms` 通过。两轮都已通过修正后的普通文件打开场景。
+- 最终完整 `npm.cmd test` 为 `342/342`，0 失败、0 跳过，耗时约 `109.5` 秒；其中 4000 文件冷扫描为 `326.4 ms`。安装器工作流契约随完整回归通过，`git diff --check` 在提交前复核。
+- 正式工作流仍需在 `v0.4.3@76fc807e94c9d4dd46afdb36721867180de4cd91` 上完成测试、恢复、构建和附件上传后才算通过。
+- 便携包 Run `31676525235` 已成功并上传 ZIP 与 SHA-256；安装器首轮未进入构建步骤，因此 Release 当时只有两个便携附件，没有把不完整发布误报为完成。
+
+### Notes
+
+- `tests/browser-performance.test.js`：允许普通文件编辑器的 MergeView 或合法轻量双栏渲染，同时保留原故障断言。
+- `.github/workflows/release-installer.yml`：让 `v0.4.3` 手动重跑借用并恢复修正后的浏览器测试。
+- `tests/installer-package.test.js`：固定兼容重跑与恢复契约。
+- `docs/CONTINUE.md`、`docs/PACKAGING.md`：记录首轮失败证据、产品/测试边界和不可变标签策略。
+- `progress.md`：仅在末尾追加本轮诊断、验证计划、文件清单和回滚信息。
+- 回滚方式：提交前只恢复本节列出的六个文件；提交后执行 `git revert <workflow-fix-commit>`。不得移动 `v0.4.3` 或其他既有标签，不得清理受保护异常未跟踪文件。
