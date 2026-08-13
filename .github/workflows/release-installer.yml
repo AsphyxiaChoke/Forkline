@@ -56,6 +56,7 @@ jobs:
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
+          FORKLINE_BROWSER_PERFORMANCE_SCALE: '3'
         run: npm.cmd test
 
       - name: Restore release-tag browser regression harness

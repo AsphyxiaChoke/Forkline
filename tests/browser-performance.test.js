@@ -22,6 +22,7 @@ const largeHistoryFeatureGroups = 10;
 const largeHistoryFeatureCommits = 50;
 const largeWorktreeFileCount = 4000;
 const cdpCommandTimeoutMs = 30000;
+const performanceBudgetScale = process.env.FORKLINE_BROWSER_PERFORMANCE_SCALE === "3" ? 3 : 1;
 const gitEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: nullConfig,
@@ -1602,7 +1603,7 @@ test("real Chromium keeps historical file comparison responsive", {
       fileTreeListenerAdds,
     };
   })()`);
-  assert.ok(worktreeMetrics.apiMs < 350, `large worktree cold API took ${worktreeMetrics.apiMs.toFixed(1)} ms`);
+  assert.ok(worktreeMetrics.apiMs < performanceBudget(350), `large worktree cold API took ${worktreeMetrics.apiMs.toFixed(1)} ms`);
   assert.equal(worktreeMetrics.warmLoadedFiles, 0);
   assert.equal(worktreeMetrics.warmUnchanged, true);
   assert.equal(worktreeMetrics.sameSnapshot, true);
@@ -1655,7 +1656,7 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(watchedWorktreeChange.fileCount, largeWorktreeFileCount);
   assert.notEqual(watchedWorktreeChange.snapshot, worktreeMetrics.worktreeSnapshot);
   assert.notEqual(watchedWorktreeChange.fileSnapshot, worktreeMetrics.watchedFileSnapshot);
-  assert.ok(watchedWorktreeChange.apiMs < 300, `single-file worktree refresh took ${watchedWorktreeChange.apiMs.toFixed(1)} ms after ${watchedWorktreeChange.attempts} attempts`);
+  assert.ok(watchedWorktreeChange.apiMs < performanceBudget(300), `single-file worktree refresh took ${watchedWorktreeChange.apiMs.toFixed(1)} ms after ${watchedWorktreeChange.attempts} attempts`);
   t.diagnostic(
     `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms/${worktreeMetrics.coldPayloadBytes} bytes, unchanged API median ${worktreeMetrics.warmApiMs.toFixed(1)} ms [${worktreeMetrics.warmApiSamples.map((value) => value.toFixed(1)).join(", ")}]/${worktreeMetrics.warmPayloadBytes} bytes, changed API ${watchedWorktreeChange.apiMs.toFixed(1)} ms/${watchedWorktreeChange.attempts} attempts, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, load-all ${worktreeMetrics.loadAllMs.toFixed(1)} ms/${worktreeMetrics.loadPasses} passes, load delay ${worktreeMetrics.loadMaxDelay.toFixed(1)} ms, pass ${worktreeMetrics.loadPassMetrics.map((item) => `${item.rows}:${item.dispatchMs.toFixed(1)}/${item.frameMs.toFixed(1)}`).join(", ")}, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, listener adds ${worktreeMetrics.fileTreeListenerAdds}, initial/final rows ${worktreeMetrics.initialRenderedRows}/${worktreeMetrics.loadedAllRows}, initial/final tree nodes ${worktreeMetrics.initialTreeNodes}/${worktreeMetrics.treeNodes}, initial/final page nodes ${worktreeMetrics.initialPageNodes}/${worktreeMetrics.pageNodes}`
   );
@@ -1772,9 +1773,9 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(switchMetrics.commit.count, 12);
   assert.equal(switchMetrics.stateRef.count, 0);
   assert.equal(switchMetrics.lightweightRef.count, 0);
-  assert.ok(switchMetrics.open.medianMs < 130, `repository switch open median took ${switchMetrics.open.medianMs.toFixed(1)} ms`);
-  assert.ok(switchMetrics.openDetails.medianMs < 150, `repository switch details median took ${switchMetrics.openDetails.medianMs.toFixed(1)} ms`);
-  assert.ok(switchMetrics.commit.medianMs < 100, `repository switch commit median took ${switchMetrics.commit.medianMs.toFixed(1)} ms`);
+  assert.ok(switchMetrics.open.medianMs < performanceBudget(130), `repository switch open median took ${switchMetrics.open.medianMs.toFixed(1)} ms`);
+  assert.ok(switchMetrics.openDetails.medianMs < performanceBudget(150), `repository switch details median took ${switchMetrics.openDetails.medianMs.toFixed(1)} ms`);
+  assert.ok(switchMetrics.commit.medianMs < performanceBudget(100), `repository switch commit median took ${switchMetrics.commit.medianMs.toFixed(1)} ms`);
   assert.equal(path.resolve(switchMetrics.finalRepo), path.resolve(alternateRepo));
 
   const editorSoak = await evaluate(cdp, `(async () => {
@@ -2230,4 +2231,8 @@ function appendLog(current, chunk) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function performanceBudget(milliseconds) {
+  return milliseconds * performanceBudgetScale;
 }

@@ -9725,3 +9725,29 @@
 - `docs/CONTINUE.md`：追加第二阶段诊断、当前验证结果与下一发布落点。
 - `progress.md`：仅在末尾追加本轮诊断、修复和验证证据。
 - 回滚方式：提交前仅对上述六个文件执行 `git restore --source=HEAD --worktree -- <file>`；提交后执行 `git revert <this-task-commit>`。不得使用整仓库清理，不得移动发布标签或触碰异常未跟踪文件。
+
+## 2026-08-13 - Task: 校准安装器共享 runner 的浏览器计时预算
+
+### What was done
+
+- 重跑安装器工作流 `31663491437`，确认修正后的 MergeView 正常交互与慢构建自动降级均已越过；兼容测试文件在失败后也按 `always()` 成功恢复，构建步骤没有执行。
+- 新的唯一失败为 GitHub 共享 Windows runner 上 4000 文件冷扫描 `816.4 ms`，而本机固定门限为 `350 ms`；同轮复杂编辑器、冲突编辑器和 Git 读取整体约比本机慢 2 到 3 倍，未出现功能、数据量、DOM 或 UI 卡顿断言失败。
+- 仅为安装器工作流设置白名单环境值 `FORKLINE_BROWSER_PERFORMANCE_SCALE=3`，测试代码只有在值恰好为 `3` 时缩放五个 Git/磁盘严格计时预算；默认开发与本机回归仍为原 `1x` 门限。
+- 未缩放功能结果、文件数、响应体、DOM 上限、UI 主线程延迟或自动降级断言；未修改产品代码、安装器内容、更新逻辑或发布标签。
+
+### Testing
+
+- Run `31663491437` 为 `335/336`，唯一失败证据为 `tests/browser-performance.test.js:1605` 的冷扫描 `816.4 ms`；测试后恢复步骤成功，构建、校验和附件上传均未执行。
+- 工作流契约 `2/2`、JavaScript 语法、YAML 结构和 `git diff --check` 通过。
+- `3x` 环境真实 Chromium 专项 `1/1` 通过，随后与工作流相同环境的完整回归 `336/336` 通过，0 项失败、0 项跳过，耗时约 `107.6` 秒。
+- 默认严格 `1x` 真实 Chromium 专项再次 `1/1` 通过；4000 文件冷扫描约 `287.9 ms`，继续满足原 `350 ms` 门限。
+
+### Notes
+
+- `.github/workflows/release-installer.yml`：为共享安装器 runner 显式设置三倍 Git/磁盘计时预算。
+- `tests/browser-performance.test.js`：加入严格白名单预算因子，并只应用到五个 Git/磁盘计时断言。
+- `tests/installer-package.test.js`：固定工作流必须显式声明三倍预算。
+- `docs/PACKAGING.md`：说明共享 runner 预算与本机严格门限的边界。
+- `docs/CONTINUE.md`：追加第三阶段失败证据、修复方式和下一验证点。
+- `progress.md`：仅在末尾追加本轮诊断、变更和验证证据。
+- 回滚方式：提交前仅恢复本节列出的六个文件增量；提交后执行 `git revert <this-task-commit>`。不得移动 `v0.4.1`、`v0.4.0` 或清理异常未跟踪文件。
