@@ -9928,3 +9928,30 @@
 - `docs/CONTINUE.md`：追加 v0.4.4 发布续接状态、真实记录和剩余远端验证。
 - `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
 - 回滚方式：提交前只恢复本节列出的 17 个任务文件；发布提交后执行 `git revert <v0.4.4-release-commit>` 创建后续修复提交。不得移动既有标签，不得使用 `git clean`、`git add .`，不得触碰受保护异常文件；如需恢复安装前用户数据，可先关闭 Forkline，再从上述备份目录按原路径复制回 `%APPDATA%\forkline`。
+
+## 2026-08-13 - Task: 完成 Forkline v0.4.4 正式发布与远端附件验收
+
+### What was done
+
+- 将发布提交推送到 `origin/main`，创建并推送固定指向该提交的注释标签 `v0.4.4`，发布 GitHub Release；没有移动或覆盖任何既有标签，也没有上传本机验证产物冒充正式附件。
+- 等待安装器与便携包两条 Release 工作流完成，确认它们均从不可变标签提交构建；重新取得并核对正式六附件、GitHub digest、两个校验文件、`latest.yml`、安装器版本与未签名状态。
+- 通过 `ghfast.top` 下载正式 EXE 和 blockmap，确认国内节点内容与 GitHub 官方附件一致；保留官方 Release 元数据和 SHA-512 作为信任根。
+- 最终保留 `D:\Forkline` v0.4.4 与 `4` 条稳定最近仓库记录，应用和后台服务均已退出；受保护异常未跟踪文件继续原样保留。
+
+### Testing
+
+- `main`、`origin/main` 和 `v0.4.4` 在发布时均解引用到 `21e66ccbe372d69f18b9761118c6da20088cb5b4`；远端注释标签对象为 `a18b1f5c23d99b4f462dedabd285f7b8798dadb0`。`v0.4.0` 至 `v0.4.3` 标签未移动。
+- Release <https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.4> 为 Latest、非草稿、非预发布。安装器 Run `31687442333` 与便携包 Run `31687442202` 均为 `success`，`headSha` 均为发布提交；安装器工作流自动测试为 `347/347`，0 失败、0 跳过，耗时约 `135.7` 秒。
+- 正式 EXE 为 `100,597,262` 字节、SHA-256 `3d3c893e7db8d3406c51a569b6a1fb94ecc859185f3caf26137ca1be149e5f12`；blockmap 为 `105,889` 字节、SHA-256 `acefb4b803110a3df74b46ed8198d5be7733086fcdc5a27bcea74b67d2e8d281`；便携 ZIP 为 `36,646,273` 字节、SHA-256 `6d13e5cfd1beda161561c2a657bd003ced732204324dfaaf2d140c9c41059222`。
+- EXE 校验文件、ZIP 校验文件和 `latest.yml` 分别为 `102`、`99`、`369` 字节，SHA-256 分别为 `84bbdf631c4e2ecfe0ec3c77558443aec5f03a4826f5cad38c514a6d32fa3319`、`ccb667f144342247c80b6555278e3fba179d510a85df1a36299b404bd44356df`、`167500b1669e2bb94be31b53e8ff3fa2321e58498314f49a884a3af9779d80a6`。六附件均匹配 GitHub digest，EXE/ZIP 均匹配各自校验文件。
+- `latest.yml` 的版本、文件名、`100597262` 字节大小及 SHA-512 `2dGtVBSwNffb8kHvGvNcxFom4l5rHf2/+An93NFu0cUfoaqdNxrNLOWSbHvsqOP/4O9JDyipIl3F4epxEDOq+w==` 与正式 EXE 一致；EXE 文件版本为 `0.4.4`、产品版本为 `0.4.4`，Authenticode 为 `NotSigned`。
+- 国内节点完整 EXE 与 blockmap 的大小和 SHA-256 均匹配官方附件；便携 ZIP 可正常列目录并包含 `.git`、`runtime`、源码、文档与启动脚本，继续保留 Web 便携版 Git 快进更新形态。
+- `D:\Forkline\Forkline.exe` 文件版本为 `0.4.4`、产品版本为 `0.4.4.0`，HKCU 卸载项为 `Forkline 0.4.4`；当前应用、Electron、后台服务进程和监听端口均为 0。稳定最近仓库 JSON 仍包含 `4` 条记录。
+- 文档提交前受保护异常文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.4 正式工作流、六附件、校验链、国内节点、未签名风险和最终安装状态。
+- `docs/CONTINUE.md`：把 v0.4.4 从发布准备更新为正式发布验收完成，并记录后续不可变标签边界。
+- `progress.md`：仅在末尾追加本轮发布操作、正式验收证据、文件清单和回滚方式。
+- 回滚方式：对本轮文档验收提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.4` 及任何既有标签，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。

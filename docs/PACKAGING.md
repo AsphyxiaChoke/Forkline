@@ -202,3 +202,14 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 本机 NSIS 安装器 `Forkline-Setup-0.4.4-windows-x64.exe` 为 `100,600,510` 字节，SHA-256 `22566fbc3b815df033d582627ab7fd21bd5cad8bce193f70ced7ae32a86948fe`，SHA-512 `xu8Por6RG4THQnBKFZK7WLBAU+QwbiMOj2t0uRYYh62Pbmc57rJyANC9WJe0vCeYoDZ8ykRZrzZ1cF/gPLSUPA==`，签名状态为 `NotSigned`。blockmap 为 `105,720` 字节、SHA-256 `8b2e89fb948687a9951e908e8de8594c57297632d2f37b67ee9353448c962275`；`latest.yml` 为 `369` 字节、SHA-256 `06f18a93ef228ef24e89b1425bab18869533ac6d78852e074cc0af620e46d24e`，版本、文件名、大小和 SHA-512 与 EXE 一致。
 - 本机从 v0.4.3 覆盖安装到 `D:\Forkline` 后迁移出 `4` 条真实最近仓库；服务端口从 `65214` 变为 `59745` 后，路径与分支集合仍完整。卸载移除了安装目录、桌面/开始菜单快捷方式和 HKCU 登记，同时稳定 JSON 的 SHA-256 保持 `bdb869af1e5c72933e77629e19217632ab24ca405be6ac538c527d56c7146922` 且仍有 `4` 条记录；重新安装后版本、登记、快捷方式、仓库恢复和退出无残留均通过，最终保留 `D:\Forkline` v0.4.4。
 - 本地 `win-unpacked` 和最终安装目录的 ASAR 均为 `0.4.4`，入口为 `electron/main.js`，保留 `electron-updater ^6.8.9`；稳定存储模块与源码在换行归一化后完全一致。正式 Release 仍必须由不可变 `v0.4.4` 标签触发两条 Windows 工作流，远端附件需重新下载并校验；本机产物不能替代正式工作流产物。
+
+## v0.4.4 正式发布验收
+
+- Release：[Forkline v0.4.4](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.4) 为 Latest，且不是草稿或预发布版本；不可移动的注释标签 `v0.4.4` 固定指向发布提交 `21e66ccbe372d69f18b9761118c6da20088cb5b4`。
+- 安装器工作流：[GitHub Actions 31687442333](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31687442333)；便携包工作流：[GitHub Actions 31687442202](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31687442202)。两条工作流均在 `v0.4.4` 标签提交上成功，安装器工作流完整自动回归为 `347/347`，0 失败、0 跳过。
+- `Forkline-Setup-0.4.4-windows-x64.exe`：`100,597,262` 字节，SHA-256 `3d3c893e7db8d3406c51a569b6a1fb94ecc859185f3caf26137ca1be149e5f12`；`Forkline-Setup-0.4.4-windows-x64.exe.blockmap`：`105,889` 字节，SHA-256 `acefb4b803110a3df74b46ed8198d5be7733086fcdc5a27bcea74b67d2e8d281`。
+- `Forkline-Setup-0.4.4-windows-x64.exe.sha256`：`102` 字节，SHA-256 `84bbdf631c4e2ecfe0ec3c77558443aec5f03a4826f5cad38c514a6d32fa3319`；`Forkline-v0.4.4-windows-x64.zip`：`36,646,273` 字节，SHA-256 `6d13e5cfd1beda161561c2a657bd003ced732204324dfaaf2d140c9c41059222`；ZIP 校验文件为 `99` 字节，SHA-256 `ccb667f144342247c80b6555278e3fba179d510a85df1a36299b404bd44356df`。
+- `latest.yml`：`369` 字节，SHA-256 `167500b1669e2bb94be31b53e8ff3fa2321e58498314f49a884a3af9779d80a6`；版本 `0.4.4`、文件名、`100597262` 字节大小和 SHA-512 `2dGtVBSwNffb8kHvGvNcxFom4l5rHf2/+An93NFu0cUfoaqdNxrNLOWSbHvsqOP/4O9JDyipIl3F4epxEDOq+w==` 均与正式 EXE 一致。
+- 六个正式附件的本机 SHA-256 与 GitHub digest 全部一致，EXE/ZIP 也分别匹配各自校验文件；便携 ZIP 已检查包含 `.git`、`runtime`、源码、文档和启动脚本，继续保留现有 Git 快进更新形态。
+- `ghfast.top` 下载的正式 EXE 和 blockmap 分别与官方附件逐字节校验一致；正式 EXE 文件版本为 `0.4.4`、产品版本为 `0.4.4`，Authenticode 状态为 `NotSigned`。发布说明已明确“未知发布者”和 SmartScreen 风险，用户仍应只信任官方 Release 元数据与校验值。
+- 最终本机保留 `D:\Forkline` v0.4.4，当前无 Forkline/Electron/后台服务进程或监听端口；HKCU 卸载项为 `Forkline 0.4.4`。稳定最近仓库文件仍含 `4` 条迁移记录，软件重启或后续更新不会再因随机回环端口变化而读取到空列表。

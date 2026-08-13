@@ -1167,3 +1167,13 @@
 - v0.4.4 已在 `D:\Forkline` 完成覆盖安装、普通文件打开、正常退出、快捷方式、HKCU 卸载登记、卸载保留用户数据和重装终验。最终安装版文件/产品版本为 `0.4.4`，稳定 JSON 保留 `4` 条记录；退出后 Forkline 进程和监听端口均为 0。
 - 最终完整自动回归为 `347/347`，0 失败、0 跳过。本机安装器 SHA-256 为 `22566fbc3b815df033d582627ab7fd21bd5cad8bce193f70ced7ae32a86948fe`，签名状态 `NotSigned`；正式附件仍以不可变 `v0.4.4` 标签触发的 GitHub 工作流为准。
 - 下一步只剩精准暂存本轮文件、提交并推送 `main`、创建新的注释标签和正式 Release、等待安装器及便携包工作流成功，再重新下载六个附件核对 GitHub digest、校验文件、`latest.yml` 和未签名风险。不得移动 `v0.4.3` 或其他既有标签，不得清理或暂存受保护异常文件 `n+fs.statSync(p.join('public'`。
+
+## 2026-08-13 Forkline v0.4.4 正式发布验收完成
+
+- 发布提交 `21e66ccbe372d69f18b9761118c6da20088cb5b4` 已推送，注释标签 `v0.4.4` 固定指向该提交；正式 Release <https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.4> 为 Latest，且不是草稿或预发布版本。
+- 安装器工作流 `31687442333` 与便携包工作流 `31687442202` 均在 `v0.4.4@21e66cc` 上成功。安装器工作流完整自动回归为 `347/347`，0 失败、0 跳过，随后构建并上传未签名 Windows x64 NSIS 安装器。
+- 正式 EXE 为 `100,597,262` 字节、SHA-256 `3d3c893e7db8d3406c51a569b6a1fb94ecc859185f3caf26137ca1be149e5f12`；blockmap 为 `105,889` 字节、SHA-256 `acefb4b803110a3df74b46ed8198d5be7733086fcdc5a27bcea74b67d2e8d281`；便携 ZIP 为 `36,646,273` 字节、SHA-256 `6d13e5cfd1beda161561c2a657bd003ced732204324dfaaf2d140c9c41059222`。
+- 两个校验文件和 `latest.yml` 的 GitHub digest、本机 SHA-256 均一致；`latest.yml` 记录的版本、文件名、大小和 SHA-512 `2dGtVBSwNffb8kHvGvNcxFom4l5rHf2/+An93NFu0cUfoaqdNxrNLOWSbHvsqOP/4O9JDyipIl3F4epxEDOq+w==` 与正式 EXE 一致。正式安装器为 `NotSigned`，Release 已标注未知发布者和 SmartScreen 风险。
+- `ghfast.top` 下载的正式 EXE 和 blockmap 与 GitHub 官方附件校验一致，证明安装版白名单加速可取得同一内容；官方 `latest.yml` 与 SHA-512 仍是信任根，失败回退和用户取消边界继续由既有自动测试固定。
+- 最终现场继续保留 `D:\Forkline` v0.4.4，HKCU 卸载登记正确，当前无应用或后台服务残留。`%APPDATA%\forkline\desktop-recent-repositories.json` 仍保存 `4` 条真实仓库记录。
+- 本任务已经闭环。后续改动必须创建新提交和新版本，禁止移动 `v0.4.4` 或任何既有标签；受保护异常未跟踪文件继续原样保留，不得清理、暂存或提交。
