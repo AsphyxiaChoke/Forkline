@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require("electron");
-const { autoUpdater } = require("electron-updater");
+const electronUpdater = require("electron-updater");
 const { fork } = require("node:child_process");
 const http = require("node:http");
 const net = require("node:net");
@@ -24,6 +24,7 @@ const { createRendererDraftStore } = require("./renderer-draft-store");
 const { createRepositoryOpenCoordinator } = require("./repository-open-coordinator");
 const { reportElectronUpdateReady } = require("./self-update-health");
 const { createInstallerUpdateController } = require("./installer-update-controller");
+const { createForklineAutoUpdater } = require("./installer-update-accelerator");
 const { shutdownServerProcess } = require("./server-process-shutdown");
 const { findStartupRepository } = require("./startup-repository");
 
@@ -51,6 +52,7 @@ let rendererWasUnresponsive = false;
 let rendererRecoveryRiskSignature = "";
 let selfUpdateQuitRequested = false;
 let installerUpdateController = null;
+const autoUpdater = process.platform === "win32" ? createForklineAutoUpdater() : electronUpdater.autoUpdater;
 const rendererDraftStore = createRendererDraftStore();
 
 const repositoryOpenCoordinator = createRepositoryOpenCoordinator({

@@ -9776,3 +9776,34 @@
 - `docs/CONTINUE.md`：追加最终发布状态、不可变标签、D 盘现场以及后续国内更新加速的安全边界。
 - `progress.md`：仅在末尾追加本轮发布验收证据。
 - 回滚方式：对本轮文档提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.1`、`v0.4.0`，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。
+
+## 2026-08-13 - Task: 为 Forkline v0.4.2 安装版加入国内更新加速
+
+### What was done
+
+- 将应用版本升至 `0.4.2`，保持源码克隆、Electron 源码版和 Web 便携版的 Git 快进更新不变；仅为打包后的 Windows NSIS 安装版接入可单测的自定义更新器。
+- 安装版继续从 GitHub 官方 Release 获取版本和 `latest.yml`，只把与版本严格匹配的 Forkline Windows x64 EXE 与 blockmap 改写到 `https://ghfast.top/`；渲染页仍只能使用固定受限 IPC，不能传入镜像、URL 或可执行文件路径。
+- 加速节点失败或代理内容未通过官方 SHA-512 校验时，沿用 `electron-updater` 的失败缓存清理，再禁用差分下载并回退 GitHub 官方完整 EXE；用户主动取消下载时不回退。安装前仍先检查 Git 操作，再优雅停止后台服务和它持有的 Git/SSH 子进程。
+- 补充用户、Electron、打包与续接文档，明确 `v0.4.1` 首次升级 `v0.4.2` 仍走官方源；安装 `v0.4.2` 后的后续安装版应用内更新才启用国内加速，并继续如实标注未签名风险。
+
+### Testing
+
+- 加速器专项 `5/5` 通过；其中真实 `ForklineNsisUpdater` 回归会先写入失败的代理临时文件，确认 `electron-updater` 清理后按顺序请求代理 URL 与官方 URL，并最终落盘通过官方 SHA-512 的安装器。Electron/安装器相关专项 `47/47` 通过。
+- 完整回归最终 `341/341` 通过，0 项失败、0 项跳过，耗时约 `104.8` 秒。首轮唯一失败是既有 4000 文件冷扫描 `351.9 ms` 比默认 `350 ms` 门限多 `1.9 ms`；未修改代码或门限，默认 `1x` 专项复跑为 `302.8 ms`，最终全量为 `299.5 ms`。
+- `node --check`、`git diff --check`、版本一致性和 Release 工作流 YAML 解析通过；`npm.cmd audit --audit-level=low` 为 0 个已知漏洞，`npm.cmd ls --depth=0` 正常。
+- 本机构建生成 `Forkline-Setup-0.4.2-windows-x64.exe`：`100,683,918` 字节，文件/产品版本均为 `0.4.2`，SHA-256 `c0515e225c1c644a9832756899fd435b5baf54819a1137fcab56a994b4cc8009`，SHA-512 `yjizj0Z98Tpsj7wJTgeE5aLuK3M/ZLcPLLxNMI8OGvy/Z+T/gc7XHguICKZ1hLoF4aBdL0ZNsBBlsu0s1TXQCg==`，签名状态 `NotSigned`。
+- blockmap 为 `105,652` 字节、SHA-256 `ba009299e9eea589d17986b4e9058138be21d488c701300e3fb4a8d34467e32e`；`latest.yml` 为 `369` 字节、SHA-256 `d0dbe0c6dc6586c891a6c4ec69a8068722cf40e31160f5eaa77c047a797362f3`，其版本、文件名、大小和 SHA-512 与 EXE 一致。
+- ASAR 内 Electron 主进程、加速器、安装更新控制器和 preload 与源码逐字节一致；打包后的 `package.json` 保留 `0.4.2`、`electron/main.js` 和 `electron-updater` 运行依赖，只按 electron-builder 预期移除脚本、开发依赖与构建配置。
+- `ghfast.top` 对正式 v0.4.1 安装器资产的 `0-1023` 字节范围请求返回 `206 Partial Content`，总大小 `100594372` 与官方附件一致；代理完整 v0.4.2 附件和 SHA-512 需在 Release 工作流上传后复核。
+- 测试后更新器临时目录、Forkline 仓库 Node/Electron 进程和常用测试端口均为 0。受保护异常文件 `n+fs.statSync(p.join('public'` 仍为 0 字节，SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `electron/installer-update-accelerator.js`：新增白名单下载改写、取消识别、官方完整下载回退和自定义 NSIS updater。
+- `electron/main.js`：Windows 安装版改用自定义 updater，其他平台继续使用原 updater。
+- `tests/installer-update-accelerator.test.js`：覆盖白名单、官方校验信息保留、真实失败缓存清理与官方回退、取消和非白名单边界。
+- `tests/electron-shell.test.js`、`tests/installer-package.test.js`：固定主进程接线与 `0.4.2` 打包契约。
+- `package.json`、`package-lock.json`：发布版本同步为 `0.4.2`。
+- `README.md`、`docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`：记录用户更新方式、信任边界、发布验证和续接状态。
+- `progress.md`：仅在末尾追加本轮实现、验证、文件清单和回滚信息。
+- 回滚方式：提交前仅恢复本节列出的源码、测试、版本和文档文件；提交后执行 `git revert <v0.4.2-release-commit>` 创建后续修复提交。不得移动 `v0.4.0` 或 `v0.4.1` 标签，不得使用 `git clean`、`git add .` 或触碰受保护异常文件。

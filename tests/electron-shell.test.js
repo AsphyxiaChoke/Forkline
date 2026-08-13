@@ -70,6 +70,7 @@ test("Electron exposes only fixed installer-update IPC and preserves source upda
   const settings = read("public/js/panels/settings.js");
 
   assert.equal(typeof createInstallerUpdateController, "function");
+  assert.match(main, /createForklineAutoUpdater/);
   assert.match(main, /supported:\s*app\.isPackaged && process\.platform === "win32"/);
   assert.match(main, /prepareInstall:\s*prepareInstallerInstall/);
   assert.match(main, /requestJson\(`\$\{serverUrl\}\/api\/operations`\)[\s\S]*?runningOperations\?\.length[\s\S]*?Forkline 还有操作正在执行，请等待完成后再更新。/);

@@ -108,7 +108,9 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 只有打包后的 Windows NSIS 版本启用 `electron-updater`；开发态和其他平台返回不支持，并继续使用原 Git 更新路径。
 - 不自动下载，不静默安装。用户在设置页点击“立即更新并重启”后才下载。
 - 安装前必须确认没有 Git 操作仍在执行，再优雅停止 Forkline 后台服务以及它持有的 Git/SSH 子进程；操作繁忙、停机超时或失败时取消安装。
-- 安装器下载地址由 GitHub provider 固定生成，渲染进程不能提供任意 URL 或可执行文件路径。
+- GitHub provider 仍从官方 Release 读取 `latest.yml`，由官方元数据决定版本和 SHA-512。`v0.4.2` 起只把与版本严格匹配的 `AsphyxiaChoke/Forkline` Windows x64 EXE 和 blockmap 改写到 `https://ghfast.top/`；其他仓库、协议、主机、文件名和资产类型均不改写。
+- 加速下载沿用官方元数据中的 SHA-512。节点失败或内容校验失败时，`electron-updater` 先清理失败缓存，再关闭差分下载并回退 GitHub 官方完整 EXE；用户取消下载时不回退。渲染进程不能提供任意 URL、镜像或可执行文件路径。
+- `v0.4.1` 的 GitHub provider 会直接生成官方资产 URL，且该版本中没有加速控制器。因此首次从 `v0.4.1` 升级 `v0.4.2` 仍走官方源；安装 `v0.4.2` 后的后续安装版更新才启用国内加速。
 
 ### 发布验证
 
@@ -117,6 +119,7 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 本机验证当前用户安装、目录选择、桌面/开始菜单快捷方式、启动、版本显示、后台服务退出和卸载。
 - `Get-AuthenticodeSignature` 应如实记录签名状态；未签名版本不得写成已受信任。
 - Release 工作流完成后重新下载全部附件，校验安装器 SHA-256 与 `.sha256` 内容一致，并核对 `latest.yml` 的版本、文件名、大小和 SHA-512。
+- 通过加速 URL 下载正式 EXE 与 blockmap，确认响应对应白名单资产，并按官方 `latest.yml` 的 SHA-512 复核 EXE；再验证代理失败会回退官方完整下载、用户取消不会回退。
 
 ## v0.3.0 实际产物
 
