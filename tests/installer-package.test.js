@@ -34,6 +34,7 @@ test("installer release workflow publishes updater metadata and checksums", () =
   assert.match(workflow, /release:\s*\r?\n\s*types:\s*\[published\]/);
   assert.match(workflow, /ref:\s*\$\{\{ steps\.release\.outputs\.tag \}\}/);
   assert.match(workflow, /npm\.cmd ci/);
+  assert.match(workflow, /name:\s*Run automated tests[\s\S]*?TEMP:\s*\$\{\{ runner\.temp \}\}[\s\S]*?TMP:\s*\$\{\{ runner\.temp \}\}[\s\S]*?npm\.cmd test/);
   assert.match(workflow, /npm\.cmd test/);
   assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY/);
   assert.match(workflow, /npm\.cmd run build:installer/);

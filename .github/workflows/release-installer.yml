@@ -48,6 +48,9 @@ jobs:
         run: npm.cmd ci
 
       - name: Run automated tests
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: npm.cmd test
 
       - name: Build unsigned Windows x64 installer

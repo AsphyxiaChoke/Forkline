@@ -9674,3 +9674,28 @@
 - `progress.md`：仅在末尾追加本轮卸载与重装实机闭环证据。
 - 最终现场保留 `D:\Forkline` 当前用户安装版；未删除 Codex 私有目录中的既有测试快捷方式，避免超出本轮安装与卸载目标范围。
 - 回滚方式：仅反向恢复 `docs/CONTINUE.md` 中本轮验收状态文字并删除 `progress.md` 末尾本节；不得卸载最终保留的 D 盘应用、清理用户数据或触碰异常未跟踪文件。提交后应使用 `git revert <v0.4.1-release-commit>` 创建后续修复提交，不得移动任何已发布标签。
+
+## 2026-08-13 - Task: 修复 v0.4.1 安装器工作流的 Windows 临时路径别名
+
+### What was done
+
+- 保留已经推送的 `v0.4.1` 注释标签和正式 Release，不移动、不覆盖既有发布提交；确认 Web 便携包工作流成功，安装器工作流首次运行只在自动测试阶段失败，尚未生成安装器附件。
+- 从失败日志收敛根因：GitHub Windows runner 的默认临时目录以 `RUNNER~1` 8.3 短路径传给测试，而 Git 返回同一目录的 `runneradmin` 长路径，导致自更新根目录检查和仓库请求上下文保护把同一物理目录误判为不同路径。
+- 只在安装器工作流的自动测试步骤把 `TEMP` 与 `TMP` 固定为 GitHub `runner.temp`，不修改安装器、更新控制器或产品运行时路径语义；加入契约测试固定该 CI 边界。
+- 计划在修复提交推送后通过 `workflow_dispatch` 输入不可变标签 `v0.4.1` 重新运行安装器工作流，成功后再下载并核验全部 Release 附件。
+
+### Testing
+
+- 首次安装器工作流 `31661242135` 的失败日志确认 `36` 项失败，重复证据为请求路径 `C:\Users\RUNNER~1\AppData\Local\Temp\...` 与服务端路径 `C:/Users/runneradmin/AppData/Local/Temp/...`；构建、校验和附件上传步骤均被跳过。
+- Web 便携包工作流 `31661242086` 成功完成，已上传 `Forkline-v0.4.1-windows-x64.zip` 与对应 SHA256 文件。
+- 新增契约在发布提交的旧工作流内容上红测确认不匹配，修复后 `tests/installer-package.test.js` 为 `2/2` 通过；Release 工作流 YAML 结构化解析和 `git diff --check` 通过。
+- 修复后完整 `npm.cmd test` 再次 `336/336` 通过，0 项失败、0 项跳过，耗时约 `116.9` 秒；重新调度结果将在修复提交推送后补充，未把尚未重跑的安装器工作流记录为成功。
+
+### Notes
+
+- `.github/workflows/release-installer.yml`：仅为自动测试步骤固定 GitHub runner 的长路径临时目录。
+- `tests/installer-package.test.js`：固定安装器工作流必须显式设置 `TEMP` 与 `TMP` 为 `runner.temp`。
+- `docs/PACKAGING.md`：说明 CI 临时路径别名及其与正式运行时边界的区别。
+- `docs/CONTINUE.md`：记录首次失败证据、不可变标签边界和既有标签重跑方案。
+- `progress.md`：仅在末尾追加本轮诊断与修复记录。
+- 回滚方式：对本轮工作流修复提交执行 `git revert <workflow-fix-commit>`；不得移动 `v0.4.1` 或 `v0.4.0` 标签，也不得删除已上传的便携包附件。异常未跟踪文件仍须保持未暂存、未提交。

@@ -99,6 +99,8 @@ npm.cmd run build:installer
 
 `.github/workflows/release-installer.yml` 在正式 Release 发布后签出不可变 Tag，校验 Tag 与 `package.json` 版本一致，在 Windows x64 runner 上执行完整自动回归，再构建未签名 NSIS 安装器、生成 SHA-256，并把安装器、blockmap、校验文件和 `latest.yml` 附加到同一个 Release。
 
+GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git 会返回同一目录的长路径。安装器工作流只在自动测试步骤把 `TEMP` 与 `TMP` 固定为 `${{ runner.temp }}`，避免测试夹具把同一物理仓库误判为不同路径；正式安装器配置和运行时路径处理不受此 CI 设置影响。
+
 安装器当前没有代码签名。Release 说明必须明确“未知发布者”和 SmartScreen 风险，并要求用户只从官方 Release 下载和核验 SHA-256。
 
 ### 更新边界
