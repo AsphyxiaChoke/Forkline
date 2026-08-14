@@ -535,6 +535,51 @@ test("desktop repository handoff waits for startup and keeps the latest pending 
   assert.deepEqual(opened, ["D:\\RepoB", "D:\\RepoC"]);
 });
 
+test("desktop preference persistence failures show a user-facing warning", async () => {
+  let failureHandler = null;
+  let beforeUnloadHandler = null;
+  let stopped = false;
+  const messages = [];
+  const context = vm.createContext({
+    window: {
+      Forkline: {},
+      ForklinePreferenceStorage: {
+        init: async () => true,
+        onPersistenceFailure(handler) {
+          failureHandler = handler;
+          return () => { stopped = true; };
+        },
+      },
+      addEventListener(type, handler) {
+        if (type === "beforeunload") beforeUnloadHandler = handler;
+      },
+    },
+    state: {},
+    defaultRecoveryPolicy: () => ({}),
+    initializeUiDiagnostics: () => {},
+    initLocale: async () => {},
+    initRecentRepoStorage: async () => {},
+    initTheme: () => {},
+    initLayoutResizers: () => {},
+    initCommandHints: () => {},
+    initWorktreeAutoRefresh: () => {},
+    updateAmendMode: () => {},
+    init: async () => {},
+    restoreDesktopRecoveryDraft: async () => false,
+    toast: (message) => messages.push(message),
+    t: (message) => message,
+  });
+
+  vm.runInContext(bootstrapSource, context);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof failureHandler, "function");
+  failureHandler({ key: "forkline-theme", operation: "write" });
+  assert.deepEqual(messages, ["本机偏好保存失败，本次更改不会在重启后保留。"]);
+
+  beforeUnloadHandler();
+  assert.equal(stopped, true);
+});
+
 test("opening a repository refreshes only selected branch history", async () => {
   const start = repositoriesSource.indexOf("async function applyOpenedRepoData");
   const end = repositoriesSource.indexOf("\nfunction clearOpenedRepoState", start);

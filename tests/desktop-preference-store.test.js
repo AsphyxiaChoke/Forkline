@@ -51,6 +51,33 @@ test("desktop preference store keeps only bounded allowlisted string values", (t
   });
 });
 
+test("desktop preference store keeps the last valid file when a replacement write is interrupted", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forkline-desktop-preference-atomic-"));
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+  const filePath = path.join(tempRoot, "desktop-ui-preferences.json");
+  writeDesktopPreferenceStore(filePath, { "forkline-theme": "forest" });
+  const originalContent = fs.readFileSync(filePath, "utf8");
+  const originalWriteFileSync = fs.writeFileSync;
+
+  fs.writeFileSync = function interruptedWrite(target, content, options) {
+    originalWriteFileSync(target, String(content).slice(0, 4), options);
+    const error = new Error("injected desktop preference write failure");
+    error.code = "EIO";
+    throw error;
+  };
+  try {
+    assert.throws(
+      () => writeDesktopPreferenceStore(filePath, { "forkline-theme": "graphite" }),
+      /injected desktop preference write failure/,
+    );
+  } finally {
+    fs.writeFileSync = originalWriteFileSync;
+  }
+
+  assert.equal(fs.readFileSync(filePath, "utf8"), originalContent);
+  assert.deepEqual(fs.readdirSync(tempRoot), ["desktop-ui-preferences.json"]);
+});
+
 test("legacy desktop preferences choose the uniquely newest business-time snapshot", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forkline-desktop-preference-migration-"));
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));

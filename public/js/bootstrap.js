@@ -3,6 +3,7 @@ let desktopRepositoryOpenReady = false;
 let desktopRepositoryOpenBusy = false;
 let pendingDesktopRepository = "";
 let stopInstallerUpdateState = null;
+let stopDesktopPreferenceFailures = null;
 
 async function flushDesktopRepositoryOpen() {
   if (!desktopRepositoryOpenReady || desktopRepositoryOpenBusy || !pendingDesktopRepository) return;
@@ -36,6 +37,15 @@ function initDesktopInstallerUpdates() {
   window.addEventListener("beforeunload", () => stopInstallerUpdateState?.(), { once: true });
 }
 
+function initDesktopPreferenceFailures() {
+  const preferenceStorage = window.ForklinePreferenceStorage;
+  if (typeof preferenceStorage?.onPersistenceFailure !== "function") return;
+  stopDesktopPreferenceFailures = preferenceStorage.onPersistenceFailure(() => {
+    toast(t("本机偏好保存失败，本次更改不会在重启后保留。"));
+  });
+  window.addEventListener("beforeunload", () => stopDesktopPreferenceFailures?.(), { once: true });
+}
+
 async function startForkline() {
   await window.ForklinePreferenceStorage?.init?.();
   initializeUiDiagnostics();
@@ -55,5 +65,6 @@ async function startForkline() {
 
 initDesktopRepositoryOpen();
 initDesktopInstallerUpdates();
+initDesktopPreferenceFailures();
 window.Forkline.start = startForkline;
 startForkline().catch((error) => toast(error.message));

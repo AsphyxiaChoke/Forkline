@@ -2,9 +2,60 @@
 (function initializeDesktopPreferenceStorage(root) {
   const browserStorage = root.localStorage;
   let desktopValues = null;
+  let confirmedDesktopValues = null;
+  const desktopMutationVersions = new Map();
+  const desktopMutationQueues = new Map();
+  const persistenceFailureHandlers = new Set();
 
   function desktopBridge() {
     return root.forklineDesktop;
+  }
+
+  function persistDesktopMutation(key, operationName, operation, nextValue) {
+    const version = (desktopMutationVersions.get(key) || 0) + 1;
+    desktopMutationVersions.set(key, version);
+    const pending = (desktopMutationQueues.get(key) || Promise.resolve()).then(async () => {
+      let saved = false;
+      try {
+        saved = await operation();
+      } catch {}
+      if (saved === true) {
+        confirmDesktopValue(key, nextValue);
+        return;
+      }
+      if (desktopMutationVersions.get(key) !== version) return;
+      restoreDesktopValue(key, confirmedDesktopValue(key));
+      reportPersistenceFailure(key, operationName);
+    });
+    desktopMutationQueues.set(key, pending);
+  }
+
+  function confirmDesktopValue(key, value) {
+    if (value === null) delete confirmedDesktopValues[key];
+    else confirmedDesktopValues[key] = value;
+  }
+
+  function confirmedDesktopValue(key) {
+    return Object.hasOwn(confirmedDesktopValues, key) ? confirmedDesktopValues[key] : null;
+  }
+
+  function restoreDesktopValue(key, value) {
+    if (value === null) delete desktopValues[key];
+    else desktopValues[key] = value;
+  }
+
+  function reportPersistenceFailure(key, operation) {
+    for (const handler of persistenceFailureHandlers) {
+      try {
+        handler({ key, operation });
+      } catch {}
+    }
+  }
+
+  function onPersistenceFailure(handler) {
+    if (typeof handler !== "function") return () => {};
+    persistenceFailureHandlers.add(handler);
+    return () => persistenceFailureHandlers.delete(handler);
   }
 
   const storage = {
@@ -19,7 +70,7 @@
       }
       const storedValue = String(value);
       desktopValues[key] = storedValue;
-      Promise.resolve(desktopBridge()?.writePreference?.(key, storedValue)).catch(() => {});
+      persistDesktopMutation(key, "write", () => desktopBridge()?.writePreference?.(key, storedValue), storedValue);
     },
     removeItem(key) {
       if (desktopValues === null) {
@@ -27,7 +78,7 @@
         return;
       }
       delete desktopValues[key];
-      Promise.resolve(desktopBridge()?.removePreference?.(key)).catch(() => {});
+      persistDesktopMutation(key, "remove", () => desktopBridge()?.removePreference?.(key), null);
     },
   };
 
@@ -37,12 +88,14 @@
     try {
       const value = await readPreferences();
       desktopValues = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+      confirmedDesktopValues = { ...desktopValues };
       return true;
     } catch {
       desktopValues = {};
+      confirmedDesktopValues = {};
       return false;
     }
   }
 
-  root.ForklinePreferenceStorage = { init, storage };
+  root.ForklinePreferenceStorage = { init, onPersistenceFailure, storage };
 })(window);

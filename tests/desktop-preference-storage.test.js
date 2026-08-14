@@ -52,6 +52,98 @@ test("web preference storage keeps using the current origin localStorage", async
   assert.equal(browserValues.get("forkline-theme"), "contrast");
 });
 
+test("desktop preference storage rolls back changes rejected by persistent storage", async () => {
+  const bridge = {
+    readPreferences: async () => ({
+      "forkline-theme": "forest",
+      "forkline-locale": "en",
+    }),
+    writePreference: async () => false,
+    removePreference: async () => {
+      throw new Error("disk unavailable");
+    },
+  };
+  const context = createContext(new Map(), bridge);
+  const storage = context.window.ForklinePreferenceStorage.storage;
+
+  assert.equal(await context.window.ForklinePreferenceStorage.init(), true);
+  storage.setItem("forkline-theme", "graphite");
+  storage.removeItem("forkline-locale");
+  assert.equal(storage.getItem("forkline-theme"), "graphite");
+  assert.equal(storage.getItem("forkline-locale"), null);
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(storage.getItem("forkline-theme"), "forest");
+  assert.equal(storage.getItem("forkline-locale"), "en");
+});
+
+test("a stale desktop write failure cannot undo a newer saved value", async () => {
+  let rejectFirstWrite;
+  const stableValues = new Map([["forkline-theme", "forest"]]);
+  const bridge = {
+    readPreferences: async () => Object.fromEntries(stableValues),
+    writePreference: async (key, value) => {
+      if (value === "graphite") {
+        await new Promise((_resolve, reject) => { rejectFirstWrite = reject; });
+        return false;
+      }
+      stableValues.set(key, value);
+      return true;
+    },
+  };
+  const context = createContext(new Map(), bridge);
+  const storage = context.window.ForklinePreferenceStorage.storage;
+
+  assert.equal(await context.window.ForklinePreferenceStorage.init(), true);
+  storage.setItem("forkline-theme", "graphite");
+  await Promise.resolve();
+  storage.setItem("forkline-theme", "rose");
+  rejectFirstWrite(new Error("late failure"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(storage.getItem("forkline-theme"), "rose");
+  assert.equal(stableValues.get("forkline-theme"), "rose");
+});
+
+test("consecutive desktop write failures restore the last confirmed value", async () => {
+  const bridge = {
+    readPreferences: async () => ({ "forkline-theme": "forest" }),
+    writePreference: async () => false,
+  };
+  const context = createContext(new Map(), bridge);
+  const storage = context.window.ForklinePreferenceStorage.storage;
+
+  assert.equal(await context.window.ForklinePreferenceStorage.init(), true);
+  storage.setItem("forkline-theme", "graphite");
+  storage.setItem("forkline-theme", "rose");
+  assert.equal(storage.getItem("forkline-theme"), "rose");
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(storage.getItem("forkline-theme"), "forest");
+});
+
+test("desktop preference storage reports the latest persistence failure", async () => {
+  const failures = [];
+  const bridge = {
+    readPreferences: async () => ({ "forkline-theme": "forest" }),
+    writePreference: async () => false,
+  };
+  const context = createContext(new Map(), bridge);
+  const preferenceStorage = context.window.ForklinePreferenceStorage;
+  const stop = preferenceStorage.onPersistenceFailure((failure) => failures.push(failure));
+
+  assert.equal(await preferenceStorage.init(), true);
+  preferenceStorage.storage.setItem("forkline-theme", "graphite");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].key, "forkline-theme");
+  assert.equal(failures[0].operation, "write");
+
+  stop();
+  preferenceStorage.storage.setItem("forkline-theme", "rose");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failures.length, 1);
+});
+
 function createContext(browserValues, bridge = null) {
   const localStorage = {
     getItem: (key) => browserValues.get(key) ?? null,

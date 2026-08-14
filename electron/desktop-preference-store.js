@@ -47,7 +47,15 @@ function readDesktopPreferenceStore(filePath) {
 function writeDesktopPreferenceStore(filePath, value) {
   const preferences = normalizeDesktopPreferenceValues(value);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify({ version: 1, preferences }, null, 2)}\n`, "utf8");
+  const temporaryPath = `${filePath}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify({ version: 1, preferences }, null, 2)}\n`, "utf8");
+    fs.renameSync(temporaryPath, filePath);
+  } finally {
+    try {
+      fs.unlinkSync(temporaryPath);
+    } catch {}
+  }
   return preferences;
 }
 

@@ -8,6 +8,13 @@ function renderSettingsTab() {
     : t("仅应用于当前仓库：{name}", { name: state.data?.repo?.name || t("当前仓库") });
   const appUpdate = settingsAppUpdateView();
   const desktopZoomCard = settingsDesktopZoomCard();
+  const desktopPreferenceStorage = typeof window.forklineDesktop?.readPreferences === "function";
+  const themeStorageText = t(desktopPreferenceStorage
+    ? "主题保存在 Forkline 本机用户数据中，重启和更新后保留。"
+    : "主题会保存在当前浏览器。");
+  const localeStorageText = t(desktopPreferenceStorage
+    ? "界面语言保存在 Forkline 本机用户数据中，重启和更新后保留。"
+    : "界面语言会保存在当前浏览器。");
   els.detailTitle.textContent = t("设置");
   els.detailSub.textContent = t("本机偏好和界面行为");
   els.detailNode.style.borderColor = "var(--violet)";
@@ -61,7 +68,7 @@ function renderSettingsTab() {
         <div class="settings-card-head">
           <div>
             <strong>外观</strong>
-            <span>主题会保存在当前浏览器。</span>
+            <span>${escapeHtml(themeStorageText)}</span>
           </div>
         </div>
         <div class="settings-choice-row settings-theme-grid">
@@ -75,7 +82,7 @@ function renderSettingsTab() {
         <div class="settings-card-head">
           <div>
             <strong>语言</strong>
-            <span>界面语言会保存在当前浏览器。</span>
+            <span>${escapeHtml(localeStorageText)}</span>
           </div>
         </div>
         <div class="settings-choice-row">

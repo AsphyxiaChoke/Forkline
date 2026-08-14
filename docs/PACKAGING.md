@@ -236,3 +236,21 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 六个附件均匹配 GitHub Release 提供的 digest，EXE/ZIP 也分别匹配各自 `.sha256` 内容。正式 EXE 文件版本与产品版本均为 `0.4.5`，Authenticode 状态为 `NotSigned`；Release 已明确未知发布者和 SmartScreen 风险。
 - GitHub 大文件直连在本机出现长时间低速与连接重置；通过 `ghfast.top` 重新取得的正式 EXE、blockmap 和便携 ZIP 的大小与 SHA-256 均匹配 GitHub 官方 digest。官方 `latest.yml`、SHA-512 和 Release digest 继续作为信任根，国内节点只承担受限白名单资产传输。
 - 便携 ZIP 已确认包含 `.git`、`runtime`、源码、文档和启动脚本，继续保留现有 Git 快进更新形态。当前 `D:\Forkline` 仍保留已通过覆盖安装、随机端口重启、卸载保留数据和重装终验的 v0.4.5 安装版；正式远端附件未被本机验证产物替代。
+
+## v0.4.6 发布准备
+
+- `v0.4.6` 修复 Electron 界面偏好写入失败时内存仍显示为已保存的问题。相同偏好键的写入按顺序提交；IPC 返回 `false` 或拒绝时恢复最后一次已经确认落盘的值并显示中文提示，较早请求的迟到失败不会撤销较新的成功选择。
+- `%APPDATA%\forkline\desktop-ui-preferences.json` 不再直接覆盖：主进程先写同目录 `.tmp`，再重命名替换。写入中断或替换失败时保留上一份完整 JSON，并清理临时文件。
+- 设置页在 Electron 中明确说明主题和语言保存在 Forkline 本机用户数据中，重启和更新后保留；Web 和 Web 便携版继续显示浏览器存储说明。Git、菜单、便携版 Git 快进更新、NSIS `electron-updater` 和国内加速信任边界均不变。
+- 正式 Release 必须由新的不可变 `v0.4.6` 注释标签触发两条 Windows 工作流；本机构建只用于覆盖升级验收。发布说明继续明确安装器未签名、未知发布者和 SmartScreen 风险，不得移动 `v0.4.5` 或任何既有标签。
+
+## v0.4.6 本机安装验收
+
+- 偏好、设置页和布局专项为 `65/65`；首轮完整回归为 `363/364`，唯一失败是既有 4000 文件冷扫描在本机波动到 `408.1 ms`，同一真实 Chromium 专项复跑为 `274.8 ms`。后续两次完整回归均为 `364/364`，冷扫描分别为 `295.4 ms` 和提交前最终复核的 `298.6 ms`。`npm.cmd audit --audit-level=low` 为 0 个已知漏洞，依赖树确认 Electron `43.3.0`、electron-builder `26.15.3`、electron-updater `6.8.9` 完整。
+- 本机安装器 `Forkline-Setup-0.4.6-windows-x64.exe` 为 `100,603,608` 字节，SHA-256 `a3cc78668d820dce2c929c7b555489ae1e8ce42d8bfe2719b647d791518e7df1`，SHA-512 `3uV7GHgHBsGhO5ITclZoEYF7l/SNE5ap+en4D7tjvR7iPP2p5Mv2wAYN5bTu9jBWJZ1hVOUZ89KuzTJTflQfpw==`，Authenticode 为 `NotSigned`。blockmap 为 `105,849` 字节、SHA-256 `e189897ff0f785784915f6ada8fa5670d41b63991badec6f4173ea24121de771`；`latest.yml` 为 `369` 字节、SHA-256 `3306ca8a9d866ae9aca9ee9a6901d1d1a88df667f5e7770c74178e06edc6728d`，版本、文件名、大小和 SHA-512 均与 EXE 一致。
+- 已用上述 SHA-256 完全匹配的未签名安装器覆盖安装到 `D:\Forkline`。首轮交互覆盖后程序与卸载器文件均已是 `0.4.6`，但 HKCU 卸载登记仍停在 `0.4.4`；检查排除了源码硬编码、重复卸载键、安装器携带旧版本和注册表权限问题。同一安装器完整静默覆盖退出码为 `0` 后，登记立即正确更新为 `Forkline 0.4.6`，证据与首轮安装未完成登记收尾一致，未为该现场现象增加重复 NSIS 注册表代码。
+- 最终 `D:\Forkline\Forkline.exe` 文件版本为 `0.4.6`、产品版本为 `0.4.6.0`，SHA-256 `22bd04513e55fb92aca8ecdae9cd82c49cf52f998fca0ccf4335403ee58b8a12`；卸载器文件/产品版本均为 `0.4.6`。HKCU 卸载命令为 `"D:\Forkline\Uninstall Forkline.exe" /currentuser`，桌面与开始菜单快捷方式的目标、工作目录和图标均指向 `D:\Forkline`。
+- 最终安装版设置页显示“已是最新版本”，当前版本和最新版本均为 `v0.4.6`；中文、深色、`75%` 和 `4` 条最近仓库完整保留，Electron 主题与语言说明均指向 Forkline 本机用户数据。普通未暂存文件 `配置文件5 (2) - 副本.txt` 两次均可打开对照编辑器，未再出现 `Cannot read properties of null (reading 'ours')`。
+- `%APPDATA%\forkline\desktop-ui-preferences.json` 与安装前备份的 SHA-256 均为 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`；测试脏文件与备份的 SHA-256 均为 `f22338f52ef95050d4924a8bc990ad23d16052814e6c8cef4169d2f0b9b40f9`。最近仓库文件仍包含原 `4` 条路径和分支，只更新了当前仓库的正常 `lastOpened` 时间。
+- 安装目录 `app.asar` SHA-256 为 `00100eadda9ac7c016464cce235c0070cadf22b18f35b57f846ae86973d26a85`，内部版本为 `0.4.6`、入口为 `electron/main.js`、保留 `electron-updater ^6.8.9`；偏好原子写入、渲染端存储门面、启动、翻译和设置页脚本与当前工作树逐字节一致。通过窗口关闭按钮退出后，安装目录相关 Forkline、后台服务、Git/SSH 子进程和监听端口均为 `0`。
+- 本机产物和安装现场只作为发布前验收证据，不能上传冒充正式附件。正式 Release 仍须从不可变 `v0.4.6` 标签重新构建并核对六个远端附件、GitHub digest、校验文件、官方 `latest.yml`、国内代理完整下载和软件内 `v0.4.5 → v0.4.6` 更新流程。

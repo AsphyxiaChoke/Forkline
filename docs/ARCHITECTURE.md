@@ -28,7 +28,7 @@
 - `public/js/i18n-loader.js`：首屏轻量中文门面，提供语言标准化和原文回退；第一次使用英语时载入完整词典，共享进行中的加载 Promise，失败后允许重试。
 - `public/js/i18n-catalog.js`：完整英文文案目录、模板插值和已知服务端文本翻译；浏览器按需载入，CommonJS 测试和服务端继续直接引用。
 - `public/js/i18n.js`：浏览器语言状态、静态页面文案捕获、异步语言切换和本地持久化。
-- `public/js/desktop-preference-storage.js`：Electron 启动时通过固定 preload 接口读入稳定界面偏好，并提供与 `localStorage` 相同的最小读写门面；普通 Web 和 Web 便携版没有桌面接口时继续直接使用当前来源的 `localStorage`。
+- `public/js/desktop-preference-storage.js`：Electron 启动时通过固定 preload 接口读入稳定界面偏好，并提供与 `localStorage` 相同的最小读写门面；同一偏好键的 IPC 写入串行执行，失败时恢复最后一次确认值并发送受限失败通知。普通 Web 和 Web 便携版没有桌面接口时继续直接使用当前来源的 `localStorage`。
 - `public/js/api.js`：共享 API 请求封装和长时间 Git 操作控制，对外暴露 `Forkline.api`，携带仓库上下文和当前语言请求头，并保留首屏操作轮询与取消能力。
 - `public/js/app/`：启动附近的界面编排、界面性能诊断、事件绑定、布局工具和首轮渲染辅助。
 - `public/js/features/`：分支、工作区更改、历史列表、图谱渲染、仓库操作、Git 操作、右键菜单和 Diff 工作台等业务流程。
@@ -72,7 +72,7 @@
 
 - `electron/main.js`：单实例、随机回环端口后台服务、窗口生命周期、缩放、窗口位置、外部链接、渲染器健康事件、稳定最近仓库/界面偏好迁移和受监督自更新退出的编排。第二实例收到的参数不能直接改后台仓库，必须交给当前页面走现有切仓流程；自更新退出消息只接受当前后台子进程。首次迁移期间即使隐藏读取窗口关闭，也不能触发应用提前退出。
 - `electron/recent-repository-store.js`：规范化桌面最近仓库记录，按时间排序、Windows 路径形式去重并限制为 `10` 条；稳定文件无效或不存在时，只从旧 LevelDB 定位随机回环来源，再由主进程提供的 Chromium 来源读取器获取固定 `localStorage` 键。原始 LevelDB 不在 Node 中直接解析或改写。
-- `electron/desktop-preference-store.js`：只接受 `9` 个固定界面偏好键和不超过 `128 KiB` 的字符串值，读写 `%APPDATA%\forkline\desktop-ui-preferences.json`。首次迁移仅在单一旧来源具有唯一最新业务时间证据时选择普通偏好；界面诊断跨来源按时间合并去重，任一来源读取失败时不写入部分结果。
+- `electron/desktop-preference-store.js`：只接受 `9` 个固定界面偏好键和不超过 `128 KiB` 的字符串值，读写 `%APPDATA%\forkline\desktop-ui-preferences.json`。更新时先完整写入同目录临时文件，再重命名替换稳定文件；任一步失败都保留旧文件并清理临时文件。首次迁移仅在单一旧来源具有唯一最新业务时间证据时选择普通偏好；界面诊断跨来源按时间合并去重，任一来源读取失败时不写入部分结果。
 - `electron/server-process-shutdown.js`：通过 IPC 请求后台服务优雅退出并等待进程结束；超时后只使用当前 Electron 实例持有的服务进程句柄做有界兜底。
 - `electron/self-update-health.js`：只允许新 Electron 实例在系统临时目录写入限定名称的更新健康标记，记录目标版本和当前 PID。
 - `electron/startup-repository.js`：从首次或后续启动参数中识别本机目录，并排除 Electron 应用根目录。
@@ -81,7 +81,7 @@
 - `electron/renderer-draft-store.js`：规范化并复制单份渲染器恢复草稿，限制为当前仓库、提交信息和工作区文件字段，总量不超过 `8 MiB`；仅保存在主进程内存，不落盘。
 - `electron/preload.js`：在上下文隔离和沙箱开启的前提下，只暴露缩放、未保存状态上报、草稿读写、最近仓库读写、固定界面偏好读写和仓库路径接收接口；主进程只接受当前 `mainWindow.webContents` 的调用，不提供任意 IPC 通道。
 - `public/js/core.js`：以固定 `600 ms` 节流采集提交信息和文件编辑器草稿；文件草稿保留原始快照与查看位置，快照变化时继续保存旧快照，避免后续重载把草稿误判为可覆盖的新版本。
-- `public/js/bootstrap.js`：在异步应用初始化前登记桌面仓库路径监听，并在语言、主题、布局、恢复策略和诊断初始化前先读取 Electron 稳定界面偏好，在恢复最近仓库前读取稳定仓库记录；初始化完成后读取 Electron 草稿，再允许第二实例路径切仓。初始化完成前只保留最新路径，完成后串行调用 `openRepo`。
+- `public/js/bootstrap.js`：在异步应用初始化前登记桌面仓库路径监听和偏好持久化失败提示，并在语言、主题、布局、恢复策略和诊断初始化前先读取 Electron 稳定界面偏好，在恢复最近仓库前读取稳定仓库记录；初始化完成后读取 Electron 草稿，再允许第二实例路径切仓。初始化完成前只保留最新路径，完成后串行调用 `openRepo`。
 - `public/js/features/repositories.js`：Electron 环境从受限桌面接口读写稳定记录，普通 Web 环境继续使用当前来源的 `localStorage`；两者共用过滤、最多 `10` 条、切仓和清除界面。所有实际切仓继续由 `openRepo` 执行；文件编辑器或提交信息框有未保存内容时先确认。克隆和初始化勾选“完成后打开”时复用同一保护。
 - `server/shutdown-controller.js`：统一桌面 IPC、自更新、父进程断开和终止信号的关闭流程，先关闭 HTTP 接入并清理 Git 运行时，再退出服务进程。
 - `server/git-runtime.js`：除操作日志中的可取消命令外，还登记普通文本和二进制 Git 查询；关闭期间拒绝新命令，并只终止本运行时持有的子进程。
@@ -224,7 +224,7 @@
 - 执行 `npm test`，使用 Node 内置测试运行器，并按测试文件串行运行。
 - `tests/git-api.test.js` 在随机本地端口启动真实 Forkline 子进程，并使用临时 Git 仓库驱动 HTTP API。
 - `tests/app-self-update.test.js` 使用真实本地 Git 远端验证快进、回退、Web 服务重启、Electron 桌面入口重启和桌面启动失败恢复，并覆盖 Release fetch 字节进度解析、瞬时网络错误重试和准备状态契约；`tests/electron-shell.test.js` 固定主进程元数据、退出消息来源和健康标记边界；`tests/layout-ui.test.js` 固定准备阶段轮询与中文进度显示。
-- `tests/recent-repository-store.test.js` 固定随机端口变化后的桌面记录持久化、Web `localStorage` 边界、记录规范化以及旧回环来源的一次性迁移；`tests/desktop-preference-store.test.js` 与 `tests/desktop-preference-storage.test.js` 固定偏好白名单/大小限制、保守迁移、失败重试、跨来源持久化和 Web 边界；`tests/electron-shell.test.js` 同时固定受限 IPC、迁移期窗口生命周期和启动顺序。
+- `tests/recent-repository-store.test.js` 固定随机端口变化后的桌面记录持久化、Web `localStorage` 边界、记录规范化以及旧回环来源的一次性迁移；`tests/desktop-preference-store.test.js` 与 `tests/desktop-preference-storage.test.js` 固定偏好白名单/大小限制、保守迁移、失败重试、原子替换、最后确认值回滚、连续失败和跨来源持久化；`tests/settings-preference-copy.test.js` 与 `tests/layout-ui.test.js` 固定 Electron/Web 文案分流、英文翻译和失败提示；`tests/electron-shell.test.js` 同时固定受限 IPC、迁移期窗口生命周期和启动顺序。
 - 测试夹具隔离全局/系统 Git 配置，使用仓库级身份和子模块设置，并在测试后清理临时目录。
 - 认证测试覆盖 `/api/state` 不执行本机认证探测、诊断接口要求仓库上下文、缓存命中、手动刷新、远端 URL 变化后的缓存失效、托管平台识别，以及 Windows/非 Windows 系统凭据入口边界。
 - 状态优化测试覆盖 upstream、领先/落后、脏工作树、游离 HEAD、无提交分支、空子模块列表、远端离线时读取本地 remote-tracking ref，以及真实子模块安全流程。

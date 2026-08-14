@@ -10029,3 +10029,65 @@
 - `docs/CONTINUE.md`：把 v0.4.5 从发布准备更新为正式发布验收完成，并记录 Git 传输失败时使用官方 Git Data API 创建同等注释标签的证据。
 - `progress.md`：仅在末尾追加本轮发布操作、正式验收证据、文件清单和回滚方式。
 - 回滚方式：对本轮文档验收提交执行 `git revert <this-task-commit>`；不得移动或覆盖 `v0.4.5` 及任何既有标签，不得卸载最终保留的 `D:\Forkline`，不得触碰受保护异常未跟踪文件。
+## 2026-08-13 - Task: Prepare Forkline v0.4.6 desktop preference reliability release
+
+### What was done
+
+- Corrected the settings copy so Electron identifies Forkline local user data as the persistence location while Web and Web portable builds retain the browser-storage wording; completed the English translations.
+- Made Electron preference mutations serialize per key, restore the last confirmed value when IPC rejects or returns `false`, prevent an older failure from undoing a later queued change, and notify the UI when the latest change cannot be persisted.
+- Replaced direct preference JSON overwrites with same-directory temporary writes followed by rename, preserving the previous complete file and removing the temporary file after an interrupted write.
+- Raised the application and installer contract version from `0.4.5` to `0.4.6`, and documented the unchanged Git, portable-update, NSIS updater, domestic acceleration, unsigned-installer, and immutable-tag boundaries.
+
+### Testing
+
+- `node --test --test-concurrency=1 tests/desktop-preference-storage.test.js tests/desktop-preference-store.test.js tests/settings-preference-copy.test.js tests/layout-ui.test.js` -> `65/65` passed, 0 failed and 0 skipped.
+- The consecutive-write-failure regression was first observed failing with the optimistic value `graphite` instead of the last confirmed value `forest`; after the queue/confirmed-value fix the same regression passes.
+- Full syntax, dependency, complete regression, installer build, package metadata, local `D:\Forkline` upgrade, signed-state and release-asset verification remain required before this task can be treated as released.
+
+### Notes
+
+- `package.json` - advanced the application and installer version to `0.4.6`.
+- `package-lock.json` - synchronized the root package and workspace package versions to `0.4.6`.
+- `electron/desktop-preference-store.js` - writes a complete temporary JSON file before replacing the stable preference file.
+- `public/js/bootstrap.js` - subscribes to desktop preference persistence failures and shows the user warning.
+- `public/js/desktop-preference-storage.js` - serializes per-key writes, tracks confirmed values, rolls back failed latest mutations and exposes a bounded failure subscription.
+- `public/js/i18n-catalog.js` - adds complete English text for the Electron persistence descriptions and failure warning.
+- `public/js/panels/settings.js` - separates Electron user-data copy from Web browser-storage copy.
+- `tests/desktop-preference-storage.test.js` - covers rejection rollback, stale failure ordering, consecutive failures and failure subscriptions.
+- `tests/desktop-preference-store.test.js` - fault-injects an interrupted temporary write and verifies the previous file remains intact.
+- `tests/installer-package.test.js` - updates the installer version contract to `0.4.6`.
+- `tests/layout-ui.test.js` - verifies the user-facing persistence failure warning and cleanup subscription.
+- `tests/settings-preference-copy.test.js` - verifies Electron/Web wording separation and English translations.
+- `README.md` - explains Electron persistence, rollback and atomic replacement behavior.
+- `docs/ELECTRON_DESKTOP.md` - records per-key persistence ordering, user-visible failure handling and stable-file replacement.
+- `docs/PACKAGING.md` - records the v0.4.6 release scope and immutable unsigned-release boundary.
+- `docs/ARCHITECTURE.md` - documents the confirmed-value storage facade, atomic desktop store and regression seams.
+- `docs/CONTINUE.md` - appends the v0.4.6 continuation and remaining validation gates.
+- `progress.md` - appends this implementation and validation record without rewriting earlier history.
+- Protected untracked file `n+fs.statSync(p.join('public'` remains outside the change list and must not be staged, modified or removed.
+- Rollback before release: restore only the files listed above from `fe444115d72fecffa184c378c7ea6ecfb4bd9e76`, leaving the protected untracked file untouched. After release: revert the v0.4.6 release commit with a new commit and publish a new patch version; do not move an existing tag.
+
+## 2026-08-14 - Task: 完成 Forkline v0.4.6 本机构建与安装发布门禁
+
+### What was done
+
+- 完成 v0.4.6 完整自动回归、依赖审计、安装器元数据和本机产物验真，并使用未签名安装器覆盖安装到 `D:\Forkline`。
+- 验证设置页版本与稳定偏好恢复、4 条最近仓库、普通工作区文件查看、当前用户卸载登记、桌面/开始菜单快捷方式、安装版 ASAR 和正常退出无残留。
+- 对首轮覆盖后卸载登记仍显示 `0.4.4` 的现场进行最小化诊断；排除硬编码、重复键、旧安装器元数据和注册表权限后，用同一哈希安装器完整覆盖复现，退出码 `0` 且登记立即更新为 `0.4.6`，因此未增加冗余产品代码。
+
+### Testing
+
+- 偏好、设置页和布局专项 `65/65` 通过。首轮完整回归 `363/364` 的唯一失败为 4000 文件冷扫描 `408.1 ms > 350 ms`；同一真实 Chromium 专项为 `274.8 ms`，后续两次完整回归均为 `364/364`，冷扫描分别为 `295.4 ms` 和提交前最终复核的 `298.6 ms`。
+- `npm.cmd audit --audit-level=low` 为 0 个已知漏洞；`npm.cmd ls --depth=0` 确认 Electron `43.3.0`、electron-builder `26.15.3`、electron-updater `6.8.9` 完整。Node 语法、JSON、`git diff --check` 和调试残留扫描均通过。
+- 安装器为 `100,603,608` 字节，SHA-256 `a3cc78668d820dce2c929c7b555489ae1e8ce42d8bfe2719b647d791518e7df1`，SHA-512 `3uV7GHgHBsGhO5ITclZoEYF7l/SNE5ap+en4D7tjvR7iPP2p5Mv2wAYN5bTu9jBWJZ1hVOUZ89KuzTJTflQfpw==`，Authenticode 为 `NotSigned`。blockmap SHA-256 为 `e189897ff0f785784915f6ada8fa5670d41b63991badec6f4173ea24121de771`，`latest.yml` SHA-256 为 `3306ca8a9d866ae9aca9ee9a6901d1d1a88df667f5e7770c74178e06edc6728d`；版本、文件名、大小和 SHA-512 均一致。
+- 最终安装版程序版本 `0.4.6`、产品版本 `0.4.6.0`，HKCU 登记为 `Forkline 0.4.6`，桌面和开始菜单快捷方式均指向 `D:\Forkline`。设置页当前/最新均为 `v0.4.6`，显示“已是最新版本”，中文、深色、`75%`、4 条最近仓库和本机用户数据文案均正确。
+- 普通未暂存文件 `配置文件5 (2) - 副本.txt` 两次打开成功，未出现 `Cannot read properties of null (reading 'ours')`。稳定偏好文件与备份 SHA-256 均为 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`；测试脏文件与备份 SHA-256 均为 `f22338f52ef95050d4924a8bc990ad23d16052814e6c8cef4169d2f0b9b40f9`。
+- 安装目录 ASAR SHA-256 为 `00100eadda9ac7c016464cce235c0070cadf22b18f35b57f846ae86973d26a85`，内部版本、入口和 `electron-updater` 依赖正确，本轮 5 个关键脚本与工作树逐字节一致。通过窗口关闭按钮退出后，安装目录相关应用、后台服务、Git/SSH 子进程和监听端口均为 `0`。
+- 受保护异常未跟踪文件继续为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.6 本机产物、覆盖安装、登记诊断、设置页、数据哈希、ASAR 和退出验收证据。
+- `docs/CONTINUE.md`：把 v0.4.6 更新为本机发布门禁完成，并记录提交、正式工作流和软件内更新剩余步骤。
+- `progress.md`：仅在末尾追加本轮本机构建与安装验收、测试证据、文件清单和回滚方式。
+- 回滚方式：提交前只删除上述三个文件末尾新增的 `2026-08-14`/`v0.4.6 本机安装验收` 段落；发布提交后执行 `git revert <v0.4.6-release-commit>` 创建新提交，不得移动 `v0.4.6` 或任何既有标签。若需要恢复安装前用户数据，先确认 Forkline 已退出，再从 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.6-local-e2e-535f22f8b3c84a1486468531338a4306` 按原路径恢复；不得触碰受保护异常文件。
