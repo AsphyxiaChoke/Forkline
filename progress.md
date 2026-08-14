@@ -10091,3 +10091,28 @@
 - `docs/CONTINUE.md`：把 v0.4.6 更新为本机发布门禁完成，并记录提交、正式工作流和软件内更新剩余步骤。
 - `progress.md`：仅在末尾追加本轮本机构建与安装验收、测试证据、文件清单和回滚方式。
 - 回滚方式：提交前只删除上述三个文件末尾新增的 `2026-08-14`/`v0.4.6 本机安装验收` 段落；发布提交后执行 `git revert <v0.4.6-release-commit>` 创建新提交，不得移动 `v0.4.6` 或任何既有标签。若需要恢复安装前用户数据，先确认 Forkline 已退出，再从 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.6-local-e2e-535f22f8b3c84a1486468531338a4306` 按原路径恢复；不得触碰受保护异常文件。
+
+## 2026-08-14 - Task: 完成 Forkline v0.4.6 正式发布、软件内更新终验与缓存清理
+
+### What was done
+
+- 核实不可移动的 `v0.4.6` 注释标签、正式 Release、安装器/便携包工作流和六个附件，并记录 GitHub digest、官方更新元数据、国内节点校验和未签名风险。
+- 把正式 v0.4.5 覆盖安装到 `D:\Forkline`，通过 Electron CDP 的真实设置入口执行“立即更新并重启”，再对更新后的 v0.4.6 设置页、最近仓库、界面偏好、安装登记和正常退出进行终验；全程未使用 Computer Use。
+- 删除本轮临时验收脚本、Playwright 下载缓存、v0.4.5 安装器、用户数据备份和已消费的 updater `pending` 副本；保留 updater 当前差分基线，并追加说明旧临时备份路径已经失效。
+
+### Testing
+
+- 当前完整 `npm.cmd test` 为 `364/364` 通过，0 失败、0 跳过，总耗时约 `114.8` 秒；真实 Chromium 4000 文件冷扫描为 `328.7 ms`，低于 `350 ms` 门限。
+- `v0.4.6`、`HEAD` 和执行文档收尾前的 `origin/main` 均解引用到 `14193fcc33c4c39f4349e729e34ee3dfbdbd9369`。便携包工作流 `31763297562` 与安装器工作流 `31763297556` 均为 `success`，`headSha` 均为该发布提交。
+- 正式 EXE、blockmap、便携 ZIP 的大小/SHA-256 分别为 `100,600,231`/`46d3f83bae1eae2c88155644e3c90536a9ff03fc44b5465791b71c96588f2b0a`、`105,772`/`b4588204e11b0f740578296a8793bfccbc21b1376757e1c6b99d528a12c8c9f9`、`36,699,971`/`a246f885605d9e31687952c9a4d9a70f5277fd1f1106385128c068b56132e3ca`；六附件全部匹配 GitHub digest，`latest.yml` 的 SHA-512 与正式 EXE 一致，Authenticode 为 `NotSigned`。
+- 正式 v0.4.5 安装器通过实时 GitHub digest 和 SHA-256 `12a13f9d9e021486d66da05ec46816e37808f7bf8e46e538068a4295ff2fa34b` 验真后覆盖成功，程序和 HKCU 登记均为 `0.4.5`。CDP 更新前确认 `currentVersion=0.4.5`、`latestVersion=0.4.6`、`installMode=nsis` 和 4 条最近仓库；界面下载进度达到 `85%` 后旧实例退出，最终程序与 HKCU 登记均为 `0.4.6`。
+- 更新器 `installer.exe` 和已消费的 pending EXE 均为 `100,600,231` 字节、SHA-256 `46d3f83bae1eae2c88155644e3c90536a9ff03fc44b5465791b71c96588f2b0a`。首次验收脚本因未采到退出前的瞬时第 4 阶段而保守报错，但磁盘版本、登记、缓存安装器和随后独立 CDP 启动共同证明产品更新成功；未把验收脚本时序误判为产品缺陷。
+- 更新后 CDP 确认当前/最新均为 `v0.4.6`、“已是最新版本”、Electron 本机数据文案、中文、深色、`75%`、当前仓库和 4 条最近仓库正确。`desktop-ui-preferences.json`、`desktop-preferences.json`、`desktop-window-state.json` 更新前后 SHA-256 不变；最近仓库的路径、名称和分支语义一致，只更新当前条目的 `lastOpened`。通过页面关闭后安装目录进程及相关 Node/Git/SSH 子进程为 `0`。
+- 清理目标共 `308,663,903` 字节（约 `294.4 MiB`），删除后 `%TEMP%` 的 `forkline-*` 项为 `0`，updater `pending` 不存在，当前差分基线仍存在。受保护异常文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.6 正式工作流、六附件、信任链、软件内更新、用户数据和缓存清理终验。
+- `docs/CONTINUE.md`：把 v0.4.6 从“本机发布门禁完成”更新为正式发布和软件内更新全闭环，并使旧临时备份路径失效说明生效。
+- `progress.md`：仅在末尾追加本轮正式发布终验、CDP 更新证据、缓存清理、文件清单和回滚方式。
+- 回滚方式：对本轮文档收尾提交执行 `git revert <this-doc-closure-commit>`；该操作只回滚文档，不得移动或覆盖 `v0.4.6` 及任何既有标签，也不会卸载已经验证的 `D:\Forkline` v0.4.6。临时备份和缓存已按用户要求删除，不能通过文档回滚恢复；受保护异常文件不得触碰。

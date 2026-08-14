@@ -1212,3 +1212,15 @@
 - 设置页联网确认当前版本和最新版本均为 `v0.4.6` 且“已是最新版本”；中文、深色、`75%` 和 `4` 条最近仓库保留。普通未暂存文件可正常打开，无 `ours` 错误。稳定偏好文件与安装前备份哈希一致，测试脏文件与备份哈希一致，安装版 ASAR 的本轮关键脚本与工作树逐字节一致。
 - 应用通过窗口关闭按钮退出后，安装目录相关应用、后台服务、Git/SSH 子进程和监听端口均为 `0`。受保护异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍须保持 0 字节、不得修改、暂存或提交。
 - 下一步只显式暂存本轮 `18` 个目标文件，提交并推送 `main`，再创建新的不可变注释标签 `v0.4.6` 和正式 Release。等待安装器与便携包工作流成功后，重新下载并验真六个正式附件及国内代理完整 EXE、blockmap、ZIP。最后需从正式 v0.4.5 安装版执行一次软件内更新到正式 v0.4.6；该安装与点击更新动作须在执行时取得用户确认，且不得移动已经发布的 `v0.4.6` 标签。
+
+## 2026-08-14 Forkline v0.4.6 正式发布与软件内更新闭环完成
+
+- 发布提交 `14193fcc33c4c39f4349e729e34ee3dfbdbd9369` 已推送，注释标签 `v0.4.6` 固定解引用到该提交；正式 Release <https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.6> 为 Latest、非草稿、非预发布。发布说明已明确当前用户安装、可选目录、快捷方式、用户数据保留、国内加速/官方回退边界以及未签名、未知发布者和 SmartScreen 风险。
+- 便携包工作流 `31763297562` 与安装器工作流 `31763297556` 均由 `v0.4.6@14193fc` 的 Release 事件触发并成功完成；安装器工作流正式回归为 `364/364`，0 失败、0 跳过。
+- 正式 EXE 为 `100,600,231` 字节、SHA-256 `46d3f83bae1eae2c88155644e3c90536a9ff03fc44b5465791b71c96588f2b0a`；blockmap 为 `105,772` 字节、SHA-256 `b4588204e11b0f740578296a8793bfccbc21b1376757e1c6b99d528a12c8c9f9`；便携 ZIP 为 `36,699,971` 字节、SHA-256 `a246f885605d9e31687952c9a4d9a70f5277fd1f1106385128c068b56132e3ca`。EXE/ZIP 校验文件和 `latest.yml` 的 SHA-256 分别为 `421603dd27f1b9e1ccca6da40904a8690d168ff736ee5333db2141088fda8a39`、`122b50f09fdd2e1038d277e2fb2a5da679b44f20933728490ed4e7abd49a8205`、`debfe0599258a9ec13df97870f145f7c68567cf5457dcc0182683bc9fe35f678`，六附件全部匹配 GitHub digest。
+- `latest.yml` 记录的版本、文件名、`100600231` 字节大小和 SHA-512 `o1Lk0FWAxvlJ4nLwxc2cO8ghLaDiUXp6v5zg+4hmVFOGp4Dz6px0l2MmhzCRL9pfjjgrJzi+O0mo4tDtgCfYwA==` 与正式 EXE 一致，Authenticode 为 `NotSigned`。正式发布阶段通过 `ghfast.top` 取得的完整 EXE、blockmap 和便携 ZIP 均与官方 digest 一致；官方 `latest.yml`、SHA-512、校验文件和 Release digest 继续作为信任根。
+- 终验先把 GitHub digest 完全匹配的正式 v0.4.5 安装器覆盖到 `D:\Forkline`，确认程序与 HKCU 登记均为 `0.4.5`；随后通过 Electron CDP 打开真实设置入口，确认目标为 `v0.4.6` 后点击“立即更新并重启”。界面记录到下载进度 `0% → 6% → 76% → 85%` 后旧实例退出，最终程序和 HKCU 登记均更新为 `0.4.6`，更新器缓存 EXE 为 `100,600,231` 字节且 SHA-256 与正式附件一致。
+- 更新后重新以 CDP 启动安装版，设置页显示当前版本和最新版本均为 `v0.4.6`、“已是最新版本”，主题/语言说明均指向 Forkline 本机用户数据；中文、深色、`75%`、当前仓库和原 `4` 条最近仓库保留。页面关闭后安装目录应用、后台服务及其 Git/SSH 子进程均为 `0`。
+- `%APPDATA%\forkline\desktop-ui-preferences.json`、`desktop-preferences.json`、`desktop-window-state.json` 更新前后 SHA-256 分别保持 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`、`326886b370dc6365ba8016545bcac8fa99362fcc510294f30c269fd43370797d`、`765a61e7b2a05f6575ff29155d5e6469114108e9f331b25c10126c85c92b2236`。最近仓库文件只更新当前仓库的正常 `lastOpened`，4 条记录的路径、名称和分支在更新前后完全一致。
+- 本轮删除临时 Playwright 下载缓存、v0.4.5 安装器与用户数据备份、已消费的 updater `pending` 副本，共 `308,663,903` 字节（约 `294.4 MiB`）；`%TEMP%` 当前无 `forkline-*` 项。保留 `forkline-updater\installer.exe` 和 `current.blockmap` 作为后续差分更新基线。此前记录的临时备份路径已经清理且不可再用于恢复；本轮数据哈希与语义比对通过，因此不需要恢复。
+- v0.4.6 发布闭环已经完成。后续产品代码改动必须升至 `v0.4.7` 或更高补丁版本并创建新提交、新注释标签和新 Release；不得移动 `v0.4.6` 或任何既有标签，受保护异常未跟踪文件继续原样保留。

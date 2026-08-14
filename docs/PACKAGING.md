@@ -254,3 +254,16 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `%APPDATA%\forkline\desktop-ui-preferences.json` 与安装前备份的 SHA-256 均为 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`；测试脏文件与备份的 SHA-256 均为 `f22338f52ef95050d4924a8bc990ad23d16052814e6c8cef4169d2f0b9b40f9`。最近仓库文件仍包含原 `4` 条路径和分支，只更新了当前仓库的正常 `lastOpened` 时间。
 - 安装目录 `app.asar` SHA-256 为 `00100eadda9ac7c016464cce235c0070cadf22b18f35b57f846ae86973d26a85`，内部版本为 `0.4.6`、入口为 `electron/main.js`、保留 `electron-updater ^6.8.9`；偏好原子写入、渲染端存储门面、启动、翻译和设置页脚本与当前工作树逐字节一致。通过窗口关闭按钮退出后，安装目录相关 Forkline、后台服务、Git/SSH 子进程和监听端口均为 `0`。
 - 本机产物和安装现场只作为发布前验收证据，不能上传冒充正式附件。正式 Release 仍须从不可变 `v0.4.6` 标签重新构建并核对六个远端附件、GitHub digest、校验文件、官方 `latest.yml`、国内代理完整下载和软件内 `v0.4.5 → v0.4.6` 更新流程。
+
+## v0.4.6 正式发布与软件内更新验收
+
+- Release：[Forkline v0.4.6](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.6) 为 Latest、非草稿、非预发布；不可移动的注释标签 `v0.4.6` 固定解引用到发布提交 `14193fcc33c4c39f4349e729e34ee3dfbdbd9369`。
+- 便携包工作流：[GitHub Actions 31763297562](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31763297562)；安装器工作流：[GitHub Actions 31763297556](https://github.com/AsphyxiaChoke/Forkline/actions/runs/31763297556)。两条工作流均在 `v0.4.6@14193fc` 上成功；安装器工作流正式自动回归为 `364/364`，0 失败、0 跳过。
+- `Forkline-Setup-0.4.6-windows-x64.exe`：`100,600,231` 字节，SHA-256 `46d3f83bae1eae2c88155644e3c90536a9ff03fc44b5465791b71c96588f2b0a`；对应 blockmap：`105,772` 字节，SHA-256 `b4588204e11b0f740578296a8793bfccbc21b1376757e1c6b99d528a12c8c9f9`。
+- 安装器校验文件为 `102` 字节、SHA-256 `421603dd27f1b9e1ccca6da40904a8690d168ff736ee5333db2141088fda8a39`；便携 ZIP 为 `36,699,971` 字节、SHA-256 `a246f885605d9e31687952c9a4d9a70f5277fd1f1106385128c068b56132e3ca`；ZIP 校验文件为 `99` 字节、SHA-256 `122b50f09fdd2e1038d277e2fb2a5da679b44f20933728490ed4e7abd49a8205`。
+- `latest.yml` 为 `369` 字节、SHA-256 `debfe0599258a9ec13df97870f145f7c68567cf5457dcc0182683bc9fe35f678`；版本 `0.4.6`、文件名、大小和 SHA-512 `o1Lk0FWAxvlJ4nLwxc2cO8ghLaDiUXp6v5zg+4hmVFOGp4Dz6px0l2MmhzCRL9pfjjgrJzi+O0mo4tDtgCfYwA==` 均与正式 EXE 一致。六附件匹配 GitHub digest，安装器 Authenticode 为 `NotSigned`，Release 已标明未知发布者和 SmartScreen 风险。
+- 正式发布阶段通过 `ghfast.top` 下载的完整 EXE、blockmap 和便携 ZIP 均匹配官方 digest。国内节点只承担固定白名单资产传输；官方 `latest.yml`、SHA-512、校验文件和 Release digest 继续作为信任根，节点失败或校验失败时仍回退 GitHub 官方完整安装包。
+- 软件内终验先把正式 v0.4.5 安装器覆盖到 `D:\Forkline`，确认文件版本和 HKCU 登记均为 `0.4.5`，再通过 Electron CDP 的真实设置入口点击“立即更新并重启”。下载进度可见，旧实例退出后程序与登记均为 `0.4.6`，更新器缓存安装器的大小和 SHA-256 与正式附件完全一致。
+- 更新后 CDP 终验确认设置页当前/最新均为 `v0.4.6` 且显示“已是最新版本”，中文、深色、`75%`、当前仓库和 `4` 条最近仓库保留；稳定界面偏好、缩放和窗口状态文件哈希不变，最近仓库只正常更新当前条目的 `lastOpened`。页面关闭后安装目录进程、后台服务和 Git/SSH 子进程均为 `0`。
+- 终验完成后删除本轮临时 Playwright 缓存、安装器、用户数据备份和已消费的 updater `pending` 副本，合计约 `294.4 MiB`；`%TEMP%` 无 `forkline-*` 残留。保留 updater 当前基线用于后续差分更新。旧文档中的临时备份路径已经失效，不得继续引用为恢复来源。
+- 本轮仅追加发布验收文档，不修改产品代码或安装包内容。后续产品代码变更必须发布新补丁版本；禁止移动 `v0.4.6` 或任何既有标签。
