@@ -10116,3 +10116,23 @@
 - `docs/CONTINUE.md`：把 v0.4.6 从“本机发布门禁完成”更新为正式发布和软件内更新全闭环，并使旧临时备份路径失效说明生效。
 - `progress.md`：仅在末尾追加本轮正式发布终验、CDP 更新证据、缓存清理、文件清单和回滚方式。
 - 回滚方式：对本轮文档收尾提交执行 `git revert <this-doc-closure-commit>`；该操作只回滚文档，不得移动或覆盖 `v0.4.6` 及任何既有标签，也不会卸载已经验证的 `D:\Forkline` v0.4.6。临时备份和缓存已按用户要求删除，不能通过文档回滚恢复；受保护异常文件不得触碰。
+
+## 2026-08-14 - Task: 补充 Forkline v0.4.6 更新后延迟自动重启终验
+
+### What was done
+
+- 在文档收尾推送后的最终进程复核中发现更新器延迟启动了新的 Forkline 进程树；主进程命令行为 `Forkline.exe --updated`，确认这是 `autoRunAppAfterInstall` 的预期更新后自动重开，而不是用户手动启动或后台残留。
+- 对自动重开的主窗口发送正常关闭，并修正发布验收文档，使“自动重开已发生”和“最终正常退出无残留”两个时序都得到准确记录。
+
+### Testing
+
+- 延迟自动重开进程树共 `5` 个 Forkline 进程，均位于 `D:\Forkline`，主进程 PID `30052` 带 `--updated` 参数并持有可见主窗口，子进程分别为 GPU、NetworkService、后台服务和 renderer。
+- `CloseMainWindow()` 返回 `True`；安装目录进程树在 `20` 秒门限内归零，实际立即检查为 `0`，继续等待 `30` 秒仍为 `0`，未发生二次拉起。
+- 最终安装版仍为文件版本 `0.4.6`、产品版本 `0.4.6.0`，HKCU 登记为 `Forkline 0.4.6`；`v0.4.6` 标签继续固定在 `14193fcc33c4c39f4349e729e34ee3dfbdbd9369`，未修改产品代码或 Release 资产。
+
+### Notes
+
+- `docs/CONTINUE.md`：补充 updater 延迟 `--updated` 自动重开及最终正常关闭后 30 秒无残留的时序证据。
+- `docs/PACKAGING.md`：修正软件内更新验收说明，区分首次 CDP 终验关闭与 updater 后续自动重开。
+- `progress.md`：仅在末尾追加本轮延迟重启诊断、验证证据、文件清单和回滚方式。
+- 回滚方式：对本轮文档修正提交执行 `git revert <this-delayed-restart-doc-commit>`；不得回滚或移动 `v0.4.6` 标签，不得卸载最终保留的 `D:\Forkline` v0.4.6，不得触碰受保护异常未跟踪文件。
