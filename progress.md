@@ -10168,3 +10168,28 @@
 - `docs/CONTINUE.md` - records the current verified continuation point and invalid GitHub credential blocker.
 - `progress.md` - appends this implementation, verification, cleanup, file list and rollback record without rewriting history.
 - Rollback before release: restore only the files listed above from `7c3c1ae000c76a97cc0eb32ac87c005d9cb6dcd3`, leaving the protected untracked file untouched. After release: revert the v0.4.7 release commit with a new commit and publish a later patch; never move `v0.4.7`, `v0.4.6` or any existing tag. Deleted temporary caches and validation backups are not recoverable through Git rollback; current user data remains installed and preserved.
+
+## 2026-08-14 - Task: 完成 Forkline v0.4.7 正式发布、软件内更新终验与缓存清理
+
+### What was done
+
+- 核实 v0.4.7 不可移动注释标签、正式 Release、安装器/便携包工作流和六个正式附件，记录 GitHub digest、官方更新元数据、未签名风险和便携包内容边界。
+- 把正式 v0.4.6 安装到 `D:\Forkline`，通过 Electron CDP 的真实设置入口执行“立即更新并重启”，验证国内加速下载、旧实例退出、安装、`--updated` 自动重开、最终设置页、最近仓库和文件查看；全程未使用 Computer Use。
+- 恢复本轮验收产生的界面长任务诊断，精准删除验证目录和 updater 已消费副本；保留 v0.3.0 正式便携产物、v0.4.7 安装、真实用户数据和 updater 差分基线。
+
+### Testing
+
+- 发布提交 `90a0d7071f354a66d0a40a3ae1679984757c9cd2` 已推送；安装器工作流 `31780695796` 与便携包工作流 `31780695825` 均为 `success`，正式回归 `364/364` 通过。Release 为 Latest、非草稿、非预发布，`v0.4.7` 标签未移动。
+- 正式 EXE/blockmap/便携 ZIP 的大小和 SHA-256 分别为 `100,612,066`/`d52eec77a9953819ee879be666ffec02222f8e5ffd63eda67ebeed6f5e26d5c3`、`105,351`/`da17581b906a1209cb0ac05fdd223eb50d2042cae03dce3c83d0fa213bf3bb9a`、`36,718,092`/`4b3082ca0a5657aaad3af1a636c5cce7d17a581f8aff317c3e7df19580d54715`；六附件全部匹配 GitHub digest。`latest.yml` SHA-256 为 `6cb5f5c13c651710a68e25e633501d9c281b0edef632023dad3897254f909d48`，SHA-512 与正式 EXE 一致，Authenticode 为 `NotSigned`。
+- 更新前真实设置页确认 `currentVersion=0.4.6`、`latestVersion=0.4.7`、`installMode=nsis`、5 条最近仓库和可点击更新按钮。点击确认后下载从 `0%` 到 `100%`，旧实例退出；最终文件版本和 HKCU 登记均为 `0.4.7`，自动重开主进程命令行包含 `--updated`。
+- Chromium 全局网络日志捕获 `ghfast.top` 的正式 blockmap `200` 响应和安装器字节范围请求。updater 缓存 EXE 为 `100,612,066` 字节，SHA-256 `d52eec77a9953819ee879be666ffec02222f8e5ffd63eda67ebeed6f5e26d5c3`，SHA-512 `kn2kYPBIV+oSHA6128wssEKfFyhm7058zyiJj0HO/smgo1Uz5kHExiKmaAIX2tUqGmNJJAZF2fqINM396GLUZA==`，签名状态 `NotSigned`。
+- 更新后 CDP 确认用户代理包含 `Electron/43.4.0`，设置页当前/最新均为 `v0.4.7` 且“已是最新版本”。真实工作区 0 字节未跟踪文件打开和关闭成功，状态为 `UTF-8 · LF · 0 B`，冲突版本已归一化，无新增错误诊断或控制台错误；受保护文件仍为 0 字节、原写入时间和 SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+- `desktop-preferences.json` 与备份哈希一致；本轮新增的 7 条长任务诊断已原子恢复，`desktop-ui-preferences.json` 最终 SHA-256 为 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`。5 条最近仓库的路径、名称和分支完全一致，只更新当前仓库 `lastOpened`；窗口状态只发生正常启动关闭变化。
+- 正常关闭最终实例后 Forkline 进程立即为 `0`，等待 `30` 秒仍为 `0`。删除验证目录 `475,272,394` 字节和 updater `pending` `100,717,658` 字节，合计 `575,990,052` 字节；删除后两处均不存在，updater 安装器/`current.blockmap` 基线和两份 v0.3.0 正式便携产物仍存在。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.7 正式工作流、六附件、国内加速运行时网络证据、软件内更新、数据保留、退出和缓存清理终验。
+- `docs/CONTINUE.md`：把 v0.4.7 从本机发布门禁更新为正式发布和软件内更新完整闭环，并说明后续只能发布新补丁版本。
+- `progress.md`：仅在末尾追加本轮正式发布终验、CDP 更新、文件查看、数据恢复、缓存清理、文件清单和回滚方式。
+- 回滚方式：对本轮文档收尾提交执行 `git revert <this-v0.4.7-doc-closure-commit>`；该操作只回滚上述三个文档，不得移动或覆盖 `v0.4.7`、`v0.4.6` 或任何既有标签，也不得卸载最终保留的 `D:\Forkline` v0.4.7。临时验证目录、备份和 updater `pending` 已按用户要求删除，不能通过 Git 回滚恢复；受保护异常未跟踪文件不得修改、暂存、提交或删除。
