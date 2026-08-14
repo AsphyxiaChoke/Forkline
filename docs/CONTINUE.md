@@ -1224,3 +1224,13 @@
 - `%APPDATA%\forkline\desktop-ui-preferences.json`、`desktop-preferences.json`、`desktop-window-state.json` 更新前后 SHA-256 分别保持 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`、`326886b370dc6365ba8016545bcac8fa99362fcc510294f30c269fd43370797d`、`765a61e7b2a05f6575ff29155d5e6469114108e9f331b25c10126c85c92b2236`。最近仓库文件只更新当前仓库的正常 `lastOpened`，4 条记录的路径、名称和分支在更新前后完全一致。
 - 本轮删除临时 Playwright 下载缓存、v0.4.5 安装器与用户数据备份、已消费的 updater `pending` 副本，共 `308,663,903` 字节（约 `294.4 MiB`）；`%TEMP%` 当前无 `forkline-*` 项。保留 `forkline-updater\installer.exe` 和 `current.blockmap` 作为后续差分更新基线。此前记录的临时备份路径已经清理且不可再用于恢复；本轮数据哈希与语义比对通过，因此不需要恢复。
 - v0.4.6 发布闭环已经完成。后续产品代码改动必须升至 `v0.4.7` 或更高补丁版本并创建新提交、新注释标签和新 Release；不得移动 `v0.4.6` 或任何既有标签，受保护异常未跟踪文件继续原样保留。
+
+## 2026-08-14 Forkline v0.4.7 Electron 43.4.0 本机发布门禁完成
+
+- 当前正式仓库仍是 `C:\Users\Administrator\Documents\Git管理工具\work\forkline-upload` 的 `main`；本轮基线为 `7c3c1ae000c76a97cc0eb32ac87c005d9cb6dcd3`。产品版本已升至 `0.4.7`，Electron 已从 `43.3.0` 更新到 `43.4.0`，安装器契约同步固定该版本。没有修改 Web、Git、便携版更新、NSIS 更新控制器或国内加速代码。
+- Electron `v43.4.0` 官方发布说明包含 Windows 注销/关机/重启浏览器进程崩溃修复、高负载快速切换菜单崩溃修复，以及 Chromium、ANGLE、V8 上游修复。源码 Electron 与安装版均实测为 `Electron/43.4.0`，正式仓库和普通工作区文件查看正常，无新增界面诊断或控制台错误。
+- 提交前完整自动回归为 `364/364`，0 失败、0 跳过，耗时约 `119.5` 秒；4000 文件冷扫描为 `311.8 ms`。依赖审计为 0 漏洞，`npm.cmd outdated` 无过期依赖，当前依赖树为 Electron `43.4.0`、electron-builder `26.15.3`、electron-updater `6.8.9`。
+- 本机未签名安装器为 `100,615,388` 字节、SHA-256 `792de7e45b9da71bd4972118f06f4e87095dde2cd53cadfed174730151933063`；blockmap SHA-256 为 `a1445919b41e9b8a46abbccf7e3508ae5966d74667d56a5f6474ac76d032e1e2`，`latest.yml` SHA-256 为 `59301b2bf6a44a4b8b6fbd6b21e4d6e49841395ffcf755585feb1b790333a551`。ASAR 版本、入口、更新依赖及 5 个关键脚本均已验真。
+- `D:\Forkline` 已完成 v0.4.6 覆盖升级、卸载保留数据和全新安装回 v0.4.7；最终文件/产品版本、HKCU 登记、桌面/开始菜单快捷方式、`installMode=nsis` 和正常退出均正确。5 条最近仓库的路径、名称和分支语义保留，稳定界面/缩放偏好哈希不变，窗口状态只发生正常启动关闭更新。
+- 已按用户要求删除本轮 `dist` 本机构建、验证脚本、测试配置、用户数据备份和一次性 npm 缓存，共约 `452.3 MiB`；v0.3.0 便携正式产物、`D:\Forkline`、用户数据及 updater 差分基线保留，真实 updater `pending` 不存在。受保护异常文件 `n+fs.statSync(p.join('public'` 仍为 0 字节且未暂存。
+- 本轮 `8` 个目标文件已经显式暂存并创建本地发布提交，受保护异常文件不在索引中。当前唯一外部阻塞是 `gh auth status -h github.com` 报默认账号令牌失效；恢复 GitHub CLI 认证后再推送、创建不可移动的 `v0.4.7` 注释标签和正式 Release。等待两条 Release 工作流完成后核验六附件、digest、校验文件、`latest.yml`、国内节点和未签名说明；最后必须从正式 v0.4.6 通过应用内更新到正式 v0.4.7，验证自动重启、数据保留和退出无残留。不得移动 `v0.4.6` 或任何既有标签。

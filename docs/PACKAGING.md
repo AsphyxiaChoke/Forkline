@@ -267,3 +267,14 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 更新后 CDP 终验确认设置页当前/最新均为 `v0.4.6` 且显示“已是最新版本”，中文、深色、`75%`、当前仓库和 `4` 条最近仓库保留；稳定界面偏好、缩放和窗口状态文件哈希不变，最近仓库只正常更新当前条目的 `lastOpened`。更新器随后按设计延迟启动带 `--updated` 参数的新实例，实际验证了安装后自动重开；正常关闭该实例后安装目录进程、后台服务和 Git/SSH 子进程立即为 `0`，等待 `30` 秒仍无二次拉起。
 - 终验完成后删除本轮临时 Playwright 缓存、安装器、用户数据备份和已消费的 updater `pending` 副本，合计约 `294.4 MiB`；`%TEMP%` 无 `forkline-*` 残留。保留 updater 当前基线用于后续差分更新。旧文档中的临时备份路径已经失效，不得继续引用为恢复来源。
 - 本轮仅追加发布验收文档，不修改产品代码或安装包内容。后续产品代码变更必须发布新补丁版本；禁止移动 `v0.4.6` 或任何既有标签。
+
+## v0.4.7 Electron 43.4.0 发布准备与本机验收
+
+- `v0.4.7` 只把应用/安装器版本从 `0.4.6` 升至 `0.4.7`，并把 Electron 从 `43.3.0` 更新到 `43.4.0`。Electron 官方发布说明确认该版本修复 Windows 注销、关机或重启时可能发生的浏览器进程崩溃，以及高负载下快速切换菜单的崩溃，并回移 Chromium、ANGLE、V8 上游修复。Forkline 产品代码、Web 菜单、Git 语义、便携版 Git 快进更新、NSIS `electron-updater` 和国内加速信任边界均未改变。
+- 提交前完整自动回归为 `364/364`，0 失败、0 跳过，总耗时约 `119.5` 秒；真实 Chromium 4000 文件冷扫描为 `311.8 ms`，低于 `350 ms` 门限。`npm.cmd audit --audit-level=low` 为 0 个已知漏洞；使用一次性仓库缓存复跑 `npm.cmd outdated` 后无过期依赖，依赖树为 Electron `43.4.0`、electron-builder `26.15.3`、electron-updater `6.8.9`。
+- 本机安装器 `Forkline-Setup-0.4.7-windows-x64.exe` 为 `100,615,388` 字节，SHA-256 `792de7e45b9da71bd4972118f06f4e87095dde2cd53cadfed174730151933063`，SHA-512 `7AFrbWfTgP11sbUU7NAVxdbDPNvLZSJ/6DyVLlV9hM7AdrWi+D0PljgfB7MFZVRQEnTBjrdE9kTcLsQjGLI5PA==`，Authenticode 为 `NotSigned`。blockmap 为 `105,369` 字节、SHA-256 `a1445919b41e9b8a46abbccf7e3508ae5966d74667d56a5f6474ac76d032e1e2`；`latest.yml` 为 `369` 字节、SHA-256 `59301b2bf6a44a4b8b6fbd6b21e4d6e49841395ffcf755585feb1b790333a551`，版本、文件名、大小和 SHA-512 均与 EXE 一致。
+- 打包目录 `app.asar` 为 `5,217,613` 字节、SHA-256 `9b5ea34efa8432a8dfbf313e6146866eb51d5fc524c168a973f878698097a0b1`；内部版本为 `0.4.7`、入口为 `electron/main.js`、保留 `electron-updater ^6.8.9`，5 个关键脚本与工作树逐字节一致。源码 Electron 和安装版 CDP 均确认用户代理包含 `Electron/43.4.0`，正式仓库与 `package.json` 可正常打开，未出现新增诊断或控制台错误。
+- 本机完成 `v0.4.6 → v0.4.7` 覆盖安装、卸载保留用户数据和全新安装回 `D:\Forkline`，三个安装器进程退出码均为 `0`。最终程序文件版本为 `0.4.7`、产品版本为 `0.4.7.0`，HKCU 登记为 `Forkline 0.4.7`，卸载命令为 `"D:\Forkline\Uninstall Forkline.exe" /currentuser`；桌面和开始菜单快捷方式均指向 `D:\Forkline\Forkline.exe`。安装版 `currentVersion=0.4.7`、`installMode=nsis`，关闭后无 Forkline 进程残留。
+- `%APPDATA%\forkline\desktop-ui-preferences.json` 和 `desktop-preferences.json` 与安装前备份 SHA-256 完全一致；窗口状态只因正常启动关闭而更新。最近仓库在安装前后均为 `5` 条，路径、名称和分支语义一致，只更新当前正式仓库的 `lastOpened`。验证备份在完成逐项比对后已经按用户要求删除，不再是可用恢复来源；当前用户数据继续保留。
+- 本轮精准删除 `dist` 下的本机构建、CDP/ASAR 脚本、两个测试配置、验证备份和一次性 npm 缓存，共 `474,254,953` 字节（约 `452.3 MiB`）。原有 v0.3.0 便携 ZIP 与校验文件、`D:\Forkline` v0.4.7、真实用户数据，以及 updater 的 `installer.exe`/`current.blockmap` 差分基线均保留；真实 updater 目录没有 `pending`。受保护异常未跟踪文件继续为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+- 正式 Release 仍必须由新的不可移动 `v0.4.7` 注释标签触发安装器和便携包工作流；本机产物已经清理，不能上传冒充正式附件。当前 GitHub CLI 凭据失效，恢复认证后才可推送、创建标签和 Release；随后必须核对六个正式附件、GitHub digest、校验文件、`latest.yml`、未签名风险和国内节点下载，再从正式 v0.4.6 安装版执行软件内更新到正式 v0.4.7。不得移动 `v0.4.6` 或任何既有标签。

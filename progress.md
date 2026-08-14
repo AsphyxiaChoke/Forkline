@@ -10136,3 +10136,35 @@
 - `docs/PACKAGING.md`：修正软件内更新验收说明，区分首次 CDP 终验关闭与 updater 后续自动重开。
 - `progress.md`：仅在末尾追加本轮延迟重启诊断、验证证据、文件清单和回滚方式。
 - 回滚方式：对本轮文档修正提交执行 `git revert <this-delayed-restart-doc-commit>`；不得回滚或移动 `v0.4.6` 标签，不得卸载最终保留的 `D:\Forkline` v0.4.6，不得触碰受保护异常未跟踪文件。
+
+## 2026-08-14 - Task: Prepare Forkline v0.4.7 Electron 43.4.0 reliability release and clean validation cache
+
+### What was done
+
+- Advanced the application and installer contract from `0.4.6` to `0.4.7` and upgraded Electron from `43.3.0` to `43.4.0`, incorporating confirmed Windows shutdown/restart and rapid-menu-switch crash fixes without changing Forkline product logic.
+- Revalidated source Electron, the local unsigned installer, overwrite install, uninstall with user-data retention, clean reinstall to `D:\Forkline`, repository/file viewing, shortcuts, current-user registration and graceful shutdown.
+- Preserved the existing Web, Git fast-forward, portable, NSIS updater, domestic acceleration, unsigned-release and immutable-tag boundaries; cleaned only this task's generated validation/build caches after their evidence was recorded.
+
+### Testing
+
+- Electron/installer focused regressions were `37/37`; the final `npm.cmd test` was `364/364`, 0 failed and 0 skipped, with total duration about `119.5` seconds. The real Chromium 4000-file cold scan was `311.8 ms`, below the `350 ms` limit.
+- `npm.cmd audit --audit-level=low` reported 0 vulnerabilities. `npm.cmd outdated --cache dist\npm-outdated-cache --prefer-online` completed with no outdated dependencies, and `npm.cmd ls --depth=0` confirmed Electron `43.4.0`, electron-builder `26.15.3` and electron-updater `6.8.9`.
+- Electron's official `v43.4.0` notes confirm fixes for a Windows logoff/shutdown/restart browser-process crash, a heavy-load rapid-menu-switch crash, and upstream Chromium/ANGLE/V8 fixes. Source CDP reported `Electron/43.4.0`, `currentVersion=0.4.7`, `installMode=git`; packaged CDP reported `Electron/43.4.0`, `currentVersion=0.4.7`, `installMode=nsis`. The formal repository and `package.json` opened without new diagnostics or console errors.
+- The local EXE was `100,615,388` bytes with SHA-256 `792de7e45b9da71bd4972118f06f4e87095dde2cd53cadfed174730151933063`, SHA-512 `7AFrbWfTgP11sbUU7NAVxdbDPNvLZSJ/6DyVLlV9hM7AdrWi+D0PljgfB7MFZVRQEnTBjrdE9kTcLsQjGLI5PA==` and Authenticode `NotSigned`. The blockmap SHA-256 was `a1445919b41e9b8a46abbccf7e3508ae5966d74667d56a5f6474ac76d032e1e2`; `latest.yml` SHA-256 was `59301b2bf6a44a4b8b6fbd6b21e4d6e49841395ffcf755585feb1b790333a551`; the ASAR SHA-256 was `9b5ea34efa8432a8dfbf313e6146866eb51d5fc524c168a973f878698097a0b1`.
+- The v0.4.6 overwrite install, uninstall and fresh v0.4.7 install all exited `0`. Final `D:\Forkline\Forkline.exe` has file version `0.4.7`, product version `0.4.7.0`; HKCU shows `Forkline 0.4.7`, both shortcuts target `D:\Forkline`, and no Forkline process remained after normal exit.
+- Stable UI and zoom preference hashes matched their pre-install backups. The window state changed only through normal launches, while all 5 recent repository paths, names and branches remained identical and only the current repository `lastOpened` changed.
+- Removed `474,254,953` bytes (about `452.3 MiB`) of exact task-owned `dist` build output, CDP/ASAR scripts, test profiles, validation backup and one-time npm cache. The v0.3.0 portable ZIP/checksum, installed v0.4.7, user data and updater differential baseline remain; the real updater has no `pending` directory.
+- The pre-commit index contained exactly the 8 named target files. A local `main` release commit was created; GitHub authentication remains invalid, so no push, v0.4.7 tag or Release has been created yet.
+- Protected untracked file `n+fs.statSync(p.join('public'` remains 0 bytes with SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`; it was not deleted, modified, staged or committed.
+
+### Notes
+
+- `package.json` - advances the application and installer version to `0.4.7` and Electron to `^43.4.0`.
+- `package-lock.json` - synchronizes the root version and resolved Electron `43.4.0` package.
+- `tests/installer-package.test.js` - fixes the release contract at `0.4.7` and Electron `^43.4.0`.
+- `README.md` - explains the Electron runtime reliability update and unchanged product boundaries.
+- `docs/ELECTRON_DESKTOP.md` - records the v0.4.7 runtime scope and unchanged IPC/security boundary.
+- `docs/PACKAGING.md` - records the local build, install lifecycle, data-retention, cache-cleanup and remaining formal-release gates.
+- `docs/CONTINUE.md` - records the current verified continuation point and invalid GitHub credential blocker.
+- `progress.md` - appends this implementation, verification, cleanup, file list and rollback record without rewriting history.
+- Rollback before release: restore only the files listed above from `7c3c1ae000c76a97cc0eb32ac87c005d9cb6dcd3`, leaving the protected untracked file untouched. After release: revert the v0.4.7 release commit with a new commit and publish a later patch; never move `v0.4.7`, `v0.4.6` or any existing tag. Deleted temporary caches and validation backups are not recoverable through Git rollback; current user data remains installed and preserved.
