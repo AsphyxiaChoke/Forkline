@@ -10193,3 +10193,121 @@
 - `docs/CONTINUE.md`：把 v0.4.7 从本机发布门禁更新为正式发布和软件内更新完整闭环，并说明后续只能发布新补丁版本。
 - `progress.md`：仅在末尾追加本轮正式发布终验、CDP 更新、文件查看、数据恢复、缓存清理、文件清单和回滚方式。
 - 回滚方式：对本轮文档收尾提交执行 `git revert <this-v0.4.7-doc-closure-commit>`；该操作只回滚上述三个文档，不得移动或覆盖 `v0.4.7`、`v0.4.6` 或任何既有标签，也不得卸载最终保留的 `D:\Forkline` v0.4.7。临时验证目录、备份和 updater `pending` 已按用户要求删除，不能通过 Git 回滚恢复；受保护异常未跟踪文件不得修改、暂存、提交或删除。
+
+## 2026-08-14 - Task: 提交详情正文随完整消息自动展开
+
+### What was done
+
+- 保留右侧提交详情正文框原有 `132px` 可用最小高度，移除 `220px` 最大高度限制，并让正文框按完整提交消息自动向下撑开。
+- 正文超过原上限后不再依赖框内纵向滚动；摘要、历史改写保存、提交操作、右侧详情面板整体滚动和 Git 语义保持不变。
+- 补充布局回归并同步继续开发文档，明确后续不得重新引入正文最大高度。
+
+### Testing
+
+- 修改前运行 `node --test tests/layout-ui.test.js`：新增回归稳定为 `51/52`，唯一失败是正文框缺少无上限内容尺寸规则；修改后该文件 `52/52` 通过。
+- 使用真实 Edge 打开独立临时 Git 仓库，先选择短正文提交并切换提交详情；长正文包含 276 个字符和 10 段内容，正文框实际 `clientHeight = scrollHeight = 453px`、外框约 `455px`，计算样式为 `field-sizing: content`、`max-height: none`，超过旧 `220px` 上限后仍完整展示。
+- 运行完整 `npm.cmd test`：`364/364` 通过，0 失败、0 跳过，总耗时约 `116.3` 秒；真实 Chromium 历史文件、3012 条提交、4000 文件工作区、Electron、安装器更新和 Git 集成回归均通过。
+- 本轮 Playwright 浏览器、页面快照和临时测试仓库均已关闭或删除；正式仓库受保护异常未跟踪文件保持未修改、未暂存、未提交。
+
+### Notes
+
+- `public/styles.css`：让历史提交正文输入框保留最小高度并按完整内容自动展开，取消原最大高度限制。
+- `tests/layout-ui.test.js`：固定正文框最小高度、内容尺寸和无最大高度的布局契约。
+- `docs/CONTINUE.md`：更新提交详情正文区域的当前布局行为和整体滚动边界。
+- `progress.md`：仅在末尾追加本轮实现、验证、清理、文件清单和回滚方式。
+- 回滚方式：提交前执行 `git restore -- public/styles.css tests/layout-ui.test.js docs/CONTINUE.md progress.md`；若本轮之后单独提交，则执行 `git revert <该提交哈希>`。两种方式都不得触碰异常未跟踪文件 `n+fs.statSync(p.join('public'`。
+
+## 2026-08-24 - Task: 工作区与暂存区支持目录批量选择
+
+### What was done
+
+- 为工作区和暂存区的层级文件树增加独立的目录选择控件，支持全选、取消全选和部分选中状态；目录折叠与目录选择互不冲突。
+- 目录选择按当前筛选范围更新完整选择集合，隐藏在虚拟化批次之外的文件也会被纳入批量操作；选择过程只更新现有 DOM 行和操作按钮状态，不触发整棵文件树重建。
+- 调整虚拟化上限计算，使目录批量选择不会因最后一个隐藏选中文件而扩展到全量；单文件选择仍能保留目标行可见，并同步更新中文/英文提示、README 和继续开发记录。
+
+### Testing
+
+- `node --check public\\js\\features\\file-tree.js` 通过。
+- `node --check public\\js\\features\\worktree-changes.js` 通过。
+- `node --test tests\\file-editor-ui.test.js`：`35/35` 通过；覆盖目录全选/取消、隐藏文件选择不触发重建、单文件选择仍可扩展到目标行。
+- `npm.cmd run test:browser`：`1/1` 通过；真实 Chromium 4000 文件工作区确认初始/目录选择后仍为 `800` 行，目录选择集合为 `4000` 个，虚拟化上限保持 `800`，取消后选择数为 `0`；冷扫描约 `283.0 ms`，批量加载最终 `4000` 行，监听器新增 `0`。
+
+### Notes
+
+- `public/js/features/file-tree.js`：增加目录选择控件、目录范围选择和三态视觉状态更新。
+- `public/js/features/worktree-changes.js`：让虚拟化上限只为当前单文件选择保留可见范围，避免目录批量选择扩展全量渲染。
+- `public/styles.css`：增加目录选择控件及三态勾选样式。
+- `public/js/i18n-catalog.js`：补充中英文目录选择提示。
+- `tests/file-editor-ui.test.js`：新增目录批量选择和虚拟化边界回归。
+- `tests/browser-performance.test.js`：新增真实 4000 文件目录选择与虚拟化验收。
+- `README.md`：说明目录批量选择和大工作区渲染边界。
+- `docs/CONTINUE.md`：追加 v0.4.8 目录选择实现和验证结论。
+- `progress.md`：追加本轮实现、测试、文件清单和回滚点。
+- 回滚方式：本轮尚未单独提交；如继续发布，随 v0.4.8 发布提交形成回滚点，之后使用 `git revert <v0.4.8 发布提交>` 回滚本轮整体变更。回滚或提交时均不得触碰、暂存或删除异常未跟踪文件 `n+fs.statSync(p.join('public'`。
+
+## 2026-08-24 - Task: 文件夹打开入口解析仓库边界
+
+### What was done
+
+- 文件夹选择器现在从当前浏览目录向上解析最近的 Git 仓库根目录；唯一直接子仓库容器自动进入该仓库，多仓库容器返回候选并保持打开按钮禁用，不再把容器目录误当作仓库。
+- 文件夹“打开”操作改用后端解析出的仓库根目录；无仓库和多仓库情况分别给出明确提示，Web、便携版和 Electron 共用同一语义。
+
+### Testing
+
+- 当前完整回归 `npm.cmd test`：`383/383` 通过，0 失败、0 跳过；其中包含仓库子目录、唯一容器、多仓库歧义和文件夹打开分流回归。
+- `tests/api-repo-context.test.js` 与 `tests/folder-command-loader.test.js` 的仓库解析和打开入口专项回归通过。
+
+### Notes
+
+- `server/repository-browse-service.js`：增加最近仓库根目录、唯一容器和多仓库候选解析。
+- `public/js/api.js`：传递浏览结果中的仓库根目录与候选信息。
+- `public/js/features/folder-command-implementation.js`：按解析结果启用或禁用打开入口并显示提示。
+- `public/js/features/repositories.js`：复用解析后的仓库路径打开目录。
+- `tests/api-repo-context.test.js`、`tests/folder-command-loader.test.js`：覆盖解析与 UI 分流边界。
+- `docs/CONTINUE.md`、`progress.md`：记录产品边界和验证结论。
+- 回滚方式：提交前执行 `git restore -- server/repository-browse-service.js public/js/api.js public/js/features/folder-command-implementation.js public/js/features/repositories.js tests/api-repo-context.test.js tests/folder-command-loader.test.js docs/CONTINUE.md progress.md`；不得触碰异常未跟踪文件 `n+fs.statSync(p.join('public'`。
+
+## 2026-08-24 - Task: Diff 弹窗关闭后的焦点恢复
+
+### What was done
+
+- 最大化 Diff 记录打开前焦点；关闭或按 Escape 后优先恢复仍有效的打开控件，右键入口若原焦点属于其他文件则按当前 Diff 文件和范围恢复对应文件行。
+- 保留现有最大化渲染、横向滚动、滚动位置恢复和关闭时清空行 DOM 的行为，不改变 Git 操作语义。
+
+### Testing
+
+- `node --check public\\js\\features\\diff-workbench-loader.js` 通过。
+- `node --test tests\\diff-workbench-loader.test.js`：`8/8` 通过，覆盖正常焦点恢复和右键旧焦点不串文件。
+- 真实 Chromium 打开正式仓库 `public/js/api.js` 的工作区 Diff：弹窗显示 `scrollWidth=2156`、`clientWidth=1896`；实际横向滚动后 `scrollLeft=260.44775390625`；关闭后弹窗隐藏，焦点恢复到 `data-file=public/js/api.js` 的未暂存文件行。
+
+### Notes
+
+- `public/js/features/diff-workbench-loader.js`：增加焦点记录、有效性判断和当前文件行回退恢复。
+- `tests/diff-workbench-loader.test.js`：增加关闭 Diff 后焦点恢复回归。
+- `docs/CONTINUE.md`、`docs/ARCHITECTURE.md`：同步 Diff 焦点行为和模块职责。
+- `progress.md`：仅在末尾追加本轮实现、验证和回滚点。
+- 回滚方式：提交前执行 `git restore -- public/js/features/diff-workbench-loader.js tests/diff-workbench-loader.test.js docs/CONTINUE.md docs/ARCHITECTURE.md progress.md`；若已随 v0.4.8 提交，则执行 `git revert <v0.4.8 发布提交>`，任何方式均不得触碰异常未跟踪文件 `n+fs.statSync(p.join('public'`。
+
+## 2026-08-24 - Task: Forkline v0.4.8 发布前性能与本机安装验收
+
+### What was done
+
+- 在正式仓库当前状态下重新建立大工作区性能基线；确认 `127.0.0.1:5177` 当前无监听者，未触碰交接中要求保护的异常未跟踪文件或其他 PID。此前超过门限的结果未被放宽或通过修改测试掩盖。
+- 完成本机 v0.4.8 Windows x64 NSIS 构建，并在独立临时目录完成当前用户安装、启动、后台服务可用、正常关闭、卸载、快捷方式移除和用户数据保留验收；现有 `D:\Forkline` v0.4.7 未被覆盖。
+
+### Testing
+
+- `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API `281.8 ms`，低于不可放宽的 `350 ms` 门限；连续无变化 API 中位数 `57.1 ms`，变更后 API `81.6 ms`。
+- `npm.cmd test`：`385/385` 通过，0 失败、0 跳过；完整套件中的大工作区冷 API 为 `325.4 ms`，仍低于 `350 ms`。`npm.cmd audit --audit-level=low` 为 0 个漏洞；Node 语法和 `git diff --check` 无错误。
+- 本机构建使用 electron-builder `26.15.3`、Electron `43.4.1`。`Forkline-Setup-0.4.8-windows-x64.exe` 为 `104,605,702` 字节，SHA-256 `90a005f85afb508710a0852479f26cc273ea1df0342aa13f5550692258eaae04`，SHA-512 `0D6717BF55C505B19CCC99006353ED56E511FF9A2FC54E80D91EC583F1EFA0B90774EB27C8F5530615E8B035575F0FD906789DF77FCCD0DE706B15980E159EAF`；blockmap 为 `111,627` 字节，SHA-256 `053a0b585820bb3dd7cc3979aef5591c94c16e95c6a3b439935ee40e9388dc65`；`latest.yml` 为 `369` 字节，SHA-256 `02c9395eb8819a48dd886fad96aeb578f45e3471d93dd5cc44fe7a347ffcc35`。`latest.yml` 的版本、文件名、大小和 SHA-512 与 EXE 一致；Authenticode 如实为 `NotSigned`。
+- 临时安装目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.8-local-e2e` 的安装器退出码为 `0`；实际文件版本 `0.4.8`、产品版本 `0.4.8.0`，HKCU 当前用户登记为 `Forkline 0.4.8`，桌面和开始菜单快捷方式均指向该目录。启动后主窗口标题为 `Forkline Web`，后台服务监听 `57843`，首页和 `/api/state?details=core` 均为 HTTP `200`；正常关闭后安装目录进程树归零。
+- 临时卸载器退出码为 `0`；临时安装目录、HKCU 登记和两个快捷方式均已移除，`%APPDATA%\forkline` 仍存在，四个稳定用户数据文件的字节数和 SHA-256 与卸载前一致。
+- 受保护异常未跟踪文件仍为 `0` 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。GitHub CLI 当前令牌无效，`git ls-remote` 报 `SEC_E_NO_CREDENTIALS`，因此尚未推送、打标签或创建 v0.4.8 Release。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 v0.4.8 本机产物、安装/启动/卸载和发布前门禁证据。
+- `docs/CONTINUE.md`：追加 v0.4.8 当前续接点、性能结论和剩余远端发布门禁。
+- `progress.md`：仅在末尾追加本轮诊断、验证、文件清单和回滚点。
+- `dist/installer/Forkline-Setup-0.4.8-windows-x64.exe`、`.blockmap`、`latest.yml`、`.sha256`：本机构建验证产物，尚未作为正式 Release 附件发布。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；若已提交则执行 `git revert <本轮文档提交>`。不得移动既有标签，不得使用 `git clean`、`git add .` 或触碰异常未跟踪文件。

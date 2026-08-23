@@ -65,12 +65,13 @@ function stashDetailHtml(stash, detail, files, diff) {
   if (detail?.error) {
     return `<div class="empty-panel compact"><strong>${t("读取失败")}</strong><span>${escapeHtml(t(detail.error))}</span></div>`;
   }
+  const actionDisabled = stashActionBusyForCurrentRepo() ? " disabled" : "";
   return tt`
     <div class="stash-actions">
-      <button class="mini-btn" data-stash-action="apply" data-stash-ref="${escapeAttr(stash.ref)}" type="button">应用</button>
-      <button class="mini-btn" data-stash-action="pop" data-stash-ref="${escapeAttr(stash.ref)}" type="button">弹出</button>
-      <button class="mini-btn" data-stash-action="branch" data-stash-ref="${escapeAttr(stash.ref)}" type="button">建分支</button>
-      <button class="mini-btn danger" data-stash-action="drop" data-stash-ref="${escapeAttr(stash.ref)}" type="button">删除</button>
+      <button class="mini-btn" data-stash-action="apply" data-stash-ref="${escapeAttr(stash.ref)}" type="button"${actionDisabled}>应用</button>
+      <button class="mini-btn" data-stash-action="pop" data-stash-ref="${escapeAttr(stash.ref)}" type="button"${actionDisabled}>弹出</button>
+      <button class="mini-btn" data-stash-action="branch" data-stash-ref="${escapeAttr(stash.ref)}" type="button"${actionDisabled}>建分支</button>
+      <button class="mini-btn danger" data-stash-action="drop" data-stash-ref="${escapeAttr(stash.ref)}" type="button"${actionDisabled}>删除</button>
     </div>
     <div class="meta-grid stash-meta">
       <span>引用</span><div class="meta-value">${escapeHtml(stash.ref)}</div>
@@ -112,8 +113,93 @@ function selectStash(ref) {
   renderInspector();
 }
 
+function stashActionListSignature(stashes) {
+  return (stashes || [])
+    .map((stash) => [stash.ref, stash.sha, stash.message, stash.branch, stash.time, stash.subject].map((value) => value || "").join("\u001f"))
+    .join("\u001e");
+}
+
+function stashActionWorktreeSignature(data) {
+  const snapshot = data?.worktreeSnapshot || (data?.workingFiles || [])
+    .map((file) => [file.state, file.file, file.extra, file.indexStatus, file.worktreeStatus, file.snapshot].map((value) => value || "").join("\u001f"))
+    .join("\u001e");
+  const operation = data?.repo?.operation || {};
+  return [snapshot, operation.type || "", operation.snapshot || ""].join("\u001f");
+}
+
+function stashActionContext() {
+  const data = state.data;
+  const repo = data?.repo || {};
+  return {
+    data,
+    repoPath: repo.path || "",
+    stateRequestId: state.stateRequestId,
+    openRepoRequestId: state.openRepoRequestId,
+    branch: repo.branch || "",
+    headSha: repo.headSha || "",
+    worktreeSignature: stashActionWorktreeSignature(data),
+    stashSignature: stashActionListSignature(data?.stashes),
+  };
+}
+
+function isCurrentStashAction(lock) {
+  const current = stashActionContext();
+  return stashActionLocks().get(lock.repoPath) === lock
+    && current.data === lock.data
+    && current.repoPath === lock.repoPath
+    && current.stateRequestId === lock.stateRequestId
+    && current.openRepoRequestId === lock.openRepoRequestId
+    && current.branch === lock.branch
+    && current.headSha === lock.headSha
+    && current.worktreeSignature === lock.worktreeSignature
+    && current.stashSignature === lock.stashSignature;
+}
+
+function updateStashActionContext(lock) {
+  Object.assign(lock, stashActionContext());
+}
+
+function stashActionLocks() {
+  if (!(state.stashActionLocks instanceof Map)) state.stashActionLocks = new Map();
+  return state.stashActionLocks;
+}
+
+function stashActionBusyForCurrentRepo() {
+  return stashActionLocks().has(repoPathSnapshot());
+}
+
+function setStashActionButtonsDisabled(disabled) {
+  if (typeof document !== "object" || typeof document.querySelectorAll !== "function") return;
+  document.querySelectorAll("[data-stash-action]").forEach((button) => {
+    button.disabled = disabled;
+  });
+}
+
+function beginStashAction(action, ref) {
+  const context = stashActionContext();
+  const locks = stashActionLocks();
+  if (!context.repoPath || locks.has(context.repoPath)) return null;
+  const lock = { ...context, action, ref };
+  locks.set(context.repoPath, lock);
+  setStashActionButtonsDisabled(true);
+  return lock;
+}
+
+function finishStashAction(lock, button) {
+  const locks = stashActionLocks();
+  const ownsLock = locks.get(lock.repoPath) === lock;
+  if (ownsLock) {
+    locks.delete(lock.repoPath);
+    if (!stashActionBusyForCurrentRepo()) setStashActionButtonsDisabled(false);
+    return;
+  }
+  if (!stashActionBusyForCurrentRepo() && button) button.disabled = false;
+}
+
 async function runStashAction(action, ref, button) {
   if (!state.data || !ref) return;
+  const repoPath = repoPathSnapshot();
+  if (stashActionLocks().has(repoPath)) return;
   const names = { apply: "应用储藏", pop: "弹出储藏", drop: "删除储藏", branch: "从储藏创建分支" };
   const stash = state.data.stashes?.find((item) => item.ref === ref);
   if (action === "branch") {
@@ -122,16 +208,18 @@ async function runStashAction(action, ref, button) {
   }
   const message = stashActionConfirmMessage(action, ref);
   if (!state.data.repo.isSample && !confirm(message)) return;
-  const repoPath = repoPathSnapshot();
+  const lock = beginStashAction(action, ref);
+  if (!lock) return;
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ action: `${action}Stash`, ref, sha: stash?.sha || "", ...currentBranchSnapshotPayload() }) });
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentStashAction(lock)) return;
     toast(result.output || t("{action}完成", { action: t(names[action] || "储藏操作") }));
     state.stashDetails.clear();
     const data = await api("/api/worktree?stashes=1");
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentStashAction(lock)) return;
     mergeWorktreeState(data, { stashes: true });
+    updateStashActionContext(lock);
     if (!state.data.stashes?.some((stash) => stash.ref === state.selectedStash)) {
       state.selectedStash = state.data.stashes?.[0]?.ref || "";
     }
@@ -139,17 +227,20 @@ async function runStashAction(action, ref, button) {
     renderInspector();
     if (state.selectedSha && state.selectedTab !== "stashes") {
       await loadCommit(state.selectedSha);
+      if (!isCurrentStashAction(lock)) return;
       renderInspector();
     }
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentStashAction(lock)) return;
     toast(error.message);
   } finally {
-    if (button) button.disabled = false;
+    finishStashAction(lock, button);
   }
 }
 
 async function branchFromStash(ref, button) {
+  const repoPath = repoPathSnapshot();
+  if (!state.data || !ref || stashActionLocks().has(repoPath)) return;
   const stash = state.data?.stashes?.find((item) => item.ref === ref);
   const defaultName = defaultStashBranchName(ref);
   const branch = prompt(t("从 {ref} 创建新分支：", { ref }), defaultName);
@@ -161,23 +252,25 @@ async function branchFromStash(ref, button) {
   }
   const message = t("确认从 {ref} 创建并切换到分支 {branch}？\n\n命令：git stash branch <分支> <储藏>\n成功后这条储藏会从列表删除，改动会出现在新分支工作区。", { ref, branch: trimmed });
   if (!state.data.repo.isSample && !confirm(message)) return;
-  const repoPath = repoPathSnapshot();
+  const lock = beginStashAction("branch", ref);
+  if (!lock) return;
   try {
     if (button) button.disabled = true;
     const result = await api("/api/action", {
       method: "POST",
       body: JSON.stringify({ action: "branchFromStash", ref, sha: stash?.sha || "", branch: trimmed, ...currentBranchSnapshotPayload() }),
     });
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentStashAction(lock)) return;
     toast(result.output || t("已从 {ref} 创建分支 {branch}", { ref, branch: trimmed }));
     state.stashDetails.clear();
     if (result.state) {
       state.data = result.state;
     } else {
       const data = await api("/api/state");
-      if (!isCurrentRepoPath(repoPath)) return;
+      if (!isCurrentStashAction(lock)) return;
       state.data = data;
     }
+    updateStashActionContext(lock);
     state.selectedRef = state.data.repo.branch && state.data.repo.branch !== "detached HEAD" ? state.data.repo.branch : "";
     state.selectedStash = state.data.stashes?.[0]?.ref || "";
     state.selectedTab = "stashes";
@@ -185,13 +278,14 @@ async function branchFromStash(ref, button) {
     renderAll();
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);
+      if (!isCurrentStashAction(lock)) return;
       renderInspector();
     }
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentStashAction(lock)) return;
     toast(error.message);
   } finally {
-    if (button) button.disabled = false;
+    finishStashAction(lock, button);
   }
 }
 

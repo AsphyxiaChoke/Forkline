@@ -291,3 +291,12 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `desktop-preferences.json` 与更新前备份 SHA-256 同为 `326886b370dc6365ba8016545bcac8fa99362fcc510294f30c269fd43370797d`；本轮验收产生的 7 条长任务诊断已从已验证备份原子恢复，`desktop-ui-preferences.json` 最终 SHA-256 回到 `9e7e3e89a26e2c7ff9111ed9f30fef71ff402dff6f0fef09a4933d1ead36d10c`。5 条最近仓库的路径、名称和分支完全一致，仅当前仓库 `lastOpened` 正常更新；窗口状态只发生正常启动关闭变化。
 - 最终程序文件版本和 HKCU 登记均为 `0.4.7`，卸载命令仍为 `"D:\Forkline\Uninstall Forkline.exe" /currentuser`。正常关闭最终窗口后 Forkline、后台服务及其子进程立即为 `0`，继续等待 `30` 秒仍无二次拉起。
 - 精准删除本轮 `dist\release-validation-v0.4.7` 与 updater 已消费的 `pending`，共 `575,990,052` 字节（约 `549.3 MiB`）。保留 updater `installer.exe`/`current.blockmap` 差分基线、两份 v0.3.0 正式便携产物、`D:\Forkline` v0.4.7 和真实用户数据；本轮未删除早于当前任务的 npm 或浏览器缓存。本轮只追加发布验收文档，不修改已发布产品或移动任何标签。
+
+## v0.4.8 发布前本机验收
+
+- 性能门禁在当前无 `5177` 监听服务的正式仓库基线下重新验证：真实 Chromium 4000 文件冷 API `281.8 ms`，完整回归中的冷 API `325.4 ms`，均低于不可放宽的 `350 ms`；没有修改门限或测试以规避失败。
+- 完整自动回归为 `385/385`，0 失败、0 跳过；依赖审计为 0 个漏洞，Node 语法和差异检查通过。本机构建使用 electron-builder `26.15.3`、Electron `43.4.1`。
+- 本机 NSIS 产物：`Forkline-Setup-0.4.8-windows-x64.exe` 为 `104,605,702` 字节，SHA-256 `90a005f85afb508710a0852479f26cc273ea1df0342aa13f5550692258eaae04`；blockmap 为 `111,627` 字节，SHA-256 `053a0b585820bb3dd7cc3979aef5591c94c16e95c6a3b439935ee40e9388dc65`；`latest.yml` 为 `369` 字节，SHA-256 `02c9395eb8819a48dd886fad96aeb578f45e3471d93dd5cc44fe7a347ffcc35`；EXE Authenticode 为 `NotSigned`。本地生成的 `.sha256` 文件为 `102` 字节，内容与 EXE SHA-256 一致。
+- 临时安装器验证使用当前用户模式和独立目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.8-local-e2e`：安装退出码 `0`，文件/产品版本为 `0.4.8/0.4.8.0`，HKCU 登记和桌面/开始菜单快捷方式正确；启动后主窗口标题为 `Forkline Web`，后台服务端口 `57843`、首页和核心状态均 HTTP `200`，正常关闭后进程树归零。
+- 临时卸载退出码 `0`，安装目录、登记和快捷方式已移除；`%APPDATA%\forkline` 及四个稳定用户数据文件仍存在且字节数/哈希未变。现有 `D:\Forkline` v0.4.7 保持不动。
+- 正式发布仍需在不可变 `v0.4.8` 标签上由 Release 事件触发安装器和便携包工作流；本机产物不能冒充正式附件。发布说明必须继续明确当前用户安装、可选目录、桌面/开始菜单快捷方式、用户数据保留、未签名/未知发布者和 SmartScreen 风险，以及更新前优雅停止 Forkline、Git、SSH 子进程。

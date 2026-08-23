@@ -1,5 +1,6 @@
 // DOM event bindings. Load after all feature functions.
 els.openRepo.addEventListener("click", openRepo);
+els.toastClose?.addEventListener("click", dismissToast);
 els.browseRepo.addEventListener("click", () => openFolderModalLazy().catch((error) => toast(error.message)));
 els.cloneRepo.addEventListener("click", openCloneModal);
 els.initRepo.addEventListener("click", openInitModal);
@@ -180,6 +181,7 @@ els.amendToggle.addEventListener("change", () => {
 });
 els.commitSummary.addEventListener("input", reportDesktopRecoveryState);
 els.commitBody.addEventListener("input", reportDesktopRecoveryState);
+els.commitPushToggle.addEventListener("change", reportDesktopRecoveryState);
 els.commitForm.addEventListener("submit", (event) => {
   event.preventDefault();
   runAction(els.amendToggle.checked ? "amendCommit" : "commit");

@@ -7,6 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
+const coreSource = fs.readFileSync(path.join(root, "public", "js", "core.js"), "utf8");
 const source = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector-panel-loader.js"), "utf8");
 const tagsSource = fs.readFileSync(path.join(root, "public", "js", "panels", "tags.js"), "utf8");
 const workspacesSource = fs.readFileSync(path.join(root, "public", "js", "panels", "workspaces.js"), "utf8");
@@ -184,6 +185,57 @@ test("workspace tabs share one lazy module and render the tab selected during lo
   assert.equal(typeof harness.context.window.runSubmoduleAction, "function");
   await harness.context.ensureInspectorPanelLoaded("workspaces");
   assert.equal(harness.resources.length, 2);
+});
+
+test("workspace renderer does not depend on the compare panel lazy module", () => {
+  assert.match(coreSource, /function repositoryRefOptions\(extraRefs = \[\]\)/);
+  assert.doesNotMatch(workspacesSource, /\bcompareRefOptions\b/);
+  const context = vm.createContext({
+    state: {
+      selectedRef: "main",
+      data: {
+        repo: { branch: "main", name: "repo", path: "C:\\repo" },
+        branches: [],
+        remotes: [],
+        tags: [],
+      },
+    },
+    repositoryRefOptions: () => [{ ref: "main", label: "当前分支" }],
+    repoParentPath: () => "C:\\",
+    joinLocalPath: (...parts) => parts.join("\\"),
+    escapeAttr: (value) => String(value || ""),
+    t: (value) => value,
+    tt(strings, ...values) {
+      return strings.reduce((result, part, index) => result + part + (values[index] ?? ""), "");
+    },
+  });
+
+  vm.runInContext(workspacesSource, context);
+  assert.doesNotThrow(() => context.worktreeCreateHtml(true));
+  assert.match(context.worktreeCreateHtml(true), /worktreeRefOptions/);
+});
+
+test("opening a worktree reuses the guarded repository switch flow", async () => {
+  const opened = [];
+  const context = vm.createContext({
+    state: { data: { repo: { path: "C:\\repo" } } },
+    openRepo: async (repoPath) => {
+      opened.push(repoPath);
+      return true;
+    },
+    api: async () => {
+      throw new Error("unguarded worktree API path used");
+    },
+    toast: () => {},
+    t: (value) => value,
+  });
+  const button = { disabled: false };
+
+  vm.runInContext(workspacesSource, context);
+  await context.openWorktreePath("C:\\repo-feature", button);
+
+  assert.deepEqual(opened, ["C:\\repo-feature"]);
+  assert.equal(button.disabled, false);
 });
 
 test("the recovery dashboard loads on demand while recovery actions stay inside its module", async () => {

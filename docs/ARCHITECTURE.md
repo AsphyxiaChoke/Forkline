@@ -5,7 +5,7 @@
 - `server.js`：进程启动、共享状态接线、HTTP 本地化/错误转换、静态资源和 API 路由编排；不再直接实现 Git 领域行为。
 - `server/git-runtime.js`：Git 可执行文件发现、文本/二进制命令执行、长操作输出捕获、凭据隐藏和进程树终止。
 - `server/repository-service.js`：仓库读取门面，负责打开/切换仓库、引用与远端通用校验，以及下列读取子服务的显式接线。
-- `server/repository-browse-service.js`：目录浏览、快捷路径和仓库内路径边界判断。
+- `server/repository-browse-service.js`：目录浏览、快捷路径和仓库内路径边界判断；浏览仓库子目录时向上解析最近仓库根目录，容器目录仅在直接子目录唯一时自动选择仓库，多仓库容器返回候选而不猜测。
 - `server/repository-auth-service.js`：认证环境按需诊断与缓存、托管平台识别、Windows 系统凭据入口，以及 PR/MR 网页地址生成。
 - `server/repository-submodule-service.js`：工作树/子模块解析、状态增强和失效工作树快照。
 - `server/repository-worktree-service.js`：工作区状态、文件快照、Diff、储藏和同步详情读取。
@@ -34,7 +34,7 @@
 - `public/js/features/`：分支、工作区更改、历史列表、图谱渲染、仓库操作、Git 操作、右键菜单和 Diff 工作台等业务流程。
 - `public/js/features/context-menu-loader.js`：首屏右键菜单门面，负责首次使用时并行载入完整菜单实现与 `context-menu.css`、共享进行中的加载 Promise、脚本/样式独立失败重试，并保留菜单定位、关闭和供文件编辑器复用样式的能力。
 - `public/js/features/folder-command.js`：首屏目录/命令门面和右栏上下文模块；保留页签切换、上下文判断和详情触发，第一次打开目录选择器或命令面板时并行载入 `folder-command-implementation.js` 与 `folder-command.css`，等待两者完成后再打开，失败时只重试失败资源。
-- `public/js/features/folder-command-implementation.js`：按需载入的本机目录浏览和命令面板完整实现，两种入口共用同一组脚本与样式加载 Promise。
+- `public/js/features/folder-command-implementation.js`：按需载入的本机目录浏览和命令面板完整实现，两种入口共用同一组脚本与样式加载 Promise；文件夹打开入口使用后端解析出的仓库根目录，多仓库或无仓库时保持选择器打开并提示用户继续选择。
 - `public/js/features/recovery-policy.js`：首屏保留的恢复点策略、按仓库偏好、整理确认和危险操作后清理入口；不包含恢复点页面或 reflog 界面。
 - `public/js/features/git-actions-loader.js`：首屏 Git 操作门面；保留当前分支、工作区、未完成操作与远端配置快照，追加状态、文件选择辅助和“储藏并签出”返回原分支后的自动恢复，第一次实际执行 Git 动作时载入完整实现。
 - `public/js/features/git-actions.js`：按需载入的提交、签出、合并、变基、储藏、远端、单文件与批量文件等完整 Git 操作实现；载入后通过 `ForklineGitActions` 注册给首屏门面，并发入口共用加载 Promise，失败资源移除后可重试。
@@ -49,7 +49,7 @@
 - `public/js/panels/stashes.js`、`compare.js`：分别负责按需载入的储藏和分支/引用比较面板，共用 `repository-panels.css`；比较请求入口由首屏 `commit-actions-loader.js` 提供，完整请求实现在首次比较时载入，页面模块只负责结果展示与页内动作。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、按需载入的 Git 操作日志与界面诊断页面、应用设置与在线更新面板；Tag 与恢复点共用 `repository-panels.css`，日志页共用 `logs.css`，操作取消核心不属于 `logs.js`。
 - `public/js/features/file-tree.js`、`diff-renderer.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、供同步/比较等页面共用的双栏 Diff 基础渲染，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu/scroll 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。工作区与暂存区超过 800 个文件时先渲染首批，接近底部滚动或点击“继续显示”后按 400 个增量合并目录节点；目录数量仍按完整文件集合计算。每个目录节点根据完整文件数量写入固有高度，工作区目录组使用 `content-visibility: auto` 跳过屏幕外子树的布局和绘制，同时保留稳定滚动范围。普通文件单击只更新选择和文件上下文，不读取隐藏 Diff。
-- `public/js/features/diff-workbench-loader.js`：首屏 Diff 轻量门面，保留文件状态/范围判断、活动 Diff 清理和弹窗关闭能力；第一次显式打开“查看对照”时并行载入 `diff-workbench.css` 与有序脚本链 `diff-selection.js`、`diff-workbench.js`，三者完成后才进入工作台。并发入口共用一个 Promise，脚本或样式失败时只移除并重试失败资源。
+- `public/js/features/diff-workbench-loader.js`：首屏 Diff 轻量门面，保留文件状态/范围判断、活动 Diff 清理、弹窗关闭和焦点恢复能力；第一次显式打开“查看对照”时并行载入 `diff-workbench.css` 与有序脚本链 `diff-selection.js`、`diff-workbench.js`，三者完成后才进入工作台。并发入口共用一个 Promise，脚本或样式失败时只移除并重试失败资源。
 - `public/js/features/diff-workbench.js`、`diff-selection.js`：按需载入后负责工作区 Diff 读取、反馈、最大化渲染、按块/按行操作和滚动位置恢复。已从布局移除的内联对照容器只保留活动 Diff 状态并清空旧节点，不再生成隐藏副本；实际行节点只在最大化弹窗中按首批最多 1000 行渲染。
 - `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时先复用右键菜单样式，并等待 `file-editor.css` 与 CodeMirror 样式全部就绪。脚本按依赖层载入：同层 CodeMirror 插件和语言模式并行请求，`JSX / HTMLMixed / Markdown / Dockerfile` 等待各自基础模式，PHP 再等待 HTMLMixed 与 C-like；五个 Forkline 编辑器模块继续按原顺序执行。所有入口共享同一个进行中的加载 Promise，失败后只重试未成功资源，再绑定编辑器专属事件。
 - `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：按需载入后分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；两种路径都只允许编辑中间的合并结果。

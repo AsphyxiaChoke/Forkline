@@ -62,6 +62,25 @@ test("repository browse helpers keep paths inside the selected root", () => {
   assert.equal(browse.sameFsPath(root, root.replaceAll(path.sep, "/")), true);
 });
 
+test("repository browser resolves repo subdirectories and only unique container repos", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-browse-repo-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const repo = path.join(root, "module");
+  const nested = path.join(repo, "src");
+  await fs.mkdir(path.join(repo, ".git"), { recursive: true });
+  await fs.mkdir(nested, { recursive: true });
+
+  const browse = createRepositoryBrowseService({ getCurrentRepo: () => "" });
+  assert.equal(browse.readDirectory(nested).repositoryPath, repo);
+  assert.equal(browse.readDirectory(root).repositoryPath, repo);
+
+  const secondRepo = path.join(root, "another-module");
+  await fs.mkdir(path.join(secondRepo, ".git"), { recursive: true });
+  const ambiguous = browse.readDirectory(root);
+  assert.equal(ambiguous.repositoryPath, "");
+  assert.deepEqual(ambiguous.repositoryCandidates.sort(), [repo, secondRepo].sort());
+});
+
 test("repository auth helpers normalize remote URLs and encode review links", () => {
   const auth = createRepositoryAuthService({
     getCurrentRepo: () => "",

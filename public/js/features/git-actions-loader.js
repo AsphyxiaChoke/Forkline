@@ -296,6 +296,16 @@ function updateAmendMode() {
   els.amendToggle.disabled = !canAmend;
   els.amendToggle.title = canAmend ? t("追加到上一次提交") : t("当前分支还没有上一次提交");
   const enabled = canAmend && Boolean(els.amendToggle.checked);
+  const pushToggle = els.commitPushToggle;
+  if (pushToggle) {
+    if (enabled && pushToggle.checked) pushToggle.checked = false;
+    pushToggle.disabled = enabled || Boolean(state.data?.repo?.isSample);
+    pushToggle.title = enabled
+      ? t("追加提交暂不支持自动推送，请提交后手动推送")
+      : state.data?.repo?.isSample
+        ? t("示例模式不会执行实际推送")
+        : t("提交成功后自动推送当前分支");
+  }
   els.commitSubmit.textContent = enabled ? t("追加提交") : t("创建提交");
   els.commitSubmit.title = enabled ? t("追加到上一次提交") : t("创建新的提交");
 }

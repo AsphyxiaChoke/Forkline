@@ -102,6 +102,7 @@ const state = {
   folderBrowse: null,
   folderBrowseRequestId: 0,
   openRepoRequestId: 0,
+  stateRequestId: 0,
   repoHydrating: false,
   repoDetailRequestId: 0,
   repoDetailLoads: {},
@@ -115,9 +116,15 @@ function isCurrentRepoPath(repoPath) {
   return repoPathSnapshot() === repoPath;
 }
 
+function invalidateStateRefreshes() {
+  state.stateRequestId = Number.isInteger(state.stateRequestId) ? state.stateRequestId + 1 : 1;
+  return state.stateRequestId;
+}
+
 async function loadStateForRepoPath(repoPath, ref = state.selectedRef) {
+  const requestId = invalidateStateRefreshes();
   const data = await api(`/api/state?ref=${encodeURIComponent(ref)}&details=core`);
-  if (!isCurrentRepoPath(repoPath)) return null;
+  if (requestId !== state.stateRequestId || !isCurrentRepoPath(repoPath)) return null;
   state.repoDetailRequestId += 1;
   state.repoDetailLoads = {};
   return data;
@@ -155,8 +162,27 @@ const inspectorTabs = {
   branch: ["branches", "sync", "compare"],
   more: ["worktrees", "submodules", "stashes", "recovery", "logs", "settings"],
 };
+
+function repositoryRefOptions(extraRefs = []) {
+  const seen = new Set();
+  const items = [];
+  const add = (ref, label) => {
+    const value = String(ref || "").trim();
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    items.push({ ref: value, label });
+  };
+  add("HEAD", t("当前 HEAD"));
+  add(state.data?.repo?.branch, t("当前分支"));
+  (state.data?.branches || []).forEach((branch) => add(branch, t("本地分支")));
+  (state.data?.remotes || []).forEach((branch) => add(branch, t("远端分支")));
+  (state.data?.tags || []).forEach((tag) => add(tag.name, "Tag"));
+  extraRefs.forEach((ref) => add(ref, t("当前输入")));
+  return items;
+}
 const els = {
   appUpdateIndicator: $("#appUpdateIndicator"),
+  gitActionStatus: $("#gitActionStatus"),
   repoName: $("#repoName"),
   repoPath: $("#repoPath"),
   sideRepoName: $("#sideRepoName"),
@@ -194,6 +220,7 @@ const els = {
   commitSummary: $("#commitSummary"),
   commitBody: $("#commitBody"),
   amendToggle: $("#amendToggle"),
+  commitPushToggle: $("#commitPushToggle"),
   commitSubmit: $("#commitSubmit"),
   draftNote: $("#draftNote"),
   workDiffTitle: $("#workDiffTitle"),
@@ -306,6 +333,8 @@ const els = {
   fileEditorClose: $("#fileEditorClose"),
   fileEditorResizeHandle: $("#fileEditorResizeHandle"),
   toast: $("#toast"),
+  toastMessage: $("#toastMessage"),
+  toastClose: $("#toastClose"),
   undoRecovery: $("#undoRecovery"),
   themeToggle: $("#themeToggle"),
   graphModeLabel: $("#graphModeLabel"),

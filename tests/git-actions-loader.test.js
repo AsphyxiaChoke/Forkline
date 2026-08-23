@@ -131,6 +131,7 @@ function createHarness() {
     worktreeSnapshotPayload: () => ({ expectedWorktreeSnapshot: "snapshot" }),
     els: {
       amendToggle: { checked: false, disabled: false, title: "" },
+      commitPushToggle: { checked: false, disabled: false, title: "" },
       commitSubmit: { textContent: "", title: "" },
     },
   });

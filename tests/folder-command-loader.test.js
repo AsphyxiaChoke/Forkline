@@ -107,6 +107,53 @@ test("inspector context switching works before the folder-command implementation
   assert.equal(typeof harness.context.openFolderModal, "undefined");
 });
 
+test("folder opener uses the resolved repository and refuses ambiguous folders", async () => {
+  const opened = [];
+  const closed = [];
+  const toasts = [];
+  const context = vm.createContext({
+    state: { folderBrowse: { current: "C:\\container", repositoryPath: "C:\\container\\repo" } },
+    els: {
+      repoInput: { value: "" },
+      folderPathInput: { value: "C:\\container" },
+      folderCurrentPath: { textContent: "" },
+      folderParent: { disabled: false },
+      folderOpen: { disabled: false, textContent: "", title: "" },
+      folderRoots: { innerHTML: "" },
+      folderList: { innerHTML: "" },
+      folderModal: {
+        classList: { add() {}, remove() {}, contains() { return false; } },
+        setAttribute() {},
+      },
+    },
+    document: { body: { classList: { add() {}, remove() {} } } },
+    openRepo: async (pathValue) => opened.push(pathValue),
+    closeFolderModal: () => closed.push(true),
+    toast: (message) => toasts.push(message),
+    t: (value) => value,
+    escapeAttr: (value) => String(value),
+    escapeHtml: (value) => String(value),
+  });
+  vm.runInContext(implementationSource, context);
+  context.closeFolderModal = () => closed.push(true);
+
+  context.renderFolderBrowser();
+  assert.equal(context.els.folderOpen.disabled, false);
+  assert.equal(context.els.folderOpen.textContent, "打开 Git 仓库");
+  await context.openSelectedFolder();
+  assert.deepEqual(opened, ["C:\\container\\repo"]);
+  assert.deepEqual(closed, [true]);
+
+  context.state.folderBrowse = { current: "C:\\ambiguous", repositoryPath: "", repositoryCandidates: ["C:\\ambiguous\\a", "C:\\ambiguous\\b"] };
+  context.els.folderPathInput.value = "C:\\ambiguous";
+  context.renderFolderBrowser();
+  assert.equal(context.els.folderOpen.disabled, true);
+  await context.openSelectedFolder();
+  assert.deepEqual(opened, ["C:\\container\\repo"]);
+  assert.equal(closed.length, 1);
+  assert.match(toasts.at(-1), /Git 仓库/);
+});
+
 function installImplementation(context, calls) {
   context.openFolderModal = async () => calls.push(["folder"]);
   context.closeFolderModal = () => calls.push(["close-folder"]);

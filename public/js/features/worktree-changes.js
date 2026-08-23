@@ -330,10 +330,11 @@ function renderChangeSection(scope, title, files, actions) {
 function worktreeFileRenderLimit(scope, files) {
   if (!state.worktreeRenderLimits) state.worktreeRenderLimits = { unstaged: WORKTREE_FILE_INITIAL_LIMIT, staged: WORKTREE_FILE_INITIAL_LIMIT };
   const current = Math.max(WORKTREE_FILE_INITIAL_LIMIT, Number(state.worktreeRenderLimits[scope]) || 0);
-  let selectedLimit = 0;
-  files.forEach((file, index) => {
-    if (state.selectedChanges.has(changeKey(scope, file.file))) selectedLimit = index + 1;
-  });
+  const selectedFile = String(state.selectedFile || "");
+  const selectedIndex = selectedFile
+    ? files.findIndex((file) => file.file === selectedFile && state.selectedChanges.has(changeKey(scope, file.file)))
+    : -1;
+  const selectedLimit = selectedIndex >= 0 ? selectedIndex + 1 : 0;
   state.worktreeRenderLimits[scope] = Math.max(current, selectedLimit);
   return Math.min(files.length, state.worktreeRenderLimits[scope]);
 }

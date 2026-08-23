@@ -6,6 +6,9 @@ const diffWorkbenchResources = [
 const diffWorkbenchStyleResource = "./diff-workbench.css";
 
 let diffWorkbenchLoadPromise = null;
+let diffModalReturnFocus = null;
+let diffModalReturnFile = "";
+let diffModalReturnScope = "";
 let diffWorkbenchStyleLoadPromise = null;
 
 function diffWorkbenchResourceElement(resource) {
@@ -106,6 +109,7 @@ async function loadWorkingDiffLazy(filePath) {
 
 async function openDiffModalLazy() {
   const repoPath = repoPathSnapshot();
+  captureDiffModalFocus();
   await ensureDiffWorkbenchLoaded();
   if (!isCurrentRepoPath(repoPath)) return false;
   return openDiffModal();
@@ -186,9 +190,45 @@ function normalizeWorkDiffScopeChoice(scope, fileInfo) {
   return preferredWorkDiffScope(fileInfo);
 }
 
+function captureDiffModalFocus() {
+  const active = document.activeElement;
+  const filePath = String(state.activeDiff?.path || state.selectedFile || "");
+  const scope = String(state.workDiffScope || "");
+  const activeFile = String(active?.dataset?.file || "");
+  const activeScope = String(active?.dataset?.scope || "");
+  const activeMatchesDiff = !activeFile || !filePath || (activeFile === filePath && (!scope || !activeScope || activeScope === scope));
+  diffModalReturnFocus = active && active !== document.body && active !== document.documentElement && activeMatchesDiff ? active : null;
+  diffModalReturnFile = filePath;
+  diffModalReturnScope = scope;
+}
+
+function focusTargetIsRestorable(target) {
+  if (!target || target.hidden || target.disabled || typeof target.focus !== "function") return false;
+  if (target.isConnected === false) return false;
+  return typeof target.getClientRects !== "function" || target.getClientRects().length > 0;
+}
+
+function restoreDiffModalFocus() {
+  const target = diffModalReturnFocus;
+  const filePath = diffModalReturnFile;
+  const scope = diffModalReturnScope;
+  diffModalReturnFocus = null;
+  diffModalReturnFile = "";
+  diffModalReturnScope = "";
+  if (focusTargetIsRestorable(target)) {
+    target.focus({ preventScroll: true });
+    return;
+  }
+  if (!filePath || typeof document.querySelectorAll !== "function") return;
+  const rows = Array.from(document.querySelectorAll("[data-select-file]"));
+  const row = rows.find((item) => item?.dataset?.file === filePath && (!scope || item.dataset.scope === scope));
+  if (focusTargetIsRestorable(row)) row.focus({ preventScroll: true });
+}
+
 function closeDiffModal() {
   els.diffModal.classList.remove("show");
   els.diffModal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
   els.diffModalBody.replaceChildren();
+  restoreDiffModalFocus();
 }

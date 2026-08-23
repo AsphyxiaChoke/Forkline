@@ -17,6 +17,7 @@ const diffLoader = fs.readFileSync(path.join(root, "public", "js", "features", "
 const diffCore = fs.readFileSync(path.join(root, "public", "js", "features", "diff-workbench.js"), "utf8");
 const diffRenderer = fs.readFileSync(path.join(root, "public", "js", "features", "diff-renderer.js"), "utf8");
 const diffSelection = fs.readFileSync(path.join(root, "public", "js", "features", "diff-selection.js"), "utf8");
+const worktreeChanges = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-changes.js"), "utf8");
 const worktreeRefresh = fs.readFileSync(path.join(root, "public", "js", "features", "worktree-refresh.js"), "utf8");
 const diffWorkbench = [fileTree, diffLoader, diffRenderer, diffSelection, diffCore, worktreeRefresh].join("\n");
 const inspector = fs.readFileSync(path.join(root, "public", "js", "panels", "inspector.js"), "utf8");
@@ -188,6 +189,55 @@ test("delegated worktree file events preserve selection, editing, context menus,
   assert.equal(contextPrevented, true);
   assert.equal(contextStopped, true);
   assert.equal(folded, "collapsed");
+});
+
+test("worktree and staged trees select complete folders without expanding virtualized rows", () => {
+  const files = Array.from({ length: 1200 }, (_value, index) => ({
+    file: `src/hidden/file-${String(index).padStart(4, "0")}.txt`,
+    state: "M",
+    unstaged: true,
+    staged: false,
+  }));
+  const selectedChanges = new Set();
+  let refreshes = 0;
+  const sandbox = {
+    state: { data: { workingFiles: files }, selectedChanges },
+    changeGroups: (items) => ({ unstaged: items.filter((file) => file.unstaged), staged: items.filter((file) => file.staged) }),
+    filterWorkingFiles: (items) => items,
+    changeKey: (scope, file) => `${scope}:${file}`,
+    t: (value) => value,
+    escapeAttr: (value) => String(value),
+    escapeHtml: (value) => String(value),
+    scopedFileStatus: () => ({ state: "M", badge: "M", extra: "" }),
+    refreshChangeSelectionUi: () => {
+      refreshes += 1;
+    },
+  };
+  vm.runInNewContext(fileTree, sandbox);
+  sandbox.refreshChangeSelectionUi = () => {
+    refreshes += 1;
+  };
+
+  const markup = sandbox.fileTreeHtml(files.slice(0, 800), { selectionScope: "unstaged", totalFiles: files });
+  assert.match(markup, /data-select-folder/);
+  assert.match(markup, /class="tree-toggle"/);
+  assert.doesNotMatch(sandbox.fileTreeHtml(files.slice(0, 2), { mode: "commit" }), /data-select-folder/);
+
+  sandbox.selectFolderChanges("unstaged", "src/hidden");
+  assert.equal(selectedChanges.size, 1200);
+  assert.equal(refreshes, 1);
+  sandbox.selectFolderChanges("unstaged", "src/hidden");
+  assert.equal(selectedChanges.size, 0);
+
+  const limitSandbox = {
+    state: { selectedFile: "", selectedChanges, worktreeRenderLimits: { unstaged: 800, staged: 800 } },
+    changeKey: (scope, file) => `${scope}:${file}`,
+  };
+  vm.runInNewContext(worktreeChanges, limitSandbox);
+  files.forEach((file) => selectedChanges.add(`unstaged:${file.file}`));
+  assert.equal(limitSandbox.worktreeFileRenderLimit("unstaged", files), 800);
+  limitSandbox.state.selectedFile = files.at(-1).file;
+  assert.equal(limitSandbox.worktreeFileRenderLimit("unstaged", files), 1200);
 });
 
 test("worktree selection updates in place so the same row can receive a double-click", () => {

@@ -631,8 +631,8 @@ test("stage-all and stash actions use lightweight worktree refreshes", () => {
     gitActionsSource.indexOf("async function ignoreWorktreePath")
   );
   const runStashSource = stashesSource.slice(
-    stashesSource.indexOf("async function runStashAction"),
-    stashesSource.indexOf("async function branchFromStash")
+    stashesSource.indexOf("function stashActionListSignature"),
+    stashesSource.indexOf("function defaultStashBranchName")
   );
 
   assert.match(runActionSource, /const worktreeOnly = action === "stageAll" \|\| action === "discardAll"/);
@@ -642,4 +642,280 @@ test("stage-all and stash actions use lightweight worktree refreshes", () => {
   assert.doesNotMatch(createStashSource, /loadStateForRepoPath/);
   assert.match(runStashSource, /api\("\/api\/worktree\?stashes=1"\)/);
   assert.doesNotMatch(runStashSource, /api\(`\/api\/state/);
+});
+
+function createStashActionHarness(options = {}) {
+  const repoPath = options.repoPath || "C:/repo";
+  const requests = [];
+  const actionResolvers = [];
+  const actionRejectors = [];
+  const toasts = [];
+  const state = {
+    data: {
+      repo: { path: repoPath, branch: "main", headSha: "head", isSample: false },
+      workingFiles: [],
+      worktreeSnapshot: "before",
+      stashes: [
+        { ref: "stash@{0}", sha: "stash-sha-0", message: "first", branch: "main" },
+        { ref: "stash@{1}", sha: "stash-sha-1", message: "second", branch: "main" },
+      ],
+      commits: [{ sha: "head" }],
+    },
+    selectedStash: "stash@{0}",
+    selectedTab: "stashes",
+    selectedSha: "",
+    selectedRef: "main",
+    stashDetails: new Map(),
+    stateRequestId: 1,
+    openRepoRequestId: 1,
+  };
+  const button = { disabled: false };
+  const document = { querySelectorAll: () => [button] };
+  const context = vm.createContext({
+    state,
+    document,
+    confirm: () => options.confirmResult !== false,
+    prompt: () => options.promptResult || "stash/new",
+    repoPathSnapshot: () => state.data?.repo?.path || "",
+    isCurrentRepoPath: (candidate) => candidate === (state.data?.repo?.path || ""),
+    currentBranchSnapshotPayload: () => ({}),
+    api: async (url) => {
+      requests.push(url);
+      if (url === "/api/action") {
+        return new Promise((resolve, reject) => {
+          actionResolvers.push(resolve);
+          actionRejectors.push(reject);
+        });
+      }
+      return { workingFiles: [], worktreeSnapshot: "after", operation: null, stashes: state.data.stashes };
+    },
+    mergeWorktreeState: (data) => {
+      state.data.workingFiles = data.workingFiles || [];
+      state.data.worktreeSnapshot = data.worktreeSnapshot || "";
+      state.data.repo = { ...state.data.repo, operation: data.operation || null };
+      state.data.stashes = data.stashes || [];
+    },
+    renderStage: () => {},
+    renderInspector: () => {},
+    renderAll: () => {},
+    loadCommit: async () => {},
+    toast: (message) => toasts.push(message),
+    stashActionConfirmMessage: () => "confirm",
+    t: (value) => value,
+  });
+  const sourceStart = stashesSource.indexOf("function stashActionListSignature");
+  const sourceEnd = stashesSource.length;
+  vm.runInContext(stashesSource.slice(sourceStart, sourceEnd), context);
+  return { context, state, button, requests, actionResolvers, actionRejectors, toasts };
+}
+
+test("rapid duplicate stash actions do not start a second Git request", async () => {
+  const harness = createStashActionHarness();
+  const first = harness.context.runStashAction("apply", "stash@{0}", harness.button);
+  await Promise.resolve();
+  const second = harness.context.runStashAction("apply", "stash@{0}", harness.button);
+  await Promise.resolve();
+
+  assert.equal(harness.requests.filter((url) => url === "/api/action").length, 1);
+  assert.equal(harness.button.disabled, true);
+  harness.actionResolvers[0]({ output: "应用完成" });
+  await Promise.all([first, second]);
+  assert.equal(harness.button.disabled, false);
+  assert.equal(harness.state.stashActionLocks.size, 0);
+});
+
+test("different stash actions in the same repository are mutually exclusive", async () => {
+  const harness = createStashActionHarness();
+  const secondButton = { disabled: false };
+  const first = harness.context.runStashAction("apply", "stash@{0}", harness.button);
+  await Promise.resolve();
+  const second = harness.context.runStashAction("drop", "stash@{1}", secondButton);
+  await Promise.resolve();
+
+  assert.equal(harness.requests.filter((url) => url === "/api/action").length, 1);
+  assert.equal(secondButton.disabled, false);
+  harness.actionResolvers[0]({ output: "应用完成" });
+  await first;
+  await second;
+  assert.equal(harness.button.disabled, false);
+  assert.equal(harness.state.stashActionLocks.size, 0);
+});
+
+test("branch stash actions use the same in-flight lock", async () => {
+  const harness = createStashActionHarness({ promptResult: "stash/new" });
+  const first = harness.context.runStashAction("branch", "stash@{0}", harness.button);
+  await Promise.resolve();
+  const second = harness.context.runStashAction("branch", "stash@{0}", { disabled: false });
+  await Promise.resolve();
+
+  assert.equal(harness.requests.filter((url) => url === "/api/action").length, 1);
+  harness.actionResolvers[0]({
+    output: "已创建分支",
+    state: {
+      repo: { path: "C:/repo", branch: "stash/new", headSha: "new-head", isSample: false },
+      workingFiles: [],
+      worktreeSnapshot: "after-branch",
+      stashes: [{ ref: "stash@{1}", sha: "stash-sha-1" }],
+      commits: [{ sha: "new-head" }],
+    },
+  });
+  await first;
+  await second;
+  assert.equal(harness.state.stashActionLocks.size, 0);
+});
+
+test("stash locks remain exclusive when switching away and back to a repository", async () => {
+  const harness = createStashActionHarness();
+  const repoA = harness.state.data;
+  const first = harness.context.runStashAction("apply", "stash@{0}", harness.button);
+  await Promise.resolve();
+
+  harness.state.data = {
+    repo: { path: "C:/repo-b", branch: "main", headSha: "b-head", isSample: false },
+    workingFiles: [],
+    worktreeSnapshot: "b-before",
+    stashes: [{ ref: "stash@{0}", sha: "b-stash" }],
+    commits: [{ sha: "b-head" }],
+  };
+  harness.state.stateRequestId += 1;
+  const second = harness.context.runStashAction("apply", "stash@{0}", { disabled: false });
+  await Promise.resolve();
+  assert.equal(harness.requests.filter((url) => url === "/api/action").length, 2);
+
+  harness.actionResolvers[1]({ output: "B 完成" });
+  await second;
+  harness.state.data = repoA;
+  harness.state.stateRequestId += 1;
+  await harness.context.runStashAction("drop", "stash@{0}", { disabled: false });
+  assert.equal(harness.requests.filter((url) => url === "/api/action").length, 2);
+
+  harness.actionResolvers[0]({ output: "A 完成" });
+  await first;
+  assert.equal(harness.state.stashActionLocks.size, 0);
+
+  const uiHarness = createStashActionHarness();
+  const uiFirst = uiHarness.context.runStashAction("apply", "stash@{0}", uiHarness.button);
+  await Promise.resolve();
+  uiHarness.state.data = {
+    repo: { path: "C:/repo-b", branch: "main", headSha: "b-head", isSample: false },
+    workingFiles: [],
+    worktreeSnapshot: "b-before",
+    stashes: [{ ref: "stash@{0}", sha: "b-stash" }],
+    commits: [{ sha: "b-head" }],
+  };
+  uiHarness.state.stateRequestId += 1;
+  const uiSecond = uiHarness.context.runStashAction("apply", "stash@{0}", { disabled: false });
+  await Promise.resolve();
+  uiHarness.actionResolvers[0]({ output: "A 完成" });
+  await uiFirst;
+  assert.equal(uiHarness.button.disabled, true);
+  uiHarness.actionResolvers[1]({ output: "B 完成" });
+  await uiSecond;
+  assert.equal(uiHarness.button.disabled, false);
+});
+
+test("stale stash action responses cannot overwrite a switched or refreshed repository", async () => {
+  const switched = createStashActionHarness();
+  const switchedAction = switched.context.runStashAction("apply", "stash@{0}", switched.button);
+  await Promise.resolve();
+  switched.state.data = {
+    repo: { path: "C:/other", branch: "dev", headSha: "other-head", isSample: false },
+    workingFiles: [{ file: "other.txt" }],
+    worktreeSnapshot: "other",
+    stashes: [],
+    commits: [{ sha: "other-head" }],
+  };
+  switched.state.stateRequestId += 1;
+  switched.actionResolvers[0]({ output: "旧仓库完成" });
+  await switchedAction;
+  assert.equal(switched.requests.filter((url) => url === "/api/worktree?stashes=1").length, 0);
+  assert.equal(switched.state.data.repo.path, "C:/other");
+  assert.equal(switched.button.disabled, false);
+  assert.equal(switched.state.stashActionLocks.size, 0);
+
+  const refreshed = createStashActionHarness();
+  const refreshedAction = refreshed.context.runStashAction("apply", "stash@{0}", refreshed.button);
+  await Promise.resolve();
+  refreshed.state.data.worktreeSnapshot = "newer-refresh";
+  refreshed.state.data.workingFiles = [{ file: "newer.txt" }];
+  refreshed.actionResolvers[0]({ output: "旧快照完成" });
+  await refreshedAction;
+  assert.equal(refreshed.requests.filter((url) => url === "/api/worktree?stashes=1").length, 0);
+  assert.equal(refreshed.state.data.worktreeSnapshot, "newer-refresh");
+  assert.equal(refreshed.button.disabled, false);
+});
+
+test("stash action buttons recover after a Git failure", async () => {
+  const harness = createStashActionHarness();
+  const action = harness.context.runStashAction("drop", "stash@{0}", harness.button);
+  await Promise.resolve();
+  harness.actionRejectors[0](new Error("drop failed"));
+  await action;
+
+  assert.equal(harness.button.disabled, false);
+  assert.equal(harness.state.stashActionLocks.size, 0);
+  assert.deepEqual(harness.toasts, ["drop failed"]);
+});
+
+test("commit can push the current branch after refreshing the new HEAD", async () => {
+  const runActionSource = gitActionsSource.slice(
+    gitActionsSource.indexOf("async function runAction"),
+    gitActionsSource.indexOf("function currentBranchSnapshotPayload")
+  );
+  const actions = [];
+  const confirmations = [];
+  const state = {
+    data: {
+      repo: { path: "C:/repo", branch: "main", headSha: "a", selectedRef: "main", isSample: false },
+      sync: { upstream: "origin/main", upstreamSha: "a", remotes: [] },
+      workingFiles: [],
+      commits: [{ sha: "a" }],
+    },
+    selectedRef: "main",
+    selectedSha: "a",
+    commitDetails: { clear() {} },
+  };
+  const els = {
+    commitSummary: { value: "new commit" },
+    commitBody: { value: "" },
+    commitPushToggle: { checked: true },
+  };
+  const context = vm.createContext({
+    state,
+    els,
+    confirm: (message) => {
+      confirmations.push(message);
+      return true;
+    },
+    actionConfirmMessage: () => "confirm",
+    repoPathSnapshot: () => state.data.repo.path,
+    currentBranchSnapshotPayload: () => ({ expectedHead: state.data.repo.headSha }),
+    isCurrentRepoPath: () => true,
+    api: async (_path, options) => {
+      const payload = JSON.parse(options.body);
+      actions.push(payload);
+      return { output: payload.action === "commit" ? "committed" : "pushed" };
+    },
+    loadStateForRepoPath: async () => ({
+      ...state.data,
+      repo: { ...state.data.repo, headSha: "b" },
+      commits: [{ sha: "b" }],
+      sync: { ...state.data.sync, upstreamSha: "b" },
+    }),
+    renderAll() {},
+    loadCommit: async () => {},
+    renderInspector() {},
+    reportDesktopRecoveryState() {},
+    offerRecoveryUndo() {},
+    toast() {},
+    t: (value) => value,
+  });
+  vm.runInContext(runActionSource, context);
+
+  await context.runAction("commit");
+
+  assert.deepEqual(actions.map((item) => item.action), ["commit", "push"]);
+  assert.equal(actions[0].expectedHead, "a");
+  assert.equal(actions[1].expectedHead, "b");
+  assert.equal(confirmations.length, 1);
 });

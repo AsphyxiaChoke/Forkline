@@ -32,6 +32,8 @@ test("diff workbench implementation and full styles stay out of startup behind a
   assert.match(loaderSource, /function setActiveDiff\(payload\)/);
   assert.match(loaderSource, /function selectedWorkingFileInfo\(filePath = state\.selectedFile/);
   assert.match(loaderSource, /function normalizeWorkDiffScopeChoice\(scope, fileInfo\)/);
+  assert.match(loaderSource, /function captureDiffModalFocus\(\)/);
+  assert.match(loaderSource, /function restoreDiffModalFocus\(\)/);
   assert.match(loaderSource, /function closeDiffModal\(\)/);
   assert.match(implementationSource, /async function loadWorkingDiff\(filePath\)/);
   assert.match(selectionSource, /async function runWorkDiffLineAction\(button\)/);
@@ -173,6 +175,45 @@ test("diff state cleanup works before the implementation loads", () => {
   assert.equal(typeof harness.context.loadWorkingDiff, "undefined");
 });
 
+test("closing the Diff modal restores the opener focus", () => {
+  const harness = createHarness();
+  let focused = 0;
+  const opener = {
+    hidden: false,
+    disabled: false,
+    isConnected: true,
+    getClientRects: () => [{}],
+    focus() {
+      focused += 1;
+    },
+  };
+  harness.context.document.activeElement = opener;
+  harness.context.state.activeDiff = { path: "public/styles.css" };
+  harness.context.captureDiffModalFocus();
+  harness.context.els.diffModal.classList.add("show");
+
+  harness.context.closeDiffModal();
+
+  assert.equal(focused, 1);
+  assert.equal(harness.context.els.diffModal.classList.contains("show"), false);
+});
+
+test("closing a right-click Diff restores the current file row instead of stale focus", () => {
+  const harness = createHarness();
+  let focused = "";
+  const staleRow = { dataset: { file: "public/js/core.js", scope: "unstaged" }, focus() { focused = "stale"; } };
+  const currentRow = { dataset: { file: "public/js/api.js", scope: "unstaged" }, getClientRects: () => [{}], focus() { focused = "current"; } };
+  harness.context.document.activeElement = staleRow;
+  harness.context.document.querySelectorAll = (selector) => selector === "[data-select-file]" ? [staleRow, currentRow] : [];
+  harness.context.state.activeDiff = { path: "public/js/api.js" };
+  harness.context.state.workDiffScope = "unstaged";
+  harness.context.captureDiffModalFocus();
+
+  harness.context.closeDiffModal();
+
+  assert.equal(focused, "current");
+});
+
 function installSelection(context, calls) {
   context.runWorkDiffLineAction = async (button) => calls.push(["line", button?.id || ""]);
   context.handleDiffLineSelection = () => calls.push(["select"]);
@@ -196,6 +237,7 @@ function createHarness() {
     };
   };
   const document = {
+    activeElement: null,
     body: { classList: classes() },
     querySelector: (selector) => {
       if (selector.includes("data-diff-workbench-style")) {

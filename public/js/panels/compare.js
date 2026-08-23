@@ -84,7 +84,7 @@ function comparePickerHtml(model = {}) {
   const base = model.base || currentCompareBaseRef();
   const head = model.head || "";
   const sameRef = Boolean(base && head && base === head);
-  const refs = compareRefOptions([base, head]);
+  const refs = repositoryRefOptions([base, head]);
   return tt`
     <div class="compare-picker">
       <datalist id="compareRefOptions">
@@ -104,24 +104,6 @@ function comparePickerHtml(model = {}) {
       </div>
     </div>
   `;
-}
-
-function compareRefOptions(extraRefs = []) {
-  const seen = new Set();
-  const items = [];
-  const add = (ref, label) => {
-    const value = String(ref || "").trim();
-    if (!value || seen.has(value)) return;
-    seen.add(value);
-    items.push({ ref: value, label });
-  };
-  add("HEAD", t("当前 HEAD"));
-  add(state.data?.repo?.branch, t("当前分支"));
-  (state.data?.branches || []).forEach((branch) => add(branch, t("本地分支")));
-  (state.data?.remotes || []).forEach((branch) => add(branch, t("远端分支")));
-  (state.data?.tags || []).forEach((tag) => add(tag.name, "Tag"));
-  extraRefs.forEach((ref) => add(ref, t("当前输入")));
-  return items;
 }
 
 function comparePickerRefs() {

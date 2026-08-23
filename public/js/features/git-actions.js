@@ -2,6 +2,7 @@
 async function selectRef(ref) {
   if (!state.data) return;
   const repoPath = repoPathSnapshot();
+  invalidateStateRefreshes();
   const requestId = ++state.refRequestId;
   const cancelledHistoryLoad = state.historyLoading;
   state.historyRequestId += 1;
@@ -283,8 +284,8 @@ function isMissingCheckoutStashError(error) {
   ].some((text) => message.includes(text));
 }
 
-async function runAction(action) {
-  if (!state.data) return;
+async function runAction(action, options = {}) {
+  if (!state.data) return false;
   const names = {
     fetch: "抓取",
     pull: "拉取",
@@ -296,7 +297,8 @@ async function runAction(action) {
     commit: "创建提交",
     amendCommit: "追加提交",
   };
-  if (!state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return;
+  const pushAfterCommit = action === "commit" && !options.followUp && !state.data.repo.isSample && Boolean(els.commitPushToggle?.checked);
+  if (!options.skipConfirm && !state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return false;
   const repoPath = repoPathSnapshot();
   const worktreeOnly = action === "stageAll" || action === "discardAll";
   const affectedFiles = worktreeOnly ? [...new Set((state.data.workingFiles || []).map((file) => file.file).filter(Boolean))] : [];
@@ -341,9 +343,15 @@ async function runAction(action) {
       renderInspector();
     }
     if (typeof offerRecoveryUndo === "function") offerRecoveryUndo(result);
+    if (pushAfterCommit) {
+      const pushed = await runAction("push", { skipConfirm: true, followUp: true });
+      if (!pushed) toast(t("提交已创建，但推送失败；提交仍已保留，请在同步页重试。"));
+    }
+    return true;
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
+    return false;
   }
 }
 
@@ -461,6 +469,16 @@ function updateAmendMode() {
   els.amendToggle.disabled = !canAmend;
   els.amendToggle.title = canAmend ? t("追加到上一次提交") : t("当前分支还没有上一次提交");
   const enabled = canAmend && Boolean(els.amendToggle.checked);
+  const pushToggle = els.commitPushToggle;
+  if (pushToggle) {
+    if (enabled && pushToggle.checked) pushToggle.checked = false;
+    pushToggle.disabled = enabled || Boolean(state.data?.repo?.isSample);
+    pushToggle.title = enabled
+      ? t("追加提交暂不支持自动推送，请提交后手动推送")
+      : state.data?.repo?.isSample
+        ? t("示例模式不会执行实际推送")
+        : t("提交成功后自动推送当前分支");
+  }
   els.commitSubmit.textContent = enabled ? t("追加提交") : t("创建提交");
   els.commitSubmit.title = enabled ? t("追加到上一次提交") : t("创建新的提交");
 }
@@ -484,6 +502,7 @@ function operationSnapshotPayload() {
 
 function actionConfirmMessage(action, name) {
   if (action === "amendCommit") return t("确认追加到上一次提交？这会重写最新提交 SHA。");
+  if (action === "commit" && els.commitPushToggle?.checked) return t("确认创建提交并在成功后推送当前分支？\n\n如果推送失败，已创建的提交会保留，可在“同步”页重试。");
   if (action === "discardAll") return t("确认丢弃全部未提交更改？这会清空已暂存、未暂存和未跟踪文件，无法撤销。");
   if (action === "pullRebase") {
     const sync = state.data?.sync || {};

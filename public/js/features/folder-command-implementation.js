@@ -34,8 +34,15 @@ function renderFolderBrowser() {
   els.folderCurrentPath.textContent = data.current || "";
   els.folderPathInput.value = data.current || "";
   els.folderParent.disabled = !data.parent;
-  els.folderOpen.textContent = data.isGit ? t("打开 Git 仓库") : t("打开此目录");
-  els.folderOpen.title = data.isGit ? t("打开当前 Git 仓库") : t("把当前目录填入路径并尝试打开");
+  const repositoryPath = data.repositoryPath || "";
+  const repositoryCandidates = data.repositoryCandidates || [];
+  els.folderOpen.disabled = !repositoryPath;
+  els.folderOpen.textContent = repositoryPath ? t("打开 Git 仓库") : t("打开此目录");
+  els.folderOpen.title = repositoryPath
+    ? t("打开当前 Git 仓库")
+    : repositoryCandidates.length > 1
+      ? t("当前目录包含多个 Git 仓库，请进入目标仓库后再打开")
+      : t("请进入 Git 仓库后再打开");
   const shortcuts = (data.shortcuts || [])
     .map((item) => `<button class="folder-root folder-shortcut" type="button" data-folder-path="${escapeAttr(item.path)}">${escapeHtml(t(item.name))}</button>`)
     .join("");
@@ -59,8 +66,14 @@ function renderFolderBrowser() {
 }
 
 async function openSelectedFolder() {
-  const target = state.folderBrowse?.current || els.folderPathInput.value.trim();
-  if (!target) return;
+  const browse = state.folderBrowse || {};
+  const target = browse.repositoryPath || "";
+  if (!target) {
+    toast(browse.repositoryCandidates?.length > 1
+      ? t("当前目录包含多个 Git 仓库，请进入目标仓库后再打开")
+      : t("请进入 Git 仓库后再打开"));
+    return;
+  }
   els.repoInput.value = target;
   closeFolderModal();
   await openRepo(target);

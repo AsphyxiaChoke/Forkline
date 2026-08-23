@@ -23,6 +23,7 @@ function createRepositoryBrowseService(options = {}) {
 function readDirectory(pathValue = "") {
   const current = normalizeBrowseDirectory(pathValue);
   const parent = parentDirectory(current);
+  const repository = resolveRepository(current);
   const entries = fs
     .readdirSync(current, { withFileTypes: true })
     .filter((entry) => entry.name !== ".git")
@@ -38,8 +39,41 @@ function readDirectory(pathValue = "") {
     shortcuts: browseShortcuts(),
     roots: browseRoots(),
     isGit: hasGitMetadata(current),
+    repositoryPath: repository.repositoryPath,
+    repositoryCandidates: repository.repositoryCandidates,
     entries,
   };
+}
+
+function resolveRepository(current) {
+  const ancestor = findRepositoryAncestor(current);
+  if (ancestor) return { repositoryPath: ancestor, repositoryCandidates: [] };
+
+  const candidates = directRepositoryCandidates(current);
+  return {
+    repositoryPath: candidates.length === 1 ? candidates[0] : "",
+    repositoryCandidates: candidates,
+  };
+}
+
+function findRepositoryAncestor(startPath) {
+  let candidate = startPath;
+  while (candidate) {
+    if (hasGitMetadata(candidate)) return candidate;
+    const parent = parentDirectory(candidate);
+    if (!parent) break;
+    candidate = parent;
+  }
+  return "";
+}
+
+function directRepositoryCandidates(dirPath) {
+  return fs
+    .readdirSync(dirPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+    .map((entry) => path.join(dirPath, entry.name))
+    .filter((entryPath) => hasGitMetadata(entryPath))
+    .sort((left, right) => left.localeCompare(right, "zh-CN", { numeric: true }));
 }
 
 function normalizeBrowseDirectory(pathValue) {

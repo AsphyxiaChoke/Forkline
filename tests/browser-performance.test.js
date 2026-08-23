@@ -193,8 +193,8 @@ test("real Chromium keeps historical file comparison responsive", {
       toast: document.querySelector("#toast")?.textContent?.trim() || "",
     };
   })()`);
-  assert.equal(coldRepositoryOpen.frontMatches, true);
-  assert.equal(coldRepositoryOpen.serverMatches, true);
+  assert.equal(coldRepositoryOpen.frontMatches, true, JSON.stringify(coldRepositoryOpen));
+  assert.equal(coldRepositoryOpen.serverMatches, true, JSON.stringify(coldRepositoryOpen));
   assert.equal(coldRepositoryOpen.isSample, false);
   assert.equal(coldRepositoryOpen.repoHydrating, false);
   assert.ok(coldRepositoryOpen.commitRows > 0, "cold repository open should render commit history");
@@ -268,6 +268,33 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(lazyGitActions.resources, 1);
   assert.ok(lazyGitActions.loadMs < 3000, `Git actions loaded in ${lazyGitActions.loadMs.toFixed(1)} ms`);
   t.diagnostic(`Git actions first loaded in ${lazyGitActions.loadMs.toFixed(1)} ms with ${lazyGitActions.resources} resource`);
+
+  const longOperationToast = await evaluate(cdp, `(() => {
+    const message = Array.from({ length: 80 }, (_, index) =>
+      \`[main \${String(index).padStart(7, "0")}] generated commit output\`
+    ).join("\\n");
+    toast(message);
+    const container = document.querySelector("#toast");
+    const close = document.querySelector("#toastClose");
+    const visible = {
+      messageLength: document.querySelector("#toastMessage")?.textContent?.length || 0,
+      shown: container?.classList.contains("show") || false,
+      pointerEvents: getComputedStyle(container).pointerEvents,
+      closeDisabled: Boolean(close?.disabled),
+    };
+    close?.click();
+    return {
+      visible,
+      dismissed: !container?.classList.contains("show") && container?.getAttribute("aria-hidden") === "true",
+      closeDisabledAfter: Boolean(close?.disabled),
+    };
+  })()`);
+  assert.equal(longOperationToast.visible.shown, true);
+  assert.equal(longOperationToast.visible.messageLength > 1000, true);
+  assert.equal(longOperationToast.visible.pointerEvents, "auto");
+  assert.equal(longOperationToast.visible.closeDisabled, false);
+  assert.equal(longOperationToast.dismissed, true);
+  assert.equal(longOperationToast.closeDisabledAfter, true);
 
   const actionStateRefresh = await evaluate(cdp, `(async () => {
     const repoPath = repoPathSnapshot();
@@ -815,6 +842,115 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.ok(lazySettings.fileInsightsLoadMs < 3000, `file insights loaded in ${lazySettings.fileInsightsLoadMs.toFixed(1)} ms`);
   t.diagnostic(`lazy panels loaded settings/stashes/tags/workspaces/sync/compare/logs/recovery/file-insights in ${lazySettings.settingsLoadMs.toFixed(1)}/${lazySettings.stashesLoadMs.toFixed(1)}/${lazySettings.tagsLoadMs.toFixed(1)}/${lazySettings.workspacesLoadMs.toFixed(1)}/${lazySettings.syncLoadMs.toFixed(1)}/${lazySettings.compareLoadMs.toFixed(1)}/${lazySettings.logsLoadMs.toFixed(1)}/${lazySettings.recoveryLoadMs.toFixed(1)}/${lazySettings.fileInsightsLoadMs.toFixed(1)} ms with ${lazySettings.totalResources} scripts and ${lazySettings.totalStyles} panel styles`);
   t.diagnostic(`context menus first loaded in ${lazySettings.contextMenuLoadMs.toFixed(1)} ms with ${lazySettings.contextMenuResources} script and ${lazySettings.contextMenuStyles} style`);
+
+  const actionBusyMetrics = await evaluate(cdp, `(async () => {
+    const originalFetch = window.fetch;
+    const originalData = state.data;
+    const originalSelectedTab = state.selectedTab;
+    const operation = {
+      id: "browser-delayed-action",
+      action: "fetchRemote",
+      label: "抓取",
+      command: "git fetch",
+      output: "等待测试完成",
+      cancelSupported: true,
+      cancellable: true,
+      startedAt: Date.now(),
+    };
+    let resolveAction;
+    let operationEnded = false;
+    const response = (data) => new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    window.fetch = (input, options) => {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (url === "/api/action") return new Promise((resolve) => { resolveAction = resolve; });
+      if (url === "/api/operations") {
+        return Promise.resolve(response({
+          runningOperations: operationEnded ? [] : [operation],
+          operationLog: [],
+        }));
+      }
+      return originalFetch(input, options);
+    };
+    try {
+      state.data.runningOperations = [];
+      const pending = api("/api/action", {
+        method: "POST",
+        body: JSON.stringify({ action: "fetchRemote" }),
+      });
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const pull = document.querySelector('[data-action="pull"]');
+      const more = document.querySelector("#moreInspectorSelect");
+      const copyPatch = document.querySelector('[data-commit-tool="copyPatch"]');
+      const immediate = {
+        pullDisabled: Boolean(pull?.disabled),
+        moreDisabled: Boolean(more?.disabled),
+        copyPatchDisabled: copyPatch ? Boolean(copyPatch.disabled) : null,
+        statusVisible: document.querySelector("#gitActionStatus")?.hidden === false,
+        busy: window.Forkline.isGitActionBusy(),
+      };
+      mergeOperationState({ runningOperations: [operation], operationLog: [] });
+      state.selectedTab = "logs";
+      renderInspector();
+      const deadline = Date.now() + 3000;
+      while (!document.querySelector("[data-operation-cancel]") && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const cancel = document.querySelector("[data-operation-cancel]");
+      const during = {
+        cancelPresent: Boolean(cancel),
+        cancelDisabled: cancel ? Boolean(cancel.disabled) : null,
+        logsTabDisabled: Boolean(document.querySelector('[data-tab="logs"]')?.disabled),
+        moreDisabled: Boolean(more?.disabled),
+        busy: window.Forkline.isGitActionBusy(),
+      };
+      if (more && !more.disabled) {
+        more.value = "worktrees";
+        more.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const switched = {
+        selectedTab: state.selectedTab,
+        worktreePanel: Boolean(document.querySelector(".worktree-dashboard")),
+      };
+      operationEnded = true;
+      resolveAction(response({ runningOperations: [], operationLog: [] }));
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const after = {
+        pullDisabled: Boolean(pull?.disabled),
+        moreDisabled: Boolean(more?.disabled),
+        busy: window.Forkline.isGitActionBusy(),
+        statusVisible: document.querySelector("#gitActionStatus")?.hidden === false,
+      };
+      return { immediate, during, switched, after };
+    } finally {
+      window.fetch = originalFetch;
+      state.data = originalData;
+      state.selectedTab = originalSelectedTab;
+      state.data.runningOperations = [];
+      syncGitActionBusyState();
+      renderInspector();
+    }
+  })()`);
+  assert.equal(actionBusyMetrics.immediate.pullDisabled, true);
+  assert.equal(actionBusyMetrics.immediate.moreDisabled, false);
+  assert.equal(actionBusyMetrics.immediate.copyPatchDisabled, false);
+  assert.equal(actionBusyMetrics.immediate.statusVisible, true);
+  assert.equal(actionBusyMetrics.immediate.busy, true);
+  assert.equal(actionBusyMetrics.during.cancelPresent, true);
+  assert.equal(actionBusyMetrics.during.cancelDisabled, false);
+  assert.equal(actionBusyMetrics.during.logsTabDisabled, false);
+  assert.equal(actionBusyMetrics.during.moreDisabled, false);
+  assert.equal(actionBusyMetrics.during.busy, true);
+  assert.equal(actionBusyMetrics.switched.selectedTab, "worktrees");
+  assert.equal(actionBusyMetrics.switched.worktreePanel, true);
+  assert.equal(actionBusyMetrics.after.pullDisabled, false);
+  assert.equal(actionBusyMetrics.after.moreDisabled, false);
+  assert.equal(actionBusyMetrics.after.busy, false);
+  assert.equal(actionBusyMetrics.after.statusVisible, false);
 
   const baselineResizeListeners = await countWindowListeners(cdp, "resize");
   const complex = await evaluate(cdp, `(async () => {
@@ -1546,6 +1682,11 @@ test("real Chromium keeps historical file comparison responsive", {
     let initialRenderedRows;
     let initialTreeNodes;
     let initialPageNodes;
+    let folderSelectionRows;
+    let folderSelectionCount;
+    let folderSelectionLimit;
+    let folderSelectionChecked;
+    let folderSelectionCleared;
     let filteredRows;
     let filteredFile;
     let restoredRows;
@@ -1563,6 +1704,15 @@ test("real Chromium keeps historical file comparison responsive", {
       initialRenderedRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
       initialTreeNodes = document.querySelectorAll("#changeList *").length;
       initialPageNodes = document.querySelectorAll("body *").length;
+      const folderSelect = document.querySelector('#changeList [data-select-folder][data-folder-path="worktree"]');
+      folderSelect.click();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      folderSelectionRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
+      folderSelectionCount = state.selectedChanges.size;
+      folderSelectionLimit = state.worktreeRenderLimits.unstaged;
+      folderSelectionChecked = folderSelect.getAttribute("aria-checked");
+      folderSelect.click();
+      folderSelectionCleared = state.selectedChanges.size;
       const filterStarted = performance.now();
       state.worktreeFilter = "file-03999";
       els.worktreeFilterInput.value = state.worktreeFilter;
@@ -1623,6 +1773,11 @@ test("real Chromium keeps historical file comparison responsive", {
       initialRenderedRows,
       initialTreeNodes,
       initialPageNodes,
+      folderSelectionRows,
+      folderSelectionCount,
+      folderSelectionLimit,
+      folderSelectionChecked,
+      folderSelectionCleared,
       filteredRows,
       filteredFile,
       restoredRows,
@@ -1651,6 +1806,11 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.ok(worktreeMetrics.warmPayloadBytes * 20 < worktreeMetrics.coldPayloadBytes, `unchanged worktree response was not compact: ${worktreeMetrics.warmPayloadBytes}/${worktreeMetrics.coldPayloadBytes} bytes`);
   assert.ok(worktreeMetrics.initialRenderedRows <= 1000, `large worktree initially rendered ${worktreeMetrics.initialRenderedRows} rows`);
   assert.ok(worktreeMetrics.initialTreeNodes <= 6000, `large worktree initially kept ${worktreeMetrics.initialTreeNodes} tree nodes`);
+  assert.equal(worktreeMetrics.folderSelectionRows, worktreeMetrics.initialRenderedRows);
+  assert.equal(worktreeMetrics.folderSelectionCount, worktreeMetrics.loadedFiles);
+  assert.equal(worktreeMetrics.folderSelectionLimit, 800);
+  assert.equal(worktreeMetrics.folderSelectionChecked, "true");
+  assert.equal(worktreeMetrics.folderSelectionCleared, 0);
   assert.equal(worktreeMetrics.filteredRows, 1);
   assert.match(worktreeMetrics.filteredFile, /file-03999\.txt$/);
   assert.ok(worktreeMetrics.restoredRows <= 1000, `large worktree restored ${worktreeMetrics.restoredRows} rows before scrolling`);

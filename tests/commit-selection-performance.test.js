@@ -100,6 +100,7 @@ test("rapid ref selection keeps the newest response", async () => {
     api: (url) => new Promise((resolve) => { requests.set(url, resolve); }),
     repoPathSnapshot: () => state.data.repo.path,
     isCurrentRepoPath: (repoPath) => repoPath === state.data.repo.path,
+    invalidateStateRefreshes: () => {},
     setInspectorContext: () => {},
     renderAll: () => {},
     renderCommits: () => {},

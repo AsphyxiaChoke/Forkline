@@ -579,6 +579,7 @@ function renderRepoDetailPlaceholder(section, title, borderColor) {
 }
 
 function clearOpenedRepoState() {
+  invalidateStateRefreshes();
   clearRepoScopedActionState();
   if (typeof clearRecoveryUndo === "function") clearRecoveryUndo();
   state.selectedFile = "";
@@ -697,6 +698,7 @@ async function openRepo(pathOverride = "") {
   }
   if (!confirmRepositorySwitch(repoPath)) return false;
   const requestId = ++state.openRepoRequestId;
+  invalidateStateRefreshes();
   state.repoHydrating = true;
   try {
     els.openRepo.disabled = true;

@@ -7,12 +7,16 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
 const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "release-installer.yml"), "utf8");
 const installerInclude = fs.readFileSync(path.join(root, "electron", "installer.nsh"), "utf8");
 
 test("Windows installer is per-user, assisted, x64, and creates standard shortcuts", () => {
-  assert.equal(pkg.version, "0.4.7");
-  assert.equal(pkg.devDependencies.electron, "^43.4.0");
+  assert.equal(pkg.version, "0.4.8");
+  assert.equal(pkg.devDependencies.electron, "^43.4.1");
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[""].version, pkg.version);
+  assert.equal(lock.packages["node_modules/electron"].version, "43.4.1");
   assert.equal(pkg.description, "中文 Git 可视化管理工具");
   assert.equal(pkg.author, "AsphyxiaChoke");
   assert.equal(pkg.scripts["build:installer"], "electron-builder --win nsis --x64 --publish never");

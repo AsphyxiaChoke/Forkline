@@ -41,13 +41,17 @@ function treeNodeHtml(node, depth, options = {}, parentPath = "") {
       const directoryPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
       const count = options.directoryCounts?.get(directoryPath) || treeFileCount(dir);
       const intrinsicBlockSize = Math.max(58, (count + 1) * 29);
+      const selectionScope = options.selectionScope || "";
       return `
         <div class="tree-group" data-tree-path="${escapeAttr(directoryPath)}" style="--depth:${depth};--tree-intrinsic-block-size:${intrinsicBlockSize}px">
-          <button class="tree-head" type="button">
-            <span class="tree-caret"></span>
-            <span class="tree-folder" title="${escapeAttr(dir.name)}">${escapeHtml(dir.name)}</span>
-            <span class="tree-count">${count}</span>
-          </button>
+          <div class="tree-head">
+            <button class="tree-toggle" type="button" aria-expanded="true">
+              <span class="tree-caret"></span>
+              <span class="tree-folder" title="${escapeAttr(dir.name)}">${escapeHtml(dir.name)}</span>
+              <span class="tree-count">${count}</span>
+            </button>
+            ${selectionScope ? treeFolderSelectHtml(directoryPath, selectionScope) : ""}
+          </div>
           <div class="tree-children">${treeNodeHtml(dir, depth + 1, options, directoryPath)}</div>
         </div>
       `;
@@ -55,6 +59,14 @@ function treeNodeHtml(node, depth, options = {}, parentPath = "") {
     .join("");
   const rows = node.files.map((file) => fileLeafRowHtml(file, depth, options)).join("");
   return `${dirs}${rows}`;
+}
+
+function treeFolderSelectHtml(directoryPath, scope) {
+  return `
+    <button class="tree-folder-select" type="button" data-select-folder data-scope="${escapeAttr(scope)}" data-folder-path="${escapeAttr(directoryPath)}" aria-checked="false" role="checkbox" aria-label="${escapeAttr(t("选择此文件夹下的所有更改"))}" title="${escapeAttr(t("选择此文件夹下的所有更改"))}">
+      <span class="tree-folder-check" aria-hidden="true"></span>
+    </button>
+  `;
 }
 
 function treeFileCount(node) {
@@ -150,9 +162,18 @@ async function handleFileTreeClick(root, binding, event) {
     expandWorktreeFileTree(loadMore.dataset.fileTreeMore || options.loadMoreScope || "");
     return;
   }
+  const folder = fileTreeEventTarget(root, event, "[data-select-folder]");
+  if (folder) {
+    event.preventDefault();
+    event.stopPropagation();
+    selectFolderChanges(folder.dataset.scope || options.selectionScope || "", folder.dataset.folderPath || "", event);
+    return;
+  }
   const head = fileTreeEventTarget(root, event, ".tree-head");
   if (head) {
     head.closest(".tree-group")?.classList.toggle("collapsed");
+    const toggle = head.querySelector?.(".tree-toggle");
+    if (toggle) toggle.setAttribute("aria-expanded", String(!head.closest(".tree-group")?.classList.contains("collapsed")));
     return;
   }
   const row = fileTreeEventTarget(root, event, "[data-select-file]");
@@ -279,6 +300,28 @@ function selectWorkingFile(filePath) {
   openSelectedFileInspector(filePath);
 }
 
+function selectFolderChanges(scope, folderPath, event = {}) {
+  if (!scope || !folderPath || !state.data) return;
+  const files = changeGroups(filterWorkingFiles(state.data.workingFiles || []))[scope] || [];
+  const descendants = files.filter((file) => treeFileIsInFolder(file.file, folderPath));
+  if (!descendants.length) return;
+  const allSelected = descendants.every((file) => state.selectedChanges.has(changeKey(scope, file.file)));
+  if (!event.ctrlKey && !event.metaKey) state.selectedChanges.clear();
+  descendants.forEach((file) => {
+    const key = changeKey(scope, file.file);
+    if (allSelected) state.selectedChanges.delete(key);
+    else state.selectedChanges.add(key);
+  });
+  state.lastChangeSelection = { scope, key: changeKey(scope, folderPath), folder: true };
+  refreshChangeSelectionUi();
+}
+
+function treeFileIsInFolder(filePath, folderPath) {
+  const file = String(filePath || "").replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  const folder = String(folderPath || "").replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  return Boolean(file && folder && file.startsWith(`${folder}/`));
+}
+
 function openSelectedFileInspector(filePath) {
   if (!filePath) return;
   if (state.selectedTab === "fileBlame") {
@@ -299,6 +342,11 @@ function markSelectedFile() {
 }
 
 function refreshChangeSelectionUi() {
+  const filteredGroups = changeGroups(filterWorkingFiles(state.data?.workingFiles || []));
+  const folderStates = {
+    unstaged: worktreeFolderSelectionStates(filteredGroups.unstaged, "unstaged"),
+    staged: worktreeFolderSelectionStates(filteredGroups.staged, "staged"),
+  };
   [els.changeList, els.stagedChangeList].forEach((root) => {
     root.querySelectorAll("[data-select-file][data-scope]").forEach((row) => {
       const selected = state.selectedChanges.has(changeKey(row.dataset.scope || "", row.dataset.file || ""));
@@ -323,8 +371,35 @@ function refreshChangeSelectionUi() {
         button.disabled = selectedCount === 0;
       });
     });
+    root.querySelectorAll("[data-select-folder]").forEach((button) => {
+      const scope = button.dataset.scope || "";
+      const path = button.dataset.folderPath || "";
+      const selected = folderStates[scope]?.get(path) || { total: 0, selected: 0 };
+      const checked = selected.total > 0 && selected.selected === selected.total;
+      const mixed = selected.selected > 0 && !checked;
+      button.setAttribute("aria-checked", checked ? "true" : mixed ? "mixed" : "false");
+      button.title = t(checked ? "取消选择此文件夹下的所有更改" : "选择此文件夹下的所有更改");
+      button.setAttribute("aria-label", button.title);
+    });
   });
   markSelectedFile();
+}
+
+function worktreeFolderSelectionStates(files, scope) {
+  const states = new Map();
+  (files || []).forEach((file) => {
+    const parts = String(file.file || "").replaceAll("\\", "/").split("/").filter(Boolean);
+    parts.pop();
+    let current = "";
+    parts.forEach((part) => {
+      current = current ? `${current}/${part}` : part;
+      const entry = states.get(current) || { total: 0, selected: 0 };
+      entry.total += 1;
+      if (state.selectedChanges.has(changeKey(scope, file.file))) entry.selected += 1;
+      states.set(current, entry);
+    });
+  });
+  return states;
 }
 
 function selectCommitFile(filePath) {

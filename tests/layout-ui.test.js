@@ -124,6 +124,15 @@ test("ordinary command hints become hover titles without duplicate text", () => 
   assert.equal(second.button.getAttribute("title"), "移动当前分支\ngit reset --soft");
 });
 
+test("long operation toasts expose an immediate dismiss control", () => {
+  assert.match(indexHtml, /id="toastMessage"/);
+  assert.match(indexHtml, /id="toastClose"/);
+  assert.match(layoutSource, /function dismissToast\(\)/);
+  assert.match(layoutSource, /toastMessage\.textContent/);
+  assert.match(eventsSource, /toastClose\?\.addEventListener\("click", dismissToast\)/);
+  assert.match(styles, /\.toast\.show[\s\S]*pointer-events:\s*auto/);
+});
+
 test("topbar sync actions expose their Git commands on hover", () => {
   assert.match(indexHtml, /data-action="fetch" title="git fetch --all --prune"/);
   assert.match(indexHtml, /data-action="pull" title="git pull --ff-only"/);
@@ -1367,8 +1376,11 @@ test("commit operation buttons use a compact responsive grid", () => {
   assert.match(styles, /@container\s+inspector-panel\s*\(max-width:\s*300px\)[\s\S]*?\.commit-action-tools\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
 });
 
-test("commit message body editor has a practical default height", () => {
+test("commit message body editor keeps a practical minimum while expanding to full content", () => {
   assert.match(styles, /\.reword-form \.edit-field textarea\s*\{[^}]*min-height:\s*132px;/s);
+  assert.match(styles, /\.reword-form \.edit-field textarea\s*\{[^}]*max-height:\s*none;/s);
+  assert.match(styles, /\.reword-form \.edit-field textarea\s*\{[^}]*field-sizing:\s*content;/s);
+  assert.match(styles, /\.reword-form \.edit-field textarea\s*\{[^}]*overflow-y:\s*auto;/s);
 });
 
 test("conflict choice buttons form an equal centered row", () => {

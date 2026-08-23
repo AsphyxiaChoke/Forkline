@@ -395,12 +395,31 @@ function escapeAttr(value) {
   return escapeHtml(value).replaceAll("\n", " ");
 }
 
+function dismissToast() {
+  clearTimeout(toast.timer);
+  toast.timer = 0;
+  els.toast.classList.remove("show");
+  els.toast.setAttribute("aria-hidden", "true");
+  if (els.toastClose) els.toastClose.disabled = true;
+}
+
 function toast(message) {
   const text = String(message || "");
-  els.toast.textContent = text;
+  if (els.toastMessage) {
+    els.toastMessage.textContent = text;
+  } else {
+    els.toast.textContent = text;
+  }
+  if (els.toastClose) {
+    const label = typeof t === "function" ? t("关闭提示") : "关闭提示";
+    els.toastClose.disabled = false;
+    els.toastClose.title = label;
+    els.toastClose.setAttribute("aria-label", label);
+  }
+  els.toast.setAttribute("aria-hidden", "false");
   els.toast.classList.add("show");
   clearTimeout(toast.timer);
   const duration = clamp(2200 + text.length * 45, 2600, text.includes("\n") ? 16000 : 7600);
-  toast.timer = setTimeout(() => els.toast.classList.remove("show"), duration);
+  toast.timer = setTimeout(dismissToast, duration);
 }
 

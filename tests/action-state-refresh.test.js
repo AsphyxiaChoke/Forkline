@@ -69,6 +69,35 @@ test("repository action refresh leaves the new repository detail state untouched
   assert.equal(state.repoDetailLoads.stashes.repoPath, "C:/repo-b");
 });
 
+test("a newer core state refresh expires an older refresh in the same repository", async () => {
+  let resolveFirst;
+  let resolveSecond;
+  const state = {
+    data: { repo: { path: "C:/repo", branch: "main" } },
+    selectedRef: "main",
+    stateRequestId: 0,
+    repoDetailRequestId: 2,
+    repoDetailLoads: {},
+  };
+  const context = vm.createContext({
+    state,
+    api: (url) => new Promise((resolve) => {
+      if (url.includes("main")) resolveFirst = resolve;
+      else resolveSecond = resolve;
+    }),
+  });
+  vm.runInContext(coreRefreshSource, context);
+
+  const first = context.loadStateForRepoPath("C:/repo", "main");
+  const second = context.loadStateForRepoPath("C:/repo", "feature/test");
+  resolveFirst({ repo: { path: "C:/repo", selectedRef: "main" }, commits: [] });
+  resolveSecond({ repo: { path: "C:/repo", selectedRef: "feature/test" }, commits: [] });
+
+  assert.equal(await first, null);
+  assert.equal((await second).repo.selectedRef, "feature/test");
+  assert.equal(state.repoDetailRequestId, 3);
+});
+
 test("common Git actions delegate state refill instead of reading full repository state", () => {
   for (const [startName, endName] of [
     ["async function runAction", "function currentBranchSnapshotPayload"],

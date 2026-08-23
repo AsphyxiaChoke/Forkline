@@ -312,7 +312,7 @@ function worktreeSummary(rows) {
 
 function worktreeCreateHtml(realRepo) {
   const defaultRef = worktreeDefaultRef();
-  const refs = compareRefOptions([defaultRef]);
+  const refs = repositoryRefOptions([defaultRef]);
   const target = worktreeTargetSuggestion(defaultRef);
   return tt`
     <form class="worktree-create" data-worktree-form>
@@ -471,22 +471,7 @@ async function openWorktreePath(worktreePath, button) {
   if (!worktreePath) return;
   if (button) button.disabled = true;
   try {
-    const result = await api("/api/action", {
-      method: "POST",
-      body: JSON.stringify({ action: "openWorktree", path: worktreePath }),
-    });
-    toast(result.output || t("已打开工作树"));
-    clearOpenedRepoState();
-    state.selectedRef = "";
-    state.data = result.state;
-    state.selectedSha = state.data.commits[0]?.sha || "";
-    saveRecentRepo(state.data.repo);
-    renderAll();
-    if (state.selectedSha) {
-      await loadCommit(state.selectedSha);
-      if (state.data?.repo?.path !== result.state?.repo?.path) return;
-      renderInspector();
-    }
+    await openRepo(worktreePath);
   } catch (error) {
     toast(error.message);
   } finally {

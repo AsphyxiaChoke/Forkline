@@ -812,6 +812,46 @@ html[data-shell="electron"] .workspace {
   background: color-mix(in srgb, var(--field) 82%, var(--blue) 18%);
 }
 
+.git-action-status {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 220px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--amber) 42%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-action-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 12%, transparent);
+  animation: git-action-status-pulse 1.2s ease-in-out infinite;
+}
+
+.git-action-status[hidden] {
+  display: none;
+}
+
+@keyframes git-action-status-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 .topbar-more {
   position: relative;
   display: inline-flex;
@@ -2271,14 +2311,29 @@ button.file-row {
 
 .tree-head {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   width: 100%;
   min-width: 0;
   height: 28px;
   margin: 2px 0;
-  padding: 0 8px 0 4px;
+  padding: 0 4px;
+  border-radius: 8px;
+}
+
+.tree-head:hover {
+  background: color-mix(in srgb, var(--panel-3) 88%, var(--teal) 12%);
+}
+
+.tree-toggle {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 4px 0 0;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -2289,8 +2344,54 @@ button.file-row {
   text-align: left;
 }
 
-.tree-head:hover {
-  background: color-mix(in srgb, var(--panel-3) 88%, var(--teal) 12%);
+.tree-toggle:focus-visible,
+.tree-folder-select:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -1px;
+}
+
+.tree-folder-select {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--teal);
+  cursor: pointer;
+}
+
+.tree-folder-select:hover {
+  background: color-mix(in srgb, var(--teal) 16%, transparent);
+}
+
+.tree-folder-check {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--quiet);
+  border-radius: 3px;
+  color: var(--panel);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.tree-folder-select[aria-checked="true"] .tree-folder-check,
+.tree-folder-select[aria-checked="mixed"] .tree-folder-check {
+  border-color: var(--teal);
+  background: var(--teal);
+}
+
+.tree-folder-select[aria-checked="true"] .tree-folder-check::before {
+  content: "✓";
+}
+
+.tree-folder-select[aria-checked="mixed"] .tree-folder-check::before {
+  content: "−";
 }
 
 .tree-caret {
@@ -2808,6 +2909,9 @@ button.file-row {
 
 .reword-form .edit-field textarea {
   min-height: 132px;
+  max-height: none;
+  field-sizing: content;
+  overflow-y: auto;
 }
 
 .commit-tools {
@@ -3078,7 +3182,11 @@ button.file-row {
   position: fixed;
   right: 18px;
   bottom: 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   max-width: min(440px, calc(100vw - 36px));
+  max-height: min(48vh, 420px);
   padding: 12px 14px;
   border: 1px solid rgba(35, 199, 183, 0.48);
   border-radius: 8px;
@@ -3089,6 +3197,7 @@ button.file-row {
   white-space: pre-wrap;
   opacity: 0;
   pointer-events: none;
+  visibility: hidden;
   transform: translateY(10px);
   transition: opacity 0.18s ease, transform 0.18s ease;
   box-shadow: var(--shadow-soft);
@@ -3097,7 +3206,37 @@ button.file-row {
 
 .toast.show {
   opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
   transform: translateY(0);
+}
+
+.toast-message {
+  min-width: 0;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin: -3px -5px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 26px;
+}
+
+.toast-close:hover,
+.toast-close:focus-visible {
+  background: var(--panel-3);
+  color: var(--text);
 }
 
 .context-menu {
