@@ -1327,3 +1327,23 @@
 - `tests/installer-package.test.js`：同步安装器快捷方式契约断言。
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加本轮 v0.4.9 发布前证据。
 - 回滚方式：提交前恢复上述文件；提交后使用 `git revert <本轮提交>`。不要删除或暂存 `n+fs.statSync(p.join('public'`、`.playwright-cli/`，不要移动旧标签。
+
+## 2026-08-25 - Task: Forkline v0.4.9 正式发布收尾
+
+### What was done
+
+- 创建中文正式 Release `v0.4.9`，两个 Windows 工作流均成功，Release 生成安装器、blockmap、两个校验文件、便携 ZIP 和 `latest.yml` 六个附件。
+- 重新下载并复核六个正式附件的 GitHub digest、`.sha256` 内容、`latest.yml` 版本/大小/SHA-512；确认便携 ZIP 保留 `.git`、内置 Node、启动脚本和文档。
+
+### Testing
+
+- Release：`https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.9`；发布提交/标签目标：`ea43966a2ff5295aedf528bc3578eb61f5dbcbf5`。
+- 工作流 `32747708600`（安装器）和 `32747709108`（便携包）均成功；仅有 Node.js 20 弃用提示。
+- 六附件 digest：EXE `9ee113acb86258f92feb38c88808e017884dd314b357a159898b87936eab23ba`；blockmap `38af1e141d2acda34147c017608837e044bdf86843fee3834524451c0c6b27da`；EXE 校验文件 `4fd674d5971332d7aeb644074732bcc2c18cc96245903910ff46fb6242873465`；ZIP `9c358d2bd5556938139b2ed38888bb301c190758b9fa2180de970307ab1e6fee`；ZIP 校验文件 `6a955716ccd57996c064cd0732fc79becc8951dcb42e5d3b153cbcba8a18d051`；`latest.yml` `220958d62114a2c658897cf0e5bdaeee570c0cb154afb47b47271257593c3cce`。
+- 正式安装器签名状态 `NotSigned`；Release 文案已标注未知发布者和 SmartScreen 风险。直接 GitHub 大文件下载卡在 0 字节，固定 Release 代理下载后的内容与官方 API digest 完全一致。
+- 保护文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未暂存、未提交；`.playwright-cli/` 仍未跟踪。
+
+### Notes
+
+- `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加 v0.4.9 正式发布收尾。
+- 回滚方式：提交前恢复这三份文档；提交后使用 `git revert <本轮文档提交>`。不删除正式附件，不移动 `v0.4.0` 至 `v0.4.9` 的任何标签。

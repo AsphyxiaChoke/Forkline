@@ -325,3 +325,19 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `package.json`、`tests/installer-package.test.js`：把桌面快捷方式策略改为 `"always"` 并更新安装器契约测试。
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加 v0.4.9 发布准备、安装器产物、交互式安装/卸载和最终门禁记录。
 - 回滚方式：提交前执行 `git restore -- package.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮提交>`。不得触碰异常未跟踪文件、`.playwright-cli/` 或任何既有标签。
+
+## v0.4.9 正式发布与验收
+
+- 正式 Release：[Forkline v0.4.9](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.9)，发布提交为 `ea43966a2ff5295aedf528bc3578eb61f5dbcbf5`；`v0.4.9` 为注释标签，标签目标与该提交一致，未移动 `v0.4.0` 至 `v0.4.8` 任一既有标签。
+- 安装器工作流：[32747708600](https://github.com/AsphyxiaChoke/Forkline/actions/runs/32747708600) 成功；便携包工作流：[32747709108](https://github.com/AsphyxiaChoke/Forkline/actions/runs/32747709108) 成功。安装器工作流自动测试通过；仅有 GitHub Actions Node.js 20 弃用提示。
+- 正式六个附件均为 `uploaded`：安装器 `104603086` 字节 / SHA-256 `9ee113acb86258f92feb38c88808e017884dd314b357a159898b87936eab23ba`；安装器 blockmap `111568` 字节 / `38af1e141d2acda34147c017608837e044bdf86843fee3834524451c0c6b27da`；安装器 `.sha256` `102` 字节 / `4fd674d5971332d7aeb644074732bcc2c18cc96245903910ff46fb6242873465`。
+- 便携 ZIP `36789411` 字节 / SHA-256 `9c358d2bd5556938139b2ed38888bb301c190758b9fa2180de970307ab1e6fee`；ZIP `.sha256` `99` 字节 / `6a955716ccd57996c064cd0732fc79becc8951dcb42e5d3b153cbcba8a18d051`；`latest.yml` `369` 字节 / `220958d62114a2c658897cf0e5bdaeee570c0cb154afb47b47271257593c3cce`。
+- 六个附件重新下载后的本机 SHA-256 全部匹配 GitHub API digest；两个 `.sha256` 文件分别匹配 EXE 和 ZIP；`latest.yml` 的版本 `0.4.9`、安装器大小 `104603086` 和 SHA-512 `MB+dtLVJB/md5ahvUDOhMySApSuoerd8PvpOardxlmQd2Hg5Nb5anvbv5tAlZ+bYs4wfv/u5/FGD6MTwMU0CdQ==` 均匹配。GitHub 直连大文件下载在本机卡在 0 字节，随后通过固定 Release 代理重新下载并以官方 API digest 复核，代理不作为信任根。
+- 正式便携 ZIP 已确认保留 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码和 `docs/`；继续使用原 Git 快进更新。正式安装器 Authenticode 为 `NotSigned`，Release 说明已标注未知发布者和 SmartScreen 风险。
+- 正式 Release 发布说明为中文，明确当前用户安装、可选目录、桌面/开始菜单快捷方式、`electron-updater`、更新前优雅停止 Forkline/Git/SSH 子进程、Web/便携版 Git 更新边界和未签名风险。
+- 发布后最终工作区文档收尾只追加本节；`v0.4.9` 标签继续固定在产品提交，不将后续文档提交回写到该标签。
+
+### Notes
+
+- `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加正式 Release、工作流、六个附件 digest、下载复核和便携 ZIP 内容验收。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮文档提交>`。不删除 Release 附件，不移动任何标签，不触碰异常未跟踪文件或 `.playwright-cli/`。

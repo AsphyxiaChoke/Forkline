@@ -10380,3 +10380,22 @@
 - `tests/installer-package.test.js`：更新安装器契约断言。
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加 v0.4.9 发布前安装器和测试记录。
 - 回滚方式：提交前恢复上述文件；提交后执行 `git revert <本轮提交>`。不得使用 `git clean`、`git add .`、`git reset --hard`，不得触碰异常未跟踪文件、`.playwright-cli/` 或既有标签。
+
+## 2026-08-25 - Task: Forkline v0.4.9 正式发布收尾
+
+### What was done
+
+- 创建中文 GitHub Release `v0.4.9`，安装器和便携包工作流均成功，六个正式附件已上传。
+- 完成官方 Release 附件重新下载、GitHub digest、两个 `.sha256` 文件、`latest.yml` 和便携 ZIP 内容复核；清理本轮明确创建的下载验证目录。
+
+### Testing
+
+- Release URL：`https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.9`；标签/产品提交：`ea43966a2ff5295aedf528bc3578eb61f5dbcbf5`。
+- 工作流 `32747708600`、`32747709108` 均成功；正式六附件本机 SHA-256 与 GitHub API digest 全部一致。
+- EXE/ZIP 校验文件分别匹配主附件；`latest.yml` 版本 `0.4.9`、大小 `104603086`、SHA-512 均匹配；便携 ZIP 含 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd` 和 `docs/`；安装器签名状态 `NotSigned`。
+- 异常未跟踪文件长度 `0`、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交；`.playwright-cli/` 未跟踪且未触碰。
+
+### Notes
+
+- `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加正式发布验收记录。
+- 回滚方式：提交前恢复这三份文档；提交后使用 `git revert <本轮文档提交>`。不得删除 Release 附件、移动任何既有标签或触碰保护对象。
