@@ -1265,3 +1265,15 @@
 - 临时当前用户安装、实际启动（主窗口 `Forkline Web`、随机端口 `57843`、首页和核心状态 HTTP `200`）、正常关闭和卸载均通过；HKCU、桌面/开始菜单快捷方式和临时安装目录均按预期清理，`%APPDATA%\forkline` 用户数据保持不变。现有 `D:\Forkline` v0.4.7 未被覆盖。
 - 剩余门禁：恢复 GitHub CLI/Git HTTPS 认证；精确暂存并提交、推送 `main`，创建固定的 `v0.4.8` 注释标签和 Release，等待安装器/便携包工作流成功，再核验六个正式附件、digest、校验文件、`latest.yml`、未签名风险，最后从正式 v0.4.7 安装版执行 v0.4.8 软件内更新。
 - 受保护异常文件 `n+fs.statSync(p.join('public'` 仍为 0 字节、未暂存、未提交；不得移动 `v0.4.0` 至 `v0.4.7` 或任何既有标签。
+
+## 2026-08-24 Forkline v0.4.8 正式发布与软件内更新终验完成
+
+- 正式 Release：[Forkline v0.4.8](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.8) 已发布，Release ID 为 `375395807`，不是草稿或预发布；提交 `377c7fe7c1dc19e4b060894fca55deb00a1ab16f` 已在 `main`、`origin/main` 和不可移动注释标签 `v0.4.8` 上。`v0.4.0` 至 `v0.4.7` 标签均未移动。
+- 两条正式工作流均成功：安装器 `32681983878`，便携包 `32681983853`。六个正式附件的 GitHub digest 已验真：EXE `104602003` 字节、`be63579913237ddbdba4b2e8b9af5b1f514aa02b9fa71e942c9abdeb53ccdee1`；blockmap `111478` 字节、`d8d9528ecdfe85b9bdf76a1eb472c30a252510a6808f98267ba7f7957938f8da`；EXE 校验文件 `fc7a9a05f26126f1bbce8eb0614e0a3633d871f9628ffad2fe2c6292c271bb73`；便携 ZIP `36769362` 字节、`3f0e3ec9d4036e9cf044f5b79471d283e35c04aff2528c1cc08f3bae53627489`；ZIP 校验文件 `afabe91fe67552332f0a811d5423989f2d55d4dcb8b4a34dd44555bb64728432`；`latest.yml` `369` 字节、`932cb1aeef1abd489cc3fd46094966f18028a6684879e8bfcd7e2b42eedeaab9`。`latest.yml` 中的 EXE SHA-512 为 `BJIy1UJefOvD9qaHXDxvtuFx5/jjebVzE3rSzirl4TEv9nK1MBdpdl+K3ZzmTZbgvCZ/yzfX1Ikf0NHjGF24Ww==`。
+- 正式 EXE 文件版本为 `0.4.8`，Authenticode 为 `NotSigned`。发布说明必须继续标注未知发布者、SmartScreen/未签名风险；便携 ZIP 仍包含 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码和文档，继续使用原 Git 快进更新。
+- 真实软件内更新使用隔离的正式 v0.4.7 安装基线：原 `D:\Forkline` 经只读检查已不存在，未被覆盖；v0.4.7 安装器来自 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.7-update-assets-20260824\Forkline-Setup-0.4.7-windows-x64.exe`，大小 `100612066` 字节，SHA-256 为 `d52eec77a9953819ee879be666ffec02222f8e5ffd63eda67ebeed6f5e26d5c3`。因此本轮更新结果不是原 `D:\Forkline` 现场的验收证据。
+- 隔离 v0.4.7 页面真实显示当前 `v0.4.7`、最新 `v0.4.8` 和可用的“立即更新并重启”入口；确认后旧实例退出，安装目录中的 EXE 文件/产品版本变为 `0.4.8/0.4.8.0`。更新后新后台服务在随机端口 `59137` 提供首页和核心状态 HTTP `200`，`/api/operations` 显示无运行操作，Git/SSH 子进程为 `0`。
+- 更新后真实 Electron 设置页显示当前/最新均为 `v0.4.8`，状态为“已是最新版本”；中文、深色主题、`80%` 缩放、最近仓库和当前仓库均可用，页面明确说明主题与语言保存在 Forkline 本机用户数据中并在重启/更新后保留。关闭窗口后 Forkline、后台服务、Git/SSH 子进程和 `59137`/`56299` 监听均为 `0`。
+- 安装前的稳定用户数据文件均未被清空：`desktop-preferences.json` 的哈希仍为 `11EC006FF334C761C6CC9324E6AD419C753F5FC5F0262CED18622E720CD31B6A`，最近仓库的路径/名称/分支语义保留，界面偏好中的中文、深色和缩放值保留；最近仓库时间戳和运行期诊断会按正常启动/交互更新，不能用整文件哈希变化误判为数据丢失。
+- 隔离安装器的静默安装退出码为 `0`，但未生成可见 HKCU 卸载登记；静默卸载器退出码也为 `0`，移除了快捷方式但未清除该异常安装目录。该异常已如实保留并记录，不能写成“标准 HKCU 卸载闭环通过”。确认进程归零后仅删除了两处明确的 TEMP 隔离目录；真实 `%APPDATA%\forkline` 和 `AppData\Local\forkline-updater` 基线未删除。
+- 受保护未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交。后续产品代码或发布动作必须使用新版本/新提交，禁止移动任何既有标签。

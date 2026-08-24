@@ -10311,3 +10311,26 @@
 - `progress.md`：仅在末尾追加本轮诊断、验证、文件清单和回滚点。
 - `dist/installer/Forkline-Setup-0.4.8-windows-x64.exe`、`.blockmap`、`latest.yml`、`.sha256`：本机构建验证产物，尚未作为正式 Release 附件发布。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；若已提交则执行 `git revert <本轮文档提交>`。不得移动既有标签，不得使用 `git clean`、`git add .` 或触碰异常未跟踪文件。
+
+## 2026-08-24 - Task: 完成 Forkline v0.4.8 正式发布、软件内更新终验与隔离现场清理
+
+### What was done
+
+- 对已发布的 v0.4.8 Release、安装器/便携包工作流、六个附件 digest、`latest.yml` SHA-512 和未签名风险完成收尾记录；`main`、`origin/main`、`v0.4.8` 与既有标签边界保持不变。
+- 在不存在 `D:\Forkline` 的事实基础上，使用临时隔离 v0.4.7 安装基线执行真实 Electron 设置页“立即更新并重启”；确认 updater 完成替换后，v0.4.8 页面、后台服务、用户偏好和最近仓库均可用。
+- 记录静默安装未生成 HKCU 卸载登记、静默卸载器只移除快捷方式而未清除异常安装目录的现场异常；确认进程归零后删除两处明确的隔离 TEMP 目录，保留真实用户数据和 updater 缓存基线。
+
+### Testing
+
+- 正式发布证据：Release ID `375395807`；安装器工作流 `32681983878`、便携包工作流 `32681983853`；发布提交/标签目标 `377c7fe7c1dc19e4b060894fca55deb00a1ab16f`。正式 EXE 为 `104602003` 字节、SHA-256 `be63579913237ddbdba4b2e8b9af5b1f514aa02b9fa71e942c9abdeb53ccdee1`，blockmap 为 `111478` 字节、SHA-256 `d8d9528ecdfe85b9bdf76a1eb472c30a252510a6808f98267ba7f7957938f8da`，便携 ZIP 为 `36769362` 字节、SHA-256 `3f0e3ec9d4036e9cf044f5b79471d283e35c04aff2528c1cc08f3bae53627489`；其余三个附件 digest 和 `latest.yml` SHA-512 已同步写入 `docs/`。Authenticode 为 `NotSigned`。
+- 隔离 v0.4.7 安装器退出码 `0`，更新前真实页面为 `v0.4.7 → v0.4.8`；确认后旧端口 `56299` 释放，更新后安装目录文件/产品版本为 `0.4.8/0.4.8.0`，新服务端口 `59137` 的首页、`/api/state?details=core` 和 `/api/operations` 检查通过，Git/SSH 子进程为 `0`。
+- 更新后真实 Electron 设置页显示当前/最新均为 `v0.4.8`、状态“已是最新版本”，中文、深色、`80%` 缩放和最近仓库均保留；正常关闭后 Forkline 进程和监听端口为 `0`。`D:\Forkline` 从始至终不存在，未被覆盖。
+- 静默卸载器退出码 `0`；HKCU 卸载登记不存在，快捷方式已移除但异常隔离安装目录仍在，之后仅删除已验证的两处 TEMP 隔离目录。真实 `%APPDATA%\forkline` 仍存在；异常未跟踪文件仍为 0 字节，SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交。
+- 本轮未重跑自动测试套件；前一条发布前门禁已记录 `npm.cmd test` `385/385` 和浏览器性能专项 `1/1`，本轮专门补充正式 Release 后的软件内更新、重启、用户数据和退出残留验收。
+
+### Notes
+
+- `docs/CONTINUE.md`：追加 v0.4.8 正式 Release、正式附件摘要、隔离更新终验、D:\Forkline 不存在事实和卸载登记异常。
+- `docs/PACKAGING.md`：追加 v0.4.8 发布附件、NSIS/便携边界、未签名风险、更新链路和隔离清理结果。
+- `progress.md`：追加本轮正式发布终验、测试证据、异常边界、文件清单和回滚点。
+- 回滚方式：提交前执行 `git restore -- docs/CONTINUE.md docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮文档收尾提交>`。该回滚不恢复已删除的隔离临时目录，也不触碰 `%APPDATA%\forkline`、`AppData\Local\forkline-updater`、异常未跟踪文件或任何既有标签。

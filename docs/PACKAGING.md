@@ -300,3 +300,13 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 临时安装器验证使用当前用户模式和独立目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.8-local-e2e`：安装退出码 `0`，文件/产品版本为 `0.4.8/0.4.8.0`，HKCU 登记和桌面/开始菜单快捷方式正确；启动后主窗口标题为 `Forkline Web`，后台服务端口 `57843`、首页和核心状态均 HTTP `200`，正常关闭后进程树归零。
 - 临时卸载退出码 `0`，安装目录、登记和快捷方式已移除；`%APPDATA%\forkline` 及四个稳定用户数据文件仍存在且字节数/哈希未变。现有 `D:\Forkline` v0.4.7 保持不动。
 - 正式发布仍需在不可变 `v0.4.8` 标签上由 Release 事件触发安装器和便携包工作流；本机产物不能冒充正式附件。发布说明必须继续明确当前用户安装、可选目录、桌面/开始菜单快捷方式、用户数据保留、未签名/未知发布者和 SmartScreen 风险，以及更新前优雅停止 Forkline、Git、SSH 子进程。
+
+## v0.4.8 正式发布与软件内更新验收
+
+- 正式 Release：[v0.4.8](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.8)，Release ID `375395807`，发布提交 `377c7fe7c1dc19e4b060894fca55deb00a1ab16f`；安装器工作流 `32681983878`、便携包工作流 `32681983853` 均成功。`v0.4.8` 是当前正式版本，既有 `v0.4.0` 至 `v0.4.7` 标签未移动。
+- 六个正式附件及 digest：`Forkline-Setup-0.4.8-windows-x64.exe` `104602003` 字节 / `be63579913237ddbdba4b2e8b9af5b1f514aa02b9fa71e942c9abdeb53ccdee1`；对应 blockmap `111478` 字节 / `d8d9528ecdfe85b9bdf76a1eb472c30a252510a6808f98267ba7f7957938f8da`；EXE `.sha256` / `fc7a9a05f26126f1bbce8eb0614e0a3633d871f9628ffad2fe2c6292c271bb73`；便携 ZIP `36769362` 字节 / `3f0e3ec9d4036e9cf044f5b79471d283e35c04aff2528c1cc08f3bae53627489`；ZIP `.sha256` / `afabe91fe67552332f0a811d5423989f2d55d4dcb8b4a34dd44555bb64728432`；`latest.yml` `369` 字节 / `932cb1aeef1abd489cc3fd46094966f18028a6684879e8bfcd7e2b42eedeaab9`。`latest.yml` 的 EXE SHA-512 为 `BJIy1UJefOvD9qaHXDxvtuFx5/jjebVzE3rSzirl4TEv9nK1MBdpdl+K3ZzmTZbgvCZ/yzfX1Ikf0NHjGF24Ww==`。
+- 安装包是当前用户 NSIS 安装、可选安装目录、默认桌面/开始菜单快捷方式；正式 EXE 的 Authenticode 状态为 `NotSigned`，发布说明必须保留未知发布者和 SmartScreen 风险。便携包保留 `.git` 与内置 Node 运行时，继续走原 Git 快进更新，不使用 NSIS updater。
+- 软件内更新终验采用临时隔离 v0.4.7 基线，而不是不存在的 `D:\Forkline` 现场。更新前页面状态为 `v0.4.7 → v0.4.8`，点击确认后旧服务停止；更新后安装目录 EXE/产品版本为 `0.4.8/0.4.8.0`，随机后台端口 `59137` 返回首页和核心状态 `200`，无运行操作、Git/SSH 子进程为 `0`。
+- 更新后真实 Electron 设置页确认当前/最新均为 `v0.4.8`、状态“已是最新版本”，并确认中文、深色、`80%` 缩放和最近仓库仍可用。正常关闭后安装版进程、后台服务和监听端口均归零；用户数据目录 `%APPDATA%\forkline` 保留，稳定偏好字段和最近仓库语义保留。
+- 隔离 v0.4.7 安装的已知现场异常：静默安装退出码为 `0`，但没有可见 HKCU 卸载登记；静默卸载退出码为 `0`，快捷方式被移除但安装目录文件仍在。因此本轮只把“更新后运行和退出”判为通过，把“该静默安装的标准登记卸载”判为异常并记录，不能混淆两者。确认无进程占用后，已删除明确的 `forkline-v0.4.7-update-e2e` 与 `forkline-v0.4.7-update-assets-20260824` 临时目录；未删除真实用户数据或 updater 基线。
+- `n+fs.statSync(p.join('public'` 继续作为保护对象，长度 `0`、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，不得进入暂存区或提交。后续回滚应使用新的文档/修复提交，禁止移动任何既有标签。
