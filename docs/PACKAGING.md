@@ -341,3 +341,4 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加正式 Release、工作流、六个附件 digest、下载复核和便携 ZIP 内容验收。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮文档提交>`。不删除 Release 附件，不移动任何标签，不触碰异常未跟踪文件或 `.playwright-cli/`。
+- 发布收尾后保留的 `D:\Forkline` 已用同一 v0.4.9 安装器恢复当前用户登记和快捷方式：HKCU 显示 `Forkline 0.4.9`，卸载命令指向 `D:\Forkline\Uninstall Forkline.exe`，桌面和开始菜单快捷方式均指向 `D:\Forkline\Forkline.exe`；程序文件版本仍为 `0.4.9/0.4.9.0`。
