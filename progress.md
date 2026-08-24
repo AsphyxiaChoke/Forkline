@@ -10334,3 +10334,49 @@
 - `docs/PACKAGING.md`：追加 v0.4.8 发布附件、NSIS/便携边界、未签名风险、更新链路和隔离清理结果。
 - `progress.md`：追加本轮正式发布终验、测试证据、异常边界、文件清单和回滚点。
 - 回滚方式：提交前执行 `git restore -- docs/CONTINUE.md docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮文档收尾提交>`。该回滚不恢复已删除的隔离临时目录，也不触碰 `%APPDATA%\forkline`、`AppData\Local\forkline-updater`、异常未跟踪文件或任何既有标签。
+
+## 2026-08-24 - Task: Forkline 多项界面问题修复收尾
+
+### What was done
+
+- Git 忙碌提示、更多面板重复选择、工作区/暂存区 Ctrl/Cmd+A、Escape 关闭 Toast、快捷键说明和提交图谱水平滚动已完成收尾。
+
+### Testing
+
+- 8 个本轮源码/测试文件 `node --check` 全部通过。
+- 定向回归 `node --test tests\\keyboard-shortcuts.test.js tests\\layout-ui.test.js tests\\api-repo-context.test.js tests\\settings-preference-copy.test.js`：`70/70` 通过。
+- 全量回归 `npm.cmd test`：`389/389` 通过，0 失败、0 跳过。
+- 浏览器专项 `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API `299.4 ms`，低于 `350 ms` 门限；真实 Chromium 的选择器重置、Toast Escape 关闭、历史图谱滚动和大工作区性能均通过。
+- `git diff --check` 通过；保护文件 `n+fs.statSync(p.join('public'` 保持 0 字节，SHA-256 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未被修改、暂存或提交。
+
+### Notes
+
+- `public/js/api.js`：Git 动作名称中文化。
+- `public/js/app/events.js`：快捷键分流、Escape Toast 关闭和“更多”选择器重置。
+- `public/js/features/file-tree.js`：工作区/暂存区当前筛选范围全选。
+- `public/js/features/folder-command.js`：重渲染后保持“更多”选择器占位状态。
+- `public/js/i18n-catalog.js`、`public/js/panels/settings.js`、`public/settings.css`：快捷键说明与双语文案。
+- `public/styles.css`：提交图谱统一水平滚动边界。
+- `tests/api-repo-context.test.js`、`tests/layout-ui.test.js`、`tests/settings-preference-copy.test.js`、`tests/browser-performance.test.js`、`tests/keyboard-shortcuts.test.js`：对应回归覆盖。
+- 回滚方式：提交前对以上已跟踪文件执行 `git restore -- <file list>`，按需删除新增的 `tests\\keyboard-shortcuts.test.js`；提交后使用 `git revert <本轮提交>`。不得触碰保护文件、`.playwright-cli/` 或既有标签。
+
+## 2026-08-24 - Task: Forkline v0.4.9 发布前安装器闭环与快捷方式修正
+
+### What was done
+
+- 将 NSIS 桌面快捷方式策略改为 `"always"`，并完成 v0.4.9 安装器重建。
+- 完成全新交互式隔离安装、启动、后台服务检查、正常关闭、卸载和快捷方式清理；保留用户手动安装的 `D:\Forkline`。
+
+### Testing
+
+- 安装版 `0.4.9/0.4.9.0`，HKCU 登记 `Forkline 0.4.9`，后台端口 `63247`，窗口响应正常。
+- `D:\桌面\Forkline.lnk` 和 `%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Forkline.lnk` 均正确指向隔离安装目录；正常关闭后进程归零，卸载退出码 `0`，安装目录、登记和快捷方式均已移除。
+- 安装器 `104606437` 字节，SHA-256 `09f38e2a9c06ae17038f0716bf41dba7c113ad9379405590a11c7fe961c3f7d3`；blockmap `111630` 字节，SHA-256 `4848f743c97dd40c31919e6426df7f0bd6b17a6f5eedf433f52f64111303a548`；`latest.yml` SHA-256 `b39850cd5deae8a13925e35e6720e44564f77511bc32345f68258c42b23cb243`；签名状态 `NotSigned`。
+- Node 语法检查、`git diff --check`、`npm.cmd test` `389/389`、`npm.cmd run test:browser` `1/1` 全部通过。
+
+### Notes
+
+- `package.json`：桌面快捷方式策略从 `true` 改为 `"always"`。
+- `tests/installer-package.test.js`：更新安装器契约断言。
+- `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加 v0.4.9 发布前安装器和测试记录。
+- 回滚方式：提交前恢复上述文件；提交后执行 `git revert <本轮提交>`。不得使用 `git clean`、`git add .`、`git reset --hard`，不得触碰异常未跟踪文件、`.playwright-cli/` 或既有标签。

@@ -91,6 +91,20 @@ const GIT_ACTION_READONLY_VALUES = new Map([
   ["historyQueueAction", new Set(["changeMode", "clear", "moveDown", "moveUp", "refresh", "remove"])],
   ["branchCleanupAction", new Set(["view", "compare", "refresh"])],
 ]);
+const GIT_ACTION_DISPLAY_NAMES = new Map([
+  ["fetch", "抓取"],
+  ["fetchRemote", "抓取"],
+  ["pull", "拉取"],
+  ["pullRebase", "变基拉取"],
+  ["push", "推送"],
+  ["forcePushLease", "安全强推"],
+  ["stageAll", "暂存全部"],
+  ["discardAll", "丢弃全部"],
+  ["commit", "创建提交"],
+  ["amendCommit", "追加提交"],
+  ["cloneRepository", "克隆仓库"],
+  ["initRepository", "初始化仓库"],
+]);
 
 function runningGitOperations() {
   if (typeof state === "object" && state.data?.repo?.isSample) return [];
@@ -148,6 +162,8 @@ function actionRequestBody(options = {}) {
 function actionRequestLabel(options = {}) {
   const action = String(actionRequestBody(options).action || "").trim();
   if (!action) return typeof t === "function" ? t("Git 操作") : "Git 操作";
+  const displayName = GIT_ACTION_DISPLAY_NAMES.get(action);
+  if (displayName) return typeof t === "function" ? t(displayName) : displayName;
   return typeof t === "function" ? t("Git 操作 {action}", { action }) : `Git 操作 ${action}`;
 }
 

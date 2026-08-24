@@ -1277,3 +1277,53 @@
 - 安装前的稳定用户数据文件均未被清空：`desktop-preferences.json` 的哈希仍为 `11EC006FF334C761C6CC9324E6AD419C753F5FC5F0262CED18622E720CD31B6A`，最近仓库的路径/名称/分支语义保留，界面偏好中的中文、深色和缩放值保留；最近仓库时间戳和运行期诊断会按正常启动/交互更新，不能用整文件哈希变化误判为数据丢失。
 - 隔离安装器的静默安装退出码为 `0`，但未生成可见 HKCU 卸载登记；静默卸载器退出码也为 `0`，移除了快捷方式但未清除该异常安装目录。该异常已如实保留并记录，不能写成“标准 HKCU 卸载闭环通过”。确认进程归零后仅删除了两处明确的 TEMP 隔离目录；真实 `%APPDATA%\forkline` 和 `AppData\Local\forkline-updater` 基线未删除。
 - 受保护未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交。后续产品代码或发布动作必须使用新版本/新提交，禁止移动任何既有标签。
+
+## 2026-08-24 - Task: Forkline 多项界面问题修复收尾
+
+### What was done
+
+- Git 忙碌提示把内部动作名转换为中文业务名称；“更多”面板选择后恢复占位值，重复选择同一面板以及拉取后的重新渲染都可以继续使用。
+- 工作区和暂存区支持 `Ctrl/Cmd+A` 按当前筛选范围选择全部文件；文本输入、文本域和 CodeMirror 保留原生 `Ctrl/Cmd+X/C/V/Z/Y` 编辑行为。
+- Toast 支持 `Escape` 关闭；设置页增加中文快捷键说明及英文翻译；提交图谱表头与提交行共用一个水平滚动边界，窄窗口不再裁切内容。
+- 本轮只收尾上述界面问题；目录批量选择、文件夹仓库边界、提交时推送、储藏保护和安装版更新控制器继续沿用既有实现及其回归，不改变 Web、源码克隆和便携版更新语义。
+
+### Testing
+
+- `node --check`：本轮 8 个源码/测试文件全部通过。
+- 定向回归：`node --test tests\\keyboard-shortcuts.test.js tests\\layout-ui.test.js tests\\api-repo-context.test.js tests\\settings-preference-copy.test.js`，`70/70` 通过。
+- 完整回归：`npm.cmd test`，`389/389` 通过，0 失败、0 跳过。
+- 真实 Chromium：`npm.cmd run test:browser`，`1/1` 通过；4000 文件工作区冷 API `299.4 ms`，仍低于 `350 ms` 门限；选择器重置、Toast Escape 关闭和大提交历史滚动断言均通过。
+- `git diff --check` 通过；保护文件仍为 0 字节，SHA-256 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，未删除、未修改、未暂存、未提交。
+
+### Notes
+
+- `public/js/api.js`：增加 Git 动作中文显示名称。
+- `public/js/app/events.js`：重置“更多”选择器并支持 Escape 关闭 Toast、工作区快捷键分流。
+- `public/js/features/file-tree.js`：增加当前工作区/暂存区筛选范围的 Ctrl/Cmd+A 全选。
+- `public/js/features/folder-command.js`：让“更多”选择器在重渲染后保持占位状态。
+- `public/js/i18n-catalog.js`、`public/js/panels/settings.js`、`public/settings.css`：增加快捷键设置说明及中英文显示。
+- `public/styles.css`：统一提交图谱表头和提交行的水平滚动内容宽度。
+- `tests/api-repo-context.test.js`、`tests/layout-ui.test.js`、`tests/settings-preference-copy.test.js`、`tests/browser-performance.test.js`、`tests/keyboard-shortcuts.test.js`：补充中文提示、快捷键、选择器、滚动和真实 Chromium 回归。
+- 回滚方式：提交前对上述已跟踪文件执行 `git restore -- <file list>`，并按需删除新增的 `tests\\keyboard-shortcuts.test.js`；提交后使用 `git revert <本轮提交>`。两种方式均不得触碰 `n+fs.statSync(p.join('public'`、`.playwright-cli/` 或任何既有标签。
+
+## 2026-08-24 - Task: Forkline v0.4.9 发布前安装器闭环
+
+### What was done
+
+- 将 NSIS 桌面快捷方式策略调整为 electron-builder 的 `"always"`，确保已有安装痕迹或用户移除过快捷方式后重新安装仍恢复桌面快捷方式；开始菜单快捷方式、当前用户安装和可选目录保持不变。
+- 使用重建后的 v0.4.9 安装器完成全新交互式隔离安装、启动、后台端口检查、正常关闭和卸载；已有 `D:\Forkline` 用户安装未被清理。
+
+### Testing
+
+- 交互式隔离安装目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.9-interactive-final2`；版本 `0.4.9/0.4.9.0`，HKCU 登记 `Forkline 0.4.9`，服务端口 `63247`，窗口 `Forkline Web`。
+- 快捷方式：`D:\桌面\Forkline.lnk` 与 `%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Forkline.lnk` 均存在，目标和工作目录均指向隔离安装目录。
+- 正常关闭后进程归零；卸载器退出码 `0`，安装目录、HKCU 登记和两个快捷方式均移除。
+- 本机构建安装器 `104606437` 字节，SHA-256 `09f38e2a9c06ae17038f0716bf41dba7c113ad9379405590a11c7fe961c3f7d3`；blockmap `111630` 字节，SHA-256 `4848f743c97dd40c31919e6426df7f0bd6b17a6f5eedf433f52f64111303a548`；`latest.yml` SHA-256 `b39850cd5deae8a13925e35e6720e44564f77511bc32345f68258c42b23cb243`，Authenticode `NotSigned`。
+- `npm.cmd test`：`389/389`；`npm.cmd run test:browser`：`1/1`；Node 语法检查和 `git diff --check` 通过。
+
+### Notes
+
+- `package.json`：`createDesktopShortcut` 改为 `"always"`。
+- `tests/installer-package.test.js`：同步安装器快捷方式契约断言。
+- `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加本轮 v0.4.9 发布前证据。
+- 回滚方式：提交前恢复上述文件；提交后使用 `git revert <本轮提交>`。不要删除或暂存 `n+fs.statSync(p.join('public'`、`.playwright-cli/`，不要移动旧标签。

@@ -91,6 +91,22 @@ function renderSettingsTab() {
         </div>
       </section>
 
+      <section class="settings-card settings-shortcuts-card">
+        <div class="settings-card-head">
+          <div>
+            <strong>${escapeHtml(t("快捷键"))}</strong>
+            <span>${escapeHtml(t("常用编辑、文件选择和窗口操作"))}</span>
+          </div>
+        </div>
+        <div class="settings-shortcuts" aria-label="${escapeAttr(t("快捷键"))}">
+          ${settingsShortcutRow("Ctrl / ⌘ + A", "Ctrl / ⌘ + A：选择当前工作区或暂存区的全部文件")}
+          ${settingsShortcutRow("Ctrl / ⌘ + X/C/V/Z/Y", "Ctrl / ⌘ + X/C/V/Z/Y：在输入框和文件编辑器中剪切、复制、粘贴、撤回、恢复")}
+          ${settingsShortcutRow("Ctrl / ⌘ + F/H/S", "Ctrl / ⌘ + F/H/S：在文件编辑器中查找、替换、保存")}
+          ${settingsShortcutRow("Ctrl / ⌘ + K", "Ctrl / ⌘ + K：打开命令面板")}
+          ${settingsShortcutRow("Escape", "Escape：关闭提示、菜单或当前对话框")}
+        </div>
+      </section>
+
       <section class="settings-card">
         <div class="settings-card-head">
           <div>
@@ -143,6 +159,15 @@ function renderSettingsTab() {
     </div>
   `;
   refreshDesktopZoomState().catch(() => {});
+}
+
+function settingsShortcutRow(shortcut, description) {
+  return `
+    <div class="settings-shortcut-row">
+      <kbd>${escapeHtml(shortcut)}</kbd>
+      <span>${escapeHtml(t(description))}</span>
+    </div>
+  `;
 }
 
 function settingsDesktopZoomCard() {

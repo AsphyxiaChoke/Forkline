@@ -316,6 +316,27 @@ function selectFolderChanges(scope, folderPath, event = {}) {
   refreshChangeSelectionUi();
 }
 
+function selectAllChanges(scope) {
+  if (!scope || !state.data) return false;
+  const groups = changeGroups(filterWorkingFiles(state.data.workingFiles || []));
+  const files = groups[scope] || [];
+  if (!files.length) return false;
+  clearSelectedScope(scope);
+  files.forEach((file) => state.selectedChanges.add(changeKey(scope, file.file)));
+  state.lastChangeSelection = { scope, key: changeKey(scope, files.at(-1).file), all: true };
+  refreshChangeSelectionUi();
+  return true;
+}
+
+function handleWorkspaceSelectionShortcut(event) {
+  if (!(event?.ctrlKey || event?.metaKey) || String(event.key || "").toLowerCase() !== "a") return false;
+  const target = event.target;
+  if (target?.closest?.("input, textarea, select, [contenteditable='true'], .CodeMirror")) return false;
+  const list = target?.closest?.("#changeList, #stagedChangeList");
+  if (!list) return false;
+  return selectAllChanges(list.id === "stagedChangeList" ? "staged" : "unstaged");
+}
+
 function treeFileIsInFolder(filePath, folderPath) {
   const file = String(filePath || "").replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
   const folder = String(folderPath || "").replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");

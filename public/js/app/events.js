@@ -624,6 +624,7 @@ els.moreInspectorSelect?.addEventListener("change", () => {
   const tab = els.moreInspectorSelect.value;
   if (!tab) return;
   switchInspectorTab(tab);
+  els.moreInspectorSelect.value = "";
 });
 document.addEventListener("click", (event) => {
   const commitMenuAction = event.target.closest("[data-commit-action]");
@@ -738,6 +739,10 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-open-diff-modal]")) openDiffModalLazy().catch((error) => toast(error.message));
 });
 document.addEventListener("keydown", (event) => {
+  if (handleWorkspaceSelectionShortcut(event)) {
+    event.preventDefault();
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && els.fileEditorModal.classList.contains("show")) {
     event.preventDefault();
     openFileEditorSearch(false);
@@ -788,6 +793,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && els.tagContextMenu.classList.contains("show")) hideTagContextMenu();
   if (event.key === "Escape" && els.remoteContextMenu.classList.contains("show")) hideRemoteContextMenu();
   if (event.key === "Escape" && els.reflogContextMenu.classList.contains("show")) hideReflogContextMenu();
+  if (event.key === "Escape" && els.toast.classList.contains("show")) dismissToast();
 });
 document.addEventListener("scroll", (event) => {
   if (event.target instanceof Element && event.target.closest(".context-menu")) return;

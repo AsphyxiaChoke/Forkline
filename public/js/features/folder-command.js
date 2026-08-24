@@ -180,8 +180,7 @@ function renderInspectorTabs() {
     tab.classList.toggle("active", visible && tab.dataset.tab === state.selectedTab);
   });
   if (els.moreInspectorSelect) {
-    const moreTabs = inspectorTabs.more;
-    els.moreInspectorSelect.value = moreTabs.includes(state.selectedTab) ? state.selectedTab : "";
+    els.moreInspectorSelect.value = "";
   }
 }
 

@@ -130,7 +130,13 @@ test("long operation toasts expose an immediate dismiss control", () => {
   assert.match(layoutSource, /function dismissToast\(\)/);
   assert.match(layoutSource, /toastMessage\.textContent/);
   assert.match(eventsSource, /toastClose\?\.addEventListener\("click", dismissToast\)/);
+  assert.match(eventsSource, /event\.key === "Escape"[\s\S]*?dismissToast\(\)/);
   assert.match(styles, /\.toast\.show[\s\S]*pointer-events:\s*auto/);
+});
+
+test("more inspector selection resets after opening a panel so the same panel can be opened again", () => {
+  assert.match(eventsSource, /switchInspectorTab\(tab\);\s*els\.moreInspectorSelect\.value = "";/);
+  assert.match(eventsSource, /els\.moreInspectorSelect\?\.addEventListener\("change"/);
 });
 
 test("topbar sync actions expose their Git commands on hover", () => {
@@ -1306,6 +1312,14 @@ test("minimum inspector width wraps controls instead of clipping labels", () => 
 
 test("sync panel grid buttons center their labels in both axes", () => {
   assert.match(repositoryPanelStyles, /\.sync-actions \.mini-btn,\s*\.sync-section-head \.mini-btn,\s*\.upstream-actions \.mini-btn,\s*\.remote-actions \.mini-btn\s*\{[^}]*place-items:\s*center;[^}]*text-align:\s*center;/s);
+});
+
+test("history columns use one horizontal scroll boundary and keep header rows aligned", () => {
+  assert.match(styles, /\.history\s*\{[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;/s);
+  assert.match(styles, /--history-content-min-w:\s*calc\(/);
+  assert.match(styles, /\.history-head,\s*\.history-scroll\s*\{[^}]*min-width:\s*var\(--history-content-min-w\);/s);
+  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*700px\)[\s\S]*?--history-content-min-w:\s*calc\(/s);
+  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*500px\)[\s\S]*?--history-content-min-w:\s*calc\(/s);
 });
 
 test("repository tool panels keep their shared styles out of the startup stylesheet", () => {

@@ -310,3 +310,18 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 更新后真实 Electron 设置页确认当前/最新均为 `v0.4.8`、状态“已是最新版本”，并确认中文、深色、`80%` 缩放和最近仓库仍可用。正常关闭后安装版进程、后台服务和监听端口均归零；用户数据目录 `%APPDATA%\forkline` 保留，稳定偏好字段和最近仓库语义保留。
 - 隔离 v0.4.7 安装的已知现场异常：静默安装退出码为 `0`，但没有可见 HKCU 卸载登记；静默卸载退出码为 `0`，快捷方式被移除但安装目录文件仍在。因此本轮只把“更新后运行和退出”判为通过，把“该静默安装的标准登记卸载”判为异常并记录，不能混淆两者。确认无进程占用后，已删除明确的 `forkline-v0.4.7-update-e2e` 与 `forkline-v0.4.7-update-assets-20260824` 临时目录；未删除真实用户数据或 updater 基线。
 - `n+fs.statSync(p.join('public'` 继续作为保护对象，长度 `0`、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，不得进入暂存区或提交。后续回滚应使用新的文档/修复提交，禁止移动任何既有标签。
+
+## v0.4.9 发布准备
+
+- v0.4.9 收尾了 Git 忙碌提示中文化、“更多”面板重复打开、工作区/暂存区筛选范围全选、Toast Escape 关闭、快捷键说明和提交图谱水平滚动问题；Web、源码克隆和便携版继续使用原 Git 快进更新，NSIS 安装版继续使用 `electron-updater`。
+- NSIS 仍为当前用户安装、可选择目录、默认运行安装后程序，并创建桌面和开始菜单快捷方式。为保证重装时也恢复桌面快捷方式，`createDesktopShortcut` 使用 electron-builder 支持的 `"always"` 策略；该策略不改变安装目录或更新语义。
+- 本机构建安装器 `Forkline-Setup-0.4.9-windows-x64.exe`：`104606437` 字节，SHA-256 `09f38e2a9c06ae17038f0716bf41dba7c113ad9379405590a11c7fe961c3f7d3`；blockmap：`111630` 字节，SHA-256 `4848f743c97dd40c31919e6426df7f0bd6b17a6f5eedf433f52f64111303a548`；`latest.yml`：`369` 字节，SHA-256 `b39850cd5deae8a13925e35e6720e44564f77511bc32345f68258c42b23cb243`。`latest.yml` 版本为 `0.4.9`，文件大小和 SHA-512 `MB+dtLVJB/md5ahvUDOhMySApSuoerd8PvpOardxlmQd2Hg5Nb5anvbv5tAlZ+bYs4wfv/u5/FGD6MTwMU0CdQ==` 与安装器一致；Authenticode 为 `NotSigned`。
+- 真实交互式安装到 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.9-interactive-final2` 后，`Forkline.exe`/产品版本为 `0.4.9/0.4.9.0`，HKCU 登记为 `Forkline 0.4.9`，后台服务监听 `63247`，窗口标题为 `Forkline Web` 且响应正常。桌面快捷方式为 `D:\桌面\Forkline.lnk`，开始菜单快捷方式为 `%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Forkline.lnk`；两者目标、工作目录和图标均指向该隔离安装目录。
+- 该交互式临时实例正常关闭后 Forkline 进程归零；卸载器退出码为 `0`，安装目录、HKCU 登记和两个快捷方式均已移除。已有用户手动安装的 `D:\Forkline` 未被本轮清理。
+- 本轮门禁：`node --check` 全部通过；`npm.cmd test` 为 `389/389`；`npm.cmd run test:browser` 为 `1/1`；`git diff --check` 通过。正式 Release 仍必须在不可变 `v0.4.9` 标签上由两条 GitHub Windows 工作流重新构建并核验六个附件、digest、`.sha256` 和 `latest.yml`，本机构建产物不能冒充正式附件。
+
+### Notes
+
+- `package.json`、`tests/installer-package.test.js`：把桌面快捷方式策略改为 `"always"` 并更新安装器契约测试。
+- `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加 v0.4.9 发布准备、安装器产物、交互式安装/卸载和最终门禁记录。
+- 回滚方式：提交前执行 `git restore -- package.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮提交>`。不得触碰异常未跟踪文件、`.playwright-cli/` 或任何既有标签。

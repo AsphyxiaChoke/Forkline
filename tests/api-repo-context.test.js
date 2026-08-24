@@ -244,7 +244,7 @@ test("Git action requests immediately lock action controls and restore their ori
   assert.equal(controls[1].disabled, true);
   assert.equal(controls[2].disabled, true);
   assert.equal(status.hidden, false);
-  assert.match(status.textContent, /stageAll/);
+  assert.match(status.textContent, /暂存全部/);
 
   resolveAction({ ok: true, json: async () => ({}) });
   await pending;

@@ -39,6 +39,9 @@ test("desktop preference persistence copy has complete English translations", ()
     catalog.translate("en", "本机偏好保存失败，本次更改不会在重启后保留。"),
     "Forkline could not save the local preference. This change will not be kept after restart.",
   );
+  assert.equal(catalog.translate("en", "快捷键"), "Keyboard shortcuts");
+  assert.equal(catalog.translate("en", "Ctrl / ⌘ + A：选择当前工作区或暂存区的全部文件"), "Ctrl / ⌘ + A: Select all files in the current working tree or staging list");
+  assert.equal(catalog.translate("en", "Ctrl / ⌘ + X/C/V/Z/Y：在输入框和文件编辑器中剪切、复制、粘贴、撤回、恢复"), "Ctrl / ⌘ + X/C/V/Z/Y: Cut, copy, paste, undo, and redo in inputs and the file editor");
 });
 
 function renderSettings(desktop = null) {
@@ -78,6 +81,7 @@ function renderSettings(desktop = null) {
 
   vm.runInContext(settingsSource, context);
   vm.runInContext("renderSettingsTab()", context);
+  if (desktop) assert.match(detailBody.innerHTML, /settings-shortcuts/);
   return detailBody.innerHTML;
 }
 

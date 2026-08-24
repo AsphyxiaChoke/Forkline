@@ -1,6 +1,6 @@
 {
   "name": "forkline",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "中文 Git 可视化管理工具",
   "author": "AsphyxiaChoke",
   "private": true,
@@ -56,7 +56,7 @@
       "allowElevation": false,
       "include": "electron/installer.nsh",
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Forkline",
       "runAfterFinish": true,

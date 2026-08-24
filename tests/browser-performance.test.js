@@ -914,16 +914,22 @@ test("real Chromium keeps historical file comparison responsive", {
       const switched = {
         selectedTab: state.selectedTab,
         worktreePanel: Boolean(document.querySelector(".worktree-dashboard")),
+        selectorAfterSwitch: more?.value || "",
       };
       operationEnded = true;
       resolveAction(response({ runningOperations: [], operationLog: [] }));
       await pending;
       await new Promise((resolve) => setTimeout(resolve, 60));
+      renderInspector();
+      toast("Escape 关闭测试提示");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       const after = {
         pullDisabled: Boolean(pull?.disabled),
         moreDisabled: Boolean(more?.disabled),
         busy: window.Forkline.isGitActionBusy(),
         statusVisible: document.querySelector("#gitActionStatus")?.hidden === false,
+        selectorAfterRender: more?.value || "",
+        toastDismissed: !document.querySelector("#toast")?.classList.contains("show"),
       };
       return { immediate, during, switched, after };
     } finally {
@@ -947,10 +953,13 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(actionBusyMetrics.during.busy, true);
   assert.equal(actionBusyMetrics.switched.selectedTab, "worktrees");
   assert.equal(actionBusyMetrics.switched.worktreePanel, true);
+  assert.equal(actionBusyMetrics.switched.selectorAfterSwitch, "");
   assert.equal(actionBusyMetrics.after.pullDisabled, false);
   assert.equal(actionBusyMetrics.after.moreDisabled, false);
   assert.equal(actionBusyMetrics.after.busy, false);
   assert.equal(actionBusyMetrics.after.statusVisible, false);
+  assert.equal(actionBusyMetrics.after.selectorAfterRender, "");
+  assert.equal(actionBusyMetrics.after.toastDismissed, true);
 
   const baselineResizeListeners = await countWindowListeners(cdp, "resize");
   const complex = await evaluate(cdp, `(async () => {

@@ -12,7 +12,7 @@ const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "releas
 const installerInclude = fs.readFileSync(path.join(root, "electron", "installer.nsh"), "utf8");
 
 test("Windows installer is per-user, assisted, x64, and creates standard shortcuts", () => {
-  assert.equal(pkg.version, "0.4.8");
+  assert.equal(pkg.version, "0.4.9");
   assert.equal(pkg.devDependencies.electron, "^43.4.1");
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);
@@ -30,7 +30,7 @@ test("Windows installer is per-user, assisted, x64, and creates standard shortcu
   assert.equal(pkg.build.nsis.include, "electron/installer.nsh");
   assert.match(installerInclude, /!macro\s+customInstallMode\s*\r?\n\s*StrCpy\s+\$isForceCurrentInstall\s+"1"\s*\r?\n!macroend/);
   assert.equal(pkg.build.nsis.allowToChangeInstallationDirectory, true);
-  assert.equal(pkg.build.nsis.createDesktopShortcut, true);
+  assert.equal(pkg.build.nsis.createDesktopShortcut, "always");
   assert.equal(pkg.build.nsis.createStartMenuShortcut, true);
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
 });
