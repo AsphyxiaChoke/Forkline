@@ -76,6 +76,7 @@ const state = {
   selectedTag: "",
   selectedRecoveryRef: "",
   recoveryUndo: null,
+  recoveryRedo: null,
   selectedReflogSelector: "",
   recoveryFilter: { query: "", branch: "", action: "" },
   recoveryPolicy: { keepDays: "90", maxPerBranch: "50", autoPrune: false },
@@ -336,6 +337,7 @@ const els = {
   toastMessage: $("#toastMessage"),
   toastClose: $("#toastClose"),
   undoRecovery: $("#undoRecovery"),
+  redoRecovery: $("#redoRecovery"),
   themeToggle: $("#themeToggle"),
   graphModeLabel: $("#graphModeLabel"),
 };

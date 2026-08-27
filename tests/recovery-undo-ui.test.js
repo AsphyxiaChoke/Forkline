@@ -23,6 +23,15 @@ function createHarness(apiResult = { ok: true, output: "已恢复", recovery: { 
       attributes.set(name, value);
     },
   };
+  const redoButton = {
+    hidden: true,
+    disabled: false,
+    textContent: "",
+    title: "",
+    setAttribute(name, value) {
+      attributes.set(`redo-${name}`, value);
+    },
+  };
   const state = {
     data: {
       repo: {
@@ -33,26 +42,34 @@ function createHarness(apiResult = { ok: true, output: "已恢复", recovery: { 
         operation: null,
       },
       workingFiles: [],
+      worktreeSnapshot: "clean",
     },
     recoveryUndo: null,
+    recoveryRedo: null,
     selectedRecoveryRef: "",
   };
   const context = vm.createContext({
     state,
-    els: { undoRecovery: button },
+    els: { undoRecovery: button, redoRecovery: redoButton },
     t: (message, values = {}) => Object.entries(values).reduce((text, [key, value]) => text.replaceAll(`{${key}}`, String(value)), message),
     repoPathSnapshot: () => state.data.repo.path,
     isCurrentRepoPath: (repoPath) => repoPath === state.data.repo.path,
-    currentBranchSnapshotPayload: () => ({ expectedBranch: state.data.repo.branch, expectedHead: state.data.repo.headSha, expectedWorktreeSnapshot: "clean" }),
+    currentBranchSnapshotPayload: () => ({ expectedBranch: state.data.repo.branch, expectedHead: state.data.repo.headSha, expectedWorktreeSnapshot: state.data.worktreeSnapshot }),
     maybeOfferRecoveryPolicyCleanup: (result) => calls.cleanup.push(result.recovery.ref),
     api: async (requestPath, options) => {
       calls.api.push({ path: requestPath, options });
-      return apiResult;
+      return typeof apiResult === "function" ? apiResult(requestPath, options) : apiResult;
     },
     reloadAfterHistoryAction: async (repoPath) => {
       calls.reload.push(repoPath);
     },
     toast: (message) => calls.toast.push(message),
+    mergeWorktreeState: (data) => {
+      state.data.workingFiles = data.workingFiles || [];
+      state.data.worktreeSnapshot = data.worktreeSnapshot || "";
+      state.data.repo.operation = data.operation || null;
+    },
+    renderStage: () => {},
   });
   vm.runInContext(source, context);
   return { attributes, button, calls, context, state };
@@ -122,4 +139,50 @@ test("one-click recovery restores the returned point with current snapshots", as
   assert.equal(harness.state.recoveryUndo, null);
   assert.equal(harness.button.hidden, true);
   assert.deepEqual(harness.calls.toast, ["已恢复"]);
+});
+
+test("staging undo and redo restore only the index and keep the shortcut stacks swapped", async () => {
+  const beforeTree = "a".repeat(40);
+  const afterTree = "b".repeat(40);
+  const harness = createHarness((requestPath, options) => {
+    if (requestPath === "/api/action") {
+      const body = JSON.parse(options.body);
+      return {
+        ok: true,
+        output: body.tree === beforeTree ? "已取消暂存" : "已恢复暂存",
+        indexHistory: { before: body.expectedIndexTree, after: body.tree },
+      };
+    }
+    return { workingFiles: [{ file: "note.txt" }], worktreeSnapshot: "clean", operation: null };
+  });
+
+  harness.context.offerIndexUndo({ indexHistory: { before: beforeTree, after: afterTree } }, "暂存");
+  assert.equal(harness.state.recoveryUndo.type, "index");
+  assert.equal(harness.state.recoveryUndo.targetTree, beforeTree);
+  assert.equal(harness.button.hidden, false);
+  assert.equal(harness.button.disabled, false);
+
+  await harness.context.runShortcutHistory("undo", harness.button);
+  const actionCalls = () => harness.calls.api.filter((call) => call.path === "/api/action");
+  let body = JSON.parse(actionCalls()[0].options.body);
+  assert.deepEqual(body, {
+    action: "restoreIndexTree",
+    tree: beforeTree,
+    expectedIndexTree: afterTree,
+    expectedBranch: "main",
+    expectedHead: "after-operation",
+    expectedWorktreeSnapshot: "clean",
+  });
+  assert.equal(harness.state.recoveryUndo, null);
+  assert.equal(harness.state.recoveryRedo.type, "index");
+  assert.equal(harness.state.recoveryRedo.targetTree, afterTree);
+
+  await harness.context.runShortcutHistory("redo", harness.redoButton);
+  body = JSON.parse(actionCalls()[1].options.body);
+  assert.equal(body.action, "restoreIndexTree");
+  assert.equal(body.tree, afterTree);
+  assert.equal(body.expectedIndexTree, beforeTree);
+  assert.equal(harness.state.recoveryUndo.type, "index");
+  assert.equal(harness.state.recoveryUndo.targetTree, beforeTree);
+  assert.equal(harness.state.recoveryRedo, null);
 });

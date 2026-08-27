@@ -102,6 +102,9 @@ async function runWorkDiffLineAction(button) {
     });
     resetDiffLineSelection(false);
     await refreshWorkDiffAfterAction(file, scope, view, repoPath);
+    if ((action === "stageSelectedLines" || action === "unstageSelectedLines") && typeof offerIndexUndo === "function") {
+      offerIndexUndo(result, action === "stageSelectedLines" ? "暂存所选行" : "取消暂存所选行");
+    }
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);

@@ -54,6 +54,7 @@ async function refreshWorktree(silent = false) {
       state.data.worktreeSnapshot = nextSnapshot;
       state.data.repo = { ...(state.data.repo || {}), operation: nextOperation };
       state.worktreeSignature = nextSignature;
+      if (typeof renderRecoveryButtons === "function") renderRecoveryButtons();
       if (operationChanged) refreshRepoOperationBanner(state.data.workingFiles);
       if (!silent) toast(t("未提交修改已是最新"));
       return operationChanged ? "changed" : "unchanged";
@@ -67,9 +68,11 @@ async function refreshWorktree(silent = false) {
       return "changed";
     } else if (!silent) {
       state.data.worktreeSnapshot = nextSnapshot;
+      if (typeof renderRecoveryButtons === "function") renderRecoveryButtons();
       toast(t("未提交修改已是最新"));
     } else {
       state.data.worktreeSnapshot = nextSnapshot;
+      if (typeof renderRecoveryButtons === "function") renderRecoveryButtons();
     }
     return "unchanged";
   } catch (error) {

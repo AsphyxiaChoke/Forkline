@@ -230,6 +230,9 @@ async function runWorkDiffHunkAction(action, button) {
       highlight,
     });
     await refreshWorkDiffAfterAction(file, scope, view, repoPath);
+    if ((action === "stageHunk" || action === "unstageHunk") && typeof offerIndexUndo === "function") {
+      offerIndexUndo(result, action === "stageHunk" ? "暂存改动块" : "取消暂存改动块");
+    }
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);

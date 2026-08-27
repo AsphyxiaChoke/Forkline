@@ -142,6 +142,7 @@ function createGitOperationsService(options) {
     ignoreWorktreePath,
     popStash,
     resolveConflictFile,
+    restoreIndexTree,
     restoreCheckoutStash,
     stageAll,
     stageFile,
@@ -149,6 +150,7 @@ function createGitOperationsService(options) {
     unstageFile,
     unstageSelectedLines,
     applyWorktreeHunk,
+    withIndexHistory,
     validateStashFiles,
   } = worktreeService;
   const recoveryService = createGitRecoveryService({
@@ -343,7 +345,10 @@ function createGitOperationsService(options) {
       return unsetCurrentBranchUpstream();
     }
     if (action === "stageAll") {
-      return stageAll();
+      return withIndexHistory(stageAll);
+    }
+    if (action === "restoreIndexTree") {
+      return restoreIndexTree(body);
     }
     if (action === "discardAll") {
       return discardAll();
@@ -463,28 +468,28 @@ function createGitOperationsService(options) {
       return pruneRecoveryPoints(body);
     }
     if (action === "stageFile") {
-      return stageFile(body);
+      return withIndexHistory(() => stageFile(body));
     }
     if (action === "ignoreWorktreePath") {
       return commandResult(await ignoreWorktreePath(body));
     }
     if (action === "unstageFile") {
-      return commandResult(await unstageFile(body));
+      return withIndexHistory(async () => commandResult(await unstageFile(body)));
     }
     if (action === "resolveConflictFile") {
       return commandResult(await resolveConflictFile(body));
     }
     if (action === "stageHunk") {
-      return commandResult(await applyWorktreeHunk(body, "stage"));
+      return withIndexHistory(async () => commandResult(await applyWorktreeHunk(body, "stage")));
     }
     if (action === "stageSelectedLines") {
-      return commandResult(await stageSelectedLines(body));
+      return withIndexHistory(async () => commandResult(await stageSelectedLines(body)));
     }
     if (action === "unstageSelectedLines") {
-      return commandResult(await unstageSelectedLines(body));
+      return withIndexHistory(async () => commandResult(await unstageSelectedLines(body)));
     }
     if (action === "unstageHunk") {
-      return commandResult(await applyWorktreeHunk(body, "unstage"));
+      return withIndexHistory(async () => commandResult(await applyWorktreeHunk(body, "unstage")));
     }
     if (action === "discardWorktreeHunk") {
       return commandResult(await applyWorktreeHunk(body, "discard"));
@@ -501,7 +506,8 @@ function createGitOperationsService(options) {
       if (!summary) throw new Error("请填写提交摘要");
       const args = ["commit", "-m", summary];
       if (detail) args.push("-m", detail);
-      return commandResult(await git(currentRepo, args, { timeout: 120000 }));
+      const recovery = await createRecoveryPoint("commit");
+      return appendRecoveryLine(commandResult(await git(currentRepo, args, { timeout: 120000 })), recovery);
     }
     if (action === "amendCommit") {
       if (!(await hasHeadCommit(currentRepo))) {
@@ -729,6 +735,7 @@ function createGitOperationsService(options) {
       branchFromStash: branch && ref ? `从储藏 ${ref} 创建分支 ${branch}` : "从储藏创建分支",
       applyPatch: body.stage ? "应用补丁并暂存" : "应用补丁到工作区",
       restoreRecoveryPoint: ref ? `恢复到恢复点 ${ref}` : "恢复到恢复点",
+      restoreIndexTree: "恢复暂存区",
       createRecoveryPointFromReflog: body.sha ? `从引用日志创建恢复点 ${shortText(body.sha, 12)}` : "从引用日志创建恢复点",
       restoreReflogEntry: body.sha ? `恢复到引用日志 ${shortText(body.sha, 12)}` : "恢复到引用日志",
       deleteRecoveryPoint: ref ? `删除恢复点 ${ref}` : "删除恢复点",

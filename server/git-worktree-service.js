@@ -108,6 +108,50 @@ function createGitWorktreeService(options) {
 
   }
 
+  async function readIndexTree() {
+    return (await git(currentRepo, ["write-tree"], { timeout: 60000, stdoutOnly: true })).trim().toLowerCase();
+  }
+
+  async function withIndexHistory(callback) {
+    let before = "";
+    try {
+      before = await readIndexTree();
+    } catch (_error) {
+      // Unmerged index entries cannot be represented by write-tree; the Git action still runs without a shortcut snapshot.
+    }
+    const value = await callback();
+    if (!before) return value;
+    let after = "";
+    try {
+      after = await readIndexTree();
+    } catch (_error) {
+      return value;
+    }
+    if (!after || after === before) return value;
+    const result = value && typeof value === "object" ? value : commandResult(value);
+    return { ...result, indexHistory: { before, after } };
+  }
+
+  async function restoreIndexTree(body = {}) {
+    const target = String(body.tree || "").trim().toLowerCase();
+    const expected = String(body.expectedIndexTree || "").trim().toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(target) || !/^[0-9a-f]{40}$/.test(expected)) {
+      throw new Error("索引树身份不合法，请刷新后再试。");
+    }
+    await git(currentRepo, ["cat-file", "-e", `${target}^{tree}`], { timeout: 60000 });
+    const current = await readIndexTree();
+    if (current !== expected) {
+      throw new Error("暂存区状态已经变化。为避免覆盖新的暂存内容，请刷新后重新撤销或恢复。");
+    }
+    await git(currentRepo, ["read-tree", "--reset", target], { timeout: 60000 });
+    const after = await readIndexTree();
+    return {
+      ok: true,
+      output: "已恢复暂存区",
+      indexHistory: { before: current, after },
+    };
+  }
+
 
 
   async function findCheckoutStash(body) {
@@ -696,6 +740,7 @@ function createGitWorktreeService(options) {
     readDirtySubmoduleWorktrees,
 
     resolveConflictFile,
+    restoreIndexTree,
 
     restoreCheckoutStash,
 
@@ -708,6 +753,8 @@ function createGitWorktreeService(options) {
     unstageFile,
 
     unstageSelectedLines,
+
+    withIndexHistory,
 
     validateStashFiles,
 

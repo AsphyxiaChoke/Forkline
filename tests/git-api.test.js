@@ -1223,6 +1223,76 @@ test("common worktree flow stages, unstages, commits, amends, and discards", { t
   await assert.rejects(fs.stat(scratchPath), { code: "ENOENT" });
 });
 
+test("safe index and commit undo APIs preserve working files and support redo", { timeout: 120000 }, async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-safe-history-"));
+  t.after(() => removeFixture(root));
+
+  const repo = path.join(root, "repo");
+  const notePath = path.join(repo, "note.txt");
+  await initRepository(repo);
+  await fs.writeFile(notePath, "base\n", "utf8");
+  await git(repo, ["add", "note.txt"]);
+  await git(repo, ["commit", "-m", "base"]);
+  const baseHead = await git(repo, ["rev-parse", "HEAD"]);
+
+  await fs.appendFile(notePath, "staged line\n", "utf8");
+  await openRepo(repo);
+  let state = await readState(repo);
+  const staged = await action(repo, state, { action: "stageFile", file: "note.txt", expectedFileSnapshot: state.workingFiles.find((item) => item.file === "note.txt")?.snapshot });
+  assertStatus(staged, 200);
+  assert.match(staged.body.indexHistory?.before || "", /^[0-9a-f]{40}$/);
+  assert.match(staged.body.indexHistory?.after || "", /^[0-9a-f]{40}$/);
+  const contentBeforeIndexUndo = await fs.readFile(notePath, "utf8");
+
+  state = await readState(repo);
+  const indexUndo = await action(repo, state, {
+    action: "restoreIndexTree",
+    tree: staged.body.indexHistory.before,
+    expectedIndexTree: staged.body.indexHistory.after,
+  });
+  assertStatus(indexUndo, 200);
+  assert.equal(await git(repo, ["diff", "--cached", "--", "note.txt"]), "");
+  assert.match(await git(repo, ["diff", "--", "note.txt"]), /staged line/);
+  assert.equal(await fs.readFile(notePath, "utf8"), contentBeforeIndexUndo);
+
+  state = await readState(repo);
+  const indexRedo = await action(repo, state, {
+    action: "restoreIndexTree",
+    tree: indexUndo.body.indexHistory.before,
+    expectedIndexTree: indexUndo.body.indexHistory.after,
+  });
+  assertStatus(indexRedo, 200);
+  assert.match(await git(repo, ["diff", "--cached", "--", "note.txt"]), /staged line/);
+
+  state = await readState(repo);
+  const committed = await action(repo, state, { action: "commit", summary: "safe history commit" });
+  assertStatus(committed, 200);
+  assert.equal(committed.body.recovery?.sha, baseHead);
+  assert.equal(committed.body.recovery?.actionLabel, "创建提交前");
+  const committedHead = await git(repo, ["rev-parse", "HEAD"]);
+
+  state = await readState(repo);
+  const commitUndo = await action(repo, state, {
+    action: "restoreRecoveryPoint",
+    ref: committed.body.recovery.ref,
+    sha: committed.body.recovery.sha,
+  });
+  assertStatus(commitUndo, 200);
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), baseHead);
+  assert.equal(await git(repo, ["status", "--short"]), "");
+  assert.match(commitUndo.body.recovery?.ref || "", /^refs\/forkline\/recovery\//);
+
+  state = await readState(repo);
+  const commitRedo = await action(repo, state, {
+    action: "restoreRecoveryPoint",
+    ref: commitUndo.body.recovery.ref,
+    sha: commitUndo.body.recovery.sha,
+  });
+  assertStatus(commitRedo, 200);
+  assert.equal(await git(repo, ["rev-parse", "HEAD"]), committedHead);
+  assert.equal(await git(repo, ["status", "--short"]), "");
+});
+
 test("repository setup and patch flow clones, initializes, and applies patches", { timeout: 120000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "forkline-repository-setup-"));
   t.after(() => removeFixture(root));

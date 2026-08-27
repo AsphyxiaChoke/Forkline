@@ -815,6 +815,26 @@ test("file editor centers each stage button on the full visual chunk", () => {
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-copy\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)/s);
 });
 
+test("file editor merge highlights keep syntax text readable", () => {
+  assert.match(
+    styles,
+    /\.file-editor-merge \.CodeMirror-merge-left \.CodeMirror-merge-l-chunk\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--danger\) 12%, var\(--field\)\)/s
+  );
+  assert.match(
+    styles,
+    /\.file-editor-merge \.CodeMirror-merge-editor \.CodeMirror-merge-l-chunk\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--green\) 11%, var\(--field\)\)/s
+  );
+  assert.match(
+    styles,
+    /\.file-editor-merge \.CodeMirror-merge-l-deleted\s*\{[^}]*background-color:\s*color-mix\(in srgb, var\(--danger\) 18%, transparent\)/s
+  );
+  assert.match(
+    styles,
+    /\.file-editor-merge \.CodeMirror-merge-l-inserted\s*\{[^}]*background-color:\s*color-mix\(in srgb, var\(--green\) 16%, transparent\)/s
+  );
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-(?:deleted|inserted)[^}]*box-shadow:[^}]*var\(--(?:danger|green)\)/s);
+});
+
 test("file editor maps working-tree selections to the matching Git hunk and line keys", () => {
   const sandbox = {};
   vm.runInNewContext(editor, sandbox);

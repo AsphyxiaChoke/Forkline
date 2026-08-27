@@ -349,6 +349,9 @@ async function runFileEditorGitAction(payload, operationMessage, fallbackOutput,
       restoreView,
       feedbackMessage: options.feedbackMessage || fallbackOutput,
     });
+    if ((payload.action === "stageHunk" || payload.action === "stageSelectedLines") && typeof offerIndexUndo === "function") {
+      offerIndexUndo(result, payload.action === "stageHunk" ? "暂存改动块" : "暂存所选行");
+    }
     return true;
   } catch (error) {
     if (!isCurrentRepoPath(editor.repoPath) || state.fileEditor !== editor) return false;

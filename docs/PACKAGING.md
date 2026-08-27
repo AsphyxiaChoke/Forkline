@@ -342,3 +342,13 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加正式 Release、工作流、六个附件 digest、下载复核和便携 ZIP 内容验收。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮文档提交>`。不删除 Release 附件，不移动任何标签，不触碰异常未跟踪文件或 `.playwright-cli/`。
 - 发布收尾后保留的 `D:\Forkline` 已用同一 v0.4.9 安装器恢复当前用户登记和快捷方式：HKCU 显示 `Forkline 0.4.9`，卸载命令指向 `D:\Forkline\Uninstall Forkline.exe`，桌面和开始菜单快捷方式均指向 `D:\Forkline\Forkline.exe`；程序文件版本仍为 `0.4.9/0.4.9.0`。
+
+## v0.4.10 发布准备
+
+- v0.4.10 修复文件编辑器 Diff 高亮导致的代码文字不清晰问题，并增加页面级“撤销/恢复”：安全的暂存、取消暂存和提交操作可以撤销、恢复；暂存撤销只恢复 Git index，不修改工作区文件。输入框、文本域和 CodeMirror 继续使用原生编辑撤销行为，Web、源码克隆、便携版更新语义和 NSIS `electron-updater` 边界不变。
+- `package.json`、`package-lock.json` 和安装器契约测试已同步到 `0.4.10`。本机构建使用 electron-builder `26.15.3`、Electron `43.4.1`；默认 Electron 下载在本机网络中停留在约 1%，因此构建时使用本机已校验的 Electron 发行目录，缓存压缩包 SHA-256 为 `c2ef9a5f65472c34d14bd3e67b7d14e66b0c01f124aba45263d6a4232160e13a`。这只影响本机构建输入，GitHub 工作流仍按工作流自身的标准 Electron 下载流程构建。
+- 本机构建安装器 `Forkline-Setup-0.4.10-windows-x64.exe`：`104691603` 字节，SHA-256 `5af9f04c0e0348b27bdfbf6fdc91d2f9d1a571864f989ee906a08ec47b678dc7`；blockmap：`111514` 字节，SHA-256 `2efb6ab9e451a33ef1461a689d6831bf0027881952c66ddf1cfddd3af9fc2b96`；`latest.yml`：`372` 字节，SHA-256 `c8504eb014472df08f633df62559c88755323f820da55b011ca5ce7fc5263ee5`。`latest.yml` 版本为 `0.4.10`，安装器大小和 SHA-512 `mXjwQsQUXk6pSW2VAcVNdE/1r115HyrfLFk83oP7VDj6mz3iq7ZO1jnRu4OjxXue41AA1B24KcYi2khPWRbW7g==` 与安装器一致；Authenticode 为 `NotSigned`。
+- 当前版本完整回归为 `394/394`，0 失败、0 跳过；`npm.cmd run test:browser` 为 `1/1`，4000 文件工作区冷 API `337.4 ms`，低于 `350 ms` 门限。Node 语法检查、`git diff --check` 和安装器契约测试均通过。
+- 在隔离目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.10-e2e` 完成当前用户静默安装，安装器退出码为 `0`，程序文件/产品版本为 `0.4.10/0.4.10.0`。使用独立 TEMP 用户数据启动后，真实窗口标题为 `Forkline Web`，设置页显示当前版本 `v0.4.10`，后台首页和核心状态接口返回 `200`；关闭后该安装目录的 Forkline 进程、后台端口和调试端口均为 `0`。现有 `D:\Forkline` 保持为 `0.4.9`，未覆盖。
+- 本机静默卸载器退出码为 `0`，但未生成可见 HKCU 卸载登记和快捷方式，卸载后隔离目录仍存在；因此这次只把“安装文件、启动、页面版本、后台服务、关闭”判为通过，不把静默卸载写成标准交互式卸载通过。交互式 NSIS 的目录选择/快捷方式配置仍由安装器契约测试和既有 v0.4.9 交互式验收覆盖，正式发布说明继续标注当前用户安装、可选目录、桌面/开始菜单快捷方式和未签名 SmartScreen 风险。
+- 正式发布仍待提交、推送，并在不可移动的 `v0.4.10` 标签上由安装器和便携包工作流重新构建；本机构建产物不能直接冒充正式 Release 附件。

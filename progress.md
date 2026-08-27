@@ -10400,3 +10400,54 @@
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加正式发布验收记录。
 - 回滚方式：提交前恢复这三份文档；提交后使用 `git revert <本轮文档提交>`。不得删除 Release 附件、移动任何既有标签或触碰保护对象。
 - 发布收尾后的 `D:\Forkline` 保留为 v0.4.9 当前用户安装，HKCU 卸载登记和桌面/开始菜单快捷方式均已恢复，目标均指向 `D:\Forkline`，程序版本为 `0.4.9/0.4.9.0`。
+
+## 2026-08-28 - Task: Forkline v0.4.10 修复、安装器验收与发布准备
+
+### What was done
+
+- 修复文件编辑器 Diff 高亮导致的代码文字不清晰问题，并完成页面级“撤销/恢复”闭环：安全的暂存、取消暂存和提交操作支持撤销与恢复；暂存撤销只恢复 Git index，不改动工作区文件；输入框、文本域和 CodeMirror 保持原生编辑撤销行为。
+- 将应用、锁文件和安装器契约版本升至 `0.4.10`，同步中文使用说明、架构说明、打包说明和续接记录。
+- 生成 Windows x64 NSIS 本机构建包；完成隔离安装文件落地、启动、真实页面版本/标题、后台服务 HTTP `200`、关闭后进程与端口归零验证。现有 `D:\Forkline` v0.4.9 未被覆盖。
+
+### Testing
+
+- `npm.cmd test`：`394/394` 通过，0 失败、0 取消、0 跳过；版本升档后再次运行，命令显示 `forkline@0.4.10`。
+- `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API `337.4 ms`，低于 `350 ms` 门限。
+- `node --check server.js`、`node --check public\\js\\features\\recovery-undo.js`、`node --check public\\js\\app\\events.js` 通过；安装器契约测试通过；`git diff --check` 无差异错误。
+- 本机构建：`Forkline-Setup-0.4.10-windows-x64.exe` 为 `104691603` 字节，SHA-256 `5af9f04c0e0348b27bdfbf6fdc91d2f9d1a571864f989ee906a08ec47b678dc7`；blockmap 为 `111514` 字节，SHA-256 `2efb6ab9e451a33ef1461a689d6831bf0027881952c66ddf1cfddd3af9fc2b96`；`latest.yml` 为 `372` 字节，SHA-256 `c8504eb014472df08f633df62559c88755323f820da55b011ca5ce7fc5263ee5`，版本、安装器大小和 SHA-512 均一致；Authenticode 为 `NotSigned`。
+- 隔离安装器退出码为 `0`，程序文件/产品版本为 `0.4.10/0.4.10.0`；独立用户数据启动后窗口标题 `Forkline Web`，设置页显示 `v0.4.10`，首页和核心状态接口返回 `200`；关闭后该安装目录 Forkline 进程、后台端口和调试端口均为 `0`。
+- 静默卸载器退出码为 `0`，但没有可见 HKCU 卸载登记/快捷方式且隔离目录仍在；已如实标记为安装器现场异常，没有把它写成标准交互式卸载通过。验证结束后仅删除了本轮明确创建的 16 个 TEMP 隔离目录/日志；`D:\Forkline` 仍为 `0.4.9/0.4.9.0`。
+- 受保护异常未跟踪文件 `n+fs.statSync(p.join('public'` 保持 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交；`.playwright-cli/` 同样未触碰。
+
+### Notes
+
+- `README.md`：补充页面级撤销/恢复行为和输入控件原生撤销边界。
+- `docs/ARCHITECTURE.md`：补充 index tree、提交恢复点、快照守卫和撤销/恢复栈交换分层。
+- `docs/CONTINUE.md`：追加 v0.4.10 发布准备、测试、安装和已知现场异常。
+- `docs/PACKAGING.md`：追加 v0.4.10 本机构建、校验、启动关闭和安装器异常证据。
+- `package.json`：版本升至 `0.4.10`。
+- `package-lock.json`：同步根包和锁包版本至 `0.4.10`。
+- `public/file-editor.css`：降低 Diff 插入/删除高亮不透明度，保留边框、下划线和颜色标识。
+- `public/index.html`：增加中文“恢复”按钮。
+- `public/js/app/events.js`：绑定撤销/恢复按钮和页面级快捷键，并保留文本编辑原生快捷键。
+- `public/js/core.js`：增加恢复状态和 DOM 引用。
+- `public/js/features/diff-selection.js`：接入按行暂存/取消暂存恢复点。
+- `public/js/features/diff-workbench.js`：接入按块暂存/取消暂存恢复点。
+- `public/js/features/file-editor-actions.js`：接入文件编辑器按块/按行暂存恢复点。
+- `public/js/features/git-actions.js`：接入全部暂存、文件暂存/取消暂存和批量操作恢复点。
+- `public/js/features/recovery-undo.js`：实现页面级 Undo/Redo 控制器、index tree 恢复和提交 recovery ref 恢复。
+- `public/js/features/worktree-refresh.js`：工作区快照变化时刷新并失效过期恢复状态。
+- `public/js/i18n-catalog.js`：增加撤销/恢复、index 恢复和安装器提示翻译。
+- `server.js`：将 index 恢复纳入快照守卫动作集合。
+- `server/git-operations-service.js`：为提交和索引操作接入恢复点及恢复接口。
+- `server/git-worktree-service.js`：实现 index tree 读取、历史包装和恢复。
+- `server/repository-service.js`：增加创建提交前恢复点标签。
+- `tests/file-editor-ui.test.js`：覆盖高亮可读性和编辑器恢复行为。
+- `tests/git-api.test.js`：覆盖 index/提交撤销恢复的真实 Git API 行为。
+- `tests/git-snapshot-guards.test.js`：覆盖恢复前快照守卫。
+- `tests/installer-package.test.js`：同步 `0.4.10` 安装器版本契约。
+- `tests/keyboard-shortcuts.test.js`：覆盖页面级撤销/恢复快捷键分流。
+- `tests/recovery-undo-ui.test.js`：覆盖撤销/恢复控制器、按钮和栈交换行为。
+- `progress.md`：仅在末尾追加本轮结果、测试、文件清单和回滚点。
+- 回滚方式：提交前对上述本轮已跟踪文件执行 `git restore -- <file list>`；提交后使用 `git revert <本轮提交>`。不得触碰保护文件、`.playwright-cli/`、`D:\Forkline` 或任何既有标签。
+- 远端发布卡点：当前 `gh auth status -h github.com` 显示已登录账户令牌无效；认证恢复后再推送、创建不可移动的 `v0.4.10` 标签和 GitHub Release，并核对两条工作流及六个正式附件。

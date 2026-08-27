@@ -13,7 +13,7 @@
 - `server/repository-history.js`：提交详情、补丁、文件历史、逐行追踪和分支比较。
 - `server/git-operations-service.js`：Git 写操作门面，负责请求分派、共享快照校验和下列写操作子服务的显式接线。
 - `server/git-branch-service.js`：克隆/初始化、分支、远端、Tag、工作树、子模块和同步写操作。
-- `server/git-worktree-service.js`：暂存/取消暂存、丢弃、储藏、冲突处理和补丁应用。
+- `server/git-worktree-service.js`：暂存/取消暂存、丢弃、储藏、冲突处理和补丁应用；对可恢复的索引操作记录前后 index tree，并通过 `read-tree --reset` 在快照守卫通过后只恢复暂存区。
 - `server/git-history-service.js`：合并、变基、挑选、还原、重置和历史编辑。
 - `server/git-recovery-service.js`：恢复点创建/恢复/清理、reflog 恢复和保留策略。
 - `server/worktree-patch.js`、`server/temp-files.js`：可直接测试的纯补丁处理和临时文件清理辅助。
@@ -36,6 +36,7 @@
 - `public/js/features/folder-command.js`：首屏目录/命令门面和右栏上下文模块；保留页签切换、上下文判断和详情触发，第一次打开目录选择器或命令面板时并行载入 `folder-command-implementation.js` 与 `folder-command.css`，等待两者完成后再打开，失败时只重试失败资源。
 - `public/js/features/folder-command-implementation.js`：按需载入的本机目录浏览和命令面板完整实现，两种入口共用同一组脚本与样式加载 Promise；文件夹打开入口使用后端解析出的仓库根目录，多仓库或无仓库时保持选择器打开并提示用户继续选择。
 - `public/js/features/recovery-policy.js`：首屏保留的恢复点策略、按仓库偏好、整理确认和危险操作后清理入口；不包含恢复点页面或 reflog 界面。
+- `public/js/features/recovery-undo.js`：首屏保留的页面级撤销/恢复控制器；提交操作使用 Git 恢复点，暂存操作使用 index tree，校验仓库、分支、HEAD 和工作区快照后才执行，并在成功后交换 Undo/Redo 栈。
 - `public/js/features/git-actions-loader.js`：首屏 Git 操作门面；保留当前分支、工作区、未完成操作与远端配置快照，追加状态、文件选择辅助和“储藏并签出”返回原分支后的自动恢复，第一次实际执行 Git 动作时载入完整实现。
 - `public/js/features/git-actions.js`：按需载入的提交、签出、合并、变基、储藏、远端、单文件与批量文件等完整 Git 操作实现；载入后通过 `ForklineGitActions` 注册给首屏门面，并发入口共用加载 Promise，失败资源移除后可重试。
 - `public/js/features/commit-actions-loader.js`：首屏提交操作门面；保留提交详情和菜单渲染需要的历史编辑配置、队列信息、远端提交 URL、复制与弹窗关闭辅助。空历史队列直接渲染；已有计划或队列时先显示加载状态，并行载入完整实现与 `commit-actions.css`，两者完成后自动重绘，失败时只重试失败资源。
@@ -135,7 +136,7 @@
 
 `git-actions-loader.js` 必须先于布局、事件绑定和启动模块加载，因为这些路径立即需要快照校验、追加状态、远端查找、文件选择统计和自动恢复切换储藏。完整 `git-actions.js` 不进入首屏；提交、签出、合并、变基、储藏、远端和文件写操作第一次执行时才载入，并通过 `ForklineGitActions` 向门面注册。所有入口共用同一个加载 Promise，失败脚本必须移除并允许下一次操作重试。
 
-恢复点策略由首屏 `public/js/features/recovery-policy.js` 提供，保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。
+恢复点策略由首屏 `public/js/features/recovery-policy.js` 提供，保存在浏览器 `forkline-recovery-policy` 的版本化结构中，以规范化仓库路径作为 `repositories` 键；首次加载和仓库切换都必须先调用 `loadRecoveryPolicyForRepo()` 再渲染面板。旧的全局策略只迁移到首次打开的真实仓库，示例仓库不持久化，也不触发操作后整理检查。`recovery-undo.js` 将提交前恢复点和暂存前后 index tree 分成两类页面级历史；暂存撤销只调用 `restoreIndexTree`，不会写工作区文件。仓库、分支、HEAD 或 index 关联的工作区快照变化后，旧的暂存 Undo/Redo 会自动失效；提交恢复在工作区有未提交改动时保留恢复点但禁用按钮。
 
 ## 国际化规则
 

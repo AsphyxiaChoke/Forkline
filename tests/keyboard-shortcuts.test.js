@@ -48,6 +48,8 @@ test("Ctrl/Cmd+A selects the current filtered worktree or staged range and leave
 test("shortcut bindings keep native text editing and reset the more selector", () => {
   assert.match(eventsSource, /handleWorkspaceSelectionShortcut\(event\)/);
   assert.match(eventsSource, /event\.key\.toLowerCase\(\) === "k"/);
+  assert.match(eventsSource, /runShortcutHistory\("undo"/);
+  assert.match(eventsSource, /runShortcutHistory\("redo"/);
   assert.match(eventsSource, /event\.key === "Escape"/);
   assert.match(eventsSource, /handleWorkspaceSelectionShortcut\(event\)/);
   assert.match(settingsSource, /settings-shortcuts/);

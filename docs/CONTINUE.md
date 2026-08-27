@@ -1348,3 +1348,24 @@
 - `docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加 v0.4.9 正式发布收尾。
 - 回滚方式：提交前恢复这三份文档；提交后使用 `git revert <本轮文档提交>`。不删除正式附件，不移动 `v0.4.0` 至 `v0.4.9` 的任何标签。
 - `D:\Forkline` 最终保留为 v0.4.9 当前用户安装：HKCU 登记、卸载命令、桌面快捷方式和开始菜单快捷方式均已恢复并指向该目录，程序文件版本为 `0.4.9/0.4.9.0`。
+
+## 2026-08-28 - Task: Forkline v0.4.10 发布准备
+
+### What was done
+
+- 完成文件编辑器 Diff 高亮可读性修复，以及安全的页面级“撤销/恢复”闭环；暂存撤销只恢复 index，提交撤销使用 Git recovery ref，工作区文件不被错误覆盖。
+- 应用、锁文件和安装器契约已升至 `0.4.10`；本机生成 Windows x64 NSIS 安装器并完成启动、版本页、后台服务、正常关闭验证。
+
+### Testing
+
+- `npm.cmd test`：`394/394` 通过，0 失败、0 跳过。
+- `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API `337.4 ms`，低于 `350 ms` 门限。
+- 本机安装器：`Forkline-Setup-0.4.10-windows-x64.exe` 为 `104691603` 字节，SHA-256 `5af9f04c0e0348b27bdfbf6fdc91d2f9d1a571864f989ee906a08ec47b678dc7`；blockmap 为 `111514` 字节，SHA-256 `2efb6ab9e451a33ef1461a689d6831bf0027881952c66ddf1cfddd3af9fc2b96`；`latest.yml` 为 `372` 字节，版本 `0.4.10`，SHA-256 `c8504eb014472df08f633df62559c88755323f820da55b011ca5ce7fc5263ee5`；Authenticode `NotSigned`。
+- 隔离安装程序版本为 `0.4.10/0.4.10.0`，真实 Electron 页面标题为 `Forkline Web`，设置页显示 `v0.4.10`，首页和核心状态 HTTP `200`；关闭后安装目录进程和端口归零。静默卸载退出码为 `0`，但没有 HKCU 登记/快捷方式且目录仍在，未将该异常误报为标准交互式卸载通过。
+- 受保护异常未跟踪文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交；现有 `D:\Forkline` v0.4.9 未被覆盖。
+
+### Notes
+
+- 修改文件：`package.json`、`package-lock.json`、`tests/installer-package.test.js`、本轮功能源码与测试、`README.md`、`docs/ARCHITECTURE.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`。
+- 回滚方式：提交前对本轮已跟踪文件执行 `git restore -- <file list>`；提交后使用 `git revert <本轮提交>`。不得触碰 `n+fs.statSync(p.join('public'`、`.playwright-cli/`、`D:\Forkline` 或任何既有标签。
+- 剩余动作：追加 `progress.md`，显式暂存跟踪文件，提交并推送，创建不可移动的 `v0.4.10` Release，核对 GitHub Actions 生成的六个正式附件和远端 digest。

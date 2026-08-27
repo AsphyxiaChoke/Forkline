@@ -329,6 +329,7 @@ async function runAction(action, options = {}) {
         state.workDiffScope = "unstaged";
       }
       renderStage();
+      if (action === "stageAll" && typeof offerIndexUndo === "function") offerIndexUndo(result, "暂存全部");
       return;
     }
     state.commitDetails.clear();
@@ -850,6 +851,7 @@ async function runSingleFileAction(action, file) {
     mergeWorktreeState(data);
     syncFileSelectionAfterAction(action, [file], state.data.workingFiles);
     renderStage();
+    if ((action === "stageFile" || action === "unstageFile") && typeof offerIndexUndo === "function") offerIndexUndo(result, names[action]);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);
@@ -922,14 +924,18 @@ async function runFileBatchAction(action, scope, button) {
   if (isDiscardAction(action) && !state.data.repo.isSample && !confirm(discardConfirmMessage(action, files))) return;
   if (button) button.disabled = true;
   const repoPath = repoPathSnapshot();
+  let firstIndexTree = "";
+  let lastIndexTree = "";
   try {
     for (const file of files) {
       if (!isCurrentRepoPath(repoPath)) return;
-      await api("/api/action", {
+      const result = await api("/api/action", {
         method: "POST",
         body: JSON.stringify({ action, file, ...currentBranchSnapshotPayload(), ...fileSnapshotPayload(file, scope) }),
       });
       if (!isCurrentRepoPath(repoPath)) return;
+      if (result.indexHistory?.before && !firstIndexTree) firstIndexTree = result.indexHistory.before;
+      if (result.indexHistory?.after) lastIndexTree = result.indexHistory.after;
       state.selectedChanges.delete(changeKey(scope, file));
     }
     toast(t("{action}完成：{count} 个文件", { action: t(name), count: files.length }));
@@ -938,6 +944,7 @@ async function runFileBatchAction(action, scope, button) {
     mergeWorktreeState(data);
     syncFileSelectionAfterAction(action, files, state.data.workingFiles);
     renderStage();
+    if (firstIndexTree && lastIndexTree && typeof offerIndexUndo === "function") offerIndexUndo({ indexHistory: { before: firstIndexTree, after: lastIndexTree } }, name);
   } catch (error) {
     if (!isCurrentRepoPath(repoPath)) return;
     toast(error.message);

@@ -69,6 +69,62 @@ test("file snapshot failures stop file actions", async () => {
   assert.equal(writeCalled, false);
 });
 
+test("index undo restores a validated tree without touching the worktree", async () => {
+  const calls = [];
+  let currentTree = "b".repeat(40);
+  const targetTree = "a".repeat(40);
+  const service = createService(async (_repo, args) => {
+    calls.push(args);
+    if (args[0] === "rev-parse" && args.includes("HEAD^{commit}")) return "1".repeat(40);
+    if (args[0] === "write-tree") return currentTree;
+    if (args[0] === "cat-file" && args[1] === "-e") return "";
+    if (args[0] === "read-tree") {
+      currentTree = targetTree;
+      return "";
+    }
+    if (args[0] === "status") return "status";
+    return "";
+  });
+
+  const expectedBefore = currentTree;
+  const result = await service.runAction({
+    action: "restoreIndexTree",
+    tree: targetTree,
+    expectedIndexTree: currentTree,
+    expectedBranch: "main",
+    expectedHead: "1".repeat(40),
+    expectedWorktreeSnapshot: SNAPSHOT,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.indexHistory, { before: expectedBefore, after: targetTree });
+  assert.ok(calls.some((args) => args[0] === "read-tree" && args.includes("--reset") && args.includes(targetTree)));
+});
+
+test("index undo rejects an invalid target before changing the index", async () => {
+  let readTreeCalled = false;
+  const service = createService(async (_repo, args) => {
+    if (args[0] === "rev-parse" && args.includes("HEAD^{commit}")) return "1".repeat(40);
+    if (args[0] === "write-tree") return "b".repeat(40);
+    if (args[0] === "status") return "status";
+    if (args[0] === "read-tree") readTreeCalled = true;
+    return "";
+  });
+
+  await assert.rejects(
+    () => service.runAction({
+      action: "restoreIndexTree",
+      tree: "not-a-tree",
+      expectedIndexTree: "b".repeat(40),
+      expectedBranch: "main",
+      expectedHead: "1".repeat(40),
+      expectedWorktreeSnapshot: SNAPSHOT,
+    }),
+    /索引树身份不合法/
+  );
+  assert.equal(readTreeCalled, false);
+});
+
 test("full status fallback failures stop file actions", async () => {
   let statusCalls = 0;
   let writeCalled = false;

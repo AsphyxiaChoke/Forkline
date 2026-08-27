@@ -88,6 +88,7 @@ els.commitGraph.addEventListener("contextmenu", async (event) => {
 });
 els.themeToggle.addEventListener("click", toggleTheme);
 els.undoRecovery.addEventListener("click", () => runRecoveryUndo(els.undoRecovery));
+els.redoRecovery.addEventListener("click", () => runShortcutHistory("redo", els.redoRecovery));
 els.newBranch.addEventListener("click", openBranchModal);
 els.branchForm.addEventListener("submit", submitBranchForm);
 els.branchCancel.addEventListener("click", closeBranchModal);
@@ -738,10 +739,32 @@ document.addEventListener("click", (event) => {
   }
   if (event.target.closest("[data-open-diff-modal]")) openDiffModalLazy().catch((error) => toast(error.message));
 });
+function preservesNativeTextHistory(target) {
+  const editor = target?.closest?.("input, textarea, select, [contenteditable], .CodeMirror");
+  return Boolean(editor && editor.getAttribute?.("contenteditable") !== "false");
+}
+
 document.addEventListener("keydown", (event) => {
   if (handleWorkspaceSelectionShortcut(event)) {
     event.preventDefault();
     return;
+  }
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !preservesNativeTextHistory(event.target)) {
+    const key = event.key.toLowerCase();
+    if (key === "z") {
+      event.preventDefault();
+      if (event.shiftKey) {
+        runShortcutHistory("redo", els.redoRecovery).catch((error) => toast(error.message));
+      } else {
+        runShortcutHistory("undo", els.undoRecovery).catch((error) => toast(error.message));
+      }
+      return;
+    }
+    if (key === "y") {
+      event.preventDefault();
+      runShortcutHistory("redo", els.redoRecovery).catch((error) => toast(error.message));
+      return;
+    }
   }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && els.fileEditorModal.classList.contains("show")) {
     event.preventDefault();

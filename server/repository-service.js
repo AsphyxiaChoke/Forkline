@@ -753,6 +753,7 @@ function createRepositoryService(options) {
 
   function recoveryActionLabel(action) {
     const labels = {
+      commit: "创建提交前",
       amend: "追加提交前",
       reword: "修改提交信息前",
       "pull-rebase": "变基拉取前",
