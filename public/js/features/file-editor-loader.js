@@ -165,6 +165,16 @@ function bindFileEditorEvents() {
 }
 
 async function openFileEditorLazy(filePath, previousFilePath = "", options = {}) {
+  const desktop = typeof window === "object" ? window.forklineDesktop : null;
+  const standalone = typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow();
+  if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
+    return desktop.openFileEditorWindow(
+      filePath,
+      previousFilePath,
+      options.source === "commit" ? "commit" : "worktree",
+      options.source === "commit" ? options.commit : ""
+    );
+  }
   const repoPath = repoPathSnapshot();
   await ensureFileEditorLoaded();
   if (!isCurrentRepoPath(repoPath)) return false;
@@ -172,6 +182,11 @@ async function openFileEditorLazy(filePath, previousFilePath = "", options = {})
 }
 
 async function openCommitFileViewerLazy(filePath, previousFilePath = "", commitSha = "") {
+  const desktop = typeof window === "object" ? window.forklineDesktop : null;
+  const standalone = typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow();
+  if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
+    return desktop.openFileEditorWindow(filePath, previousFilePath, "commit", commitSha);
+  }
   const repoPath = repoPathSnapshot();
   await ensureFileEditorLoaded();
   if (!isCurrentRepoPath(repoPath)) return false;

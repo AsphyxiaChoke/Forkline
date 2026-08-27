@@ -39,6 +39,10 @@ const {
   readDesktopPreferenceStore,
   updateDesktopPreferenceStore,
 } = require("./desktop-preference-store");
+const {
+  fileEditorWindowUrl,
+  normalizeFileEditorRequest,
+} = require("./file-editor-window");
 
 const LOOPBACK_HOST = "127.0.0.1";
 const SERVER_START_TIMEOUT_MS = 15000;
@@ -65,6 +69,10 @@ let rendererRecoveryRiskSignature = "";
 let selfUpdateQuitRequested = false;
 let installerUpdateController = null;
 let recentRepositoryMigrationActive = false;
+let fileEditorWindow = null;
+let fileEditorWindowReady = false;
+let fileEditorWindowCloseAllowed = false;
+let pendingFileEditorWindowRequest = null;
 const autoUpdater = process.platform === "win32" ? createForklineAutoUpdater() : electronUpdater.autoUpdater;
 const rendererDraftStore = createRendererDraftStore();
 
@@ -242,6 +250,7 @@ async function ensureInstallerUpdateIdle() {
 async function prepareInstallerInstall() {
   await ensureInstallerUpdateIdle();
   quitting = true;
+  closeFileEditorWindowForQuit();
   flushDesktopWindowState();
   const result = await stopServer({ allowForce: false });
   if (!["already-exited", "graceful"].includes(result.mode)) {
@@ -355,15 +364,33 @@ function registerRendererRecoveryState() {
 
 function registerDesktopTitleBarTheme() {
   ipcMain.on("forkline:desktop-titlebar-theme", (event, value) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
-    if (process.platform !== "win32" || typeof mainWindow.setTitleBarOverlay !== "function") return;
+    const target = event.sender === mainWindow?.webContents
+      ? mainWindow
+      : event.sender === fileEditorWindow?.webContents
+        ? fileEditorWindow
+        : null;
+    if (!target || target.isDestroyed()) return;
+    if (process.platform !== "win32" || typeof target.setTitleBarOverlay !== "function") return;
     const color = normalizeTitleBarColor(value?.color, WINDOWS_TITLEBAR_COLOR);
     const symbolColor = normalizeTitleBarColor(value?.symbolColor, WINDOWS_TITLEBAR_SYMBOL_COLOR);
-    mainWindow.setTitleBarOverlay({
+    target.setTitleBarOverlay({
       color,
       symbolColor,
       height: ELECTRON_TITLEBAR_CSS_HEIGHT,
     });
+  });
+}
+
+function registerFileEditorWindow() {
+  ipcMain.handle("forkline:file-editor:open", (event, value) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false;
+    return openFileEditorWindow(value);
+  });
+  ipcMain.handle("forkline:file-editor:close", (event) => {
+    if (!fileEditorWindow || fileEditorWindow.isDestroyed() || event.sender !== fileEditorWindow.webContents) return false;
+    fileEditorWindowCloseAllowed = true;
+    fileEditorWindow.close();
+    return true;
   });
 }
 
@@ -379,6 +406,115 @@ function isInternalUrl(value) {
   } catch {
     return false;
   }
+}
+
+function desktopWindowChromeOptions() {
+  return process.platform === "win32" ? {
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: WINDOWS_TITLEBAR_COLOR,
+      symbolColor: WINDOWS_TITLEBAR_SYMBOL_COLOR,
+      height: ELECTRON_TITLEBAR_CSS_HEIGHT,
+    },
+  } : {};
+}
+
+function configureExternalNavigation(window) {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url) && !isInternalUrl(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isInternalUrl(url)) return;
+    event.preventDefault();
+    if (/^https?:/i.test(url)) void shell.openExternal(url);
+  });
+}
+
+function closeFileEditorWindowForQuit() {
+  if (!fileEditorWindow || fileEditorWindow.isDestroyed()) return;
+  fileEditorWindowCloseAllowed = true;
+  fileEditorWindow.close();
+}
+
+function sendPendingFileEditorWindowRequest() {
+  if (!pendingFileEditorWindowRequest || !fileEditorWindowReady) return;
+  if (!fileEditorWindow || fileEditorWindow.isDestroyed() || fileEditorWindow.webContents.isDestroyed()) return;
+  fileEditorWindow.webContents.send("forkline:file-editor:open-context", pendingFileEditorWindowRequest);
+  pendingFileEditorWindowRequest = null;
+}
+
+function createFileEditorWindow(request) {
+  const editorWindow = new BrowserWindow({
+    width: 1480,
+    height: 980,
+    minWidth: 800,
+    minHeight: 640,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: "#0e1117",
+    title: "Forkline 编辑器",
+    icon: DESKTOP_ICON_PATH,
+    parent: mainWindow,
+    ...desktopWindowChromeOptions(),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+  fileEditorWindow = editorWindow;
+  fileEditorWindowReady = false;
+  fileEditorWindowCloseAllowed = false;
+  configureExternalNavigation(editorWindow);
+  editorWindow.webContents.setZoomFactor(desktopZoomFactor);
+  editorWindow.webContents.on("before-input-event", (event, input) => {
+    if (handleDesktopZoomShortcut(event, input)) return;
+    if (input.key === "F12" && !process.argv.includes("--devtools")) event.preventDefault();
+  });
+  editorWindow.webContents.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
+    dialog.showErrorBox("Forkline 编辑器加载失败", `${description}\n${url}`);
+  });
+  editorWindow.webContents.on("did-finish-load", () => {
+    fileEditorWindowReady = true;
+    sendPendingFileEditorWindowRequest();
+  });
+  editorWindow.once("ready-to-show", () => editorWindow.show());
+  editorWindow.on("close", (event) => {
+    if (quitting || fileEditorWindowCloseAllowed) return;
+    event.preventDefault();
+    if (!editorWindow.webContents.isDestroyed()) editorWindow.webContents.send("forkline:file-editor:close-requested");
+  });
+  editorWindow.on("closed", () => {
+    if (fileEditorWindow === editorWindow) fileEditorWindow = null;
+    fileEditorWindowReady = false;
+    fileEditorWindowCloseAllowed = false;
+    pendingFileEditorWindowRequest = null;
+  });
+  const url = fileEditorWindowUrl(serverUrl, request);
+  if (!url) {
+    editorWindow.destroy();
+    return false;
+  }
+  void editorWindow.loadURL(url);
+  return true;
+}
+
+function openFileEditorWindow(request) {
+  const normalized = normalizeFileEditorRequest(request);
+  if (!normalized || !serverUrl || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (fileEditorWindow && !fileEditorWindow.isDestroyed()) {
+    pendingFileEditorWindowRequest = normalized;
+    if (fileEditorWindow.isMinimized()) fileEditorWindow.restore();
+    fileEditorWindow.show();
+    fileEditorWindow.focus();
+    sendPendingFileEditorWindowRequest();
+    return true;
+  }
+  return createFileEditorWindow(normalized);
 }
 
 function desktopZoomPreferencePath() {
@@ -571,6 +707,9 @@ function applyDesktopZoom(value, persist = true) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.setZoomFactor(desktopZoomFactor);
   }
+  if (fileEditorWindow && !fileEditorWindow.isDestroyed()) {
+    fileEditorWindow.webContents.setZoomFactor(desktopZoomFactor);
+  }
   if (persist) {
     try {
       writeZoomFactor(desktopZoomPreferencePath(), desktopZoomFactor);
@@ -613,14 +752,6 @@ function handleDesktopZoomShortcut(event, input) {
 function createWindow() {
   desktopWindowState = readWindowState(desktopWindowStatePath(), screen.getAllDisplays());
   const initialBounds = desktopWindowState.bounds || { width: 1450, height: 900 };
-  const windowsTitleBar = process.platform === "win32" ? {
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: WINDOWS_TITLEBAR_COLOR,
-      symbolColor: WINDOWS_TITLEBAR_SYMBOL_COLOR,
-      height: ELECTRON_TITLEBAR_CSS_HEIGHT,
-    },
-  } : {};
 
   mainWindow = new BrowserWindow({
     ...initialBounds,
@@ -631,7 +762,7 @@ function createWindow() {
     backgroundColor: "#0e1117",
     title: "Forkline",
     icon: DESKTOP_ICON_PATH,
-    ...windowsTitleBar,
+    ...desktopWindowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -643,15 +774,7 @@ function createWindow() {
 
   attachRendererHealth(mainWindow);
   mainWindow.webContents.setZoomFactor(desktopZoomFactor);
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url) && !isInternalUrl(url)) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isInternalUrl(url)) return;
-    event.preventDefault();
-    if (/^https?:/i.test(url)) void shell.openExternal(url);
-  });
+  configureExternalNavigation(mainWindow);
   mainWindow.webContents.on("before-input-event", (event, input) => {
     if (handleDesktopZoomShortcut(event, input)) return;
     if (input.key === "F12" && !process.argv.includes("--devtools")) event.preventDefault();
@@ -692,6 +815,7 @@ if (hasSingleInstanceLock) {
       registerRendererRecoveryState();
       registerDesktopPreferences();
       registerDesktopRecentRepositories();
+      registerFileEditorWindow();
       registerInstallerUpdates();
       await migrateDesktopRecentRepositories();
       await migrateDesktopPreferences();
@@ -714,6 +838,7 @@ if (hasSingleInstanceLock) {
     event.preventDefault();
     if (quitting) return;
     quitting = true;
+    closeFileEditorWindowForQuit();
     flushDesktopWindowState();
     rendererHealthController?.dispose();
     stopRendererReloadWatcher();

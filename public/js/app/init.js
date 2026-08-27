@@ -1,5 +1,24 @@
 // App initialization and top-level rendering.
+function standaloneFileEditorContext() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("fileEditorWindow") !== "1") return null;
+  const source = params.get("source") || "";
+  const file = params.get("file") || "";
+  const previousFile = params.get("previousFile") || "";
+  const commit = params.get("commit") || "";
+  if (!file || file.includes("\0") || !["worktree", "commit"].includes(source)) return null;
+  if (source === "commit" && !/^[0-9a-f]{7,64}$/i.test(commit)) return null;
+  document.documentElement.dataset.window = "file-editor";
+  document.title = "Forkline 编辑器";
+  return { file, previousFile, source, commit };
+}
+
+function isStandaloneFileEditorWindow() {
+  return new URLSearchParams(window.location.search).get("fileEditorWindow") === "1";
+}
+
 async function init() {
+  const standaloneContext = standaloneFileEditorContext();
   const selfUpdateResult = await checkForSelfUpdateResult();
   await restoreSelfUpdateRepo(selfUpdateResult);
   checkForAppUpdate();
@@ -21,6 +40,17 @@ async function init() {
     const hydrationPromise = state.data.progressive
       ? hydrateOpenedRepoData(state.openRepoRequestId, state.data.repo.path)
       : null;
+    if (standaloneContext) {
+      if (hydrationPromise && !(await hydrationPromise)) return;
+      await openFileEditorLazy(
+        standaloneContext.file,
+        standaloneContext.previousFile,
+        standaloneContext.source === "commit"
+          ? { source: "commit", commit: standaloneContext.commit }
+          : {}
+      );
+      return;
+    }
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);
     }

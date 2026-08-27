@@ -63,6 +63,27 @@ test("Electron reuses the web app behind an isolated desktop shell", () => {
   assert.match(preload, /dataset\.shell\s*=\s*"electron"/);
 });
 
+test("Electron opens file editors in a separate restricted child window", () => {
+  const main = read("electron/main.js");
+  const preload = read("electron/preload.js");
+  const bootstrap = read("public/js/bootstrap.js");
+  const init = read("public/js/app/init.js");
+
+  assert.match(main, /fileEditorWindow/);
+  assert.match(main, /forkline:file-editor:open/);
+  assert.match(main, /new BrowserWindow\(\{[\s\S]*parent:\s*mainWindow/);
+  assert.match(main, /event\.sender !== mainWindow\.webContents/);
+  assert.match(main, /forkline:file-editor:close/);
+  assert.match(preload, /openFileEditorWindow/);
+  assert.match(preload, /closeFileEditorWindow/);
+  assert.match(preload, /onOpenFileEditor/);
+  assert.match(preload, /onFileEditorCloseRequested/);
+  assert.match(bootstrap, /isStandaloneFileEditorWindow/);
+  assert.match(bootstrap, /onOpenFileEditor/);
+  assert.match(init, /standaloneFileEditorContext/);
+  assert.match(init, /openFileEditorLazy\(/);
+});
+
 test("Electron exposes only fixed installer-update IPC and preserves source updates", () => {
   const main = read("electron/main.js");
   const preload = read("electron/preload.js");

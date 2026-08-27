@@ -16,6 +16,36 @@ contextBridge.exposeInMainWorld("forklineDesktop", {
   getInstallerUpdateState: () => ipcRenderer.invoke("forkline:installer-update:get-state"),
   checkInstallerUpdate: () => ipcRenderer.invoke("forkline:installer-update:check"),
   installInstallerUpdate: (version) => ipcRenderer.invoke("forkline:installer-update:install", String(version || "")),
+  openFileEditorWindow: (file, previousFile, source, commit) => ipcRenderer.invoke("forkline:file-editor:open", {
+    file: String(file || ""),
+    previousFile: String(previousFile || ""),
+    source: source === "commit" ? "commit" : "worktree",
+    commit: String(commit || ""),
+  }),
+  closeFileEditorWindow: () => ipcRenderer.invoke("forkline:file-editor:close"),
+  onOpenFileEditor: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      const source = value.source === "commit" ? "commit" : value.source === "worktree" ? "worktree" : "";
+      const file = String(value.file || "");
+      if (!source || !file || file.includes("\0")) return;
+      handler({
+        file,
+        previousFile: String(value.previousFile || ""),
+        source,
+        commit: String(value.commit || ""),
+      });
+    };
+    ipcRenderer.on("forkline:file-editor:open-context", listener);
+    return () => ipcRenderer.removeListener("forkline:file-editor:open-context", listener);
+  },
+  onFileEditorCloseRequested: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = () => handler();
+    ipcRenderer.on("forkline:file-editor:close-requested", listener);
+    return () => ipcRenderer.removeListener("forkline:file-editor:close-requested", listener);
+  },
   onInstallerUpdateState: (handler) => {
     if (typeof handler !== "function") return () => {};
     const listener = (_event, state) => handler(state && typeof state === "object" ? { ...state } : null);

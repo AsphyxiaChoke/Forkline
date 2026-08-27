@@ -786,3 +786,49 @@ body.file-editor-window-resizing * {
     padding: 8px 10px;
   }
 }
+
+html[data-window="file-editor"] {
+  overflow: hidden;
+}
+
+html[data-window="file-editor"] body {
+  overflow: hidden;
+}
+
+html[data-window="file-editor"] .app-shell {
+  display: none;
+}
+
+html[data-window="file-editor"] .file-editor-modal.show {
+  display: grid;
+  pointer-events: auto;
+  background: var(--surface);
+}
+
+html[data-window="file-editor"] .file-editor-dialog {
+  position: static;
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  transform: none;
+  border: 0;
+  border-radius: 0;
+}
+
+html[data-window="file-editor"] .file-editor-head {
+  cursor: default;
+  -webkit-app-region: drag;
+}
+
+html[data-window="file-editor"] .file-editor-head button,
+html[data-window="file-editor"] .file-editor-head input,
+html[data-window="file-editor"] .file-editor-head select {
+  -webkit-app-region: no-drag;
+}
+
+html[data-window="file-editor"] .file-editor-resize-handle {
+  display: none;
+}

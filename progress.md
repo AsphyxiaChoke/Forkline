@@ -10451,3 +10451,31 @@
 - `progress.md`：仅在末尾追加本轮结果、测试、文件清单和回滚点。
 - 回滚方式：提交前对上述本轮已跟踪文件执行 `git restore -- <file list>`；提交后使用 `git revert <本轮提交>`。不得触碰保护文件、`.playwright-cli/`、`D:\Forkline` 或任何既有标签。
 - 远端发布卡点：当前 `gh auth status -h github.com` 显示已登录账户令牌无效；认证恢复后再推送、创建不可移动的 `v0.4.10` 标签和 GitHub Release，并核对两条工作流及六个正式附件。
+
+## 2026-08-28 - Task: Forkline v0.4.10 独立编辑器验收与发布收尾准备
+
+### What was done
+
+- 完成当前工作树的独立文件编辑器 Electron 子窗口实际验收：主窗口继续显示 Web 工作台，文件编辑器通过固定受限 IPC 在独立子窗口打开；Web 版原页面编辑器路径保持不变。
+- 重建当前 v0.4.10 Windows x64 NSIS 安装器，并在隔离用户数据和临时安装目录中加载正式仓库、打开真实 `package.json`、关闭编辑器子窗口和停止后台服务。
+- 如实保留静默 NSIS 卸载现场异常：退出码为 `0`，但没有可见 HKCU 卸载登记且临时安装目录未由卸载器清理；未将其写成标准交互式卸载通过。现有 `D:\Forkline` 和既有开始菜单快捷方式未触碰。
+
+### Testing
+
+- `npm.cmd test`：`398/398` 通过，0 失败、0 取消、0 跳过。
+- `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API 约 `306.6 ms`，低于 `350 ms` 门限。
+- `npm.cmd run build:installer`：成功；安装器 `104609975` 字节，SHA-256 `072C1C0F36731B78ADE0BD07CA94AB8A01C03E78A97A3FE9C1FEB7D3A28A99DF`；blockmap `111642` 字节，SHA-256 `3A252AD32FD662E9DF23B833B03E0B9AF16F1119F1C39AC5F0376A5927B7CA9A`；`latest.yml` `372` 字节，SHA-256 `23D6DAA836E7868451A2423D1978D79008FD6DBB1900CBDBA374D9A271184B53`；Authenticode `NotSigned`。
+- 隔离真实 Electron：正式仓库页面显示 `forkline-upload` / `main`；核心状态 HTTP `200`；子窗口标题 `Forkline 编辑器`，URL 含 `fileEditorWindow=1&file=package.json&source=worktree`，状态为真实仓库、文件读取完成、弹层可见、CodeMirror `2` 个；关闭 IPC 返回 `true` 且编辑器页归零；最终临时 Forkline 进程归零、服务端口不再监听。
+- 保护校验：异常未跟踪文件保持 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交；`.playwright-cli/` 未触碰；`v0.4.9` 解引用仍为 `ea43966a2ff5295aedf528bc3578eb61f5dbcbf5`。
+
+### Notes
+
+- `electron/main.js`：增加独立文件编辑器窗口生命周期、受限 IPC、外部导航和退出联动。
+- `electron/preload.js`：增加固定的文件编辑器打开、关闭、上下文和关闭请求接口。
+- `electron/file-editor-window.js`：新增文件上下文校验、提交 SHA 校验和内部 URL 编解码。
+- `public/file-editor.css`：调整编辑器窗口与 Diff 高亮的桌面显示规则。
+- `public/js/app/init.js`、`public/js/bootstrap.js`、`public/js/features/file-editor-loader.js`、`public/js/features/file-editor.js`：接入独立窗口上下文、打开分流、关闭请求和未保存内容确认。
+- `tests/electron-shell.test.js`、`tests/file-editor-ui.test.js`、`tests/file-editor-window.test.js`：补充 Electron 外壳、UI 分流、IPC 边界和 URL 编解码回归。
+- `docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`：追加独立编辑器和本机构建/安装验收证据。
+- `progress.md`：仅在末尾追加本轮闭环记录。
+- 回滚方式：提交前执行 `git restore -- electron/main.js electron/preload.js public/file-editor.css public/js/app/init.js public/js/bootstrap.js public/js/features/file-editor-loader.js public/js/features/file-editor.js tests/electron-shell.test.js tests/file-editor-ui.test.js docs/ELECTRON_DESKTOP.md docs/PACKAGING.md docs/CONTINUE.md progress.md`，并按需删除新增的 `electron/file-editor-window.js`、`tests/file-editor-window.test.js`；提交后使用 `git revert <本轮提交>`。不得触碰 `n+fs.statSync(p.join('public'`、`.playwright-cli/`、`D:\Forkline` 或任何既有标签。

@@ -33,6 +33,9 @@ const mergeAddon = fs.readFileSync(path.join(root, "public", "vendor", "codemirr
 const baseStyles = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const diffWorkbenchStyles = fs.readFileSync(path.join(root, "public", "diff-workbench.css"), "utf8");
 const editorStyles = fs.readFileSync(path.join(root, "public", "file-editor.css"), "utf8");
+const init = fs.readFileSync(path.join(root, "public", "js", "app", "init.js"), "utf8");
+const bootstrap = fs.readFileSync(path.join(root, "public", "js", "bootstrap.js"), "utf8");
+const preload = fs.readFileSync(path.join(root, "electron", "preload.js"), "utf8");
 const styles = `${baseStyles}\n${diffWorkbenchStyles}\n${editorStyles}`;
 const catalog = require(path.join(root, "public", "js", "i18n-catalog.js"));
 
@@ -813,6 +816,18 @@ test("file editor centers each stage button on the full visual chunk", () => {
   );
   assert.match(editor, /button\.style\.top\s*=\s*`\$\{center\}px`/);
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-copy\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)/s);
+});
+
+test("Electron file editor uses a standalone window while Web keeps the in-page editor", () => {
+  assert.match(init, /function standaloneFileEditorContext\(/);
+  assert.match(init, /get\("fileEditorWindow"\)\s*!==\s*"1"/);
+  assert.match(init, /standaloneContext\.file/);
+  assert.match(editorLoader, /openFileEditorWindow/);
+  assert.match(editorCore, /isStandaloneFileEditorWindow\(\)/);
+  assert.match(bootstrap, /onFileEditorCloseRequested/);
+  assert.match(preload, /onOpenFileEditor/);
+  assert.match(styles, /html\[data-window="file-editor"\] \.app-shell[\s\S]*display:\s*none/);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-dialog[\s\S]*position:\s*static/);
 });
 
 test("file editor merge highlights keep syntax text readable", () => {

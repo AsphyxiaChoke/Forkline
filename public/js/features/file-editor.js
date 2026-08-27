@@ -346,7 +346,12 @@ async function submitFileEditor(event) {
 }
 
 function closeFileEditor(force = false) {
-  if (!els.fileEditorModal.classList.contains("show") && !state.fileEditor) return true;
+  const standalone = typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow();
+  const desktop = typeof window === "object" ? window.forklineDesktop : null;
+  if (!els.fileEditorModal.classList.contains("show") && !state.fileEditor) {
+    if (standalone) desktop?.closeFileEditorWindow?.();
+    return true;
+  }
   if ((state.fileEditor?.saving || state.fileEditor?.operating) && !force) return false;
   if (!force && fileEditorDirty() && !confirm(t("文件还有未保存的修改，确认关闭编辑器？"))) return false;
   destroyFileEditorInstance();
@@ -358,6 +363,7 @@ function closeFileEditor(force = false) {
   setFileEditorControlsDisabled(false);
   hideFileEditorContextMenu();
   reportDesktopRecoveryState();
+  if (standalone) desktop?.closeFileEditorWindow?.();
   return true;
 }
 

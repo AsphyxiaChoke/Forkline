@@ -4,6 +4,10 @@ let desktopRepositoryOpenBusy = false;
 let pendingDesktopRepository = "";
 let stopInstallerUpdateState = null;
 let stopDesktopPreferenceFailures = null;
+let stopStandaloneFileEditorOpen = null;
+let stopStandaloneFileEditorClose = null;
+let standaloneFileEditorReady = false;
+let pendingStandaloneFileEditor = null;
 
 async function flushDesktopRepositoryOpen() {
   if (!desktopRepositoryOpenReady || desktopRepositoryOpenBusy || !pendingDesktopRepository) return;
@@ -46,7 +50,37 @@ function initDesktopPreferenceFailures() {
   window.addEventListener("beforeunload", () => stopDesktopPreferenceFailures?.(), { once: true });
 }
 
+async function flushStandaloneFileEditor() {
+  if (!standaloneFileEditorReady || !pendingStandaloneFileEditor || !state.data) return;
+  const context = pendingStandaloneFileEditor;
+  pendingStandaloneFileEditor = null;
+  await openFileEditorLazy(
+    context.file,
+    context.previousFile,
+    context.source === "commit" ? { source: "commit", commit: context.commit } : {}
+  );
+}
+
+function initStandaloneFileEditor() {
+  if (typeof isStandaloneFileEditorWindow !== "function" || !isStandaloneFileEditorWindow()) return;
+  const bridge = window.forklineDesktop;
+  if (typeof bridge?.onOpenFileEditor === "function") {
+    stopStandaloneFileEditorOpen = bridge.onOpenFileEditor((context) => {
+      pendingStandaloneFileEditor = context;
+      flushStandaloneFileEditor().catch((error) => toast(error.message));
+    });
+  }
+  if (typeof bridge?.onFileEditorCloseRequested === "function") {
+    stopStandaloneFileEditorClose = bridge.onFileEditorCloseRequested(() => closeFileEditor());
+  }
+  window.addEventListener("beforeunload", () => {
+    stopStandaloneFileEditorOpen?.();
+    stopStandaloneFileEditorClose?.();
+  }, { once: true });
+}
+
 async function startForkline() {
+  initStandaloneFileEditor();
   await window.ForklinePreferenceStorage?.init?.();
   initializeUiDiagnostics();
   state.recoveryPolicy = defaultRecoveryPolicy();
@@ -59,6 +93,8 @@ async function startForkline() {
   updateAmendMode();
   await init();
   await restoreDesktopRecoveryDraft();
+  standaloneFileEditorReady = true;
+  await flushStandaloneFileEditor();
   desktopRepositoryOpenReady = true;
   await flushDesktopRepositoryOpen();
 }

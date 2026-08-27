@@ -1369,3 +1369,10 @@
 - 修改文件：`package.json`、`package-lock.json`、`tests/installer-package.test.js`、本轮功能源码与测试、`README.md`、`docs/ARCHITECTURE.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`。
 - 回滚方式：提交前对本轮已跟踪文件执行 `git restore -- <file list>`；提交后使用 `git revert <本轮提交>`。不得触碰 `n+fs.statSync(p.join('public'`、`.playwright-cli/`、`D:\Forkline` 或任何既有标签。
 - 剩余动作：追加 `progress.md`，显式暂存跟踪文件，提交并推送，创建不可移动的 `v0.4.10` Release，核对 GitHub Actions 生成的六个正式附件和远端 digest。
+
+## 2026-08-28 - v0.4.10 独立编辑器验收续接
+
+- 当前工作树的 v0.4.10 Electron/NSIS 安装器已重建。自动测试为 `398/398`，浏览器测试为 `1/1`；构建产物的 `latest.yml` 版本、大小和 SHA-512 与安装器一致，签名状态为 `NotSigned`。
+- 真实隔离 Electron 启动正式仓库成功：主页显示 `forkline-upload` 与 `main`；通过固定 IPC 打开 `package.json` 后，主页和独立子窗口同时存在，子窗口标题为 `Forkline 编辑器`，上下文仅包含 `worktree` 文件请求，弹层可见且 CodeMirror 已创建。固定关闭 IPC 关闭后子窗口消失。
+- 隔离实例核心状态 HTTP `200`，退出后临时 Forkline 进程和随机服务端口归零。静默卸载器虽然退出码为 `0`，但仍未清理其临时安装目录/可见卸载登记，因此不得写成标准交互式卸载通过；交互式目录选择、快捷方式策略仍由安装器契约和既有交互式验收覆盖。
+- 远端动作仍未完成：需确认 `gh auth status -h github.com` 有效后，显式暂存跟踪文件，提交并推送 `main`，创建不可移动的 `v0.4.10` 标签/Release，等待安装器与便携包工作流完成，再核对六个正式附件和 GitHub digest。禁止触碰 `v0.4.0` 至 `v0.4.9` 任一标签。

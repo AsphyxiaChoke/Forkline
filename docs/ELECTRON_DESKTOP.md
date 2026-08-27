@@ -134,3 +134,9 @@ npm.cmd run desktop:dev -- "D:\桌面\GitTest"
 Electron 桌面版与 Web 版共用界面、Git 语义和后台服务。`v0.4.1` 新增 Windows x64 NSIS 安装器、安装器级应用内更新和 Release 自动构建；`v0.4.2` 为安装版的后续应用内更新加入受限国内下载加速与官方源回退；`v0.4.4` 把 Electron 最近仓库迁移到稳定用户数据文件；`v0.4.5` 进一步把主题、语言、布局和界面诊断等偏好迁移到不受随机回环端口影响的稳定文件；`v0.4.6` 补齐偏好保存失败回滚、用户提示和稳定文件原子替换；`v0.4.7` 将 Electron 运行时更新到 `43.4.0`；`v0.4.8` 更新到 `43.4.1`，吸收 Windows 系统打开对话框退出、主进程退出、BrowserWindow 生命周期和原生解压安装相关修复，不扩大主进程、preload 或 IPC 权限。提交详情正文在现代浏览器中按完整内容展开，不支持该 CSS 能力的浏览器保留滚动回退。Web 便携包及其 Git 快进更新保持不变。
 
 当前发布边界仍是不签名安装器。发布说明必须明确未知发布者与 SmartScreen 风险；后续若加入代码签名，应发布新版本，不得替换已发布版本的信任边界说明。
+
+## v0.4.10 独立文件编辑器验收
+
+- Electron 桌面版从主窗口打开文件时创建独立的受限子窗口；Web 浏览器继续使用原页面编辑器。子窗口使用独立标题、固定文件上下文和 URL 编码，只接受 `worktree` 或带合法提交 SHA 的 `commit` 请求；preload 仅暴露打开、关闭、上下文切换和关闭请求四类固定接口。
+- 在当前 v0.4.10 安装器的隔离实例中打开正式仓库 `C:/Users/Administrator/Documents/Git管理工具/work/forkline-upload` 的 `package.json`，主窗口标题为 `Forkline Web`，子窗口标题为 `Forkline 编辑器`，子窗口 URL 含 `fileEditorWindow=1&file=package.json&source=worktree`；子窗口状态为真实仓库、文件读取完成、编辑器弹层可见、CodeMirror 实例 `2`。
+- 子窗口关闭 IPC 返回成功，关闭后调试页不再包含编辑器子页；主窗口和后台服务仍可独立运行。窗口退出时继续复用已有优雅服务停止流程，不扩大 Git/SSH 进程清理范围。
