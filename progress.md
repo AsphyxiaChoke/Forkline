@@ -10518,3 +10518,22 @@
 
 - 修改文件：`public/js/features/file-tree.js`：将目录选择渲染为文件夹行并改用 `aria-pressed`；`public/styles.css`：增加 Windows 文件夹图标、选中/混合高亮和目录行布局；`tests/file-editor-ui.test.js`：补目录行交互与视觉契约；`tests/browser-performance.test.js`：同步目录选择状态断言；`README.md`：更新用户操作说明；`docs/ARCHITECTURE.md`：更新文件树职责说明；`progress.md`：追加本轮结果、测试、保护对象和回滚点。
 - 回滚方式：提交前执行 `git restore -- public/js/features/file-tree.js public/styles.css tests/file-editor-ui.test.js tests/browser-performance.test.js README.md docs/ARCHITECTURE.md progress.md`；提交后执行 `git revert <本轮提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-28 - Task: Forkline v0.4.11 版本升档、安装器与发布准备
+
+### What was done
+
+- 将产品版本升至 `0.4.11`，纳入 Issue #5 文件夹式目录选择修复，并同步安装器契约；保留 Web、源码克隆、便携版和 NSIS 安装版既有更新边界。
+- 完成本机构建安装器、版本/元数据校验和隔离安装启动验收；记录本机 GPU 启动兼容性异常及静默 NSIS 登记/卸载异常，未将其误报为标准通过。
+
+### Testing
+
+- `npm.cmd test`：`399/399` 通过，0 失败、0 取消、0 跳过。
+- `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API `328.4 ms`，低于 `350 ms` 门限。
+- `node --check tests\\installer-package.test.js`、`git diff --check` 通过；本机构建的 EXE 为 `104610247` 字节，SHA-256 `44044ad351ea3008f7d78598b9c7f921d1199a6c5c279fa73133bb63fd116064`；blockmap 为 `111564` 字节，SHA-256 `beefa5843fd9ae6437ea46e1c9925de5e68f2ffb6ee8fa1fe021a3d742e93447`；`latest.yml` 为 `372` 字节，SHA-256 `b397b7f7953f5d4b59835ce0a03710378182c48fdc3e2caf9c491c7d896956db`，版本、大小和 SHA-512 一致，Authenticode `NotSigned`。
+- 隔离安装退出码 `0`；使用本机兼容性启动参数时首页和 `/api/state?details=core` HTTP `200`，`/api/app-update` 当前版本为 `0.4.11`。无兼容参数启动受到本机 Electron GPU 子进程异常影响；静默卸载退出码 `0` 但未清理临时目录，按已知异常记录。
+
+### Notes
+
+- 修改文件：`package.json`：版本升至 `0.4.11`；`package-lock.json`：同步根包版本；`tests/installer-package.test.js`：同步安装器版本契约；`docs/PACKAGING.md`：追加 v0.4.11 构建、校验和安装现场；`docs/CONTINUE.md`：追加 v0.4.11 发布准备与剩余动作；`progress.md`：追加本轮闭环记录。
+- 回滚方式：提交前执行 `git restore -- package.json package-lock.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签或触碰 `D:\Forkline`。

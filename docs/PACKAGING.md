@@ -369,3 +369,13 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 两个 `.sha256` 文件分别匹配安装器和便携 ZIP；`latest.yml` 版本为 `0.4.10`，安装器文件名、大小 `104606321` 和 SHA-512 `sSm6BmOKpqa85ZlDj/VucymFjx10amMHW3xkMpEYDtqltA4YgpCmwRl0ZfJBfLBo1Bqlblm2pkLYftsqgPXt6Q==` 均与正式安装器一致。正式安装器 Authenticode 为 `NotSigned`。
 - 便携 ZIP 已确认保留顶层目录下的 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码、测试和 `docs/`；便携版继续使用现有 Git 快进更新，不使用 NSIS updater。当前 Release 验收下载目录为 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.10-release-audit-20260828-101658`。
 - 正式附件验收至此完成。仓库中的异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，`.playwright-cli/` 仍未跟踪；二者均未修改、暂存或提交。
+
+## v0.4.11 发布准备
+
+- v0.4.11 将 Issue #5 的工作区/暂存区目录选择改为 Windows 文件夹式可点击行：目录图标、名称和改动数量组成选择行，左侧箭头只负责展开/折叠；目录全选、取消选择、Ctrl/Cmd 多选、Shift 文件范围选择和虚拟化仍保持原语义。Web、源码克隆、便携版和 NSIS 安装版共用同一文件树实现。
+- `package.json`、`package-lock.json` 和安装器契约测试已同步到 `0.4.11`。Web、源码克隆和便携版继续使用原 Git 快进更新；NSIS 安装版继续使用 `electron-updater`，安装更新前优雅停止 Forkline 后台服务及其 Git/SSH 子进程。
+- 本机构建安装器 `Forkline-Setup-0.4.11-windows-x64.exe` 为 `104610247` 字节，SHA-256 `44044ad351ea3008f7d78598b9c7f921d1199a6c5c279fa73133bb63fd116064`；blockmap 为 `111564` 字节，SHA-256 `beefa5843fd9ae6437ea46e1c9925de5e68f2ffb6ee8fa1fe021a3d742e93447`；`latest.yml` 为 `372` 字节，SHA-256 `b397b7f7953f5d4b59835ce0a03710378182c48fdc3e2caf9c491c7d896956db`。`latest.yml` 版本、安装器文件名、大小和 SHA-512 `Hc3PQhK94mob5sSpv8itX0NgrWvJmcMBnumGvbuVWnzGihLc4tX1ofZMkeVF2ZrbBxgdioF7M2jURRAxxRg95w==` 均匹配；Authenticode 为 `NotSigned`。
+- `npm.cmd test` 为 `399/399`，`npm.cmd run test:browser` 为 `1/1`；4000 文件工作区冷 API 为 `328.4 ms`，低于 `350 ms` 门限。`node --check tests\\installer-package.test.js` 和 `git diff --check` 通过。
+- 隔离当前用户静默安装退出码为 `0`，安装目录生成程序和卸载器。无兼容性启动参数时，本机 Electron GPU 子进程因环境 DLL/图形能力异常退出；使用仅用于本机验收的 `--no-sandbox --disable-gpu --disable-gpu-compositing --disable-features=VizDisplayCompositor` 参数后，真实安装版后台监听 `127.0.0.1:56572`，首页和 `/api/state?details=core` 均 HTTP `200`，`/api/app-update` 显示当前版本 `0.4.11`。
+- 本轮静默安装未生成该临时目录对应的可见 HKCU 卸载登记或快捷方式；静默卸载器退出码为 `0`，但未清理该临时安装目录。该现象按异常记录，不能写成标准交互式安装/卸载通过；现有 `D:\Forkline` 程序、登记和桌面/开始菜单快捷方式未触碰。
+- 正式发布仍需在本轮提交推送后创建不可移动的 `v0.4.11` Release，由安装器和便携包工作流构建正式附件，再核对六个附件、GitHub digest、两个 `.sha256`、`latest.yml` 和便携 ZIP 内容。安装器未签名、未知发布者和 SmartScreen 风险必须保留在中文发布说明中。
