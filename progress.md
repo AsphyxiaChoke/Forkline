@@ -10479,3 +10479,22 @@
 - `docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`：追加独立编辑器和本机构建/安装验收证据。
 - `progress.md`：仅在末尾追加本轮闭环记录。
 - 回滚方式：提交前执行 `git restore -- electron/main.js electron/preload.js public/file-editor.css public/js/app/init.js public/js/bootstrap.js public/js/features/file-editor-loader.js public/js/features/file-editor.js tests/electron-shell.test.js tests/file-editor-ui.test.js docs/ELECTRON_DESKTOP.md docs/PACKAGING.md docs/CONTINUE.md progress.md`，并按需删除新增的 `electron/file-editor-window.js`、`tests/file-editor-window.test.js`；提交后使用 `git revert <本轮提交>`。不得触碰 `n+fs.statSync(p.join('public'`、`.playwright-cli/`、`D:\Forkline` 或任何既有标签。
+
+## 2026-08-28 - Task: Forkline v0.4.10 正式 Release 附件验收与文档收尾
+
+### What was done
+
+- 完成正式 v0.4.10 Release 的六个 Windows x64 附件验收，并将 Release、工作流、校验和便携包内容证据追加到发布文档和续接记录。
+- 确认正式 Release 为非草稿、非预发布，`v0.4.10` 标签固定在 `15826d52e341a2fc17ec8855ae9bcde76acec678`，既有 `v0.4.9` 标签未移动。
+
+### Testing
+
+- 安装器工作流 `33134728084`、便携包工作流 `33134728147` 均成功；本地全量自动测试 `398/398`、Issue 定向回归 `195/195` 均通过。
+- Release 六附件本机 SHA-256 与 GitHub digest 全部一致：EXE `c9b6be0153ec05663b9a2c4fa7c15d424bd6a7f248169c5e5552b9da06999320`；blockmap `91e1a724995314ef81dadb3c7733ac86b422c932efd10e1780a4024828874878`；EXE 校验文件 `8a627971cfe16d28240b4db963173c9e8fa0ab8c7111ad3e55be63d424805a21`；ZIP `738511f90f0644c8a3a3554142865afb7d53a882f3918c08b1ae26961b6521e7`；ZIP 校验文件 `e85b9cbac41d394feacbf78fe792b3f8ed253a68343d1559438319f5fa848602`；`latest.yml` `09fcf2833c4d2302e48c3da49be6eab8773ddf4614fef1bc324f6b77abf7094d`。
+- `latest.yml` 的版本、安装器文件名、大小 `104606321` 和 SHA-512 `sSm6BmOKpqa85ZlDj/VucymFjx10amMHW3xkMpEYDtqltA4YgpCmwRl0ZfJBfLBo1Bqlblm2pkLYftsqgPXt6Q==` 均匹配；便携 ZIP 含 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码和 `docs/`；Authenticode 为 `NotSigned`。
+- 保护文件 `n+fs.statSync(p.join('public'` 保持 0 字节和 SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，未修改、未暂存、未提交；`.playwright-cli/` 仍未跟踪且未触碰。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`：追加正式 Release 六附件、digest、`latest.yml` 和便携 ZIP 验收；`docs/CONTINUE.md`：追加 v0.4.10 发布完成状态和后续边界；`progress.md`：追加本轮验收、测试、保护对象和回滚点。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮文档收尾提交>`。不删除 Release 附件，不移动 `v0.4.9`、`v0.4.10` 或任何既有标签，不触碰两个未跟踪保护对象。

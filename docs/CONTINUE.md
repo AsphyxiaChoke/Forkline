@@ -1376,3 +1376,10 @@
 - 真实隔离 Electron 启动正式仓库成功：主页显示 `forkline-upload` 与 `main`；通过固定 IPC 打开 `package.json` 后，主页和独立子窗口同时存在，子窗口标题为 `Forkline 编辑器`，上下文仅包含 `worktree` 文件请求，弹层可见且 CodeMirror 已创建。固定关闭 IPC 关闭后子窗口消失。
 - 隔离实例核心状态 HTTP `200`，退出后临时 Forkline 进程和随机服务端口归零。静默卸载器虽然退出码为 `0`，但仍未清理其临时安装目录/可见卸载登记，因此不得写成标准交互式卸载通过；交互式目录选择、快捷方式策略仍由安装器契约和既有交互式验收覆盖。
 - 远端动作仍未完成：需确认 `gh auth status -h github.com` 有效后，显式暂存跟踪文件，提交并推送 `main`，创建不可移动的 `v0.4.10` 标签/Release，等待安装器与便携包工作流完成，再核对六个正式附件和 GitHub digest。禁止触碰 `v0.4.0` 至 `v0.4.9` 任一标签。
+
+## v0.4.10 正式发布完成
+
+- 已完成正式 Release：[Forkline v0.4.10](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.10)。Release 为正式版、非草稿、非预发布；`v0.4.10` 固定解引用到 `15826d52e341a2fc17ec8855ae9bcde76acec678`，未修改 `v0.4.9` 或更早标签。
+- 安装器工作流 `33134728084`、便携包工作流 `33134728147` 均成功；六个正式附件已上传并经本机重新下载、GitHub digest、`.sha256`、`latest.yml` 和便携 ZIP 内容复核。完整自动回归为 `398/398`，Issue 定向回归为 `195/195`。
+- 后续维护必须保持产品边界：Web、源码克隆和便携版走原 Git 快进更新；NSIS 安装版走 `electron-updater`，更新前优雅停止 Forkline 后台服务及 Git/SSH 子进程。安装器未签名风险仍须在对外说明中保留。
+- 保护对象继续保持原状：`.playwright-cli/` 和 `n+fs.statSync(p.join('public'` 不得删除、修改、暂存或提交。若需回滚本轮文档收尾，提交前恢复三份文档，提交后使用 `git revert <文档收尾提交>`；禁止移动既有标签。

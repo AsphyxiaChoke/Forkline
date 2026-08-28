@@ -360,3 +360,12 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 隔离安装器退出码为 `0`，安装文件版本为 `0.4.10/0.4.10.0`。从隔离用户数据启动后，正式仓库页面加载成功，核心状态接口返回 HTTP `200`；主窗口与独立文件编辑器子窗口均完成真实验证，关闭子窗口后无编辑器调试页，停止临时实例后 Forkline 进程归零且服务端口不再监听。现有 `D:\Forkline` 未被覆盖。
 - 静默卸载器退出码为 `0`，但本次仍观察到未生成可见 HKCU 卸载登记、未清理临时安装目录的现场异常；开始菜单中的既有快捷方式目标为 `D:\Forkline`，不是本轮创建对象，因此未删除。临时安装目录和三个临时用户数据目录在进程归零后已按明确路径清理。
 - 自动回归：`npm.cmd test` 为 `398/398`，`npm.cmd run test:browser` 为 `1/1`；构建、独立编辑器窗口、固定 IPC、真实仓库页面和关闭流程均有证据。上述本机产物仅作验收，不可直接冒充正式 Release 附件。
+
+## v0.4.10 正式 Release 验收
+
+- 正式 Release：[Forkline v0.4.10](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.10) 已创建，为正式版、非草稿、非预发布；不可移动的 `v0.4.10` 标签解引用到 `15826d52e341a2fc17ec8855ae9bcde76acec678`，`v0.4.9` 仍固定在 `ea43966a2ff5295aedf528bc3578eb61f5dbcbf5`。
+- 安装器工作流 [33134728084](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33134728084) 和便携包工作流 [33134728147](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33134728147) 均成功；正式 Release 说明为中文，明确 Windows x64 当前用户安装、可选目录、桌面/开始菜单快捷方式、`electron-updater` 更新边界、更新前优雅停止 Forkline/Git/SSH 子进程和未签名 SmartScreen 风险。
+- 六个正式附件均为 `uploaded`，本机重新下载后 SHA-256 与 GitHub Release API digest 全部一致：安装器 `104606321` 字节 / `c9b6be0153ec05663b9a2c4fa7c15d424bd6a7f248169c5e5552b9da06999320`；blockmap `111672` 字节 / `91e1a724995314ef81dadb3c7733ac86b422c932efd10e1780a4024828874878`；安装器校验文件 `103` 字节 / `8a627971cfe16d28240b4db963173c9e8fa0ab8c7111ad3e55be63d424805a21`；便携 ZIP `36822241` 字节 / `738511f90f0644c8a3a3554142865afb7d53a882f3918c08b1ae26961b6521e7`；ZIP 校验文件 `100` 字节 / `e85b9cbac41d394feacbf78fe792b3f8ed253a68343d1559438319f5fa848602`；`latest.yml` `372` 字节 / `09fcf2833c4d2302e48c3da49be6eab8773ddf4614fef1bc324f6b77abf7094d`。
+- 两个 `.sha256` 文件分别匹配安装器和便携 ZIP；`latest.yml` 版本为 `0.4.10`，安装器文件名、大小 `104606321` 和 SHA-512 `sSm6BmOKpqa85ZlDj/VucymFjx10amMHW3xkMpEYDtqltA4YgpCmwRl0ZfJBfLBo1Bqlblm2pkLYftsqgPXt6Q==` 均与正式安装器一致。正式安装器 Authenticode 为 `NotSigned`。
+- 便携 ZIP 已确认保留顶层目录下的 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码、测试和 `docs/`；便携版继续使用现有 Git 快进更新，不使用 NSIS updater。当前 Release 验收下载目录为 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.10-release-audit-20260828-101658`。
+- 正式附件验收至此完成。仓库中的异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，`.playwright-cli/` 仍未跟踪；二者均未修改、暂存或提交。
