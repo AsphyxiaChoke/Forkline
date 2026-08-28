@@ -10498,3 +10498,23 @@
 
 - 修改文件：`docs/PACKAGING.md`：追加正式 Release 六附件、digest、`latest.yml` 和便携 ZIP 验收；`docs/CONTINUE.md`：追加 v0.4.10 发布完成状态和后续边界；`progress.md`：追加本轮验收、测试、保护对象和回滚点。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮文档收尾提交>`。不删除 Release 附件，不移动 `v0.4.9`、`v0.4.10` 或任何既有标签，不触碰两个未跟踪保护对象。
+
+## 2026-08-28 - Task: Issue #5 工作区和暂存区文件夹式选择
+
+### What was done
+
+- 将工作区和暂存区目录选择从右侧 checkbox 方框改为 Windows 文件夹式目录行：文件夹图标、名称和数量组成可点击的选择行，左侧箭头只负责展开/折叠。
+- 保留目录全选/取消选择、部分选择状态、Ctrl/Cmd 多选、Shift 文件范围选择、虚拟化分批渲染和工作区/暂存区 Git 操作语义；提交/同步等只读文件树不显示目录选择控件。
+- 同步更新用户说明、架构说明和 UI 回归测试，确保后续不会重新引入 checkbox 语义。
+
+### Testing
+
+- `node --test tests/file-editor-ui.test.js`：`38/38` 通过，覆盖文件夹行按钮、无 checkbox 语义、目录选择事件和完整后代文件选择。
+- `npm.cmd test`：`399/399` 通过，0 失败、0 取消、0 跳过。
+- `npm.cmd run test:browser`：`1/1` 通过；4000 文件工作区冷 API `288.2 ms`，目录选择后仍保持首批 `800` 行、全部 `4000` 个文件选择和分批追加。
+- `node --check public\\js\\features\\file-tree.js`、测试文件语法检查和 `git diff --check` 通过；生产代码和文档中不再使用 `aria-checked`、`role="checkbox"` 或 `tree-folder-check`。
+
+### Notes
+
+- 修改文件：`public/js/features/file-tree.js`：将目录选择渲染为文件夹行并改用 `aria-pressed`；`public/styles.css`：增加 Windows 文件夹图标、选中/混合高亮和目录行布局；`tests/file-editor-ui.test.js`：补目录行交互与视觉契约；`tests/browser-performance.test.js`：同步目录选择状态断言；`README.md`：更新用户操作说明；`docs/ARCHITECTURE.md`：更新文件树职责说明；`progress.md`：追加本轮结果、测试、保护对象和回滚点。
+- 回滚方式：提交前执行 `git restore -- public/js/features/file-tree.js public/styles.css tests/file-editor-ui.test.js tests/browser-performance.test.js README.md docs/ARCHITECTURE.md progress.md`；提交后执行 `git revert <本轮提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。

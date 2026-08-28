@@ -47,10 +47,8 @@ function treeNodeHtml(node, depth, options = {}, parentPath = "") {
           <div class="tree-head">
             <button class="tree-toggle" type="button" aria-expanded="true">
               <span class="tree-caret"></span>
-              <span class="tree-folder" title="${escapeAttr(dir.name)}">${escapeHtml(dir.name)}</span>
-              <span class="tree-count">${count}</span>
             </button>
-            ${selectionScope ? treeFolderSelectHtml(directoryPath, selectionScope) : ""}
+            ${selectionScope ? treeFolderSelectHtml(directoryPath, selectionScope, dir.name, count) : treeFolderLabelHtml(dir.name, count)}
           </div>
           <div class="tree-children">${treeNodeHtml(dir, depth + 1, options, directoryPath)}</div>
         </div>
@@ -61,10 +59,22 @@ function treeNodeHtml(node, depth, options = {}, parentPath = "") {
   return `${dirs}${rows}`;
 }
 
-function treeFolderSelectHtml(directoryPath, scope) {
+function treeFolderLabelHtml(name, count) {
   return `
-    <button class="tree-folder-select" type="button" data-select-folder data-scope="${escapeAttr(scope)}" data-folder-path="${escapeAttr(directoryPath)}" aria-checked="false" role="checkbox" aria-label="${escapeAttr(t("选择此文件夹下的所有更改"))}" title="${escapeAttr(t("选择此文件夹下的所有更改"))}">
-      <span class="tree-folder-check" aria-hidden="true"></span>
+    <div class="tree-folder-label">
+      <span class="tree-folder-icon" aria-hidden="true"></span>
+      <span class="tree-folder" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+      <span class="tree-count">${count}</span>
+    </div>
+  `;
+}
+
+function treeFolderSelectHtml(directoryPath, scope, name, count) {
+  return `
+    <button class="tree-folder-select" type="button" data-select-folder data-scope="${escapeAttr(scope)}" data-folder-path="${escapeAttr(directoryPath)}" aria-pressed="false" aria-label="${escapeAttr(t("选择此文件夹下的所有更改"))}" title="${escapeAttr(t("选择此文件夹下的所有更改"))}">
+      <span class="tree-folder-icon" aria-hidden="true"></span>
+      <span class="tree-folder" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+      <span class="tree-count">${count}</span>
     </button>
   `;
 }
@@ -398,7 +408,7 @@ function refreshChangeSelectionUi() {
       const selected = folderStates[scope]?.get(path) || { total: 0, selected: 0 };
       const checked = selected.total > 0 && selected.selected === selected.total;
       const mixed = selected.selected > 0 && !checked;
-      button.setAttribute("aria-checked", checked ? "true" : mixed ? "mixed" : "false");
+      button.setAttribute("aria-pressed", checked ? "true" : mixed ? "mixed" : "false");
       button.title = t(checked ? "取消选择此文件夹下的所有更改" : "选择此文件夹下的所有更改");
       button.setAttribute("aria-label", button.title);
     });

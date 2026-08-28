@@ -63,6 +63,9 @@ test("file editor opens from worktree double-click and follows file selection wh
     previousDiffScript = position;
   }
   assert.match(fileTree, /function fileTreeHtml\(/);
+  assert.match(styles, /\.tree-folder-icon::before\s*\{/);
+  assert.match(styles, /\.tree-folder-select\[aria-pressed="true"\]/);
+  assert.doesNotMatch(styles, /\.tree-folder-check|aria-checked/);
   assert.match(fileTree, /function shortFileName\(/);
   assert.match(diffLoader, /async function ensureDiffWorkbenchLoaded\(/);
   assert.match(diffLoader, /function setActiveDiff\(/);
@@ -194,6 +197,45 @@ test("delegated worktree file events preserve selection, editing, context menus,
   assert.equal(folded, "collapsed");
 });
 
+test("folder selection uses a folder row button instead of checkbox semantics", async () => {
+  const listeners = new Map();
+  const selectedChanges = new Set();
+  let refreshes = 0;
+  const sandbox = {
+    state: {
+      data: { workingFiles: [{ file: "src/main.c", unstaged: true, staged: false }, { file: "src/lib/util.c", unstaged: true, staged: false }] },
+      selectedChanges,
+    },
+    changeGroups: (files) => ({ unstaged: files.filter((file) => file.unstaged), staged: files.filter((file) => file.staged) }),
+    filterWorkingFiles: (files) => files,
+    changeKey: (scope, file) => `${scope}:${file}`,
+    refreshChangeSelectionUi: () => { refreshes += 1; },
+  };
+  vm.runInNewContext(fileTree, sandbox);
+  sandbox.refreshChangeSelectionUi = () => { refreshes += 1; };
+  const rootElement = {
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    contains: () => true,
+  };
+  sandbox.bindFileTree(rootElement, { selectionScope: "unstaged" });
+  const folder = { dataset: { scope: "unstaged", folderPath: "src" } };
+  let prevented = false;
+  let stopped = false;
+  const clickEvent = {
+    target: { closest: (selector) => selector === "[data-select-folder]" ? folder : null },
+    ctrlKey: true,
+    preventDefault: () => { prevented = true; },
+    stopPropagation: () => { stopped = true; },
+  };
+
+  await listeners.get("click")(clickEvent);
+
+  assert.deepEqual([...selectedChanges], ["unstaged:src/main.c", "unstaged:src/lib/util.c"]);
+  assert.equal(refreshes, 1);
+  assert.equal(prevented, true);
+  assert.equal(stopped, true);
+});
+
 test("worktree and staged trees select complete folders without expanding virtualized rows", () => {
   const files = Array.from({ length: 1200 }, (_value, index) => ({
     file: `src/hidden/file-${String(index).padStart(4, "0")}.txt`,
@@ -223,6 +265,9 @@ test("worktree and staged trees select complete folders without expanding virtua
 
   const markup = sandbox.fileTreeHtml(files.slice(0, 800), { selectionScope: "unstaged", totalFiles: files });
   assert.match(markup, /data-select-folder/);
+  assert.match(markup, /class="tree-folder-icon"/);
+  assert.match(markup, /aria-pressed="false"/);
+  assert.doesNotMatch(markup, /role="checkbox"|aria-checked=|tree-folder-check/);
   assert.match(markup, /class="tree-toggle"/);
   assert.doesNotMatch(sandbox.fileTreeHtml(files.slice(0, 2), { mode: "commit" }), /data-select-folder/);
 

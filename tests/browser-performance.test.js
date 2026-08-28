@@ -1694,7 +1694,7 @@ test("real Chromium keeps historical file comparison responsive", {
     let folderSelectionRows;
     let folderSelectionCount;
     let folderSelectionLimit;
-    let folderSelectionChecked;
+    let folderSelectionPressed;
     let folderSelectionCleared;
     let filteredRows;
     let filteredFile;
@@ -1719,7 +1719,7 @@ test("real Chromium keeps historical file comparison responsive", {
       folderSelectionRows = document.querySelectorAll("#changeList .file-row[data-file]").length;
       folderSelectionCount = state.selectedChanges.size;
       folderSelectionLimit = state.worktreeRenderLimits.unstaged;
-      folderSelectionChecked = folderSelect.getAttribute("aria-checked");
+      folderSelectionPressed = folderSelect.getAttribute("aria-pressed");
       folderSelect.click();
       folderSelectionCleared = state.selectedChanges.size;
       const filterStarted = performance.now();
@@ -1785,7 +1785,7 @@ test("real Chromium keeps historical file comparison responsive", {
       folderSelectionRows,
       folderSelectionCount,
       folderSelectionLimit,
-      folderSelectionChecked,
+      folderSelectionPressed,
       folderSelectionCleared,
       filteredRows,
       filteredFile,
@@ -1818,7 +1818,7 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(worktreeMetrics.folderSelectionRows, worktreeMetrics.initialRenderedRows);
   assert.equal(worktreeMetrics.folderSelectionCount, worktreeMetrics.loadedFiles);
   assert.equal(worktreeMetrics.folderSelectionLimit, 800);
-  assert.equal(worktreeMetrics.folderSelectionChecked, "true");
+  assert.equal(worktreeMetrics.folderSelectionPressed, "true");
   assert.equal(worktreeMetrics.folderSelectionCleared, 0);
   assert.equal(worktreeMetrics.filteredRows, 1);
   assert.match(worktreeMetrics.filteredFile, /file-03999\.txt$/);

@@ -2320,7 +2320,7 @@ button.file-row {
 
 .tree-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 26px minmax(0, 1fr);
   align-items: center;
   gap: 2px;
   width: 100%;
@@ -2337,12 +2337,13 @@ button.file-row {
 
 .tree-toggle {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: center;
+  justify-items: center;
   gap: 6px;
+  width: 26px;
   min-width: 0;
   height: 28px;
-  padding: 0 4px 0 0;
+  padding: 0;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -2361,46 +2362,90 @@ button.file-row {
 
 .tree-folder-select {
   display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--teal);
+  color: var(--muted);
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
 }
 
 .tree-folder-select:hover {
-  background: color-mix(in srgb, var(--teal) 16%, transparent);
+  background: color-mix(in srgb, var(--panel-3) 84%, var(--teal) 16%);
 }
 
-.tree-folder-check {
+.tree-folder-select[aria-pressed="true"] {
+  background: linear-gradient(90deg, rgba(var(--teal-rgb), 0.18), transparent 72%), var(--panel-2);
+  box-shadow: inset 3px 0 0 var(--teal);
+  color: var(--text);
+}
+
+.tree-folder-select[aria-pressed="mixed"] {
+  background: linear-gradient(90deg, rgba(var(--blue-rgb), 0.14), transparent 72%), var(--panel-2);
+  box-shadow: inset 3px 0 0 var(--blue);
+  color: var(--text);
+}
+
+.tree-folder-label {
   display: grid;
-  place-items: center;
-  width: 12px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+}
+
+.tree-folder-icon {
+  position: relative;
+  width: 16px;
   height: 12px;
-  border: 1px solid var(--quiet);
-  border-radius: 3px;
-  color: var(--panel);
-  font-size: 10px;
-  font-weight: 900;
-  line-height: 1;
+  border: 1px solid var(--amber);
+  border-radius: 2px 3px 3px 3px;
+  background: color-mix(in srgb, var(--amber) 72%, var(--panel-2));
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
 }
 
-.tree-folder-select[aria-checked="true"] .tree-folder-check,
-.tree-folder-select[aria-checked="mixed"] .tree-folder-check {
+.tree-folder-icon::before {
+  position: absolute;
+  top: -4px;
+  left: 1px;
+  width: 7px;
+  height: 4px;
+  border: 1px solid var(--amber);
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--amber) 72%, var(--panel-2));
+  content: "";
+}
+
+.tree-folder-select[aria-pressed="true"] .tree-folder-icon {
   border-color: var(--teal);
-  background: var(--teal);
+  background: color-mix(in srgb, var(--teal) 72%, var(--panel-2));
 }
 
-.tree-folder-select[aria-checked="true"] .tree-folder-check::before {
-  content: "✓";
+.tree-folder-select[aria-pressed="true"] .tree-folder-icon::before {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 72%, var(--panel-2));
 }
 
-.tree-folder-select[aria-checked="mixed"] .tree-folder-check::before {
-  content: "−";
+.tree-folder-select[aria-pressed="mixed"] .tree-folder-icon {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 62%, var(--panel-2));
+}
+
+.tree-folder-select[aria-pressed="mixed"] .tree-folder-icon::before {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 62%, var(--panel-2));
 }
 
 .tree-caret {
