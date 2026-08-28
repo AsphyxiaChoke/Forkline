@@ -10537,3 +10537,22 @@
 
 - 修改文件：`package.json`：版本升至 `0.4.11`；`package-lock.json`：同步根包版本；`tests/installer-package.test.js`：同步安装器版本契约；`docs/PACKAGING.md`：追加 v0.4.11 构建、校验和安装现场；`docs/CONTINUE.md`：追加 v0.4.11 发布准备与剩余动作；`progress.md`：追加本轮闭环记录。
 - 回滚方式：提交前执行 `git restore -- package.json package-lock.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签或触碰 `D:\Forkline`。
+
+## 2026-08-28 - Task: Forkline v0.4.11 正式 Release 验收
+
+### What was done
+
+- 创建并推送不可移动的 `v0.4.11` 注释标签和中文正式 GitHub Release；两条 Windows x64 工作流均成功，正式附件已完成远端验真。
+
+### Testing
+
+- Release ID `378355055`，状态为正式版、非草稿、非预发布；标签目标为 `330bbf4209e8ad37148b8a9bf01c389fce4d2971`。
+- 安装器工作流 `33156145227`、便携包工作流 `33156145225` 均为 `success`。
+- 六个附件的本机 SHA-256 均与 GitHub digest 一致：EXE `f975eebc5d4d6a6ecf6efd7c3614d26b5971b6620b175d992bd11e1d6ffacbc9`；blockmap `581d20d371176f6e9f67b2b9414c4cbaa6b5eabcc012b73680405f782ba7b7ff`；EXE 校验文件 `d1970e246629a5923ea0ff2c1e0c3073e3320b92711ccbcbda0da9d6c294e018`；ZIP `bc94b72015dcecdb120a3fcb0f28c9136f9d82eff1137601d32bdcc9feb418d5`；ZIP 校验文件 `0e6e668423516ff971329f449da68af444ec3f9af9721cd3c0d08b0032a7470f`；`latest.yml` `56290878d2ff8917fa4d4c95918b292236b516236017110c1b5f19838ad3a677`。
+- `latest.yml` 版本、文件名、安装器大小和 SHA-512 一致；便携 ZIP 内容检查通过，安装器 Authenticode 为 `NotSigned`。本机构建和远端发布说明均保留未签名风险。
+- `npm.cmd test`：`399/399`；`npm.cmd run test:browser`：`1/1`；隔离安装启动兼容性验证和静默卸载异常已在前一轮记录。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`：追加 v0.4.11 正式 Release、工作流和六附件验收；`docs/CONTINUE.md`：追加正式发布完成状态；`progress.md`：追加本轮远端验收记录。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮发布验收文档提交>`。不删除 Release 附件，不移动任何既有标签，不触碰 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 或 `D:\Forkline`。

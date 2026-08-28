@@ -379,3 +379,12 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 隔离当前用户静默安装退出码为 `0`，安装目录生成程序和卸载器。无兼容性启动参数时，本机 Electron GPU 子进程因环境 DLL/图形能力异常退出；使用仅用于本机验收的 `--no-sandbox --disable-gpu --disable-gpu-compositing --disable-features=VizDisplayCompositor` 参数后，真实安装版后台监听 `127.0.0.1:56572`，首页和 `/api/state?details=core` 均 HTTP `200`，`/api/app-update` 显示当前版本 `0.4.11`。
 - 本轮静默安装未生成该临时目录对应的可见 HKCU 卸载登记或快捷方式；静默卸载器退出码为 `0`，但未清理该临时安装目录。该现象按异常记录，不能写成标准交互式安装/卸载通过；现有 `D:\Forkline` 程序、登记和桌面/开始菜单快捷方式未触碰。
 - 正式发布仍需在本轮提交推送后创建不可移动的 `v0.4.11` Release，由安装器和便携包工作流构建正式附件，再核对六个附件、GitHub digest、两个 `.sha256`、`latest.yml` 和便携 ZIP 内容。安装器未签名、未知发布者和 SmartScreen 风险必须保留在中文发布说明中。
+
+## v0.4.11 正式 Release 验收
+
+- 正式 Release：[Forkline v0.4.11](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.11) 已创建，Release ID 为 `378355055`，为正式版、非草稿、非预发布；`v0.4.11` 标签固定指向提交 `330bbf4209e8ad37148b8a9bf01c389fce4d2971`，`v0.4.9` 和 `v0.4.10` 标签未移动。
+- 安装器工作流 [33156145227](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33156145227) 和便携包工作流 [33156145225](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33156145225) 均成功；中文发布说明已确认发布。
+- 六个正式附件均为 `uploaded`，本机重新下载后 SHA-256 与 GitHub Release digest 全部一致：安装器 `104606205` 字节 / `f975eebc5d4d6a6ecf6efd7c3614d26b5971b6620b175d992bd11e1d6ffacbc9`；blockmap `111538` 字节 / `581d20d371176f6e9f67b2b9414c4cbaa6b5eabcc012b73680405f782ba7b7ff`；安装器校验文件 `103` 字节 / `d1970e246629a5923ea0ff2c1e0c3073e3320b92711ccbcbda0da9d6c294e018`；便携 ZIP `36832097` 字节 / `bc94b72015dcecdb120a3fcb0f28c9136f9d82eff1137601d32bdcc9feb418d5`；ZIP 校验文件 `100` 字节 / `0e6e668423516ff971329f449da68af444ec3f9af9721cd3c0d08b0032a7470f`；`latest.yml` `372` 字节 / `56290878d2ff8917fa4d4c95918b292236b516236017110c1b5f19838ad3a677`。
+- `latest.yml` 的版本为 `0.4.11`，安装器大小为 `104606205`，SHA-512 为 `mdTLbsXQzPYPgVvL8D59GnFTOP8bY95xnSHUup/SvJHTQH1jrWVLxlAailv75EwfatuxWMxVZxe3jpQAvqzXYA==`；两个 `.sha256` 文件分别匹配安装器和便携 ZIP，便携 ZIP 保留 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码和 `docs/`。
+- 正式安装器 Authenticode 为 `NotSigned`，发布说明已标注未知发布者和 SmartScreen 风险；安装版继续使用 `electron-updater` 并在更新前优雅停止 Forkline 后台服务及 Git/SSH 子进程，Web、源码克隆和便携版继续使用原 Git 快进更新。
+- 正式附件验收完成。`n+fs.statSync(p.join('public'` 仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，`.playwright-cli/` 仍未跟踪；二者均未修改、暂存或提交。

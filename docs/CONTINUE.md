@@ -1392,3 +1392,11 @@
 - 隔离安装版在本机兼容性启动参数下实际提供首页和核心状态 HTTP `200`，当前版本接口为 `0.4.11`；无兼容参数的启动受本机 Electron GPU 子进程 DLL/图形环境异常影响，未把该环境现象误报为产品代码通过。
 - 静默安装和静默卸载均退出码 `0`，但临时目录未登记/未清理，故只记录安装文件和服务启动验证，不宣称标准交互式卸载通过。现有 `D:\Forkline` 及其快捷方式、用户数据未被覆盖。
 - 剩余动作：清理本轮明确创建的临时测试目录，显式暂存跟踪文件并提交推送 `main`，创建不可移动的 `v0.4.11` 标签和中文正式 Release，等待两条 Windows 工作流完成后核对六个正式附件。禁止移动 `v0.4.0` 至 `v0.4.10` 任一既有标签，继续保护 `.playwright-cli/` 和 `n+fs.statSync(p.join('public'`。
+
+## 2026-08-28 - Task: Forkline v0.4.11 正式 Release 验收完成
+
+- 已创建正式中文 Release：[Forkline v0.4.11](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.11)，Release ID `378355055`，非草稿、非预发布；`v0.4.11` 固定指向 `330bbf4209e8ad37148b8a9bf01c389fce4d2971`，未移动 `v0.4.0` 至 `v0.4.10` 任一既有标签。
+- 安装器工作流 `33156145227`、便携包工作流 `33156145225` 均成功；六个正式附件已上传并完成本机下载、GitHub digest、`.sha256`、`latest.yml` 和便携 ZIP 内容复核。
+- 正式附件：安装器 `104606205` 字节 / SHA-256 `f975eebc5d4d6a6ecf6efd7c3614d26b5971b6620b175d992bd11e1d6ffacbc9`；blockmap `111538` 字节 / `581d20d371176f6e9f67b2b9414c4cbaa6b5eabcc012b73680405f782ba7b7ff`；安装器 `.sha256` `d1970e246629a5923ea0ff2c1e0c3073e3320b92711ccbcbda0da9d6c294e018`；便携 ZIP `36832097` 字节 / `bc94b72015dcecdb120a3fcb0f28c9136f9d82eff1137601d32bdcc9feb418d5`；ZIP `.sha256` `0e6e668423516ff971329f449da68af444ec3f9af9721cd3c0d08b0032a7470f`；`latest.yml` `56290878d2ff8917fa4d4c95918b292236b516236017110c1b5f19838ad3a677`。
+- `latest.yml` 版本、安装器文件名、大小 `104606205` 和 SHA-512 `mdTLbsXQzPYPgVvL8D59GnFTOP8bY95xnSHUup/SvJHTQH1jrWVLxlAailv75EwfatuxWMxVZxe3jpQAvqzXYA==` 均匹配；安装器为 `NotSigned`，中文发布说明保留未知发布者和 SmartScreen 风险。
+- 当前 v0.4.11 发布闭环完成。后续维护继续保持 Web/源码克隆/便携版 Git 快进更新与 NSIS `electron-updater` 分流；更新前优雅停止 Forkline 后台服务和 Git/SSH 子进程。保护对象仍不得删除、修改、暂存或提交。
