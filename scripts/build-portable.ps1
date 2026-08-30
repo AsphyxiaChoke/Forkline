@@ -73,7 +73,7 @@ if ($ReleaseTag -ne "v$version") {
   throw "Release tag $ReleaseTag does not match package version $version."
 }
 
-$packageName = "Forkline-$ReleaseTag-windows-x64"
+$packageName = "Forkline-$ReleaseTag-windows-x64-portable"
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("forkline-portable-" + [guid]::NewGuid().ToString("N"))
 $packageDirectory = Join-Path $tempRoot $packageName
 $archiveName = "node-v$NodeVersion-win-x64.zip"

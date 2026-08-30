@@ -545,11 +545,11 @@ body.file-editor-window-resizing * {
 }
 
 .file-editor-merge .CodeMirror-merge-left .CodeMirror-merge-l-chunk {
-  background: color-mix(in srgb, var(--danger) 12%, var(--field));
+  background: color-mix(in srgb, var(--danger) 6%, var(--field));
 }
 
 .file-editor-merge .CodeMirror-merge-editor .CodeMirror-merge-l-chunk {
-  background: color-mix(in srgb, var(--green) 11%, var(--field));
+  background: color-mix(in srgb, var(--green) 5%, var(--field));
 }
 
 .file-editor-merge .CodeMirror-merge-left .CodeMirror-merge-l-chunk-start,
@@ -565,15 +565,31 @@ body.file-editor-window-resizing * {
 }
 
 .file-editor-merge .CodeMirror-merge-l-deleted {
-  background-color: color-mix(in srgb, var(--danger) 18%, transparent);
+  background-color: color-mix(in srgb, var(--danger) 8%, transparent);
   background-image: none;
   box-shadow: inset 0 -2px 0 var(--danger);
 }
 
 .file-editor-merge .CodeMirror-merge-l-inserted {
-  background-color: color-mix(in srgb, var(--green) 16%, transparent);
+  background-color: color-mix(in srgb, var(--green) 7%, transparent);
   background-image: none;
   box-shadow: inset 0 -2px 0 var(--green);
+}
+
+.file-editor-merge .CodeMirror-merge-l-deleted {
+  color: var(--diff-del-text);
+}
+
+.file-editor-merge .CodeMirror-merge-l-inserted {
+  color: var(--diff-add-text);
+}
+
+.file-editor-merge .CodeMirror-merge-l-deleted span[class*="cm-"] {
+  color: inherit;
+}
+
+.file-editor-merge .CodeMirror-merge-l-inserted span[class*="cm-"] {
+  color: inherit;
 }
 
 .file-editor-merge .cm-s-default .cm-comment {
@@ -807,6 +823,7 @@ html[data-window="file-editor"] .file-editor-modal.show {
 
 html[data-window="file-editor"] .file-editor-dialog {
   position: static;
+  grid-template-rows: var(--electron-titlebar-h) auto auto auto minmax(0, 1fr) auto;
   width: 100vw;
   height: 100vh;
   min-width: 0;
@@ -818,9 +835,36 @@ html[data-window="file-editor"] .file-editor-dialog {
   border-radius: 0;
 }
 
+html[data-window="file-editor"] .file-editor-dialog::before {
+  content: "";
+  grid-row: 1;
+  min-width: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--topbar);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.025);
+  -webkit-app-region: drag;
+}
+
 html[data-window="file-editor"] .file-editor-head {
   cursor: default;
   -webkit-app-region: drag;
+  grid-row: 2;
+}
+
+html[data-window="file-editor"] .file-editor-search {
+  grid-row: 3;
+}
+
+html[data-window="file-editor"] .file-editor-compare-labels {
+  grid-row: 4;
+}
+
+html[data-window="file-editor"] .file-editor-body {
+  grid-row: 5;
+}
+
+html[data-window="file-editor"] .file-editor-footer {
+  grid-row: 6;
 }
 
 html[data-window="file-editor"] .file-editor-head button,

@@ -60,6 +60,7 @@ test("portable release build preserves Git updates and verifies bundled Node", (
   const buildCommand = fs.readFileSync(path.join(root, "build-portable.cmd"), "utf8");
   const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "release-portable.yml"), "utf8");
   const packagingDoc = fs.readFileSync(path.join(root, "docs", "PACKAGING.md"), "utf8");
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
   assert.match(ignoreRules, /^\/dist\/$/m);
   assert.match(packageJson.scripts["build:portable"], /scripts\/build-portable\.ps1/);
@@ -73,8 +74,14 @@ test("portable release build preserves Git updates and verifies bundled Node", (
   assert.match(buildScript, /Forkline\.cmd/);
   assert.match(buildScript, /tar\.exe -a -c -f/);
   assert.match(buildScript, /\$packageName\/\.git\/HEAD/);
+  assert.match(buildScript, /\$packageName = "Forkline-\$ReleaseTag-windows-x64-portable"/);
   assert.match(workflow, /release:\s*\n\s*types: \[published\]/);
-  assert.match(workflow, /gh release upload \$tag dist\/\*\.zip dist\/\*\.sha256 --clobber/);
+  assert.match(workflow, /dist\/Forkline-v\*-windows-x64-portable\.zip/);
+  assert.match(workflow, /dist\/Forkline-v\*-windows-x64-portable\.zip\.sha256/);
+  assert.doesNotMatch(workflow, /gh release upload \$tag dist\/\*\.zip/);
+  assert.match(readme, /Forkline-v\*-windows-x64-portable\.zip/);
+  assert.match(readme, /GitHub 自动生成的[\s\S]*Source code \(zip\)[\s\S]*只是源码/);
   assert.match(packagingDoc, /应用内更新/);
   assert.match(packagingDoc, /强制终止/);
+  assert.match(packagingDoc, /windows-x64-portable/);
 });

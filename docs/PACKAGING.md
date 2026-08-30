@@ -13,8 +13,8 @@
 ### 产物
 
 ```text
-Forkline-v0.4.0-windows-x64.zip
-Forkline-v0.4.0-windows-x64.zip.sha256
+Forkline-v0.4.0-windows-x64-portable.zip
+Forkline-v0.4.0-windows-x64-portable.zip.sha256
 ```
 
 ZIP 内额外包含：
@@ -49,7 +49,7 @@ PORTABLE-INFO.txt
 
 ### Release 自动构建
 
-`.github/workflows/release-portable.yml` 在正式 Release 发布后构建并上传 ZIP 与 SHA256，也可以手动输入已有 Tag 重新构建并覆盖附件。
+`.github/workflows/release-portable.yml` 在正式 Release 发布后构建并上传名称包含 `-windows-x64-portable` 的 ZIP 与 SHA256，也可以手动输入已有 Tag 重新构建并覆盖附件。GitHub 页面中的 `Source code (zip)` 只是源码快照，不是便携包。
 
 `v0.3.0` 早于该工作流加入，因此首次便携附件由本地执行相同脚本构建并上传；后续 Release 走自动工作流。
 
@@ -62,7 +62,7 @@ PORTABLE-INFO.txt
 - Forkline 源码继续由现有应用内更新流程获取正式 Release Tag 并执行快进更新。
 - 内置 Node 不属于 Git 跟踪文件，普通源码更新不会替换运行时。
 - 只有需要升级 Node 运行时时，才重新下载新的完整便携包。
-- GitHub 自动生成的 Source code ZIP 不含 `.git`，不能替代便携附件，也不能执行应用内一键更新。
+- GitHub 自动生成的 `Source code (zip)` 不含 `.git`、内置 Node.js 或 `Forkline.cmd`，不能替代名称包含 `-windows-x64-portable.zip` 的便携附件，也不能执行应用内一键更新。
 
 ### 发布验证
 
@@ -388,3 +388,15 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `latest.yml` 的版本为 `0.4.11`，安装器大小为 `104606205`，SHA-512 为 `mdTLbsXQzPYPgVvL8D59GnFTOP8bY95xnSHUup/SvJHTQH1jrWVLxlAailv75EwfatuxWMxVZxe3jpQAvqzXYA==`；两个 `.sha256` 文件分别匹配安装器和便携 ZIP，便携 ZIP 保留 `.git`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、源码和 `docs/`。
 - 正式安装器 Authenticode 为 `NotSigned`，发布说明已标注未知发布者和 SmartScreen 风险；安装版继续使用 `electron-updater` 并在更新前优雅停止 Forkline 后台服务及 Git/SSH 子进程，Web、源码克隆和便携版继续使用原 Git 快进更新。
 - 正式附件验收完成。`n+fs.statSync(p.join('public'` 仍为 0 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，`.playwright-cli/` 仍未跟踪；二者均未修改、暂存或提交。
+
+## v0.4.12 Issue 修复发布准备
+
+- v0.4.12 汇总 Issue #10、#9 和 #1 的修复：便携包明确使用 `Forkline-v<version>-windows-x64-portable.zip` 并与 GitHub `Source code (zip)` 区分；Electron 独立编辑器预留 Windows 原生标题栏区域；Diff 变更文本使用主题已有的高对比前景色并保留低浓度背景、边框和下划线。
+- Web、源码克隆和便携版继续使用现有 Git 快进更新；NSIS 安装版继续使用 `electron-updater`，安装更新前优雅停止 Forkline 后台服务及 Git/SSH 子进程。安装器仍为当前用户、可选目录、默认桌面和开始菜单快捷方式，未签名风险继续写入中文发布说明。
+- 当前工作树版本已升至 `0.4.12`，旧 `v0.4.0` 至 `v0.4.11` 标签保持不变；正式 Release 需从新的不可移动 `v0.4.12` 标签构建，不覆盖既有 Release。
+- 本地自动验证：`npm.cmd test` 为 `399/399`，`npm.cmd run test:browser` 为 `1/1`；Issue #1 定向回归、安装器/便携包契约、Node 语法检查和 `git diff --check` 均通过。远端 Issue 关闭、推送、两条 Windows 工作流和六个正式附件验收仍待 GitHub 写权限恢复后执行。
+
+## v0.4.12 本机安装器构建验收
+
+- 本机构建 `Forkline-Setup-0.4.12-windows-x64.exe` 成功，文件大小 `104610372` 字节，SHA-256 `5fdb54c89316c276474cd7b2532265d382196d3f81063daf8352fdbcbd86159f`；blockmap 大小 `111592` 字节。
+- 本机 `dist/installer/latest.yml` 版本为 `0.4.12`，文件名为 `Forkline-Setup-0.4.12-windows-x64.exe`，大小 `104610372`，SHA-512 与安装器一致；Authenticode 状态为 `NotSigned`。本机构建仅作验收证据，不能替代正式 Release 工作流产物。

@@ -873,26 +873,38 @@ test("Electron file editor uses a standalone window while Web keeps the in-page 
   assert.match(preload, /onOpenFileEditor/);
   assert.match(styles, /html\[data-window="file-editor"\] \.app-shell[\s\S]*display:\s*none/);
   assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-dialog[\s\S]*position:\s*static/);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-dialog\s*\{[^}]*grid-template-rows:\s*var\(--electron-titlebar-h\) auto auto auto minmax\(0, 1fr\) auto/s);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-dialog::before\s*\{[^}]*grid-row:\s*1[^}]*-webkit-app-region:\s*drag/s);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-head\s*\{[^}]*grid-row:\s*2/s);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-search\s*\{[^}]*grid-row:\s*3/s);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-compare-labels\s*\{[^}]*grid-row:\s*4/s);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-body\s*\{[^}]*grid-row:\s*5/s);
+  assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-footer\s*\{[^}]*grid-row:\s*6/s);
 });
 
 test("file editor merge highlights keep syntax text readable", () => {
   assert.match(
     styles,
-    /\.file-editor-merge \.CodeMirror-merge-left \.CodeMirror-merge-l-chunk\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--danger\) 12%, var\(--field\)\)/s
+    /\.file-editor-merge \.CodeMirror-merge-left \.CodeMirror-merge-l-chunk\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--danger\) 6%, var\(--field\)\)/s
   );
   assert.match(
     styles,
-    /\.file-editor-merge \.CodeMirror-merge-editor \.CodeMirror-merge-l-chunk\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--green\) 11%, var\(--field\)\)/s
+    /\.file-editor-merge \.CodeMirror-merge-editor \.CodeMirror-merge-l-chunk\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--green\) 5%, var\(--field\)\)/s
   );
   assert.match(
     styles,
-    /\.file-editor-merge \.CodeMirror-merge-l-deleted\s*\{[^}]*background-color:\s*color-mix\(in srgb, var\(--danger\) 18%, transparent\)/s
+    /\.file-editor-merge \.CodeMirror-merge-l-deleted\s*\{[^}]*background-color:\s*color-mix\(in srgb, var\(--danger\) 8%, transparent\)/s
   );
   assert.match(
     styles,
-    /\.file-editor-merge \.CodeMirror-merge-l-inserted\s*\{[^}]*background-color:\s*color-mix\(in srgb, var\(--green\) 16%, transparent\)/s
+    /\.file-editor-merge \.CodeMirror-merge-l-inserted\s*\{[^}]*background-color:\s*color-mix\(in srgb, var\(--green\) 7%, transparent\)/s
   );
   assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-(?:deleted|inserted)[^}]*box-shadow:[^}]*var\(--(?:danger|green)\)/s);
+  assert.doesNotMatch(styles, /var\(--(?:danger|green)\) (?:1[1-9]|[2-9]\d)%, (?:var\(--field\)|transparent)/);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-deleted\s*\{[^}]*color:\s*var\(--diff-del-text\)/s);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-inserted\s*\{[^}]*color:\s*var\(--diff-add-text\)/s);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-deleted span\[class\*="cm-"\]\s*\{[^}]*color:\s*inherit/s);
+  assert.match(styles, /\.file-editor-merge \.CodeMirror-merge-l-inserted span\[class\*="cm-"\]\s*\{[^}]*color:\s*inherit/s);
 });
 
 test("file editor maps working-tree selections to the matching Git hunk and line keys", () => {

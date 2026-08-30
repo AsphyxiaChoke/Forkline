@@ -198,7 +198,7 @@ Forkline 已经运行时，再通过 `start-electron.cmd "仓库路径"` 启动�
 - 准备阶段会显示 GitHub Release 的对象百分比和已接收 KiB/MiB；连接重置、超时、DNS/TLS 或 early EOF 等瞬时下载错误会有限重试，仍失败时不会写入新版本。
 - 更新失败时会分别说明文件是否已回退、旧服务是否恢复。更新前检查失败不会修改 Forkline 文件，原版本会继续运行。
 - 也可以双击 `pull-latest.cmd` 拉取 `origin/main`。脚本遇到本地修改、冲突、网络或认证问题时会停止，不会强制覆盖。
-- GitHub 自动生成的源码 ZIP：不包含 `.git`，不能一键更新；需要独立桌面窗口请下载 `Forkline-Setup-*-windows-x64.exe`，需要免安装 Web 版请下载 `Forkline-v*-windows-x64.zip`。
+- GitHub 自动生成的 `Source code (zip)` 只是源码快照，不包含 `.git`、内置 Node.js 或便携启动器，不能当作 Windows 便携版使用；需要独立桌面窗口请下载 `Forkline-Setup-*-windows-x64.exe`，需要免安装 Web 版请下载 `Forkline-v*-windows-x64-portable.zip`，然后双击其中的 `Forkline.cmd`。
 
 ## 开发与测试
 

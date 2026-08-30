@@ -33,8 +33,8 @@ jobs:
         with:
           name: Forkline-windows-portable
           path: |
-            dist/*.zip
-            dist/*.sha256
+            dist/Forkline-v*-windows-x64-portable.zip
+            dist/Forkline-v*-windows-x64-portable.zip.sha256
 
       - name: Attach assets to release
         shell: pwsh
@@ -42,4 +42,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'release') { '${{ github.event.release.tag_name }}' } else { '${{ inputs.tag }}' }
-          gh release upload $tag dist/*.zip dist/*.sha256 --clobber
+          gh release upload $tag dist/Forkline-v*-windows-x64-portable.zip dist/Forkline-v*-windows-x64-portable.zip.sha256 --clobber

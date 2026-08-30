@@ -10556,3 +10556,107 @@
 
 - 修改文件：`docs/PACKAGING.md`：追加 v0.4.11 正式 Release、工作流和六附件验收；`docs/CONTINUE.md`：追加正式发布完成状态；`progress.md`：追加本轮远端验收记录。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮发布验收文档提交>`。不删除 Release 附件，不移动任何既有标签，不触碰 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 或 `D:\Forkline`。
+
+## 2026-08-30 - Task: Issue #10 便携包与源码压缩包命名区分
+
+### What was done
+
+- 将 Windows Web 便携包命名统一为 `Forkline-v<version>-windows-x64-portable.zip` 及对应 SHA-256 文件，避免与 GitHub 自动生成的 `Source code (zip)` 混淆。
+- 收紧便携包 Release 工作流的上传匹配范围，并在 README 和发布文档中说明源码快照不包含 `.git`、内置 Node.js 或 `Forkline.cmd`，不能替代便携包。
+
+### Testing
+
+- 修复前新增命名回归契约按预期失败；修改后 `node --test tests/portable-runtime.test.js` 为 `2/2` 通过。
+- 契约覆盖构建脚本、Release 上传路径、README 下载说明和便携包文档命名。
+
+### Notes
+
+- 修改文件：`scripts/build-portable.ps1`：为便携包目录和归档使用明确的 `-windows-x64-portable` 后缀；`.github/workflows/release-portable.yml`：只上传明确命名的便携 ZIP 和校验文件；`tests/portable-runtime.test.js`：增加 Issue #10 命名与源码快照区分回归；`README.md`：说明 Release 便携包下载和启动入口；`docs/PACKAGING.md`：更新便携包产物和 Source code ZIP 边界；`progress.md`：追加本轮闭环记录。
+- 回滚方式：提交前执行 `git restore -- scripts/build-portable.ps1 .github/workflows/release-portable.yml tests/portable-runtime.test.js README.md docs/PACKAGING.md progress.md`；提交后执行 `git revert <Issue-10 修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动既有标签。
+
+## 2026-08-30 - Task: Issue #1 编辑器 Diff 高亮可读性
+
+### What was done
+
+- 降低文件编辑器中整行改动块与行内增删标记的红/绿色背景浓度，解决两层背景叠加后压低语法文字对比度的问题。
+- 保留改动块边框、行内下划线和原有语法高亮，补充 Electron 文档说明该可读性边界。
+
+### Testing
+
+- 修复前新增的高亮浓度回归测试按预期失败；修改后 `node --test --test-name-pattern "file editor merge highlights keep syntax text readable" tests/file-editor-ui.test.js` 通过。
+- 回归契约确认改动背景浓度为删除 `6%/8%`、新增 `5%/7%`，并确认边框/下划线仍存在。
+
+### Notes
+
+- 修改文件：`public/file-editor.css`：降低 CodeMirror 改动块和行内标记背景浓度；`tests/file-editor-ui.test.js`：增加双层高亮浓度回归断言；`docs/ELECTRON_DESKTOP.md`：说明 Diff 高亮的可读性策略；`progress.md`：追加本轮闭环记录。
+- 回滚方式：提交前执行 `git restore -- public/file-editor.css tests/file-editor-ui.test.js docs/ELECTRON_DESKTOP.md progress.md`；提交后执行 `git revert <Issue-1 修复提交>`。不得触碰 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 或任何既有标签。
+
+## 2026-08-30 - Task: Issue #9 独立编辑器窗口按钮重叠
+
+### What was done
+
+- 为 Electron 独立文件编辑器窗口增加与主窗口一致的 Windows 原生标题栏安全区：顶部使用 `titlebar-area-height` 预留拖动区域，编辑器标题栏和业务按钮整体下移到原生最小化、最大化、关闭按钮区域之下。
+- 保留编辑器自定义关闭、查找替换和对照模式按钮，Web 浏览器内的浮动编辑器布局不变。
+
+### Testing
+
+- 修复前新增的独立窗口标题栏布局回归测试按预期失败；修改后 `node --test --test-name-pattern "Electron file editor uses a standalone window" tests/file-editor-ui.test.js` 通过。
+- 回归契约确认独立窗口包含标题栏占位、拖动区域及连续的标题栏、搜索、对照、编辑区和底栏网格行。
+
+### Notes
+
+- 修改文件：`public/file-editor.css`：为独立编辑器窗口增加原生标题栏占位行并调整各业务区域网格行；`tests/file-editor-ui.test.js`：增加 Issue #9 标题栏布局回归断言；`docs/ELECTRON_DESKTOP.md`：更新主窗口和独立编辑器窗口的标题栏边界；`progress.md`：追加本轮闭环记录。
+- 回滚方式：提交前执行 `git restore -- public/file-editor.css tests/file-editor-ui.test.js docs/ELECTRON_DESKTOP.md progress.md`；提交后执行 `git revert <Issue-9 修复提交>`。不得触碰 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 或任何既有标签。
+
+## 2026-08-30 - Task: Issue #1 最新反馈的 Diff 文字对比度
+
+### What was done
+
+- 根据 Issue #1 的最新反馈，保留低浓度改动背景，并让新增/删除标记及其 CodeMirror 语法子节点使用主题已有的高对比 Diff 前景色，避免语法色与同色改动背景叠加后难以阅读。
+
+### Testing
+
+- 修复前新增的前景色回归断言按预期失败；修复后 `node --test --test-name-pattern "file editor merge highlights keep syntax text readable" tests/file-editor-ui.test.js` 通过。
+- `npm.cmd test`：`399/399` 通过，0 失败、0 取消、0 跳过。
+- `npm.cmd run test:browser`：`1/1` 通过；真实 Chromium 4000 文件冷 API `288.2 ms`，无性能回退。
+- `node --check tests/file-editor-ui.test.js` 和 `git diff --check` 通过。
+
+### Notes
+
+- 修改文件：`public/file-editor.css`：为 CodeMirror 新增/删除文本补充高对比 Diff 前景色继承；`tests/file-editor-ui.test.js`：增加前景色与语法子节点继承回归契约；`docs/ELECTRON_DESKTOP.md`：记录 Diff 前景色策略；`progress.md`：追加本轮验证与回滚点。
+- 回滚方式：提交前执行 `git restore -- public/file-editor.css tests/file-editor-ui.test.js docs/ELECTRON_DESKTOP.md progress.md`；提交后执行 `git revert <Issue-1 对比度修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-30 - Task: Forkline v0.4.12 版本准备
+
+### What was done
+
+- 将产品版本从 `0.4.11` 升至 `0.4.12`，同步锁文件和安装器版本契约；将 Issue #10、#9、#1 的已验证修复作为本次发布候选内容。
+
+### Testing
+
+- `node -e` 版本一致性检查通过，`package.json`、`package-lock.json` 和根包版本均为 `0.4.12`。
+- `node --test tests/installer-package.test.js tests/portable-runtime.test.js`：`4/4` 通过。
+- 版本升档前后的 `npm.cmd test` 均为 `399/399`；版本升档前后的 `npm.cmd run test:browser` 均为 `1/1`。
+- `git diff --check` 通过；使用 scoped GitHub 网络路径读取远端 HEAD 成功。
+
+### Notes
+
+- 修改文件：`package.json`：版本升至 `0.4.12`；`package-lock.json`：同步根版本；`tests/installer-package.test.js`：同步安装器版本契约；`docs/PACKAGING.md`、`docs/CONTINUE.md`：记录 v0.4.12 发布边界和续接顺序；`progress.md`：追加本轮版本准备、验证和回滚点。
+- 回滚方式：提交前执行 `git restore -- package.json package-lock.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <v0.4.12 版本准备提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-30 - Task: Forkline v0.4.12 本机安装器构建
+
+### What was done
+
+- 使用当前 v0.4.12 工作树成功构建 Windows x64 NSIS 安装器，并确认本机元数据与产物一致；正式发布仍以新标签上的 GitHub Windows 工作流为准。
+
+### Testing
+
+- `npm.cmd run build:installer` 成功；安装器 `Forkline-Setup-0.4.12-windows-x64.exe` 为 `104610372` 字节，SHA-256 `5fdb54c89316c276474cd7b2532265d382196d3f81063daf8352fdbcbd86159f`。
+- blockmap 为 `111592` 字节；`latest.yml` 显示版本 `0.4.12`、安装器文件名和大小 `104610372`，SHA-512 与安装器一致。
+- `Get-AuthenticodeSignature` 显示 `NotSigned`；未将本机产物宣称为正式 Release 附件。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`、`docs/CONTINUE.md`：记录 v0.4.12 本机安装器构建证据和正式工作流边界；`progress.md`：追加本轮构建验证与回滚点。`dist/installer` 为构建输出，不作为源码变更提交。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <v0.4.12 本机安装器构建记录提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
