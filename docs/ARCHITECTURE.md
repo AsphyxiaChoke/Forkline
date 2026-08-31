@@ -52,7 +52,7 @@
 - `public/js/features/file-tree.js`、`diff-renderer.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、供同步/比较等页面共用的双栏 Diff 基础渲染，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu/scroll 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。工作区与暂存区超过 800 个文件时先渲染首批，接近底部滚动或点击“继续显示”后按 400 个增量合并目录节点；目录数量仍按完整文件集合计算。目录节点的左侧箭头只负责展开/折叠，工作区和暂存区使用文件夹行按钮选择该目录下的全部当前范围改动，选中状态用文件夹图标和行高亮表达，不使用 checkbox；普通文件单击只更新选择和文件上下文，不读取隐藏 Diff。
 - `public/js/features/diff-workbench-loader.js`：首屏 Diff 轻量门面，保留文件状态/范围判断、活动 Diff 清理、弹窗关闭和焦点恢复能力；第一次显式打开“查看对照”时并行载入 `diff-workbench.css` 与有序脚本链 `diff-selection.js`、`diff-workbench.js`，三者完成后才进入工作台。并发入口共用一个 Promise，脚本或样式失败时只移除并重试失败资源。
 - `public/js/features/diff-workbench.js`、`diff-selection.js`：按需载入后负责工作区 Diff 读取、反馈、最大化渲染、按块/按行操作和滚动位置恢复。已从布局移除的内联对照容器只保留活动 Diff 状态并清空旧节点，不再生成隐藏副本；实际行节点只在最大化弹窗中按首批最多 1000 行渲染。
-- `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时先复用右键菜单样式，并等待 `file-editor.css` 与 CodeMirror 样式全部就绪。脚本按依赖层载入：同层 CodeMirror 插件和语言模式并行请求，`JSX / HTMLMixed / Markdown / Dockerfile` 等待各自基础模式，PHP 再等待 HTMLMixed 与 C-like；五个 Forkline 编辑器模块继续按原顺序执行。所有入口共享同一个进行中的加载 Promise，失败后只重试未成功资源，再绑定编辑器专属事件。
+- `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时先复用右键菜单样式，并等待 `file-editor.css` 与 CodeMirror 样式全部就绪。脚本按依赖层载入：同层 CodeMirror 插件和语言模式并行请求，`JSX / HTMLMixed / Markdown / Dockerfile` 等待各自基础模式，PHP 再等待 HTMLMixed 与 C-like；五个 Forkline 编辑器模块继续按原顺序执行。所有入口共享同一个进行中的加载 Promise；同一仓库、文件、来源和查看上下文的切换/打开请求还共享同一个进行中的打开 Promise，避免单击与双击在文件尚未显示时重复创建编辑器。仓库切换、文件或来源变化会形成不同请求，失败后只重试未成功资源，再绑定编辑器专属事件。
 - `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：按需载入后分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；两种路径都只允许编辑中间的合并结果。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
@@ -244,7 +244,7 @@
 - `tests/i18n.test.js` 覆盖语言标准化、中文默认、英文切换、浏览器持久化、静态文案回切，以及路径和原始 Git 输出不被翻译。
 - `tests/startup-resource-budget.test.js` 解析 `public/index.html` 的首屏样式和脚本，限制最多 37 个本地资源、总量不超过 750 KiB，并固定文件编辑器、设置页、工作区管理、文件追踪、操作日志、仓库工具面板、右键菜单和 Diff 工作台专用样式、CodeMirror、编辑器实现模块、Diff 工作台与按行操作实现、完整右键菜单、目录选择与命令面板实现、设置/储藏/标签/恢复点/工作区管理/文件追踪/同步认证面板和完整英文词典继续按需加载。
 - `tests/diff-workbench-loader.test.js` 覆盖 Diff 脚本与完整样式的首屏排除、专用样式与两份有序实现的并发复用、脚本/样式独立失败重试，以及实现未载入时文件列表仍需要的状态清理和范围判断。
-- `tests/context-menu-loader.test.js` 覆盖完整实现和菜单样式的首屏排除、首次右键并行加载、并发入口复用，以及脚本/样式独立失败重试；文件编辑器加载器专项同时验证共享菜单样式只请求一次。
+- `tests/context-menu-loader.test.js` 覆盖完整实现和菜单样式的首屏排除、首次右键并行加载、并发入口复用，以及脚本/样式独立失败重试；文件编辑器加载器专项同时验证共享菜单样式只请求一次、单击切换与双击打开只执行一次同文件请求，以及切仓后不复用旧请求。
 - `tests/folder-command-loader.test.js` 覆盖目录/命令入口并发复用、失败重试，以及完整实现未载入时右栏上下文仍可切换。
 - API 集成测试覆盖中文仓库名、中文提交信息和中文分支名在英文响应中保持原值，同时验证默认中文、英文错误和不支持语言回退中文。
 - `tests/diff-preview.test.js` 验证聚合提交预览最多渲染 400 行，小 Diff 保持完整。

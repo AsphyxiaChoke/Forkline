@@ -50,6 +50,39 @@ const fileEditorScriptResources = fileEditorScriptResourceGroups.flat();
 
 let fileEditorLoadPromise = null;
 let fileEditorEventsBound = false;
+let fileEditorOpenRequest = null;
+
+function fileEditorOpenRequestKey(filePath, previousFilePath = "", options = {}, repoPath = "") {
+  const recoveryDraft = options.recoveryDraft && typeof options.recoveryDraft === "object"
+    ? [String(options.recoveryDraft.snapshot || ""), String(options.recoveryDraft.content || "")]
+    : null;
+  return JSON.stringify([
+    String(filePath || ""),
+    String(previousFilePath || ""),
+    String(repoPath || ""),
+    options.source === "commit" ? "commit" : "worktree",
+    String(options.commit || ""),
+    Boolean(options.force),
+    Boolean(options.reload),
+    recoveryDraft,
+  ]);
+}
+
+function shareFileEditorOpenRequest(filePath, previousFilePath, options, repoPath, operation) {
+  const key = fileEditorOpenRequestKey(filePath, previousFilePath, options, repoPath);
+  if (fileEditorOpenRequest?.key === key) return fileEditorOpenRequest.promise;
+  const promise = Promise.resolve().then(operation);
+  fileEditorOpenRequest = { key, promise };
+  promise.then(
+    () => {
+      if (fileEditorOpenRequest?.promise === promise) fileEditorOpenRequest = null;
+    },
+    () => {
+      if (fileEditorOpenRequest?.promise === promise) fileEditorOpenRequest = null;
+    }
+  );
+  return promise;
+}
 
 function fileEditorResourceElement(resource) {
   return Array.from(document.querySelectorAll("[data-file-editor-resource]")).find((element) => element.dataset.fileEditorResource === resource) || null;
@@ -167,36 +200,43 @@ function bindFileEditorEvents() {
 async function openFileEditorLazy(filePath, previousFilePath = "", options = {}) {
   const desktop = typeof window === "object" ? window.forklineDesktop : null;
   const standalone = typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow();
-  if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
-    return desktop.openFileEditorWindow(
-      filePath,
-      previousFilePath,
-      options.source === "commit" ? "commit" : "worktree",
-      options.source === "commit" ? options.commit : ""
-    );
-  }
   const repoPath = repoPathSnapshot();
-  await ensureFileEditorLoaded();
-  if (!isCurrentRepoPath(repoPath)) return false;
-  return openFileEditor(filePath, previousFilePath, options);
+  return shareFileEditorOpenRequest(filePath, previousFilePath, options, repoPath, async () => {
+    if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
+      return desktop.openFileEditorWindow(
+        filePath,
+        previousFilePath,
+        options.source === "commit" ? "commit" : "worktree",
+        options.source === "commit" ? options.commit : ""
+      );
+    }
+    await ensureFileEditorLoaded();
+    if (!isCurrentRepoPath(repoPath)) return false;
+    return openFileEditor(filePath, previousFilePath, options);
+  });
 }
 
 async function openCommitFileViewerLazy(filePath, previousFilePath = "", commitSha = "") {
   const desktop = typeof window === "object" ? window.forklineDesktop : null;
   const standalone = typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow();
-  if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
-    return desktop.openFileEditorWindow(filePath, previousFilePath, "commit", commitSha);
-  }
   const repoPath = repoPathSnapshot();
-  await ensureFileEditorLoaded();
-  if (!isCurrentRepoPath(repoPath)) return false;
-  return openCommitFileViewer(filePath, previousFilePath, commitSha);
+  const options = { source: "commit", commit: commitSha };
+  return shareFileEditorOpenRequest(filePath, previousFilePath, options, repoPath, async () => {
+    if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
+      return desktop.openFileEditorWindow(filePath, previousFilePath, "commit", commitSha);
+    }
+    await ensureFileEditorLoaded();
+    if (!isCurrentRepoPath(repoPath)) return false;
+    return openCommitFileViewer(filePath, previousFilePath, commitSha);
+  });
 }
 
 async function switchOpenFileEditorLazy(filePath, previousFilePath = "") {
   if (!els.fileEditorModal.classList.contains("show")) return true;
   const repoPath = repoPathSnapshot();
-  await ensureFileEditorLoaded();
-  if (!isCurrentRepoPath(repoPath)) return false;
-  return switchOpenFileEditor(filePath, previousFilePath);
+  return shareFileEditorOpenRequest(filePath, previousFilePath, {}, repoPath, async () => {
+    await ensureFileEditorLoaded();
+    if (!isCurrentRepoPath(repoPath)) return false;
+    return switchOpenFileEditor(filePath, previousFilePath);
+  });
 }

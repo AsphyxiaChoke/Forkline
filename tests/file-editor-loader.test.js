@@ -158,3 +158,51 @@ test("a file editor open waiting for resources is discarded after repository swi
   assert.equal(await opening, false);
   assert.deepEqual(sandbox.openCalls, []);
 });
+
+test("file editor switch and double-click open share one in-flight request", async () => {
+  const { sandbox } = createLoaderSandbox();
+  let releaseOpen;
+  let openCalls = 0;
+  const opening = new Promise((resolve) => {
+    releaseOpen = resolve;
+  });
+  sandbox.CodeMirror = function CodeMirror() {};
+  sandbox.els = { fileEditorModal: { classList: { contains: () => true } } };
+  sandbox.openFileEditor = async (...args) => {
+    openCalls += 1;
+    sandbox.openCalls.push(args);
+    await opening;
+    return true;
+  };
+  sandbox.switchOpenFileEditor = (...args) => sandbox.openFileEditor(...args);
+
+  const switching = vm.runInContext('switchOpenFileEditorLazy("src/main.c")', sandbox);
+  await new Promise((resolve) => setImmediate(resolve));
+  const doubleClickOpen = vm.runInContext('openFileEditorLazy("src/main.c")', sandbox);
+  releaseOpen();
+
+  assert.deepEqual(await Promise.all([switching, doubleClickOpen]), [true, true]);
+  assert.equal(openCalls, 1);
+  assert.deepEqual(sandbox.openCalls, [["src/main.c", ""]]);
+});
+
+test("file editor opens from a new repository do not reuse an old request", async () => {
+  const { sandbox } = createLoaderSandbox();
+  let openCalls = 0;
+  sandbox.CodeMirror = function CodeMirror() {};
+  sandbox.els = { fileEditorModal: { classList: { contains: () => true } } };
+  sandbox.openFileEditor = async (...args) => {
+    openCalls += 1;
+    sandbox.openCalls.push(args);
+    return true;
+  };
+  sandbox.switchOpenFileEditor = (...args) => sandbox.openFileEditor(...args);
+
+  const first = vm.runInContext('switchOpenFileEditorLazy("src/main.c")', sandbox);
+  await new Promise((resolve) => setImmediate(resolve));
+  sandbox.repoPath = "C:/other-repo";
+  const second = vm.runInContext('openFileEditorLazy("src/main.c")', sandbox);
+
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.equal(openCalls, 2);
+});

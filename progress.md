@@ -10706,3 +10706,24 @@
 - 修改文件：docs/PACKAGING.md：补充发布后严格性能复核的环境波动说明；docs/CONTINUE.md：记录后续发布前需在低负载环境复核性能门禁；progress.md：追加本轮诊断证据。
 - 已结束的精确测试进程树为正式仓库下 forkline-e2e-0818b 临时验收实例；未结束其他 Edge、系统或用户安装进程。未删除当前安装目录、卸载程序、.playwright-cli/ 或异常未跟踪文件。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <性能门禁诊断文档提交>`。不得修改性能阈值，不得移动任何既有标签。
+
+## 2026-08-31 - Task: 修复文件双击查看偶发卡死
+
+### What was done
+
+- 定位并修复工作区文件单击切换与双击查看在编辑器仍处于读取/准备状态时的并发竞争；同一仓库、文件、来源和查看上下文现在共享一个进行中的打开请求，避免重复销毁和创建编辑器。
+- 保持切仓过期保护：仓库路径纳入请求身份，切换仓库或目标文件变化不会错误复用旧请求；Web 页面编辑器和 Electron 独立编辑器窗口共用该保护。
+- 增加单元和真实 Chromium 回归，覆盖阻塞文件读取时的快速点击/双击、单击切换与双击打开去重，以及切仓后旧请求隔离。
+
+### Testing
+
+- `node --test tests/file-editor-loader.test.js`：`7/7` 通过。
+- `FORKLINE_BROWSER_PERFORMANCE_SCALE=3 npm.cmd run test:browser`：`1/1` 通过；真实 Chromium 场景确认快速点击/双击期间 `openCalls=1`、`/api/worktree-file` 请求数为 `1`，目标文件正常打开且 CodeMirror 双栏为 `2` 个。
+- `npm.cmd test`：`400/401` 通过；唯一失败仍为当前主机 4000 文件工作区冷 API 严格门禁（本次 `491.2 ms`，固定阈值 `350 ms`），未修改产品性能阈值。其余新增回归、Electron、Git/API 和 UI 测试均通过。
+- `node --check public/js/features/file-editor-loader.js tests/browser-performance.test.js tests/file-editor-loader.test.js` 与 `git diff --check` 通过。
+- 受保护未跟踪对象 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 未修改、未暂存、未提交；异常文件仍为 0 字节，SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`public/js/features/file-editor-loader.js`：增加同一打开请求的并发复用并保留仓库快照边界；`tests/file-editor-loader.test.js`：新增打开去重和切仓隔离回归；`tests/browser-performance.test.js`：新增真实快速点击/双击阻塞请求回归；`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：同步文件编辑器并发打开行为；`progress.md`：追加本轮实现、验证和回滚点。
+- 回滚方式：提交前执行 `git restore -- public/js/features/file-editor-loader.js tests/file-editor-loader.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/ELECTRON_DESKTOP.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮文件双击查看修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。

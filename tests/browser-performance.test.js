@@ -1107,6 +1107,69 @@ test("real Chromium keeps historical file comparison responsive", {
   await git(repo, ["checkout", "--", "small.c"]);
   await evaluate(cdp, "refreshWorktree(false)");
 
+  const raceFiles = [path.join(repo, "open-race-a.c"), path.join(repo, "open-race-b.c")];
+  await fs.writeFile(raceFiles[0], "int open_race_a = 1;\n", "utf8");
+  await fs.writeFile(raceFiles[1], "int open_race_b = 2;\n", "utf8");
+  let doubleClickRace;
+  try {
+    doubleClickRace = await evaluate(cdp, `(async () => {
+      await refreshWorktree(false);
+      await openFileEditorLazy("open-race-a.c");
+      const row = document.querySelector('#changeList [data-select-file][data-file="open-race-b.c"]');
+      const originalFetch = window.fetch;
+      const originalOpen = openFileEditor;
+      let openCalls = 0;
+      const releaseRequests = [];
+      window.fetch = (input, init) => {
+        const requestUrl = typeof input === "string" ? input : input?.url || "";
+        if (!requestUrl.includes("/api/worktree-file")) return originalFetch(input, init);
+        return new Promise((resolve, reject) => {
+          releaseRequests.push(() => originalFetch(input, init).then(resolve, reject));
+        });
+      };
+      openFileEditor = (...args) => {
+        openCalls += 1;
+        return originalOpen(...args);
+      };
+      try {
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const blocked = { openCalls, apiRequests: releaseRequests.length };
+        releaseRequests.forEach((release) => release());
+        const deadline = performance.now() + 5000;
+        while (performance.now() < deadline) {
+          if (state.fileEditor?.file === "open-race-b.c" && state.fileEditor?.loading === false) break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return {
+          rowFound: Boolean(row),
+          blocked,
+          opened: Boolean(
+            state.fileEditor?.file === "open-race-b.c" &&
+            state.fileEditor?.loading === false &&
+            document.querySelector("#fileEditorModal")?.classList.contains("show")
+          ),
+          codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+        };
+      } finally {
+        window.fetch = originalFetch;
+        openFileEditor = originalOpen;
+        closeFileEditor(true);
+      }
+    })()`);
+  } finally {
+    await Promise.all(raceFiles.map((file) => fs.rm(file, { force: true })));
+    await evaluate(cdp, "refreshWorktree(false)");
+  }
+  assert.equal(doubleClickRace.rowFound, true);
+  assert.deepEqual(doubleClickRace.blocked, { openCalls: 1, apiRequests: 1 });
+  assert.equal(doubleClickRace.opened, true);
+  assert.equal(doubleClickRace.codeMirrors, 2);
+
   const scattered = await evaluate(cdp, `(async () => {
     const opened = await openCommitFileViewerLazy("scattered.c", "", ${JSON.stringify(head)});
     const result = {
