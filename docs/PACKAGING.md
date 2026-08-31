@@ -414,3 +414,14 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 按本轮验收约束未执行卸载操作，当前安装目录及卸载程序保留；因此不把卸载写成已验证或失败。受保护的异常未跟踪文件 n+fs.statSync(p.join('public' 仍为 0 字节、SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；.playwright-cli/ 未修改、未暂存、未提交。
 
 - 发布完成后的当前主机严格性能复核出现环境相关波动：`npm.cmd test` 两次完整复跑均为 398/399，唯一失败为 4000 文件冷 API 超过固定 350 ms 门禁（372.8 ms、381.7 ms）；随后清理已识别的旧 forkline-e2e-0818b 测试进程树后，`npm.cmd run test:browser` 仍为 0/1，冷 API 为 399.5 ms。使用项目已有的诊断倍率 3 运行时全流程通过，冷 API 为 368.8 ms。v0.4.12 相对 v0.4.11 未修改 server.js 或 browser-performance.test.js，因此未将该主机复核波动归因于本版本代码，也未修改性能阈值；发布时已有的 399/399 与 1/1 验证记录保持原样。
+
+## v0.4.13 文件双击查看修复准备
+
+- v0.4.13 修复文件树单击切换与双击查看在编辑器读取期间竞争的问题。同一仓库、文件、来源和查看上下文共享一个进行中的打开请求，避免重复销毁/创建编辑器；切换仓库或目标文件不会复用旧请求。
+- 当前版本、锁文件和安装器契约测试已升至 `0.4.13`；Web、源码克隆和便携版更新边界、NSIS `electron-updater`、当前用户安装和未签名风险说明不变。
+- 自动回归包含加载器并发去重、切仓隔离和真实 Chromium 快速点击/双击阻塞读取场景。正式发布应使用新的不可移动 `v0.4.13` 标签，不覆盖 `v0.4.12` 或更早标签。
+
+## v0.4.13 本机安装器构建验收
+
+- 本机构建 `Forkline-Setup-0.4.13-windows-x64.exe` 成功，大小 `104610573` 字节，SHA-256 `04869302D471C4DF51A94435C6CC7458E8E2A6F3F2866DD2429A2376AC171A79`；blockmap 大小 `111744` 字节，SHA-256 `85B4EF737E25B9BF97F208CB687EA8099B8FF3EFE07AD8C8145A0C11B71DB14A`；`latest.yml` SHA-256 `776DA16DB5CC899CCC22215F97582B91D9443E33F86BB3C9F1661CA0C5584C5D`。
+- `latest.yml` 版本为 `0.4.13`，安装器文件名为 `Forkline-Setup-0.4.13-windows-x64.exe`，大小为 `104610573`，SHA-512 为 `9wDnJNjfgsgvzRsmz6SYgyUeaotqlGCT69XDQ+ji5btuWnq/vPmhQq+HigFJhYS2fwnTBSmZ1vprNSXDXFsjeA==`；安装器产品版本为 `0.4.13`，Authenticode 为 `NotSigned`。

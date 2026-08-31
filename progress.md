@@ -10727,3 +10727,23 @@
 
 - 修改文件：`public/js/features/file-editor-loader.js`：增加同一打开请求的并发复用并保留仓库快照边界；`tests/file-editor-loader.test.js`：新增打开去重和切仓隔离回归；`tests/browser-performance.test.js`：新增真实快速点击/双击阻塞请求回归；`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：同步文件编辑器并发打开行为；`progress.md`：追加本轮实现、验证和回滚点。
 - 回滚方式：提交前执行 `git restore -- public/js/features/file-editor-loader.js tests/file-editor-loader.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/ELECTRON_DESKTOP.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮文件双击查看修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: Forkline v0.4.13 版本准备与本机安装器构建
+
+### What was done
+
+- 将应用、锁文件和安装器契约升至 `0.4.13`，保留 v0.4.12 及更早标签；完成 v0.4.13 Windows x64 NSIS 本机构建验收。
+- 保持发布边界不变：安装版使用 `electron-updater`，Web/源码克隆/便携版继续使用原 Git 快进更新，安装器仍为当前用户、可选目录、默认桌面和开始菜单快捷方式。
+
+### Testing
+
+- `node -e` 版本一致性检查通过：`package.json`、`package-lock.json` 和根包版本均为 `0.4.13`。
+- `node --test tests/file-editor-loader.test.js tests/installer-package.test.js tests/electron-shell.test.js`：`45/45` 通过；相关 Node 语法检查和 `git diff --check` 通过。
+- `npm.cmd run build:installer` 成功；`Forkline-Setup-0.4.13-windows-x64.exe` 为 `104610573` 字节，SHA-256 `04869302D471C4DF51A94435C6CC7458E8E2A6F3F2866DD2429A2376AC171A79`；blockmap 为 `111744` 字节，SHA-256 `85B4EF737E25B9BF97F208CB687EA8099B8FF3EFE07AD8C8145A0C11B71DB14A`；`latest.yml` SHA-256 `776DA16DB5CC899CCC22215F97582B91D9443E33F86BB3C9F1661CA0C5584C5D`。
+- `latest.yml` 版本为 `0.4.13`，安装器大小 `104610573`，SHA-512 为 `9wDnJNjfgsgvzRsmz6SYgyUeaotqlGCT69XDQ+ji5btuWnq/vPmhQq+HigFJhYS2fwnTBSmZ1vprNSXDXFsjeA==`；产品文件版本为 `0.4.13`，Authenticode 为 `NotSigned`。
+- 受保护未跟踪对象 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 未修改、未暂存、未提交；异常文件仍为 0 字节，SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`package.json`、`package-lock.json`：升至 `0.4.13`；`tests/installer-package.test.js`：同步版本契约；`docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加版本准备和本机构建证据。
+- 回滚方式：提交前执行 `git restore -- package.json package-lock.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮 v0.4.13 版本准备提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
