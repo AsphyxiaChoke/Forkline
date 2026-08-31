@@ -42,3 +42,18 @@ test("file editor window context round-trips through an encoded internal URL", (
   assert.match(url, /^http:\/\/127\.0\.0\.1:63247\/\?fileEditorWindow=1&/);
   assert.deepEqual(readFileEditorWindowContext(new URL(url).search), request);
 });
+
+test("file editor window context carries the active theme without accepting arbitrary values", () => {
+  const request = {
+    file: "目录/配置 文件.txt",
+    previousFile: "旧目录/配置 文件.txt",
+    source: "worktree",
+    commit: "",
+    theme: "light",
+  };
+  const url = fileEditorWindowUrl("http://127.0.0.1:63247", request);
+  assert.match(url, /[?&]theme=light(?:&|$)/);
+  assert.deepEqual(readFileEditorWindowContext(new URL(url).search), request);
+  assert.equal(fileEditorWindowUrl("http://127.0.0.1:63247", { ...request, theme: "javascript:alert(1)" }), "");
+  assert.equal(readFileEditorWindowContext("?fileEditorWindow=1&file=main.js&source=worktree&theme=javascript%3Aalert%281%29"), null);
+});

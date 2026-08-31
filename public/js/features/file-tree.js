@@ -153,7 +153,7 @@ function scopedFileStatus(file, scope = "") {
 function bindFileTree(root, options = {}) {
   let binding = fileTreeBindings.get(root);
   if (!binding) {
-    binding = { options: {} };
+    binding = { options: {}, suppressScrollLoad: false };
     root.addEventListener("click", (event) => handleFileTreeClick(root, binding, event));
     root.addEventListener("dblclick", (event) => handleFileTreeDoubleClick(root, binding, event));
     root.addEventListener("contextmenu", (event) => handleFileTreeContextMenu(root, binding, event));
@@ -242,6 +242,7 @@ function handleFileTreeContextMenu(root, binding, event) {
 }
 
 function handleFileTreeScroll(root, binding) {
+  if (binding.suppressScrollLoad) return;
   const scope = binding.options?.loadMoreScope || "";
   if (!scope || root.scrollHeight <= root.clientHeight) return;
   if (root.scrollHeight - root.scrollTop - root.clientHeight > 120) return;

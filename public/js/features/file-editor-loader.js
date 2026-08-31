@@ -207,7 +207,8 @@ async function openFileEditorLazy(filePath, previousFilePath = "", options = {})
         filePath,
         previousFilePath,
         options.source === "commit" ? "commit" : "worktree",
-        options.source === "commit" ? options.commit : ""
+        options.source === "commit" ? options.commit : "",
+        state.theme
       );
     }
     await ensureFileEditorLoaded();
@@ -223,7 +224,7 @@ async function openCommitFileViewerLazy(filePath, previousFilePath = "", commitS
   const options = { source: "commit", commit: commitSha };
   return shareFileEditorOpenRequest(filePath, previousFilePath, options, repoPath, async () => {
     if (!standalone && typeof desktop?.openFileEditorWindow === "function") {
-      return desktop.openFileEditorWindow(filePath, previousFilePath, "commit", commitSha);
+      return desktop.openFileEditorWindow(filePath, previousFilePath, "commit", commitSha, state.theme);
     }
     await ensureFileEditorLoaded();
     if (!isCurrentRepoPath(repoPath)) return false;

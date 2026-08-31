@@ -363,8 +363,18 @@ function expandWorktreeFileTree(scope) {
     renderStage({ refreshDiff: false });
     return true;
   }
+  const distanceFromBottom = Math.max(0, root.scrollHeight - root.scrollTop - root.clientHeight);
   const batch = files.slice(current, next);
   appendFileTreeBatch(tree, fileTreeHtml(batch, { selectionScope: scope, totalFiles: files }));
+  const nextScrollTop = Math.max(0, root.scrollHeight - root.clientHeight - distanceFromBottom);
+  const binding = fileTreeBindings.get(root);
+  if (binding && Math.abs(root.scrollTop - nextScrollTop) >= 1) {
+    binding.suppressScrollLoad = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      binding.suppressScrollLoad = false;
+    }));
+  }
+  root.scrollTop = nextScrollTop;
   state.worktreeRenderLimits[scope] = next;
   const more = root.querySelector(`[data-file-tree-more="${scope}"]`);
   if (next >= files.length) {

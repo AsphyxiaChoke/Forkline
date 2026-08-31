@@ -2061,6 +2061,115 @@ test("real Chromium keeps historical file comparison responsive", {
   }, 0);
   assert.ok(maxLoadBatchRows <= 100, `large worktree appended ${maxLoadBatchRows} rows in one frame`);
   assert.equal(worktreeMetrics.groupContentVisibility, "auto");
+
+  const worktreeScrollAnchorMetrics = await evaluate(cdp, `(async () => {
+    const originalLimits = state.worktreeRenderLimits;
+    try {
+      state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+      renderStage({ refreshDiff: false });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const root = els.changeList;
+      root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 40);
+      const before = {
+        top: root.scrollTop,
+        height: root.scrollHeight,
+        viewport: root.clientHeight,
+        rows: root.querySelectorAll(".file-row[data-file]").length,
+      };
+      root.dispatchEvent(new Event("scroll"));
+      const immediate = {
+        top: root.scrollTop,
+        height: root.scrollHeight,
+        rows: root.querySelectorAll(".file-row[data-file]").length,
+      };
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const after = {
+        top: root.scrollTop,
+        height: root.scrollHeight,
+        rows: root.querySelectorAll(".file-row[data-file]").length,
+      };
+      return {
+        beforeTop: before.top,
+        beforeDistance: before.height - before.top - before.viewport,
+        beforeRows: before.rows,
+        immediateTop: immediate.top,
+        immediateDistance: immediate.height - immediate.top - before.viewport,
+        immediateRows: immediate.rows,
+        afterTop: after.top,
+        afterDistance: after.height - after.top - before.viewport,
+        afterRows: after.rows,
+      };
+    } finally {
+      state.worktreeRenderLimits = originalLimits;
+      renderStage({ refreshDiff: false });
+    }
+  })()`);
+  assert.equal(worktreeScrollAnchorMetrics.beforeRows, 800);
+  assert.equal(worktreeScrollAnchorMetrics.immediateRows, 900);
+  assert.equal(worktreeScrollAnchorMetrics.afterRows, 900);
+  assert.ok(
+    worktreeScrollAnchorMetrics.afterDistance <= worktreeScrollAnchorMetrics.beforeDistance + 2,
+    `worktree scroll moved away from the bottom after loading more files: ${worktreeScrollAnchorMetrics.beforeDistance.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterDistance.toFixed(1)} px`
+  );
+  assert.ok(
+    worktreeScrollAnchorMetrics.afterTop >= worktreeScrollAnchorMetrics.beforeTop - 2,
+    `worktree scrollTop moved upward after loading more files: ${worktreeScrollAnchorMetrics.beforeTop.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterTop.toFixed(1)} px`
+  );
+  t.diagnostic(
+    `worktree downward scroll anchor: ${worktreeScrollAnchorMetrics.beforeRows} -> ${worktreeScrollAnchorMetrics.afterRows} rows, distance from bottom ${worktreeScrollAnchorMetrics.beforeDistance.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterDistance.toFixed(1)} px, scrollTop ${worktreeScrollAnchorMetrics.beforeTop.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterTop.toFixed(1)} px`
+  );
+
+  const physicalScrollPrepared = await evaluate(cdp, `(async () => {
+    state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+    renderStage({ refreshDiff: false });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const root = els.changeList;
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 200);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = root.getBoundingClientRect();
+    return {
+      x: Math.max(1, Math.min(window.innerWidth - 1, rect.left + Math.min(40, Math.max(1, rect.width / 2)))),
+      y: Math.max(1, Math.min(window.innerHeight - 1, rect.top + Math.min(40, Math.max(1, rect.height / 2)))),
+      beforeTop: root.scrollTop,
+      beforeDistance: root.scrollHeight - root.scrollTop - root.clientHeight,
+      beforeRows: root.querySelectorAll(".file-row[data-file]").length,
+    };
+  })()`);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: physicalScrollPrepared.x, y: physicalScrollPrepared.y, buttons: 0 });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseWheel",
+    x: physicalScrollPrepared.x,
+    y: physicalScrollPrepared.y,
+    deltaX: 0,
+    deltaY: 180,
+  });
+  const physicalScrollAfter = await evaluate(cdp, `(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const root = els.changeList;
+    return {
+      afterTop: root.scrollTop,
+      afterDistance: root.scrollHeight - root.scrollTop - root.clientHeight,
+      afterRows: root.querySelectorAll(".file-row[data-file]").length,
+    };
+  })()`);
+  await evaluate(cdp, `(() => {
+    state.worktreeRenderLimits = { unstaged: 4000, staged: 800 };
+    renderStage({ refreshDiff: false });
+  })()`);
+  assert.equal(physicalScrollPrepared.beforeRows, 800);
+  assert.equal(physicalScrollAfter.afterRows, 900);
+  assert.ok(
+    physicalScrollAfter.afterDistance <= physicalScrollPrepared.beforeDistance + 2,
+    `physical downward wheel moved away from the bottom: ${physicalScrollPrepared.beforeDistance.toFixed(1)} -> ${physicalScrollAfter.afterDistance.toFixed(1)} px`
+  );
+  assert.ok(
+    physicalScrollAfter.afterTop >= physicalScrollPrepared.beforeTop - 2,
+    `physical downward wheel moved scrollTop upward: ${physicalScrollPrepared.beforeTop.toFixed(1)} -> ${physicalScrollAfter.afterTop.toFixed(1)} px`
+  );
+  t.diagnostic(
+    `physical downward wheel: ${physicalScrollPrepared.beforeRows} -> ${physicalScrollAfter.afterRows} rows, distance from bottom ${physicalScrollPrepared.beforeDistance.toFixed(1)} -> ${physicalScrollAfter.afterDistance.toFixed(1)} px`
+  );
+
   const watchedFilePath = path.join(repo, "worktree", "group-000", "file-00000.txt");
   await fs.writeFile(watchedFilePath, "worktree watcher changed content\n", "utf8");
   const watchedWorktreeChange = await evaluate(cdp, `(async () => {

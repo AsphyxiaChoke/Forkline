@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
+const fileEditorThemeIds = new Set(["dark", "light", "graphite", "forest", "rose", "contrast"]);
+
+function fileEditorTheme(value) {
+  const theme = String(value || "").trim().toLowerCase();
+  return fileEditorThemeIds.has(theme) ? theme : "";
+}
 
 contextBridge.exposeInMainWorld("forklineDesktop", {
   zoomFactors: [0.75, 0.8, 0.9, 1, 1.1],
@@ -16,11 +22,12 @@ contextBridge.exposeInMainWorld("forklineDesktop", {
   getInstallerUpdateState: () => ipcRenderer.invoke("forkline:installer-update:get-state"),
   checkInstallerUpdate: () => ipcRenderer.invoke("forkline:installer-update:check"),
   installInstallerUpdate: (version) => ipcRenderer.invoke("forkline:installer-update:install", String(version || "")),
-  openFileEditorWindow: (file, previousFile, source, commit) => ipcRenderer.invoke("forkline:file-editor:open", {
+  openFileEditorWindow: (file, previousFile, source, commit, theme) => ipcRenderer.invoke("forkline:file-editor:open", {
     file: String(file || ""),
     previousFile: String(previousFile || ""),
     source: source === "commit" ? "commit" : "worktree",
     commit: String(commit || ""),
+    theme: fileEditorTheme(theme),
   }),
   closeFileEditorWindow: () => ipcRenderer.invoke("forkline:file-editor:close"),
   onOpenFileEditor: (handler) => {
@@ -29,12 +36,16 @@ contextBridge.exposeInMainWorld("forklineDesktop", {
       if (!value || typeof value !== "object" || Array.isArray(value)) return;
       const source = value.source === "commit" ? "commit" : value.source === "worktree" ? "worktree" : "";
       const file = String(value.file || "");
+      const rawTheme = String(value.theme || "").trim();
+      const theme = fileEditorTheme(rawTheme);
       if (!source || !file || file.includes("\0")) return;
+      if (rawTheme && !theme) return;
       handler({
         file,
         previousFile: String(value.previousFile || ""),
         source,
         commit: String(value.commit || ""),
+        theme,
       });
     };
     ipcRenderer.on("forkline:file-editor:open-context", listener);

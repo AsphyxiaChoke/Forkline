@@ -10865,3 +10865,23 @@
 
 - 修改文件：`public/js/features/file-tree.js`：按目录路径索引增量合并；`public/js/features/worktree-changes.js`：滚动追加批次降为 100；`tests/browser-performance.test.js`：增加分散目录滚动和滚动后双击回归；`tests/installer-package.test.js`：版本契约同步到 0.4.16；`package.json`、`package-lock.json`：版本为 0.4.16；`README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`：同步卡死修复和发布边界。
 - 回滚方式：提交前执行 `git restore -- public/js/features/file-tree.js public/js/features/worktree-changes.js tests/browser-performance.test.js tests/installer-package.test.js package.json package-lock.json README.md docs/ARCHITECTURE.md docs/CONTINUE.md docs/PACKAGING.md progress.md`；提交后使用 `git revert <v0.4.16 修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动既有标签。
+
+## 2026-08-31 - Task: 修复文件列表滚轮下滑回弹与独立编辑器主题不同步
+
+### What was done
+
+- 修复工作区/暂存区文件列表触底分批加载时的滚动锚点：追加文件后保持原有距底部位置，并抑制程序化滚动校正引发的重复加载，因此滚轮向下滑动不会因列表扩展而跳回上方。
+- 修复 Electron 独立文件编辑器未继承主窗口皮肤的问题：打开和复用编辑器时传递并应用受限主题值，Web 端原有编辑器行为不变。
+- 增加真实 Chromium 滚轮、滚动后打开文件和独立编辑器主题回归覆盖，并同步更新使用说明与架构文档。
+
+### Testing
+
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`403/403` 通过，失败 `0`。
+- 真实 Chromium：文件列表 `800 -> 900` 行触底滚轮追加后距底部 `200px -> 0px`，未发生回弹；工作区滚动锚点、4,000 文件分批加载、滚动后双击打开文件均通过。
+- 定向主题/编辑器回归：独立编辑器主题传递、复用窗口即时切换和主题白名单测试通过；静态语法检查与 `git diff --check` 通过。
+- 保护对象复核通过：`.playwright-cli/` 与 `n+fs.statSync(p.join('public'` 未修改、未暂存、未提交；异常文件仍为 `0` 字节，SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`public/js/features/worktree-changes.js`、`public/js/features/file-tree.js`：修复增量加载后的滚动锚点和加载抑制；`tests/browser-performance.test.js`：增加合成/真实滚轮回归；`electron/file-editor-window.js`、`electron/preload.js`、`public/js/features/file-editor-loader.js`、`public/js/bootstrap.js`：传递并应用独立编辑器主题；`tests/file-editor-ui.test.js`、`tests/file-editor-window.test.js`：补充主题回归；`README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步行为说明。
+- 回滚方式：提交前执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md electron/file-editor-window.js electron/preload.js public/js/bootstrap.js public/js/features/file-editor-loader.js public/js/features/file-tree.js public/js/features/worktree-changes.js tests/browser-performance.test.js tests/file-editor-ui.test.js tests/file-editor-window.test.js progress.md`；提交后使用 `git revert <本轮修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动既有标签。

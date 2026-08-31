@@ -891,6 +891,12 @@ test("Electron file editor uses a standalone window while Web keeps the in-page 
   assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-footer\s*\{[^}]*grid-row:\s*6/s);
 });
 
+test("standalone file editors receive the active theme from the main window", () => {
+  assert.match(editorLoader, /openFileEditorWindow\([\s\S]*state\.theme/);
+  assert.match(preload, /openFileEditorWindow:[\s\S]*theme: fileEditorTheme\(theme\)/);
+  assert.match(bootstrap, /applyTheme\(context\.theme, false\)/);
+});
+
 test("file editor merge highlights keep syntax text readable", () => {
   assert.match(
     styles,

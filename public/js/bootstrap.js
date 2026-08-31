@@ -54,6 +54,7 @@ async function flushStandaloneFileEditor() {
   if (!standaloneFileEditorReady || !pendingStandaloneFileEditor || !state.data) return;
   const context = pendingStandaloneFileEditor;
   pendingStandaloneFileEditor = null;
+  if (context.theme && typeof applyTheme === "function") applyTheme(context.theme, false);
   await openFileEditorLazy(
     context.file,
     context.previousFile,
