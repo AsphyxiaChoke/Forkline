@@ -10660,3 +10660,49 @@
 
 - 修改文件：`docs/PACKAGING.md`、`docs/CONTINUE.md`：记录 v0.4.12 本机安装器构建证据和正式工作流边界；`progress.md`：追加本轮构建验证与回滚点。`dist/installer` 为构建输出，不作为源码变更提交。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <v0.4.12 本机安装器构建记录提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: Forkline v0.4.12 正式发布、Issue 收尾与本机安装启动验收
+
+### What was done
+
+- 完成 Forkline v0.4.12 Windows x64 Electron 独立安装版正式发布；中文 Release 已公开，v0.4.12 注释标签固定指向 b16fa69a5c92403a5acec6a0de8e1eddab7eee9b，旧 v0.4.0 至 v0.4.11 标签未移动。
+- 两条 Windows 发布工作流均成功，安装器、blockmap、两个 SHA-256 文件、便携 ZIP 和 latest.yml 共 6 个正式附件已上传并完成远端验真。
+- 全部公开 Issue 已收尾：开放 Issue 数为 0；#10、#9、#1 已发布详细修复说明并关闭，#2 至 #8 也均已关闭。修复后分别能够区分源码快照与可运行便携包、避免独立编辑器按钮与原生窗口按钮重叠，并提高 Diff 变更文本和语法子节点的可读性。
+- 完成本机安装版启动验收；安装目录保留，按用户要求未执行卸载验证。后续更新边界保持 Web/源码克隆/便携版使用 Git 快进更新，NSIS 安装版使用 electron-updater。
+
+### Testing
+
+- npm.cmd test：399/399 通过，0 失败、0 取消、0 跳过。
+- npm.cmd run test:browser：1/1 通过；Issue 定向回归、安装器/便携包契约、Node 语法检查和 git diff --check 均通过。
+- GitHub Actions：安装器工作流 33322496291 和便携包工作流 33322496280 均为 success，且均由 v0.4.12 发布事件触发。
+- 正式附件本机重新下载复核全部通过：安装器 104606262 字节 / SHA-256 ba35f92178e0adc4c5551045aff04d6e9dc66adf37e93d10894ddea6ee069154；blockmap 111597 字节 / SHA-256 d5dc4c25c543d4770ed35e71aa23b2eeddf8295d6b4c7ba0fb512337f0956295；安装器校验文件 103 字节 / SHA-256 aa5488a333d3de50513b51f4de0d7d5b8a05d3eaa72a6038b58b4fe04f8f9b8b；便携 ZIP 36848843 字节 / SHA-256 d18e0175de9360be57a82321128ec9ae54d2737b159cd3f4b1ae3fe624e55eea；便携 ZIP 校验文件 109 字节 / SHA-256 2fa8c82cf81c5d4ff9acf1f91087e314699c0bf6d3f0f8643bce4ec8bf5ebac1；latest.yml 372 字节 / SHA-256 c8465de4e9d23cfc8d9a4571e5e92ba04b48e7eac4138187c1b57a6ac3c8b9f0。六项均与 GitHub API digest 和远端大小一致。
+- latest.yml 版本为 0.4.12，安装器大小为 104606262，SHA-512 为 HoSCCQwFNufkBYjHaioKRJxNeBOeMhU6OnGu/RtgoCbr8GTO86b7CBRwSnBPx5TU+2PvPaCx+DbNqG4TmQdsNg==；便携 ZIP 内容检查确认保留顶层目录下的 .git、runtime/node.exe、Forkline.cmd、start.cmd、package.json 和 docs/。
+- 本机隔离安装目录 C:/Users/Administrator/AppData/Local/Temp/forkline-v0.4.12-interactive-final 中 Forkline.exe 产品文件版本为 0.4.12.0，卸载程序已生成；验收期间窗口标题为 Forkline Web，后台监听 127.0.0.1:62430，首页、核心状态、同步状态和操作状态接口均 HTTP 200，正常关闭后进程和服务归零。
+- 当前安装目录和卸载程序保留，未执行卸载；这项未执行的流程不宣称为通过或失败。受保护异常未跟踪文件 n+fs.statSync(p.join('public' 长度仍为 0 字节、SHA-256 为 e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855；.playwright-cli/ 未修改、未暂存、未提交。
+
+### Notes
+
+- 修改文件：docs/PACKAGING.md：追加正式 Release、6 个附件、Issue 关闭和本机安装启动验收；docs/CONTINUE.md：更新后续接手状态为 v0.4.12 已完成；progress.md：追加本轮完整发布收尾记录。
+- 本轮创建的 .gh-config-v0412/ 和 .release-verify-v0412/ 已在确认路径位于正式仓库后删除；受保护的 .playwright-cli/ 和 n+fs.statSync(p.join('public' 未删除。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <v0.4.12 发布收尾文档提交>`。不得移动任何既有标签，不得删除、修改、暂存或提交受保护对象。
+
+## 2026-08-31 - Task: v0.4.12 发布后性能门禁诊断
+
+### What was done
+
+- 发布和 Issue 收尾状态保持不变；本轮仅对严格性能门禁进行复核，没有修改产品代码、性能阈值或测试断言。
+- 排除了旧的 forkline-e2e-0818b Electron 验收进程树；确认其不属于当前 v0.4.12 安装目录，结束该精确识别的测试树后继续复跑。
+- 对比 v0.4.11 与 v0.4.12 的变更确认没有 server.js 或 tests/browser-performance.test.js 改动，因此没有把当前主机性能波动误判为 v0.4.12 产品回归。
+
+### Testing
+
+- 严格门禁复跑：`npm.cmd test` 为 398/399，唯一失败为 4000 文件冷 API 372.8 ms；定向 `npm.cmd run test:browser` 为 0/1，冷 API 381.7 ms；清理旧测试树后再次定向复跑为 399.5 ms。
+- 诊断倍率复跑：设置项目已有 FORKLINE_BROWSER_PERFORMANCE_SCALE=3 后，`npm.cmd run test:browser` 为 1/1，冷 API 368.8 ms；其余页面、渲染、滚动、工作区刷新和资源指标通过。
+- 发布时已有的成功证据仍为 `npm.cmd test` 399/399 与 `npm.cmd run test:browser` 1/1；本轮未修改阈值，当前复跑结果按主机负载相关未通过记录。
+- `git diff v0.4.11..v0.4.12 -- server.js server tests/browser-performance.test.js` 无代码差异；`git diff --check` 通过。受保护异常未跟踪文件仍为 0 字节、SHA-256 为 e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855，未暂存、未提交。
+
+### Notes
+
+- 修改文件：docs/PACKAGING.md：补充发布后严格性能复核的环境波动说明；docs/CONTINUE.md：记录后续发布前需在低负载环境复核性能门禁；progress.md：追加本轮诊断证据。
+- 已结束的精确测试进程树为正式仓库下 forkline-e2e-0818b 临时验收实例；未结束其他 Edge、系统或用户安装进程。未删除当前安装目录、卸载程序、.playwright-cli/ 或异常未跟踪文件。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <性能门禁诊断文档提交>`。不得修改性能阈值，不得移动任何既有标签。

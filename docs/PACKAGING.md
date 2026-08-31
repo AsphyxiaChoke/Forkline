@@ -399,4 +399,18 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 ## v0.4.12 本机安装器构建验收
 
 - 本机构建 `Forkline-Setup-0.4.12-windows-x64.exe` 成功，文件大小 `104610372` 字节，SHA-256 `5fdb54c89316c276474cd7b2532265d382196d3f81063daf8352fdbcbd86159f`；blockmap 大小 `111592` 字节。
-- 本机 `dist/installer/latest.yml` 版本为 `0.4.12`，文件名为 `Forkline-Setup-0.4.12-windows-x64.exe`，大小 `104610372`，SHA-512 与安装器一致；Authenticode 状态为 `NotSigned`。本机构建仅作验收证据，不能替代正式 Release 工作流产物。
+- 本机 `dist/installer/latest.yml` 版本为 `0.4.12`，文件名为 `Forkline-Setup-0.4.12-windows-x64.exe`，大小 `104610372`，SHA-512 与安装器一致；Authenticode 状态为 `NotSigned`。正式发布以 GitHub Release 工作流附件为准，本机构建仅作本地验收证据，不能替代正式附件。
+
+## v0.4.12 正式发布、全部 Issue 关闭与本机安装启动验收
+
+- 正式 Release 已发布：[Forkline v0.4.12](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.12)。Release 为正式版、非草稿、非预发布，发布说明为中文；不可移动的 `v0.4.12` 注释标签固定指向提交 `b16fa69a5c92403a5acec6a0de8e1eddab7eee9b`。
+- 标签验真确认 `v0.4.12` 的注释标签对象为 `c920c0c5be85e22ea0bc6d95330feae06768b07e`，标签目标为 `b16fa69a5c92403a5acec6a0de8e1eddab7eee9b`；`v0.4.0` 至 `v0.4.11` 均未修改。
+- GitHub Actions 工作流均成功：安装器 [33322496291](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33322496291)、便携包 [33322496280](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33322496280)，均由 `v0.4.12` 发布事件触发。
+- 六个正式附件均为 uploaded，并以 GitHub API digest 为信任根完成本机重新下载复核：安装器 104606262 字节 / SHA-256 `ba35f92178e0adc4c5551045aff04d6e9dc66adf37e93d10894ddea6ee069154`；blockmap 111597 字节 / `d5dc4c25c543d4770ed35e71aa23b2eeddf8295d6b4c7ba0fb512337f0956295`；安装器校验文件 103 字节 / `aa5488a333d3de50513b51f4de0d7d5b8a05d3eaa72a6038b58b4fe04f8f9b8b`；便携 ZIP 36848843 字节 / `d18e0175de9360be57a82321128ec9ae54d2737b159cd3f4b1ae3fe624e55eea`；便携 ZIP 校验文件 109 字节 / `2fa8c82cf81c5d4ff9acf1f91087e314699c0bf6d3f0f8643bce4ec8bf5ebac1`；latest.yml 372 字节 / `c8465de4e9d23cfc8d9a4571e5e92ba04b48e7eac4138187c1b57a6ac3c8b9f0`。
+- latest.yml 版本为 0.4.12，安装器文件名和大小 104606262 一致，SHA-512 为 `HoSCCQwFNufkBYjHaioKRJxNeBOeMhU6OnGu/RtgoCbr8GTO86b7CBRwSnBPx5TU+2PvPaCx+DbNqG4TmQdsNg==`；两个 SHA-256 校验文件分别匹配安装器和便携 ZIP。便携 ZIP 顶层目录下确认保留 .git、runtime/node.exe、Forkline.cmd、start.cmd、package.json 和 docs/，继续使用原有 Git 快进更新语义。
+- Release 继续保持产品边界：NSIS 安装版使用 electron-updater，更新前优雅停止 Forkline 后台服务及 Git/SSH 子进程；Web、源码克隆和便携版继续使用现有 Git 快进更新。安装器为当前用户安装、允许选择目录，默认创建桌面和开始菜单快捷方式；Authenticode 仍为 NotSigned，发布说明已标注未知发布者和 SmartScreen 风险。
+- GitHub Issue 已全部收尾：当前开放 Issue 数为 0；#1、#9、#10 均已发布详细修复说明并关闭，#2 至 #8 也均已关闭。修复后的效果分别是：Release 页面能区分源码快照与可运行便携包；独立编辑器业务按钮与 Windows 原生窗口按钮分离且不重叠；Diff 新增/删除文本及 CodeMirror 语法子节点保持高对比度，同时保留低浓度背景和变更标记。
+- 本机安装启动验收已完成，安装目录为 C:/Users/Administrator/AppData/Local/Temp/forkline-v0.4.12-interactive-final；Forkline.exe 产品文件版本为 0.4.12.0，卸载程序已生成。验收期间窗口标题为 Forkline Web，后台服务监听 127.0.0.1:62430，首页、核心状态、同步状态和操作状态接口均返回 HTTP 200；正常关闭后进程和服务归零。
+- 按本轮验收约束未执行卸载操作，当前安装目录及卸载程序保留；因此不把卸载写成已验证或失败。受保护的异常未跟踪文件 n+fs.statSync(p.join('public' 仍为 0 字节、SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；.playwright-cli/ 未修改、未暂存、未提交。
+
+- 发布完成后的当前主机严格性能复核出现环境相关波动：`npm.cmd test` 两次完整复跑均为 398/399，唯一失败为 4000 文件冷 API 超过固定 350 ms 门禁（372.8 ms、381.7 ms）；随后清理已识别的旧 forkline-e2e-0818b 测试进程树后，`npm.cmd run test:browser` 仍为 0/1，冷 API 为 399.5 ms。使用项目已有的诊断倍率 3 运行时全流程通过，冷 API 为 368.8 ms。v0.4.12 相对 v0.4.11 未修改 server.js 或 browser-performance.test.js，因此未将该主机复核波动归因于本版本代码，也未修改性能阈值；发布时已有的 399/399 与 1/1 验证记录保持原样。

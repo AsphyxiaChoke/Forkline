@@ -1411,3 +1411,14 @@
 - 正式附件：安装器 `104606205` 字节 / SHA-256 `f975eebc5d4d6a6ecf6efd7c3614d26b5971b6620b175d992bd11e1d6ffacbc9`；blockmap `111538` 字节 / `581d20d371176f6e9f67b2b9414c4cbaa6b5eabcc012b73680405f782ba7b7ff`；安装器 `.sha256` `d1970e246629a5923ea0ff2c1e0c3073e3320b92711ccbcbda0da9d6c294e018`；便携 ZIP `36832097` 字节 / `bc94b72015dcecdb120a3fcb0f28c9136f9d82eff1137601d32bdcc9feb418d5`；ZIP `.sha256` `0e6e668423516ff971329f449da68af444ec3f9af9721cd3c0d08b0032a7470f`；`latest.yml` `56290878d2ff8917fa4d4c95918b292236b516236017110c1b5f19838ad3a677`。
 - `latest.yml` 版本、安装器文件名、大小 `104606205` 和 SHA-512 `mdTLbsXQzPYPgVvL8D59GnFTOP8bY95xnSHUup/SvJHTQH1jrWVLxlAailv75EwfatuxWMxVZxe3jpQAvqzXYA==` 均匹配；安装器为 `NotSigned`，中文发布说明保留未知发布者和 SmartScreen 风险。
 - 当前 v0.4.11 发布闭环完成。后续维护继续保持 Web/源码克隆/便携版 Git 快进更新与 NSIS `electron-updater` 分流；更新前优雅停止 Forkline 后台服务和 Git/SSH 子进程。保护对象仍不得删除、修改、暂存或提交。
+
+## 2026-08-31 - Forkline v0.4.12 正式发布收尾
+
+- v0.4.12 已完成正式发布，Release 为非草稿、非预发布，中文发布说明已生效：[Forkline v0.4.12](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.12)。
+- `v0.4.12` 注释标签固定指向 `b16fa69a5c92403a5acec6a0de8e1eddab7eee9b`；旧 `v0.4.0` 至 `v0.4.11` 标签未移动。安装器工作流 [33322496291](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33322496291) 与便携包工作流 [33322496280](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33322496280) 均成功。
+- 正式 Release 的安装器、blockmap、两个 SHA-256 文件、便携 ZIP 和 latest.yml 共 6 个附件均已上传；本机重新下载后的文件大小和 SHA-256 全部与 GitHub API digest 一致。latest.yml 版本、安装器大小和 SHA-512 一致，便携 ZIP 保留 .git、runtime/node.exe、Forkline.cmd、start.cmd、package.json 和 docs/。
+- 当前公开 Issue 数为 0。#10 已解决便携包与 Source code 压缩包命名混淆；#9 已解决独立编辑器业务按钮与原生窗口按钮重叠；#1 已解决 Diff 高亮背景与文字对比度不足，三项均已写入详细效果说明并关闭，#2 至 #8 也均已关闭。
+- 本机当前安装验收目录为 C:/Users/Administrator/AppData/Local/Temp/forkline-v0.4.12-interactive-final，程序文件版本为 0.4.12.0；验收期间标题为 Forkline Web，后台 127.0.0.1:62430 及页面接口均正常。按要求未执行卸载，目录和卸载程序保留。
+- 后续维护继续保持 Web、源码克隆和便携版的 Git 快进更新，以及 NSIS 安装版 electron-updater 分流；更新前必须优雅停止 Forkline 后台服务及 Git/SSH 子进程。不得移动任何既有标签，不得触碰 n+fs.statSync(p.join('public' 或 .playwright-cli/。
+
+- 发布后在当前主机复跑固定 350 ms 性能门禁时，4000 文件冷 API 连续测得 372.8 ms、381.7 ms 和 399.5 ms；项目诊断倍率 3 下全流程通过，测得 368.8 ms。由于 v0.4.12 未改动 server.js 或该性能测试，未调整阈值或产品代码。后续版本发布前应在负载更低的主机环境重新确认该门禁。
