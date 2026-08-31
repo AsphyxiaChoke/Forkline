@@ -433,3 +433,13 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - `dist/installer/latest.yml` 为 `372` 字节，SHA-256 为 `7CE290B3CB1C96A520726FB01B146BFE9080C991F6F79A756A677271856BF3A9`；版本、安装器文件名、大小 `104610480` 和 SHA-512 `VMUzRVTEO2m0gUBBFc/1vkNbfxBTGRn31YEwTIW7c/vya1wY7UAYZ1eh1SspcpouDpV8FQ1M+2W3Yti8N7wX/g==` 均与本机构建安装器一致。Authenticode 为 `NotSigned`，正式发布说明必须继续标注未知发布者和 SmartScreen 风险。
 - 本轮定向编辑器回归为 `45/45`，真实 Chromium 回归为 `1/1`；约 `892 KB / 1900` 行工作区文件模拟两次单击加一次双击，打开约 `153.3 ms`，事件循环最大延迟约 `0.9 ms`，只执行 `1` 次打开和 `1` 次文件读取，创建 `0` 个 MergeView 和 `2` 个轻量 CodeMirror。按当前约束未执行卸载测试；本机构建产物不能替代 GitHub Release 工作流附件。
 - 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 `0` 字节、SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；`.playwright-cli/` 仍未跟踪，二者均未修改、暂存或提交。回滚点为本轮提交，提交后使用 `git revert <v0.4.15 修复提交>`；不得删除、修改或移动 `v0.4.14` 及更早标签。
+
+## v0.4.15 正式发布与附件验收
+
+- 正式 Release：[Forkline v0.4.15](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.15) 已创建，Release ID 为 `379547673`，为正式版、非草稿、非预发布，并成为当前 Latest。发布说明已使用正常中文 Markdown；此前 `v0.4.14` 说明中的字面 `` `n `` 也已修正并复核。
+- `v0.4.15` 为注释标签，标签对象为 `f9b8f758105577756c59cb1e65bdf07b51425166`，目标提交为 `fb028501c5419717391d57032ade0a559556a668`。`v0.4.14` 仍指向 `1bfd8da7914aab9a99ed3aa3a4acf738dcb1a710`，旧标签未移动。
+- 安装器工作流 [33364075544](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33364075544) 与便携包工作流 [33364075498](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33364075498) 均成功，均由 `v0.4.15` Release 事件触发。
+- 六个正式附件均为 `uploaded`，并完成本机代理下载与 GitHub API digest 对比：安装器 `104606898` 字节 / SHA-256 `336572c55c49efa111e1b83981e13c8e62792e0c4552f7a2a9d11b4daf56f8a2`；blockmap `111754` 字节 / `9209bbde3e340351e70c26f97f073b26ad205a15d15c06eee7b2903054de006b`；安装器校验文件 `103` 字节 / `5580b079916260a141477ed55c15c6d356d2c130ee5db063698ff4a0581b88ae`；便携 ZIP `36873766` 字节 / `b2c9479e27ab0d82fa2548a99a55587222cf5a52cfc41bc67d1cd63e801db7df`；便携 ZIP 校验文件 `109` 字节 / `9dc1f825f382f762b863daa18065ce432755c2e99bc45e7472442658970738d3`；`latest.yml` `372` 字节 / `dddb1b77bc83918e597ba25815cbbd879c3b0bcda43bbfd89be0c666e3bba52f`。
+- 两个 `.sha256` 文件分别匹配安装器和便携 ZIP；`latest.yml` 版本为 `0.4.15`，安装器文件名和大小 `104606898` 一致，SHA-512 为 `3hKJFERUOwpwHTLgRNqnjl7wpGC0NjOc+hK29akXgH64MKee0zRmUClzloDYXQeUufsvNMzdKiQaSr3p+Sdj1Q==`。便携 ZIP 已确认包含 `.git/`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、`package.json` 和 `docs/`，继续使用原有 Git 快进更新语义。
+- 正式安装器 Authenticode 为 `NotSigned`；Release 说明已明确未知发布者和 SmartScreen 风险。安装器继续为当前用户安装、允许选择目录、默认创建桌面和开始菜单快捷方式，并使用 `electron-updater`；更新前优雅停止 Forkline 后台服务及 Git / SSH 子进程。按本轮约束未执行卸载测试。
+- 当前 GitHub 开放 Issue 数为 `0`。受保护异常未跟踪文件仍为 `0` 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；`.playwright-cli/` 仍未跟踪，二者均未修改、暂存或提交。回滚点为本轮文档验收提交，提交后使用 `git revert <本轮文档验收提交>`；不得删除、修改或移动 `v0.4.14` 及更早标签。

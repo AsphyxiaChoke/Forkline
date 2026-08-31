@@ -10806,3 +10806,24 @@
 
 - 修改文件：`docs/PACKAGING.md`：追加 v0.4.15 本机构建、双击回归和未签名风险记录；`progress.md`：追加本轮最终验证记录。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮文档记录提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: 完成 v0.4.15 正式发布与远端附件验收
+
+### What was done
+
+- 修正 `v0.4.14` Release 正文的错误换行显示；GitHub 复核确认不再出现字面 `` `n ``。
+- 创建并发布 `v0.4.15` 正式 Release，安装器和便携包工作流均成功，六个正式附件已完成下载、digest、校验文件、`latest.yml` 和便携目录结构验收。
+- 确认 `v0.4.14` 标签继续指向原提交，`v0.4.15` 标签固定指向 `fb02850`；GitHub 当前开放 Issue 数为 `0`。
+
+### Testing
+
+- `gh run view 33364075544`：Windows installer 工作流 `success`；`gh run view 33364075498`：Windows portable package 工作流 `success`。
+- 六个正式附件本机 SHA-256 与 GitHub API digest 全部一致；两个 `.sha256` 文件分别匹配安装器和便携 ZIP；`latest.yml` 版本、文件名、大小和 SHA-512 与安装器一致。
+- 便携 ZIP 含 `.git/`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、`package.json` 和 `docs/`；正式安装器 Authenticode 为 `NotSigned`。
+- `v0.4.14` 与 `v0.4.15` Release 正文 Markdown 换行检查通过；标签提交目标、Release 状态（Latest、非草稿、非预发布）和 Issue 开放数检查通过。
+- 受保护未跟踪对象 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 未修改、未暂存、未提交；异常文件仍为 `0` 字节，SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`。按本轮约束未执行卸载测试。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`：追加 v0.4.15 正式 Release、工作流、六个附件 digest 和远端验收记录；`progress.md`：追加本轮正式发布闭环记录。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮正式发布文档提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
