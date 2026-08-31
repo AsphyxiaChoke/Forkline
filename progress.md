@@ -10747,3 +10747,22 @@
 
 - 修改文件：`package.json`、`package-lock.json`：升至 `0.4.13`；`tests/installer-package.test.js`：同步版本契约；`docs/PACKAGING.md`、`docs/CONTINUE.md`、`progress.md`：追加版本准备和本机构建证据。
 - 回滚方式：提交前执行 `git restore -- package.json package-lock.json tests/installer-package.test.js docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮 v0.4.13 版本准备提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: 修复工作区文件双击查看偶发卡顿
+
+### What was done
+
+- 将文件编辑器的复杂度判断从历史提交文件扩展到工作区文件；达到行数或差异复杂度门限时，创建编辑器前直接进入轻量双栏模式，避免先同步创建完整 `MergeView` 后再根据耗时降级。
+- 保留已有的单击切换/双击打开请求去重、切仓过期保护、普通小文件编辑与暂存语义，并同步更新架构、Electron 和续接文档。
+
+### Testing
+
+- 对同一约 6 万行工作区输入做基线对比：`v0.4.13` 返回 `lightweight=false`，当前工作树返回 `lightweight=true, reason=lines`。
+- `node --test --test-concurrency=1 tests/file-editor-loader.test.js tests/file-editor-ui.test.js`：`45/45` 通过。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd run test:browser`：`1/1` 通过；真实 Chromium 确认复杂工作区文件创建 `0` 个 `MergeView`、`2` 个轻量 CodeMirror，快速点击/双击期间仍为单次打开和单次文件读取。
+- `git diff --check`：通过。未加入调试日志。
+
+### Notes
+
+- 修改文件：`public/js/features/file-editor-utils.js`：工作区文件纳入复杂度判断；`tests/file-editor-ui.test.js`：增加复杂工作区门限回归；`tests/browser-performance.test.js`：增加真实工作区复杂文件双击回归；`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：记录前置轻量模式和发布续接边界；`progress.md`：追加本轮闭环记录。
+- 回滚方式：提交前执行 `git restore -- public/js/features/file-editor-utils.js tests/file-editor-ui.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/ELECTRON_DESKTOP.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。

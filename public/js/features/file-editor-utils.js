@@ -28,7 +28,7 @@ function normalizeFileEditorConflictVersion(value = {}) {
 }
 
 function detectFileEditorLightweightCompare(source, oldContent, content, largeFile = false) {
-  if (source !== "commit" || largeFile) return { enabled: false, reason: "" };
+  if ((source !== "commit" && source !== "worktree") || largeFile) return { enabled: false, reason: "" };
   const oldText = String(oldContent || "");
   const newText = String(content || "");
   if (Math.max(fileEditorLineCount(oldText), fileEditorLineCount(newText)) >= FILE_EDITOR_LIGHTWEIGHT_LINE_LIMIT) {

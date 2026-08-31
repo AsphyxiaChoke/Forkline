@@ -648,9 +648,13 @@ test("historical comparison switches complex files to the lightweight path", () 
   assert.equal(shiftedResult.enabled, false);
   assert.equal(shiftedResult.reason, "");
 
-  const worktreeResult = sandbox.detectFileEditorLightweightCompare("worktree", manyLines, manyLines, false);
+  const worktreeResult = sandbox.detectFileEditorLightweightCompare("worktree", "one\ntwo\nthree", "one\nchanged\nthree", false);
   assert.equal(worktreeResult.enabled, false);
   assert.equal(worktreeResult.reason, "");
+
+  const worktreeLargeResult = sandbox.detectFileEditorLightweightCompare("worktree", manyLines, manyLines, false);
+  assert.equal(worktreeLargeResult.enabled, true);
+  assert.equal(worktreeLargeResult.reason, "lines");
 });
 
 test("large files use two lightweight CodeMirror panes instead of MergeView", () => {

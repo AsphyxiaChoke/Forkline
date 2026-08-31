@@ -54,6 +54,7 @@
 - `public/js/features/diff-workbench.js`、`diff-selection.js`：按需载入后负责工作区 Diff 读取、反馈、最大化渲染、按块/按行操作和滚动位置恢复。已从布局移除的内联对照容器只保留活动 Diff 状态并清空旧节点，不再生成隐藏副本；实际行节点只在最大化弹窗中按首批最多 1000 行渲染。
 - `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时先复用右键菜单样式，并等待 `file-editor.css` 与 CodeMirror 样式全部就绪。脚本按依赖层载入：同层 CodeMirror 插件和语言模式并行请求，`JSX / HTMLMixed / Markdown / Dockerfile` 等待各自基础模式，PHP 再等待 HTMLMixed 与 C-like；五个 Forkline 编辑器模块继续按原顺序执行。所有入口共享同一个进行中的加载 Promise；同一仓库、文件、来源和查看上下文的切换/打开请求还共享同一个进行中的打开 Promise，避免单击与双击在文件尚未显示时重复创建编辑器。仓库切换、文件或来源变化会形成不同请求，失败后只重试未成功资源，再绑定编辑器专属事件。
 - `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：按需载入后分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和 CodeMirror 初始化。普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；两种路径都只允许编辑中间的合并结果。
+- 工作区与历史文件共用复杂度判断：行数达到 `20,000`，或连续差异达到 `2,000` 行/`32` 个区段时，在创建 `MergeView` 前直接进入轻量双栏 CodeMirror；普通小文件仍保留完整对照和暂存能力。该前置判断覆盖“文件未超过 `1 MiB` 但行数很多”的工作区文件，避免首次双击期间先同步构造完整差异视图。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
 - `public/index.html`：静态结构和有序脚本加载。

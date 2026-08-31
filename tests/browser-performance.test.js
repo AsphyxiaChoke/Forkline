@@ -1104,6 +1104,38 @@ test("real Chromium keeps historical file comparison responsive", {
     `ordinary worktree editor rendered ${ordinaryWorktreeEditor.mergeViews} MergeViews and ${ordinaryWorktreeEditor.codeMirrors} CodeMirror panes`
   );
   assert.doesNotMatch(ordinaryWorktreeEditor.toastAfter, /Cannot read properties of null/);
+
+  let largeWorktreeEditor;
+  try {
+    await fs.appendFile(path.join(repo, "complex.c"), "int ordinary_worktree_complex_change = 1;\n", "utf8");
+    largeWorktreeEditor = await evaluate(cdp, `(async () => {
+      await refreshWorktree(false);
+      const originalGuard = createFileEditorWithPerformanceGuard;
+      createFileEditorWithPerformanceGuard = createFileEditorInstance;
+      try {
+        const started = performance.now();
+        const opened = await openFileEditorLazy("complex.c");
+        return {
+          opened,
+          openMs: performance.now() - started,
+          lightweight: Boolean(state.fileEditor?.lightweightCompare),
+          mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+          codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+        };
+      } finally {
+        createFileEditorWithPerformanceGuard = originalGuard;
+        closeFileEditor(true);
+      }
+    })()`);
+  } finally {
+    await git(repo, ["checkout", "--", "complex.c"]);
+    await evaluate(cdp, "refreshWorktree(false)");
+  }
+  assert.equal(largeWorktreeEditor.opened, true);
+  assert.equal(largeWorktreeEditor.lightweight, true);
+  assert.equal(largeWorktreeEditor.mergeViews, 0);
+  assert.equal(largeWorktreeEditor.codeMirrors, 2);
+
   await git(repo, ["checkout", "--", "small.c"]);
   await evaluate(cdp, "refreshWorktree(false)");
 
