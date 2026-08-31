@@ -1966,7 +1966,7 @@ test("real Chromium keeps historical file comparison responsive", {
       maxDelay = 0;
       lastTick = performance.now();
       const loadAllStarted = performance.now();
-      while (document.querySelectorAll("#changeList .file-row[data-file]").length < state.data.workingFiles.length && loadPasses < 10) {
+      while (document.querySelectorAll("#changeList .file-row[data-file]").length < state.data.workingFiles.length && loadPasses < 50) {
         els.changeList.scrollTop = els.changeList.scrollHeight;
         const passStarted = performance.now();
         els.changeList.dispatchEvent(new Event("scroll"));
@@ -2048,7 +2048,7 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(worktreeMetrics.filteredRows, 1);
   assert.match(worktreeMetrics.filteredFile, /file-03999\.txt$/);
   assert.ok(worktreeMetrics.restoredRows <= 1000, `large worktree restored ${worktreeMetrics.restoredRows} rows before scrolling`);
-  assert.ok(worktreeMetrics.loadPasses > 0 && worktreeMetrics.loadPasses <= 10, `large worktree used ${worktreeMetrics.loadPasses} load passes`);
+  assert.ok(worktreeMetrics.loadPasses > 0 && worktreeMetrics.loadPasses <= 40, `large worktree used ${worktreeMetrics.loadPasses} load passes`);
   assert.equal(worktreeMetrics.loadedAllRows, worktreeMetrics.loadedFiles);
   assert.ok(worktreeMetrics.fileTreeListenerAdds <= 8, `large worktree added ${worktreeMetrics.fileTreeListenerAdds} file-tree listeners while rendering`);
   assert.equal(worktreeMetrics.loadPassMetrics.length, worktreeMetrics.loadPasses);
@@ -2059,7 +2059,7 @@ test("real Chromium keeps historical file comparison responsive", {
     previousLoadedRows = item.rows;
     return Math.max(maximum, added);
   }, 0);
-  assert.ok(maxLoadBatchRows <= 400, `large worktree appended ${maxLoadBatchRows} rows in one frame`);
+  assert.ok(maxLoadBatchRows <= 100, `large worktree appended ${maxLoadBatchRows} rows in one frame`);
   assert.equal(worktreeMetrics.groupContentVisibility, "auto");
   const watchedFilePath = path.join(repo, "worktree", "group-000", "file-00000.txt");
   await fs.writeFile(watchedFilePath, "worktree watcher changed content\n", "utf8");
@@ -2093,6 +2093,139 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.ok(watchedWorktreeChange.apiMs < performanceBudget(300), `single-file worktree refresh took ${watchedWorktreeChange.apiMs.toFixed(1)} ms after ${watchedWorktreeChange.attempts} attempts`);
   t.diagnostic(
     `large worktree ${worktreeMetrics.loadedFiles} files: cold API ${worktreeMetrics.apiMs.toFixed(1)} ms/${worktreeMetrics.coldPayloadBytes} bytes, unchanged API median ${worktreeMetrics.warmApiMs.toFixed(1)} ms [${worktreeMetrics.warmApiSamples.map((value) => value.toFixed(1)).join(", ")}]/${worktreeMetrics.warmPayloadBytes} bytes, changed API ${watchedWorktreeChange.apiMs.toFixed(1)} ms/${watchedWorktreeChange.attempts} attempts, render ${worktreeMetrics.renderMs.toFixed(1)} ms, filter ${worktreeMetrics.filterMs.toFixed(1)} ms, restore ${worktreeMetrics.restoreMs.toFixed(1)} ms, load-all ${worktreeMetrics.loadAllMs.toFixed(1)} ms/${worktreeMetrics.loadPasses} passes, load delay ${worktreeMetrics.loadMaxDelay.toFixed(1)} ms, pass ${worktreeMetrics.loadPassMetrics.map((item) => `${item.rows}:${item.dispatchMs.toFixed(1)}/${item.frameMs.toFixed(1)}`).join(", ")}, max delay ${worktreeMetrics.maxDelay.toFixed(1)} ms, listener adds ${worktreeMetrics.fileTreeListenerAdds}, initial/final rows ${worktreeMetrics.initialRenderedRows}/${worktreeMetrics.loadedAllRows}, initial/final tree nodes ${worktreeMetrics.initialTreeNodes}/${worktreeMetrics.treeNodes}, initial/final page nodes ${worktreeMetrics.initialPageNodes}/${worktreeMetrics.pageNodes}`
+  );
+
+  const scrollThenOpenFile = path.join(repo, "scroll-then-open.c");
+  await fs.writeFile(
+    scrollThenOpenFile,
+    `${Array.from({ length: 25000 }, (_, index) => `int scroll_then_open_${index} = ${index};`).join("\n")}\n`,
+    "utf8"
+  );
+  let scrollThenOpenMetrics;
+  try {
+    scrollThenOpenMetrics = await evaluate(cdp, `(async () => {
+      closeFileEditor(true);
+      await refreshWorktree(false);
+      state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+      renderStage({ refreshDiff: false });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const root = els.changeList;
+      let maxDelay = 0;
+      let lastTick = performance.now();
+      const timer = setInterval(() => {
+        const now = performance.now();
+        maxDelay = Math.max(maxDelay, now - lastTick - 25);
+        lastTick = now;
+      }, 25);
+      const scrollStarted = performance.now();
+      let scrollEvents = 0;
+      for (let index = 0; index < 16; index += 1) {
+        root.scrollTop = index % 2 === 0 ? root.scrollHeight : Math.max(0, root.scrollHeight - root.clientHeight - 240);
+        root.dispatchEvent(new Event("scroll"));
+        scrollEvents += 1;
+      }
+      const scrollMs = performance.now() - scrollStarted;
+      const row = document.querySelector('#changeList [data-select-file][data-file="scroll-then-open.c"]');
+      const openStarted = performance.now();
+      row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+      const deadline = performance.now() + 5000;
+      while (performance.now() < deadline) {
+        if (state.fileEditor?.file === "scroll-then-open.c" && state.fileEditor?.loading === false && document.querySelector("#fileEditorModal")?.classList.contains("show")) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      clearInterval(timer);
+      const result = {
+        rowFound: Boolean(row),
+        scrollEvents,
+        scrollMs,
+        maxDelay,
+        opened: Boolean(state.fileEditor?.file === "scroll-then-open.c" && state.fileEditor?.loading === false && document.querySelector("#fileEditorModal")?.classList.contains("show")),
+        openMs: performance.now() - openStarted,
+        lightweight: Boolean(state.fileEditor?.lightweightCompare),
+        mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+        codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+      };
+      closeFileEditor(true);
+      return result;
+    })()`);
+  } finally {
+    await fs.rm(scrollThenOpenFile, { force: true });
+    await evaluate(cdp, "refreshWorktree(false)");
+  }
+  assert.equal(scrollThenOpenMetrics.rowFound, true);
+  assert.equal(scrollThenOpenMetrics.opened, true);
+  assert.equal(scrollThenOpenMetrics.lightweight, true);
+  assert.equal(scrollThenOpenMetrics.mergeViews, 0);
+  assert.equal(scrollThenOpenMetrics.codeMirrors, 2);
+  assert.ok(scrollThenOpenMetrics.scrollMs < 1000, `scroll-triggered file loading took ${scrollThenOpenMetrics.scrollMs.toFixed(1)} ms`);
+  assert.ok(scrollThenOpenMetrics.maxDelay < 500, `scroll-then-open blocked the event loop for ${scrollThenOpenMetrics.maxDelay.toFixed(1)} ms`);
+  assert.ok(scrollThenOpenMetrics.openMs < 5000, `scroll-then-open took ${scrollThenOpenMetrics.openMs.toFixed(1)} ms`);
+  t.diagnostic(
+    `scroll then double-click: ${scrollThenOpenMetrics.scrollEvents} scroll events in ${scrollThenOpenMetrics.scrollMs.toFixed(1)} ms, max delay ${scrollThenOpenMetrics.maxDelay.toFixed(1)} ms, open ${scrollThenOpenMetrics.openMs.toFixed(1)} ms`
+  );
+
+  const scatteredWorktreeScrollMetrics = await evaluate(cdp, `(async () => {
+    closeFileEditor(true);
+    const originalFiles = state.data.workingFiles;
+    const originalSnapshot = state.data.worktreeSnapshot;
+    const originalLimits = state.worktreeRenderLimits;
+    const originalFilter = state.worktreeFilter;
+    const originalFilterInput = els.worktreeFilterInput.value;
+    const scatteredFiles = Array.from({ length: 4000 }, (_, index) => ({
+      file: "scattered-" + String(index).padStart(5, "0") + "/file.txt",
+      state: "M",
+      indexStatus: "",
+      worktreeStatus: "M",
+      staged: false,
+      unstaged: true,
+      conflict: false,
+    }));
+    state.data.workingFiles = scatteredFiles;
+    state.data.worktreeSnapshot = "browser-scattered-scroll";
+    state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+    state.worktreeFilter = "";
+    els.worktreeFilterInput.value = "";
+    let maxDelay = 0;
+    let lastTick = performance.now();
+    const timer = setInterval(() => {
+      const now = performance.now();
+      maxDelay = Math.max(maxDelay, now - lastTick - 25);
+      lastTick = now;
+    }, 25);
+    const started = performance.now();
+    let passes = 0;
+    try {
+      renderStage({ refreshDiff: false });
+      while (document.querySelectorAll("#changeList .file-row[data-file]").length < scatteredFiles.length && passes < 140) {
+        els.changeList.scrollTop = els.changeList.scrollHeight;
+        els.changeList.dispatchEvent(new Event("scroll"));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        passes += 1;
+      }
+      return {
+        elapsed: performance.now() - started,
+        maxDelay,
+        passes,
+        rows: document.querySelectorAll("#changeList .file-row[data-file]").length,
+        treeGroups: document.querySelectorAll("#changeList .tree-group").length,
+      };
+    } finally {
+      clearInterval(timer);
+      state.data.workingFiles = originalFiles;
+      state.data.worktreeSnapshot = originalSnapshot;
+      state.worktreeRenderLimits = originalLimits;
+      state.worktreeFilter = originalFilter;
+      els.worktreeFilterInput.value = originalFilterInput;
+      renderStage({ refreshDiff: false });
+    }
+  })()`);
+  assert.equal(scatteredWorktreeScrollMetrics.rows, 4000);
+  assert.equal(scatteredWorktreeScrollMetrics.treeGroups, 4000);
+  assert.ok(scatteredWorktreeScrollMetrics.passes <= 140);
+  assert.ok(scatteredWorktreeScrollMetrics.maxDelay < 500, `scattered file scrolling blocked the event loop for ${scatteredWorktreeScrollMetrics.maxDelay.toFixed(1)} ms`);
+  t.diagnostic(
+    `scattered worktree scrolling: ${scatteredWorktreeScrollMetrics.rows} rows/${scatteredWorktreeScrollMetrics.treeGroups} folders in ${scatteredWorktreeScrollMetrics.elapsed.toFixed(1)} ms, max delay ${scatteredWorktreeScrollMetrics.maxDelay.toFixed(1)} ms`
   );
 
   const progressiveOpenMetrics = await evaluate(cdp, `(async () => {

@@ -443,3 +443,10 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 两个 `.sha256` 文件分别匹配安装器和便携 ZIP；`latest.yml` 版本为 `0.4.15`，安装器文件名和大小 `104606898` 一致，SHA-512 为 `3hKJFERUOwpwHTLgRNqnjl7wpGC0NjOc+hK29akXgH64MKee0zRmUClzloDYXQeUufsvNMzdKiQaSr3p+Sdj1Q==`。便携 ZIP 已确认包含 `.git/`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、`package.json` 和 `docs/`，继续使用原有 Git 快进更新语义。
 - 正式安装器 Authenticode 为 `NotSigned`；Release 说明已明确未知发布者和 SmartScreen 风险。安装器继续为当前用户安装、允许选择目录、默认创建桌面和开始菜单快捷方式，并使用 `electron-updater`；更新前优雅停止 Forkline 后台服务及 Git / SSH 子进程。按本轮约束未执行卸载测试。
 - 当前 GitHub 开放 Issue 数为 `0`。受保护异常未跟踪文件仍为 `0` 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；`.playwright-cli/` 仍未跟踪，二者均未修改、暂存或提交。回滚点为本轮文档验收提交，提交后使用 `git revert <本轮文档验收提交>`；不得删除、修改或移动 `v0.4.14` 及更早标签。
+
+## v0.4.16 滚动后文件查看卡死修复
+
+- 本轮针对“滑动大量变更文件后双击查看可能卡死”完成修复。文件树增量合并按 `data-tree-path` 建立目录索引，避免分散目录增长时逐项线性扫描；工作区和暂存区继续保持首批 `800` 个文件，但滚动追加批次降为 `100` 个，缩短单次 DOM 工作块。目录选择、折叠、双击、右键菜单和 Git 操作语义不变。
+- 真实 Chromium 回归覆盖 `4,000` 个分散目录的完整滚动加载，以及滚动文件列表后立即双击复杂工作区文件；滚动后双击成功打开，复杂文件使用轻量双栏编辑器，不创建 `MergeView`，且只发起一次文件读取请求。此前 `12,000` 个分散目录的旧实现可超过 `30` 秒无响应，修复后 `4,000` 个目录在回归门限内完成。
+- 本地 Windows x64 NSIS 安装器已构建：`dist/installer/Forkline-Setup-0.4.16-windows-x64.exe`，大小 `104610629` 字节，SHA-256 `A49FC6624017F2C6FAF43C0E125B748AF7B0DED6DDBCD01652564CD0DD5FC471`；`dist/installer/latest.yml` 版本为 `0.4.16`，文件名、大小和 SHA-512 与安装器一致。Authenticode 为 `NotSigned`，正式发布说明须继续标注未知发布者和 SmartScreen 风险。
+- 便携包和正式 Release 仍需由 `v0.4.16` 标签触发的 GitHub Windows 工作流生成并验收；正式发布前不得把本机构建产物当作远端附件。保护对象 `n+fs.statSync(p.join('public'` 与 `.playwright-cli/` 未修改、未暂存、未提交；不得移动 `v0.4.0` 至 `v0.4.15` 的任何既有标签。

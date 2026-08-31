@@ -1,6 +1,6 @@
 // Worktree and staging area rendering.
 const WORKTREE_FILE_INITIAL_LIMIT = 800;
-const WORKTREE_FILE_BATCH_SIZE = 400;
+const WORKTREE_FILE_BATCH_SIZE = 100;
 
 function renderStage(options = {}) {
   const refreshDiff = options.refreshDiff !== false;

@@ -92,16 +92,22 @@ function appendFileTreeBatch(targetTree, html) {
 }
 
 function mergeFileTreeChildren(target, source) {
+  const existingGroups = new Map(
+    [...target.children]
+      .filter((child) => child.classList.contains("tree-group"))
+      .map((child) => [child.dataset.treePath || "", child])
+  );
   [...source.children].forEach((child) => {
     if (!child.classList.contains("tree-group")) {
       target.append(child);
       return;
     }
     const path = child.dataset.treePath || "";
-    const existing = [...target.children].find((item) => item.classList.contains("tree-group") && item.dataset.treePath === path);
+    const existing = existingGroups.get(path);
     if (!existing) {
       const firstFile = [...target.children].find((item) => !item.classList.contains("tree-group"));
       target.insertBefore(child, firstFile || null);
+      existingGroups.set(path, child);
       return;
     }
     const targetChildren = [...existing.children].find((item) => item.classList.contains("tree-children"));

@@ -10827,3 +10827,22 @@
 
 - 修改文件：`docs/PACKAGING.md`：追加 v0.4.15 正式 Release、工作流、六个附件 digest 和远端验收记录；`progress.md`：追加本轮正式发布闭环记录。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮正式发布文档提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: 完成 v0.4.16 滚动后文件查看卡死修复与发布准备
+
+### What was done
+
+- 修复大量变更文件滚动时的目录增量合并长任务：按目录路径索引已有节点，并将滚动追加批次限制为 100 个文件；滚动后双击复杂文件继续使用轻量双栏编辑器和单请求打开保护。
+- 将安装器契约同步到 `0.4.16`，追加本机构建与验收记录；保留 v0.4.15 及更早标签和两个受保护未跟踪对象。
+
+### Testing
+
+- 已有失败证据：旧实现加载 12,000 个分散目录超过 30 秒无响应；修复后 4,000 个分散目录真实 Chromium 滚动回归通过。
+- 已有真实 Electron 验收：滚动加载 4,001 行、追加 33 次，最大主线程延迟约 287.5 ms；滚动后双击 `package.json` 成功，独立编辑器连续滚动约 46.9 ms，Electron 进程和调试端口正常退出。
+- 已有自动回归：编辑器/工作区定向测试 `62/62`，完整自动回归 `401/401`，真实 Chromium 滚动后双击回归 `1/1` 均通过；本地 NSIS 构建成功，`latest.yml` 版本、文件名、大小和 SHA-512 与安装器一致。
+- 本轮待复跑：安装器契约、完整 `npm.cmd test`、真实 Chromium 回归、便携包构建和远端 GitHub Release 附件验收。
+
+### Notes
+
+- 修改文件：`public/js/features/file-tree.js`：按目录路径索引增量合并；`public/js/features/worktree-changes.js`：滚动追加批次降为 100；`tests/browser-performance.test.js`：增加分散目录滚动和滚动后双击回归；`tests/installer-package.test.js`：版本契约同步到 0.4.16；`package.json`、`package-lock.json`：版本为 0.4.16；`README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`：同步卡死修复和发布边界。
+- 回滚方式：提交前执行 `git restore -- public/js/features/file-tree.js public/js/features/worktree-changes.js tests/browser-performance.test.js tests/installer-package.test.js package.json package-lock.json README.md docs/ARCHITECTURE.md docs/CONTINUE.md docs/PACKAGING.md progress.md`；提交后使用 `git revert <v0.4.16 修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动既有标签。
