@@ -444,6 +444,16 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 正式安装器 Authenticode 为 `NotSigned`；Release 说明已明确未知发布者和 SmartScreen 风险。安装器继续为当前用户安装、允许选择目录、默认创建桌面和开始菜单快捷方式，并使用 `electron-updater`；更新前优雅停止 Forkline 后台服务及 Git / SSH 子进程。按本轮约束未执行卸载测试。
 - 当前 GitHub 开放 Issue 数为 `0`。受保护异常未跟踪文件仍为 `0` 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；`.playwright-cli/` 仍未跟踪，二者均未修改、暂存或提交。回滚点为本轮文档验收提交，提交后使用 `git revert <本轮文档验收提交>`；不得删除、修改或移动 `v0.4.14` 及更早标签。
 
+## v0.4.16 正式发布与附件验收
+
+- 正式 Release：[Forkline v0.4.16](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.16) 已创建，Release ID 为 `379598716`，为正式版、非草稿、非预发布，并成为当前 Latest。发布说明为中文，明确记录滚动后双击查看卡死修复、安装版更新边界和未签名 SmartScreen 风险。
+- `v0.4.16` 为注释标签，标签对象为 `c09a24f4e3b5c986faea6cf3659ecd3ac3e02da2`，目标提交为 `58f85da533155e454f7a9ab7cb64229b780c1985`；远端复核确认 `v0.4.15` 及更早标签未移动。
+- 安装器工作流 [33371865652](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33371865652) 与便携包工作流 [33371865631](https://github.com/AsphyxiaChoke/Forkline/actions/runs/33371865631) 均成功，且均使用提交 `58f85da533155e454f7a9ab7cb64229b780c1985`。
+- 六个正式附件均为 `uploaded`，本机重新下载后的 SHA-256 与 GitHub API digest 全部一致：安装器 `104606697` 字节 / `70f1f0878b0064c53c9b5e56a126aef723943335671614d6f864ce3a0599b4d6`；blockmap `111767` 字节 / `83a5f350c6107e3c281e4d36d3b6bdbf1ebb3d38e3b2f8ae0dbe71f1a3d58e49`；安装器校验文件 `103` 字节 / `c231fb598c88979d475bc083706d4a8fd04084dd20986ca57cbd9d2643f762b6`；便携 ZIP `36880014` 字节 / `1be6197b2e48e49d0a9df277ca87cb8871ff86d53ee5ac1c72cfb85881c84c1b`；便携 ZIP 校验文件 `109` 字节 / `1e4f8319a073cf418099befbdc332eb0b0b2024d4b6afb234b8cd3a5c895aa2a`；`latest.yml` `372` 字节 / `f1bd64558efb0649f8707af48c4359af413c51d353ba04d03b62d3a00c1a8dae`。
+- `latest.yml` 版本为 `0.4.16`，安装器文件名和大小 `104606697` 一致，SHA-512 为 `bUUDA6jU1C/lUhCdNFZNW0ti12BYaBVVVOkMpwP9XPaj+j4LtWSCtmOgljs8TPQ9eWmR/sAil+H/VFk6rzqjcA==`；两个 `.sha256` 文件分别匹配安装器和便携 ZIP。远端便携 ZIP 已确认包含 `.git/`、`runtime/node.exe`、`Forkline.cmd`、`start.cmd`、`package.json` 和 `docs/`。
+- 本地便携包脚本构建成功：`dist/Forkline-v0.4.16-windows-x64-portable.zip` 为 `36849396` 字节，SHA-256 为 `46ff87359ff8cab5b26a6e4d598a122eaab5ddf0bb4f3d30f2f491d50c708549`；正式分发以 GitHub Release 附件为准。远端安装器 Authenticode 为 `NotSigned`，首次运行可能显示未知发布者或 SmartScreen 提示。
+- v0.4.16 修复后的真实 Chromium 滚动后双击回归通过；滚动后打开约 `229.8 ms`、最大事件循环延迟约 `23.2 ms`，4,000 个分散目录滚动完整加载通过。当前 GitHub 开放 Issue 数为 `0`；保护对象 `n+fs.statSync(p.join('public'` 和 `.playwright-cli/` 均未修改、未暂存、未提交。
+
 ## v0.4.16 滚动后文件查看卡死修复
 
 - 本轮针对“滑动大量变更文件后双击查看可能卡死”完成修复。文件树增量合并按 `data-tree-path` 建立目录索引，避免分散目录增长时逐项线性扫描；工作区和暂存区继续保持首批 `800` 个文件，但滚动追加批次降为 `100` 个，缩短单次 DOM 工作块。目录选择、折叠、双击、右键菜单和 Git 操作语义不变。

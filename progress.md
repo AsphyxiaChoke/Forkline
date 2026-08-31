@@ -10828,6 +10828,25 @@
 - 修改文件：`docs/PACKAGING.md`：追加 v0.4.15 正式 Release、工作流、六个附件 digest 和远端验收记录；`progress.md`：追加本轮正式发布闭环记录。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮正式发布文档提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
 
+## 2026-08-31 - Task: 完成 Forkline v0.4.16 正式发布与远端验收
+
+### What was done
+
+- 发布 `v0.4.16` 中文正式 Release，修复大量变更文件滚动后双击查看可能卡死的问题；安装器和便携包 Windows 工作流均成功，六个正式附件完成下载、digest、校验文件、`latest.yml` 和便携目录结构验收。
+- 确认 `v0.4.16` 注释标签固定在提交 `58f85da`，`v0.4.15` 及更早标签未移动；当前 GitHub Latest 为 `v0.4.16`，公开 Issue 数为 `0`。
+
+### Testing
+
+- 本机 `npm.cmd test`：`401/401` 通过；安装器契约 `2/2` 通过；真实 Chromium 滚动后双击通过，打开约 `229.8 ms`、最大事件循环延迟约 `23.2 ms`；4,000 个分散目录滚动加载通过。
+- GitHub Actions：安装器工作流 `33371865652`、便携包工作流 `33371865631` 均为 `success`，均验证提交 `58f85da533155e454f7a9ab7cb64229b780c1985`。
+- 六个远端附件本机 SHA-256 与 GitHub API digest 全部一致；`latest.yml` 的版本、安装器大小和 SHA-512 一致；便携 ZIP 含 `.git/`、内置 Node、启动脚本和 `docs/`。本地便携包构建脚本也成功，输出 SHA-256 为 `46ff87359ff8cab5b26a6e4d598a122eaab5ddf0bb4f3d30f2f491d50c708549`。
+- 远端安装器 Authenticode 为 `NotSigned`；发布说明已标注未知发布者和 SmartScreen 风险。异常未跟踪文件仍为 `0` 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，`.playwright-cli/` 和该文件均未修改、未暂存、未提交。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`：追加 v0.4.16 正式 Release、工作流、六个附件 digest 和远端验收记录；`progress.md`：追加本轮正式发布闭环记录。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后使用 `git revert <v0.4.16 远端验收文档提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
 ## 2026-08-31 - Task: 完成 v0.4.16 滚动后文件查看卡死修复与发布准备
 
 ### What was done
