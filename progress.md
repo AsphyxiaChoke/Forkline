@@ -10766,3 +10766,43 @@
 
 - 修改文件：`public/js/features/file-editor-utils.js`：工作区文件纳入复杂度判断；`tests/file-editor-ui.test.js`：增加复杂工作区门限回归；`tests/browser-performance.test.js`：增加真实工作区复杂文件双击回归；`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：记录前置轻量模式和发布续接边界；`progress.md`：追加本轮闭环记录。
 - 回滚方式：提交前执行 `git restore -- public/js/features/file-editor-utils.js tests/file-editor-ui.test.js tests/browser-performance.test.js docs/ARCHITECTURE.md docs/ELECTRON_DESKTOP.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: 修复双击查看剩余卡死风险并准备 Forkline v0.4.15
+
+### What was done
+
+- 通过真实工作区双击场景确认原有复杂度判断的遗漏：约 `892 KB / 1900` 行的文件仍会先创建 `MergeView`，可能在首次双击期间同步占用渲染线程。
+- 新增 `768 KiB` 内容长度前置门限；达到门限的工作区或历史文件在创建 `MergeView` 前直接使用两个轻量 CodeMirror，保留工作区右侧编辑能力，并在状态栏显示“内容较大”。
+- 将真实浏览器回归改为模拟用户的两次单击加一次双击，校验单次打开、单次文件读取、无重复 `MergeView` 和可完成打开；应用、锁文件和安装器契约升至 `0.4.15`。
+
+### Testing
+
+- 修复前失败回归：`892 KB / 1900` 行工作区双击结果为 `lightweight=false`、`MergeViews=1`；修复后为 `lightweight=true`、`MergeViews=0`、`2` 个 CodeMirror 面板。
+- `node --test --test-concurrency=1 tests/file-editor-loader.test.js tests/file-editor-ui.test.js`：`45/45` 通过。
+- `FORKLINE_BROWSER_PERFORMANCE_SCALE=3 npm.cmd run test:browser`：`1/1` 通过；真实 Chromium 的复杂工作区双击和中等大文件双击均只执行一次打开和一次 `/api/worktree-file` 请求，最大事件循环延迟分别约 `42.8 ms` 和 `2.5 ms`。
+- `FORKLINE_BROWSER_PERFORMANCE_SCALE=3 npm.cmd test`：`401/401` 通过；Node 语法检查和 `git diff --check` 通过。
+- 受保护未跟踪对象 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 未修改、未暂存、未提交；异常文件仍为 `0` 字节，SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`public/js/features/file-editor-utils.js`：增加 `768 KiB` 内容门限；`public/js/features/file-editor-window.js`、`public/js/i18n-catalog.js`：增加“内容较大”状态文案；`tests/file-editor-ui.test.js`、`tests/browser-performance.test.js`：增加失败转绿的单元和真实双击回归；`package.json`、`package-lock.json`、`tests/installer-package.test.js`：升至 `0.4.15`；`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`：同步新的编辑器分流边界；`progress.md`：追加本轮记录。
+- 回滚方式：提交前执行 `git restore -- public/js/features/file-editor-utils.js public/js/features/file-editor-window.js public/js/i18n-catalog.js tests/file-editor-ui.test.js tests/browser-performance.test.js package.json package-lock.json tests/installer-package.test.js docs/ARCHITECTURE.md docs/ELECTRON_DESKTOP.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-08-31 - Task: 完成 v0.4.15 发布前验证与打包记录
+
+### What was done
+
+- 追加 `docs/PACKAGING.md` 的 v0.4.15 本机构建验收记录；确认 `docs/` 不在 Electron 安装器的打包文件列表中，因此文档追加不会改变已核对的本机构建产物。
+- 连续两轮真实 Chromium 双击压力回归均完成，验证约 `892 KB / 1900` 行工作区文件没有重复打开、重复读取或同步 `MergeView` 构造。
+
+### Testing
+
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd run test:browser`：连续 `2/2` 轮通过；双击打开耗时 `169.5 ms`、`159.7 ms`，事件循环最大延迟 `0.7 ms`、`1.1 ms`，均为 `0` 个 `MergeView`、轻量模式。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`401/401` 通过。
+- 未设置诊断倍率的单独浏览器性能基准失败为 `396.1 ms` 超过固定 `350 ms` 冷 API 门禁；没有修改代码、门限或测试，该结果按主机性能波动记录。
+- `node --check`（本轮修改的 JS）和 `git diff --check`：通过；本地 NSIS 构建产物、`latest.yml` 版本/文件名/大小/SHA-512 一致，Authenticode 为 `NotSigned`。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`：追加 v0.4.15 本机构建、双击回归和未签名风险记录；`progress.md`：追加本轮最终验证记录。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后使用 `git revert <本轮文档记录提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。

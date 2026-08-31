@@ -1112,17 +1112,59 @@ test("real Chromium keeps historical file comparison responsive", {
       await refreshWorktree(false);
       const originalGuard = createFileEditorWithPerformanceGuard;
       createFileEditorWithPerformanceGuard = createFileEditorInstance;
+      const originalOpen = openFileEditor;
+      const originalFetch = window.fetch;
+      const row = document.querySelector('#changeList [data-select-file][data-file="complex.c"]');
+      let openCalls = 0;
+      let apiRequests = 0;
+      let maxDelay = 0;
+      let lastTick = performance.now();
+      const timer = setInterval(() => {
+        const now = performance.now();
+        maxDelay = Math.max(maxDelay, now - lastTick - 25);
+        lastTick = now;
+      }, 25);
+      openFileEditor = (...args) => {
+        openCalls += 1;
+        return originalOpen(...args);
+      };
+      window.fetch = (input, init) => {
+        const requestUrl = typeof input === "string" ? input : input?.url || "";
+        if (requestUrl.includes("/api/worktree-file")) apiRequests += 1;
+        return originalFetch(input, init);
+      };
       try {
         const started = performance.now();
-        const opened = await openFileEditorLazy("complex.c");
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+        const deadline = performance.now() + 5000;
+        while (performance.now() < deadline) {
+          if (state.fileEditor?.file === "complex.c" && state.fileEditor?.loading === false && document.querySelector("#fileEditorModal")?.classList.contains("show")) break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        const opened = Boolean(
+          state.fileEditor?.file === "complex.c" &&
+          state.fileEditor?.loading === false &&
+          document.querySelector("#fileEditorModal")?.classList.contains("show")
+        );
         return {
           opened,
+          rowFound: Boolean(row),
+          openCalls,
+          apiRequests,
           openMs: performance.now() - started,
+          maxDelay,
           lightweight: Boolean(state.fileEditor?.lightweightCompare),
           mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
           codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
         };
       } finally {
+        clearInterval(timer);
+        window.fetch = originalFetch;
+        openFileEditor = originalOpen;
         createFileEditorWithPerformanceGuard = originalGuard;
         closeFileEditor(true);
       }
@@ -1131,10 +1173,98 @@ test("real Chromium keeps historical file comparison responsive", {
     await git(repo, ["checkout", "--", "complex.c"]);
     await evaluate(cdp, "refreshWorktree(false)");
   }
+  assert.equal(largeWorktreeEditor.rowFound, true);
+  assert.equal(largeWorktreeEditor.openCalls, 1);
+  assert.equal(largeWorktreeEditor.apiRequests, 1);
   assert.equal(largeWorktreeEditor.opened, true);
   assert.equal(largeWorktreeEditor.lightweight, true);
   assert.equal(largeWorktreeEditor.mergeViews, 0);
   assert.equal(largeWorktreeEditor.codeMirrors, 2);
+  assert.ok(largeWorktreeEditor.openMs < 5000, `large worktree double-click opened in ${largeWorktreeEditor.openMs.toFixed(1)} ms`);
+  assert.ok(largeWorktreeEditor.maxDelay < 1500, `large worktree double-click blocked the event loop for ${largeWorktreeEditor.maxDelay.toFixed(1)} ms`);
+
+  const mediumWorktreeFile = path.join(repo, "medium-worktree.c");
+  const mediumWorktreeContent = Array.from({ length: 1900 }, (_, index) => `int medium_${index} = ${"x".repeat(450)};`).join("\n") + "\n";
+  let mediumWorktreeEditor;
+  try {
+    await fs.writeFile(mediumWorktreeFile, mediumWorktreeContent, "utf8");
+    mediumWorktreeEditor = await evaluate(cdp, `(async () => {
+      await refreshWorktree(false);
+      const originalGuard = createFileEditorWithPerformanceGuard;
+      const originalOpen = openFileEditor;
+      const originalFetch = window.fetch;
+      const row = document.querySelector('#changeList [data-select-file][data-file="medium-worktree.c"]');
+      let openCalls = 0;
+      let apiRequests = 0;
+      let historyRequests = 0;
+      let maxDelay = 0;
+      let lastTick = performance.now();
+      const timer = setInterval(() => {
+        const now = performance.now();
+        maxDelay = Math.max(maxDelay, now - lastTick - 25);
+        lastTick = now;
+      }, 25);
+      openFileEditor = (...args) => {
+        openCalls += 1;
+        return originalOpen(...args);
+      };
+      window.fetch = (input, init) => {
+        const requestUrl = typeof input === "string" ? input : input?.url || "";
+        if (requestUrl.includes("/api/worktree-file")) apiRequests += 1;
+        if (requestUrl.includes("/api/file-history")) historyRequests += 1;
+        return originalFetch(input, init);
+      };
+      try {
+        const started = performance.now();
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        row?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+        const deadline = performance.now() + 5000;
+        while (performance.now() < deadline) {
+          if (state.fileEditor?.file === "medium-worktree.c" && state.fileEditor?.loading === false && document.querySelector("#fileEditorModal")?.classList.contains("show")) break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return {
+          opened: Boolean(
+            state.fileEditor?.file === "medium-worktree.c" &&
+            state.fileEditor?.loading === false &&
+            document.querySelector("#fileEditorModal")?.classList.contains("show")
+          ),
+          rowFound: Boolean(row),
+          openCalls,
+          apiRequests,
+          historyRequests,
+          openMs: performance.now() - started,
+          maxDelay,
+          lightweight: Boolean(state.fileEditor?.lightweightCompare),
+          mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
+          codeMirrors: document.querySelectorAll("#fileEditorMerge .CodeMirror").length,
+        };
+      } finally {
+        clearInterval(timer);
+        window.fetch = originalFetch;
+        openFileEditor = originalOpen;
+        createFileEditorWithPerformanceGuard = originalGuard;
+        closeFileEditor(true);
+      }
+    })()`);
+  } finally {
+    await fs.rm(mediumWorktreeFile, { force: true });
+    await evaluate(cdp, "refreshWorktree(false)");
+  }
+  assert.equal(mediumWorktreeEditor.rowFound, true);
+  assert.equal(mediumWorktreeEditor.openCalls, 1);
+  assert.equal(mediumWorktreeEditor.apiRequests, 1);
+  assert.ok(mediumWorktreeEditor.historyRequests <= 2);
+  assert.equal(mediumWorktreeEditor.opened, true);
+  assert.equal(mediumWorktreeEditor.lightweight, true);
+  assert.equal(mediumWorktreeEditor.mergeViews, 0);
+  assert.equal(mediumWorktreeEditor.codeMirrors, 2);
+  t.diagnostic(
+    `medium worktree double-click ${mediumWorktreeContent.length} bytes: open ${mediumWorktreeEditor.openMs.toFixed(1)} ms, max delay ${mediumWorktreeEditor.maxDelay.toFixed(1)} ms, lightweight ${mediumWorktreeEditor.lightweight}, MergeViews ${mediumWorktreeEditor.mergeViews}`
+  );
 
   await git(repo, ["checkout", "--", "small.c"]);
   await evaluate(cdp, "refreshWorktree(false)");

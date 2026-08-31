@@ -1,5 +1,6 @@
 // File type, content, and lightweight comparison helpers.
 const FILE_EDITOR_LIGHTWEIGHT_LINE_LIMIT = 20000;
+const FILE_EDITOR_LIGHTWEIGHT_CHAR_LIMIT = 768 * 1024;
 const FILE_EDITOR_LIGHTWEIGHT_CHANGED_LINE_LIMIT = 2000;
 const FILE_EDITOR_LIGHTWEIGHT_CHANGE_SEGMENT_LIMIT = 32;
 
@@ -31,6 +32,9 @@ function detectFileEditorLightweightCompare(source, oldContent, content, largeFi
   if ((source !== "commit" && source !== "worktree") || largeFile) return { enabled: false, reason: "" };
   const oldText = String(oldContent || "");
   const newText = String(content || "");
+  if (Math.max(oldText.length, newText.length) >= FILE_EDITOR_LIGHTWEIGHT_CHAR_LIMIT) {
+    return { enabled: true, reason: "size" };
+  }
   if (Math.max(fileEditorLineCount(oldText), fileEditorLineCount(newText)) >= FILE_EDITOR_LIGHTWEIGHT_LINE_LIMIT) {
     return { enabled: true, reason: "lines" };
   }

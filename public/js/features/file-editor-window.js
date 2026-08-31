@@ -256,7 +256,7 @@ function updateFileEditorStatus(message = "") {
     if (editor.largeFile) metadataParts.push(t("大文件模式"));
     else if (editor.lightweightCompare) {
       metadataParts.push(t("复杂文件轻量模式"));
-      metadataParts.push(t(editor.lightweightReason === "lines" ? "行数较多" : editor.lightweightReason === "slow" ? "响应较慢，已自动切换" : "差异较复杂"));
+      metadataParts.push(t(editor.lightweightReason === "lines" ? "行数较多" : editor.lightweightReason === "size" ? "内容较大" : editor.lightweightReason === "slow" ? "响应较慢，已自动切换" : "差异较复杂"));
     }
     if (editor.exists !== false) {
       metadataParts.push(String(editor.encoding || "utf-8").toUpperCase());

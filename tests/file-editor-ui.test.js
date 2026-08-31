@@ -627,6 +627,11 @@ test("historical comparison switches complex files to the lightweight path", () 
   assert.equal(lineResult.enabled, true);
   assert.equal(lineResult.reason, "lines");
 
+  const largeContent = "x".repeat(768 * 1024);
+  const sizeResult = sandbox.detectFileEditorLightweightCompare("worktree", "", largeContent, false);
+  assert.equal(sizeResult.enabled, true);
+  assert.equal(sizeResult.reason, "size");
+
   const oldLines = Array.from({ length: 240 }, (_, index) => `line-${index}`);
   const newLines = oldLines.slice();
   for (let index = 0; index < 40; index += 1) {

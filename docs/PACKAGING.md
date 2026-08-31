@@ -425,3 +425,11 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 
 - 本机构建 `Forkline-Setup-0.4.13-windows-x64.exe` 成功，大小 `104610573` 字节，SHA-256 `04869302D471C4DF51A94435C6CC7458E8E2A6F3F2866DD2429A2376AC171A79`；blockmap 大小 `111744` 字节，SHA-256 `85B4EF737E25B9BF97F208CB687EA8099B8FF3EFE07AD8C8145A0C11B71DB14A`；`latest.yml` SHA-256 `776DA16DB5CC899CCC22215F97582B91D9443E33F86BB3C9F1661CA0C5584C5D`。
 - `latest.yml` 版本为 `0.4.13`，安装器文件名为 `Forkline-Setup-0.4.13-windows-x64.exe`，大小为 `104610573`，SHA-512 为 `9wDnJNjfgsgvzRsmz6SYgyUeaotqlGCT69XDQ+ji5btuWnq/vPmhQq+HigFJhYS2fwnTBSmZ1vprNSXDXFsjeA==`；安装器产品版本为 `0.4.13`，Authenticode 为 `NotSigned`。
+
+## v0.4.15 本机安装器构建验收
+
+- 本轮针对文件双击查看偶发卡死风险增加了 `768 KiB` 内容前置分流；达到门限的工作区或历史文件在创建 `MergeView` 前使用两个轻量 CodeMirror，发布版本升至 `0.4.15`。Web、源码克隆和便携版继续使用原 Git 快进更新；NSIS 安装版继续使用 `electron-updater`。
+- `npm.cmd run build:installer` 本机构建成功。`dist/installer/Forkline-Setup-0.4.15-windows-x64.exe` 为 `104610480` 字节，SHA-256 为 `C9273EADF43A64FB4C1D61F0D67736EBEACCE63C10DC44D2412F5BD0A8A9944E`；对应 blockmap 为 `111579` 字节，SHA-256 为 `6BD0890CC4926C90CD3CE7B589A79ED6F9D16A8438609E19BF14DD1BFF7C879C`。
+- `dist/installer/latest.yml` 为 `372` 字节，SHA-256 为 `7CE290B3CB1C96A520726FB01B146BFE9080C991F6F79A756A677271856BF3A9`；版本、安装器文件名、大小 `104610480` 和 SHA-512 `VMUzRVTEO2m0gUBBFc/1vkNbfxBTGRn31YEwTIW7c/vya1wY7UAYZ1eh1SspcpouDpV8FQ1M+2W3Yti8N7wX/g==` 均与本机构建安装器一致。Authenticode 为 `NotSigned`，正式发布说明必须继续标注未知发布者和 SmartScreen 风险。
+- 本轮定向编辑器回归为 `45/45`，真实 Chromium 回归为 `1/1`；约 `892 KB / 1900` 行工作区文件模拟两次单击加一次双击，打开约 `153.3 ms`，事件循环最大延迟约 `0.9 ms`，只执行 `1` 次打开和 `1` 次文件读取，创建 `0` 个 MergeView 和 `2` 个轻量 CodeMirror。按当前约束未执行卸载测试；本机构建产物不能替代 GitHub Release 工作流附件。
+- 异常未跟踪文件 `n+fs.statSync(p.join('public'` 仍为 `0` 字节、SHA-256 为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`；`.playwright-cli/` 仍未跟踪，二者均未修改、暂存或提交。回滚点为本轮提交，提交后使用 `git revert <v0.4.15 修复提交>`；不得删除、修改或移动 `v0.4.14` 及更早标签。

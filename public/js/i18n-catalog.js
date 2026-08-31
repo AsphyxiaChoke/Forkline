@@ -259,6 +259,7 @@
     "只读": "Read-only",
     "大文件模式": "Large file mode",
     "复杂文件轻量模式": "Complex file lightweight mode",
+    "内容较大": "Large content",
     "行数较多": "Many lines",
     "差异较复杂": "Complex differences",
     "响应较慢，已自动切换": "Slow response, switched automatically",
