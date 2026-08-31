@@ -10885,3 +10885,23 @@
 
 - 修改文件：`public/js/features/worktree-changes.js`、`public/js/features/file-tree.js`：修复增量加载后的滚动锚点和加载抑制；`tests/browser-performance.test.js`：增加合成/真实滚轮回归；`electron/file-editor-window.js`、`electron/preload.js`、`public/js/features/file-editor-loader.js`、`public/js/bootstrap.js`：传递并应用独立编辑器主题；`tests/file-editor-ui.test.js`、`tests/file-editor-window.test.js`：补充主题回归；`README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步行为说明。
 - 回滚方式：提交前执行 `git restore -- README.md docs/ARCHITECTURE.md docs/CONTINUE.md electron/file-editor-window.js electron/preload.js public/js/bootstrap.js public/js/features/file-editor-loader.js public/js/features/file-tree.js public/js/features/worktree-changes.js tests/browser-performance.test.js tests/file-editor-ui.test.js tests/file-editor-window.test.js progress.md`；提交后使用 `git revert <本轮修复提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动既有标签。
+
+## 2026-08-31 - Task: 完成 Forkline v0.4.17 发布与远端验收
+
+### What was done
+
+- 将滚轮回弹、滚动后文件查看和独立编辑器主题同步修复发布为 `v0.4.17`，Release 正文改为中文并标注未签名安装器的 SmartScreen 风险。
+- 推送提交 `8a410c17e19cb7721598d6ed4748d185d3ba0c8d` 到 `main`，安装器和便携包工作流均成功完成并向 Release 上传附件。
+- 再次确认全部公开 Issue（#1–#10）均为关闭状态；`v0.4.16` 标签未移动。
+
+### Testing
+
+- GitHub Actions：安装器工作流 `33379694436` 和便携包工作流 `33379694495` 均为 `success`，两者 `headSha` 均为 `8a410c17e19cb7721598d6ed4748d185d3ba0c8d`；云端安装器完整自动测试通过。
+- GitHub Release API：`v0.4.17` 为正式发布，六个附件的名称、大小和 SHA-256 digest 均已核对；`latest.yml` 版本为 `0.4.17`，安装器和 SHA-512 元数据一致。
+- 本机已下载并匹配 `.blockmap`、两个 `.sha256` 和 `latest.yml` 四个小型附件；安装器和便携 ZIP 的完整二进制下载受当前代理带宽限制未完成，未将半截文件计入本机 hash 验收，但其 Release API digest、校验文件和云端构建结果均已核对。
+- 远端引用验收：`main` 与 `v0.4.17` 均指向 `8a410c17e19cb7721598d6ed4748d185d3ba0c8d`；`v0.4.16^{}` 仍指向 `58f85da533155e454f7a9ab7cb64229b780c1985`。保护对象仍未修改、未暂存、未提交。
+
+### Notes
+
+- 修改文件：`progress.md`：追加 v0.4.17 发布、工作流和远端附件验收记录。
+- 回滚方式：提交前执行 `git restore -- progress.md`；提交后使用 `git revert <本轮发布验收日志提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
