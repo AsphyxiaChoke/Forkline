@@ -10905,3 +10905,40 @@
 
 - 修改文件：`progress.md`：追加 v0.4.17 发布、工作流和远端附件验收记录。
 - 回滚方式：提交前执行 `git restore -- progress.md`；提交后使用 `git revert <本轮发布验收日志提交>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-09-01 - Task: 修复快速滚轮加载更多时停在单批次
+
+### What was done
+
+- 稳定复现并修复工作区快速连续向下滚轮只从 `800` 行加载到 `900` 行的问题；追加批次不再强制抢写原生 `scrollTop`，滚动加载锁只覆盖同步 DOM 合并，后续滚轮事件可继续加载。
+- 保留目录固定高度块、屏幕外节点卸载/恢复、文件夹选择、折叠、双击、右键菜单和 Git 操作语义，并补充真实 Chromium 高速滚轮回归。
+
+### Testing
+
+- 修复前真实 Chromium 回归稳定失败：连续 60 次高速向下滚轮为 `800 -> 900` 行。
+- 修复后 `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd run test:browser`：`1/1` 通过；同一场景为 `800 -> 1200` 行，最大向上跳变 `0 px`；4000 个分散目录快速滚轮 `scrollTop 0 -> 19200 px`，最大向上跳变 `0 px`。
+- `node --test tests/file-editor-ui.test.js`：`39/39` 通过；相关 `node --check`、`git diff --check` 通过。完整 `npm.cmd test` 尚待本轮最终复跑。
+
+### Notes
+
+- 修改文件：`public/js/features/file-tree.js`：取消跨两帧的滚动加载抑制；`public/js/features/worktree-changes.js`：追加批次不再程序化改写滚动位置；`tests/browser-performance.test.js`：增加连续高速滚轮、分散目录块和重渲染位置回归；`README.md`：更新工作区滚动说明；`docs/ARCHITECTURE.md`：更新文件树滚动加载边界；`docs/CONTINUE.md`：追加本轮续接记录。
+- 回滚方式：提交后执行 `git revert <本轮快速滚轮修复提交>`；提交前如需整体恢复到本轮起点，先保存当前差异，再使用 `git restore --source=a84f429764e2a3d2ee945084840c9e94b10ea76a -- <上述跟踪文件列表>`。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-09-01 - Task: 修复编辑器快速滚轮回弹
+
+### What was done
+
+- 稳定复现并修复轻量文件编辑器快速向下滚轮时两栏约 `726 px` 的向上回弹；根因是 CodeMirror 内部位置校正事件与跨栏程序同步竞争，内部 `scroll` 被误判为新的用户滚动源。
+- 轻量双栏/三栏同步现在为每个目标栏维护程序滚动期望队列，快速滚轮期间用短活动窗口锁定明确滚轮来源并忽略内部位置校正；滚动条拖动、键盘滚动和普通程序化滚动仍使用原生 `scroll` 同步。关闭编辑器时清理滚轮计时器和全部监听器。
+- 增加延迟程序滚动事件的最小时序回归，并同步更新 README、架构文档和续接记录；没有修改旧版本标签或受保护未跟踪对象。
+
+### Testing
+
+- 修复前真实 Chromium 快速编辑器滚轮回归失败：两栏最大向上跳变均为 `726 px`。
+- 修复后 `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd run test:browser`：`1/1` 通过；快速编辑器滚轮两栏最大向上跳变均为 `0 px`，最终滚动比例差 `0.0006`。同轮冲突三栏同步、滚动后双击打开、4000 个分散目录快速滚动和编辑器反复打开均通过。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`404/404` 通过，失败 `0`；`node --check` 和 `git diff --check` 通过。
+
+### Notes
+
+- 修改文件：`public/js/features/file-editor-actions.js`：增加目标滚动期望队列和滚轮活动来源抑制；`public/js/features/file-editor-window.js`：清理滚轮计时器并解除 wheel/scroll 监听；`tests/file-editor-ui.test.js`：增加延迟程序滚动事件单测；`tests/browser-performance.test.js`：保留真实快速滚轮回弹门禁；`README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步快速滚轮行为、架构边界和续接证据。
+- 回滚方式：提交后使用 `git revert <本轮编辑器快速滚轮修复提交>`；提交前不要对包含此前 v0.4.18 工作的整文件执行 `git restore`，如需撤销只反向应用本轮对应补丁。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。

@@ -49,7 +49,7 @@
 - `public/js/panels/auth.js`：按需载入的完整同步页，负责页面布局、待拉取/待推送提交预览、upstream 与远端管理、连接诊断、认证助手和系统凭据入口；页面样式来自共享 `repository-panels.css`。
 - `public/js/panels/stashes.js`、`compare.js`：分别负责按需载入的储藏和分支/引用比较面板，共用 `repository-panels.css`；比较请求入口由首屏 `commit-actions-loader.js` 提供，完整请求实现在首次比较时载入，页面模块只负责结果展示与页内动作。
 - `public/js/panels/tags.js`、`recovery.js`、`logs.js`、`settings.js`：分别负责 Tag、恢复点与 reflog、按需载入的 Git 操作日志与界面诊断页面、应用设置与在线更新面板；Tag 与恢复点共用 `repository-panels.css`，日志页共用 `logs.css`，操作取消核心不属于 `logs.js`。
-- `public/js/features/file-tree.js`、`diff-renderer.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、供同步/比较等页面共用的双栏 Diff 基础渲染，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu/scroll 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。工作区与暂存区超过 800 个文件时先渲染首批，接近底部滚动或点击“继续显示”后按 100 个增量合并目录节点；追加前记录滚动容器距底部距离，追加后恢复对应位置，并在两帧内忽略位置校正产生的滚动事件，避免向下滚轮回弹或同一帧连载多批。目录合并按 `data-tree-path` 建立一次索引，避免分散目录增长时重复线性扫描，目录数量仍按完整文件集合计算。目录节点的左侧箭头只负责展开/折叠，工作区和暂存区使用文件夹行按钮选择该目录下的全部当前范围改动，选中状态用文件夹图标和行高亮表达，不使用 checkbox；普通文件单击只更新选择和文件上下文，不读取隐藏 Diff。
+- `public/js/features/file-tree.js`、`diff-renderer.js`、`worktree-refresh.js`：分别负责工作区/提交文件树、供同步/比较等页面共用的双栏 Diff 基础渲染，以及工作区签名和焦点轮询。文件树通过 `WeakMap` 为每个长期存在的容器只绑定一组 click/dblclick/contextmenu/scroll 委托监听，右侧详情容器重用时只替换当前模式配置，不随文件行数量重复创建监听器。工作区与暂存区超过 800 个文件时先渲染首批，接近底部滚动或点击“继续显示”后按小批次合并目录节点；追加只更新渲染高度缓存，不强制改写原生 `scrollTop`，因此高速滚轮事件不会被程序化位置校正吞掉，也不会因一次追加只能停在单个批次。顶层目录很多时按固定高度块组织目录，块离开视口时暂时卸载子节点、回到视口时恢复，滚动判断使用渲染高度缓存而不是在每个滚动事件读取整棵树的 `scrollHeight`；目录合并按 `data-tree-path` 建立一次索引，避免分散目录增长时重复线性扫描，目录数量仍按完整文件集合计算。目录节点的左侧箭头只负责展开/折叠，工作区和暂存区使用文件夹行按钮选择该目录下的全部当前范围改动，选中状态用文件夹图标和行高亮表达，不使用 checkbox；普通文件单击只更新选择和文件上下文，不读取隐藏 Diff。
 - `public/js/features/diff-workbench-loader.js`：首屏 Diff 轻量门面，保留文件状态/范围判断、活动 Diff 清理、弹窗关闭和焦点恢复能力；第一次显式打开“查看对照”时并行载入 `diff-workbench.css` 与有序脚本链 `diff-selection.js`、`diff-workbench.js`，三者完成后才进入工作台。并发入口共用一个 Promise，脚本或样式失败时只移除并重试失败资源。
 - `public/js/features/diff-workbench.js`、`diff-selection.js`：按需载入后负责工作区 Diff 读取、反馈、最大化渲染、按块/按行操作和滚动位置恢复。已从布局移除的内联对照容器只保留活动 Diff 状态并清空旧节点，不再生成隐藏副本；实际行节点只在最大化弹窗中按首批最多 1000 行渲染。
 - `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时先复用右键菜单样式，并等待 `file-editor.css` 与 CodeMirror 样式全部就绪。脚本按依赖层载入：同层 CodeMirror 插件和语言模式并行请求，`JSX / HTMLMixed / Markdown / Dockerfile` 等待各自基础模式，PHP 再等待 HTMLMixed 与 C-like；五个 Forkline 编辑器模块继续按原顺序执行。所有入口共享同一个进行中的加载 Promise；同一仓库、文件、来源和查看上下文的切换/打开请求还共享同一个进行中的打开 Promise，避免单击与双击在文件尚未显示时重复创建编辑器。仓库切换、文件或来源变化会形成不同请求，失败后只重试未成功资源，再绑定编辑器专属事件。
@@ -170,6 +170,7 @@
 - `GET /api/commit` 以一条 `show -s` 同时取得提交元数据、父提交和完整正文，并与第一父提交文件清单、可选 Diff 同轮启动；根提交和合并提交的展示语义保持不变。结果会把 `仓库路径 + 提交 SHA -> 第一父提交` 写入 512 项 LRU；`GET /api/commit-file` 优先复用，未命中时仍执行一次 `rev-list --parents -n 1 <sha>^{commit}` 并回填。根提交用空父提交值缓存，仓库间不会共享结果，文件内容仍分别通过 `cat-file blob` 并行读取。
 - 普通冲突创建“当前版本 / 合并结果 / 对方版本”三栏 MergeView，左右差异块按钮只把对应内容应用到中间；按钮观察器只能在文案或定位真实变化时更新 DOM，避免观察器回调再次触发自身。
 - 任一侧达到复杂度阈值时创建三个独立 CodeMirror，并按滚动比例同步。关闭、切换文件或切换仓库时必须解除三栏滚动监听、销毁 MergeView，并清空编辑器 DOM。
+- 轻量编辑器的滚动同步在每个目标栏维护程序滚动期望队列，避免快速连续同步时的旧事件反向驱动另一栏；明确滚轮输入在短活动窗口内优先作为用户来源，CodeMirror 的内部位置校正不会被当成新的用户滚动，滚动条、键盘和普通程序化滚动仍由原生 `scroll` 路径同步。
 - 保存接口只写工作区并保持编码、BOM、换行和快照保护，不自动执行 `git add`；新内容先写入目标文件同目录的独占临时文件并执行 `fsync`，替换前再次核对原文件 SHA-256，最后使用同文件系统原子重命名替换。写入、刷盘、快照复核或重命名失败时删除临时文件并保留原文件；用户仍需在冲突解决后显式暂存文件，再继续合并、变基、挑选或还原。
 - 普通 MergeView 同步测量构建耗时；超过 `250 ms` 时立即销毁并按当前文件类型重建为轻量双栏或三栏，同时把仓库、版本和文件快照键保存在 `sessionStorage`。同一浏览器会话再次打开相同版本时跳过 MergeView，普通工作区文件的轻量右栏仍可编辑和保存。
 
@@ -234,7 +235,7 @@
 - `tests/checkout-stash-ui-state.test.js` 验证签出储藏提醒在实际分支或查看引用变化后被丢弃，保留当前分支总览中的正常提示，并验证 Forkline 主动签出后的自动恢复不显示确认框。
 - `tests/worktree-refresh.test.js` 验证文件快照影响刷新签名、未跟踪路径不进入索引查询、大路径列表按 Windows 安全长度分批、轮询状态命令关闭可选 Git 锁、具体文件与目录事件只重算受影响状态项、Git 索引事件完整重扫、60 秒安全重扫、监听失败回退，以及页面隐藏或失焦时不执行周期读取。
 - `tests/action-state-refresh.test.js` 固定动作完成后的统一回填只请求 `details=core`、使旧详情区块请求失效、保留切仓后的新仓库详情状态，并阻止常用动作重新直接读取完整 `/api/state`；真实 Chromium 同时记录实际请求 URL 和回填耗时。
-- `tests/browser-performance.test.js` 对 4000 文件工作区记录冷 API、连续 5 次无变化 API 的中位数和响应体积，并固定冷 API 低于 `350 ms`；真实修改一个已有文件后，下一次 API 必须立即返回新快照且单次耗时低于 `300 ms`。测试同时继续测量首批/完整行数、DOM 节点、筛选、恢复、滚动分批加载、事件循环边界与文件树新增监听器数量。首批不得超过 1000 行和 6000 个树节点，滚动后必须完整显示 4000 个文件，两个长期容器最多补齐 8 个委托监听，真实嵌套目录必须应用目录级 `content-visibility`。`tests/git-api.test.js` 还会构造前后 porcelain 文本相同的 `MM` 状态，只替换 Git index blob，确认索引监听会强制刷新工作区快照。
+- `tests/browser-performance.test.js` 对 4000 文件工作区记录冷 API、连续 5 次无变化 API 的中位数和响应体积，并固定冷 API 低于 `350 ms`；真实修改一个已有文件后，下一次 API 必须立即返回新快照且单次耗时低于 `300 ms`。测试同时继续测量首批/完整行数、DOM 节点、筛选、恢复、滚动分批加载、快速连续滚轮、事件循环边界与文件树新增监听器数量。首批不得超过 1000 行和 6000 个树节点，滚动后必须完整显示 4000 个文件，两个长期容器最多补齐 8 个委托监听，目录组和文件行的布局高度必须保持稳定。`tests/git-api.test.js` 还会构造前后 porcelain 文本相同的 `MM` 状态，只替换 Git index blob，确认索引监听会强制刷新工作区快照。
 - `tests/backend-modules.test.js` 固定入口、门面与二级服务边界，防止实现重新回流到 `server.js` 或两个门面文件。
 - `tests/backend-services.test.js` 直接覆盖补丁裁剪、路径边界、远端网页 URL、恢复点保留策略、受保护分支和历史分页等纯服务逻辑。
 - `tests/git-snapshot-guards.test.js` 使用故障注入验证 HEAD、upstream、全工作区、单文件、文件全量回退和 worktree 清理快照读取失败时不会继续执行 Git 写操作。

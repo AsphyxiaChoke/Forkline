@@ -1,4 +1,74 @@
 // File editor comparison panes, staging, and context actions.
+function bindFileEditorScrollSync(editor, panes) {
+  let frame = 0;
+  let pendingSource = null;
+  const programmaticScrolls = new WeakMap();
+  const wheelActive = new WeakSet();
+  const wheelTimers = new Map();
+  const entries = panes
+    .map((source) => ({ source, element: source.getScrollerElement?.() }))
+    .filter(({ element }) => element);
+  const schedule = (source) => {
+    pendingSource = source;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const activeSource = pendingSource;
+      pendingSource = null;
+      if (!activeSource) return;
+      const sourceInfo = activeSource.getScrollInfo();
+      const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
+      panes.forEach((target) => {
+        if (target === activeSource) return;
+        const targetInfo = target.getScrollInfo();
+        const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
+        const nextTop = targetRange * (sourceInfo.top / sourceRange);
+        if (Math.abs(targetInfo.top - nextTop) < 1 && Math.abs(targetInfo.left - sourceInfo.left) < 1) return;
+        const expectedPositions = programmaticScrolls.get(target) || [];
+        expectedPositions.push({ left: sourceInfo.left, top: nextTop });
+        programmaticScrolls.set(target, expectedPositions);
+        target.scrollTo(sourceInfo.left, nextTop);
+      });
+    });
+    editor.scrollSyncFrame = frame;
+  };
+  const handlers = entries.map(({ source, element }) => {
+    const handler = () => {
+      const expectedPositions = programmaticScrolls.get(source);
+      if (expectedPositions?.length) {
+        const scrollInfo = source.getScrollInfo();
+        const matchedIndex = expectedPositions.findIndex(
+          (expected) => Math.abs(scrollInfo.top - expected.top) < 1 && Math.abs(scrollInfo.left - expected.left) < 1
+        );
+        if (matchedIndex >= 0) {
+          expectedPositions.splice(0, matchedIndex + 1);
+          if (!expectedPositions.length) programmaticScrolls.delete(source);
+          return;
+        }
+        programmaticScrolls.delete(source);
+      }
+      if (wheelActive.has(source)) return;
+      schedule(source);
+    };
+    const wheelHandler = () => {
+      wheelActive.add(source);
+      const previousTimer = wheelTimers.get(source);
+      if (previousTimer) clearTimeout(previousTimer);
+      wheelTimers.set(source, setTimeout(() => {
+        wheelActive.delete(source);
+        wheelTimers.delete(source);
+      }, 200));
+      schedule(source);
+    };
+    element.addEventListener("wheel", wheelHandler, { passive: true });
+    element.addEventListener("scroll", handler, { passive: true });
+    return { source, element, handler, wheelHandler };
+  });
+  editor.scrollSyncWheelTimers = wheelTimers;
+  editor.scrollSyncHandlers = handlers;
+  return handlers;
+}
+
 function createLargeFileCompare(editor, codeMirrorOptions) {
   const compare = document.createElement("div");
   compare.className = "file-editor-large-compare";
@@ -23,25 +93,9 @@ function createLargeFileCompare(editor, codeMirrorOptions) {
     readOnly: editor.readOnly,
     autoCloseBrackets: false,
   });
-  let syncing = false;
-  const syncScroll = (source, target) => {
-    if (syncing) return;
-    const sourceInfo = source.getScrollInfo();
-    const targetInfo = target.getScrollInfo();
-    const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
-    const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
-    const nextTop = targetRange * (sourceInfo.top / sourceRange);
-    if (Math.abs(targetInfo.top - nextTop) < 1 && Math.abs(targetInfo.left - sourceInfo.left) < 1) return;
-    syncing = true;
-    target.scrollTo(sourceInfo.left, nextTop);
-    requestAnimationFrame(() => {
-      syncing = false;
-    });
-  };
-  editor.oldScrollHandler = () => syncScroll(editor.oldCodeMirror, editor.codeMirror);
-  editor.newScrollHandler = () => syncScroll(editor.codeMirror, editor.oldCodeMirror);
-  editor.oldCodeMirror.on("scroll", editor.oldScrollHandler);
-  editor.codeMirror.on("scroll", editor.newScrollHandler);
+  const handlers = bindFileEditorScrollSync(editor, [editor.oldCodeMirror, editor.codeMirror]);
+  editor.oldScrollHandler = handlers[0].handler;
+  editor.newScrollHandler = handlers[1].handler;
 }
 
 function createConflictFileCompare(editor, codeMirrorOptions) {
@@ -80,26 +134,7 @@ function createConflictFileCompare(editor, codeMirrorOptions) {
 
 function bindConflictFileEditorScroll(editor) {
   const panes = [editor.oldCodeMirror, editor.codeMirror, editor.theirsCodeMirror].filter(Boolean);
-  let syncing = false;
-  editor.conflictScrollHandlers = panes.map((source) => {
-    const handler = () => {
-      if (syncing) return;
-      const sourceInfo = source.getScrollInfo();
-      const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
-      syncing = true;
-      panes.forEach((target) => {
-        if (target === source) return;
-        const targetInfo = target.getScrollInfo();
-        const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
-        target.scrollTo(sourceInfo.left, targetRange * (sourceInfo.top / sourceRange));
-      });
-      requestAnimationFrame(() => {
-        syncing = false;
-      });
-    };
-    source.on("scroll", handler);
-    return { source, handler };
-  });
+  editor.conflictScrollHandlers = bindFileEditorScrollSync(editor, panes);
 }
 
 function observeFileEditorChangeMarkers(editor) {

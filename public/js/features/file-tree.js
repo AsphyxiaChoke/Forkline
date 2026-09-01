@@ -1,11 +1,17 @@
 // Hierarchical file trees and file selection state.
 const fileTreeBindings = new WeakMap();
+const TREE_CHUNK_DIRECTORY_THRESHOLD = 200;
+const TREE_CHUNK_SIZE = 100;
 
 function fileTreeHtml(files, options = {}) {
   const root = { dirs: new Map(), files: [] };
   files.forEach((file) => addFileToTree(root, file));
   const directoryCounts = Array.isArray(options.totalFiles) ? fileTreeDirectoryCounts(options.totalFiles) : null;
-  return `<div class="file-tree">${treeNodeHtml(root, 0, { ...options, directoryCounts })}</div>`;
+  return `<div class="file-tree">${treeNodeHtml(root, 0, {
+    ...options,
+    directoryCounts,
+    chunkTopLevelDirectories: root.dirs.size >= TREE_CHUNK_DIRECTORY_THRESHOLD,
+  })}</div>`;
 }
 
 function fileTreeDirectoryCounts(files) {
@@ -35,15 +41,36 @@ function addFileToTree(root, file) {
   node.files.push({ ...file, raw, leaf });
 }
 
+function treeNodeBlockSize(node) {
+  return 32 + node.files.length * 30 + [...node.dirs.values()].reduce((total, dir) => total + treeNodeBlockSize(dir), 0);
+}
+
+function treeElementBlockSize(group) {
+  if (group.classList.contains("collapsed")) return 32;
+  const children = [...group.children].find((child) => child.classList.contains("tree-children"));
+  return 32 + [...(children?.children || [])].reduce(
+    (total, child) => {
+      if (child.classList.contains("file-row")) return total + 30;
+      if (!child.classList.contains("tree-group")) return total;
+      const intrinsicBlockSize = Number.parseFloat(child.style.getPropertyValue("--tree-intrinsic-block-size"));
+      return total + (Number.isFinite(intrinsicBlockSize) ? intrinsicBlockSize : treeElementBlockSize(child));
+    },
+    0
+  );
+}
+
 function treeNodeHtml(node, depth, options = {}, parentPath = "") {
-  const dirs = [...node.dirs.values()]
+  const directoryEntries = [...node.dirs.values()]
     .map((dir) => {
       const directoryPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
       const count = options.directoryCounts?.get(directoryPath) || treeFileCount(dir);
-      const intrinsicBlockSize = Math.max(58, (count + 1) * 29);
+      const intrinsicBlockSize = Math.max(58, treeNodeBlockSize(dir));
+      const virtualized = dir.files.length > 1 || dir.dirs.size > 0;
       const selectionScope = options.selectionScope || "";
-      return `
-        <div class="tree-group" data-tree-path="${escapeAttr(directoryPath)}" style="--depth:${depth};--tree-intrinsic-block-size:${intrinsicBlockSize}px">
+      return {
+        intrinsicBlockSize,
+        markup: `
+        <div class="tree-group${virtualized ? " virtualized-tree-group" : ""}" data-tree-path="${escapeAttr(directoryPath)}" style="--depth:${depth};--tree-intrinsic-block-size:${intrinsicBlockSize}px">
           <div class="tree-head">
             <button class="tree-toggle" type="button" aria-expanded="true">
               <span class="tree-caret"></span>
@@ -52,11 +79,28 @@ function treeNodeHtml(node, depth, options = {}, parentPath = "") {
           </div>
           <div class="tree-children">${treeNodeHtml(dir, depth + 1, options, directoryPath)}</div>
         </div>
-      `;
-    })
-    .join("");
+      `,
+      };
+    });
+  const dirs = depth === 0 && options.chunkTopLevelDirectories
+    ? treeChunkHtml(directoryEntries)
+    : directoryEntries.map((entry) => entry.markup).join("");
   const rows = node.files.map((file) => fileLeafRowHtml(file, depth, options)).join("");
   return `${dirs}${rows}`;
+}
+
+function treeChunkHtml(entries) {
+  const chunks = [];
+  for (let index = 0; index < entries.length; index += TREE_CHUNK_SIZE) {
+    const chunkEntries = entries.slice(index, index + TREE_CHUNK_SIZE);
+    const intrinsicBlockSize = chunkEntries.reduce((total, entry) => total + entry.intrinsicBlockSize, 0);
+    chunks.push(`
+      <div class="tree-chunk" data-tree-chunk style="--tree-chunk-intrinsic-block-size:${intrinsicBlockSize}px">
+        ${chunkEntries.map((entry) => entry.markup).join("")}
+      </div>
+    `);
+  }
+  return chunks.join("");
 }
 
 function treeFolderLabelHtml(name, count) {
@@ -87,33 +131,157 @@ function appendFileTreeBatch(targetTree, html) {
   const container = document.createElement("div");
   container.innerHTML = html;
   const sourceTree = container.querySelector(".file-tree");
-  if (!sourceTree) return;
-  mergeFileTreeChildren(targetTree, sourceTree);
+  if (!sourceTree) return 0;
+  return mergeFileTreeChildren(targetTree, sourceTree);
+}
+
+function treeLevelGroups(container) {
+  const groups = [];
+  [...container.children].forEach((child) => {
+    if (child.classList.contains("tree-group")) groups.push(child);
+    if (child.classList.contains("tree-chunk")) {
+      groups.push(...[...child.children].filter((item) => item.classList.contains("tree-group")));
+    }
+  });
+  return groups;
+}
+
+function treeLevelIsChunked(container) {
+  return [...container.children].some((child) => child.classList.contains("tree-chunk"));
+}
+
+function treeChunkBlockSize(chunk) {
+  return [...chunk.children].reduce(
+    (total, child) => total + (Number.parseFloat(child.style.getPropertyValue("--tree-intrinsic-block-size")) || treeElementBlockSize(child)),
+    0
+  );
+}
+
+function treeChunks(root) {
+  const tree = root.querySelector(".file-tree");
+  return tree ? [...tree.children].filter((child) => child.classList.contains("tree-chunk")) : [];
+}
+
+function scheduleTreeChunkSync(root, binding) {
+  if (binding.treeChunkSyncPending || !treeChunks(root).length || typeof requestAnimationFrame !== "function") return;
+  binding.treeChunkSyncPending = true;
+  requestAnimationFrame(() => {
+    binding.treeChunkSyncPending = false;
+    syncTreeChunkWindow(root);
+  });
+}
+
+function syncTreeChunkWindow(root) {
+  const chunks = treeChunks(root);
+  if (!chunks.length) return;
+  const rootRect = root.getBoundingClientRect();
+  const preload = root.clientHeight * 2;
+  const visibleStart = rootRect.top - preload;
+  const visibleEnd = rootRect.bottom + preload;
+  let changed = false;
+  chunks.forEach((chunk) => {
+    const rect = chunk.getBoundingClientRect();
+    const shouldMount = rect.bottom >= visibleStart && rect.top <= visibleEnd;
+    const mounted = chunk.dataset.treeChunkMounted !== "false";
+    if (shouldMount && !mounted) {
+      mountTreeChunk(chunk);
+      changed = true;
+    } else if (!shouldMount && mounted) {
+      chunk.__treeChunkMarkup = chunk.innerHTML;
+      chunk.__treeChunkGroupPaths = [...chunk.children].map((group) => group.dataset.treePath || "");
+      chunk.replaceChildren();
+      chunk.dataset.treeChunkMounted = "false";
+      changed = true;
+    }
+  });
+  if (changed && typeof refreshChangeSelectionUi === "function") refreshChangeSelectionUi();
+}
+
+function mountTreeChunk(chunk) {
+  chunk.innerHTML = chunk.__treeChunkMarkup || "";
+  chunk.dataset.treeChunkMounted = "true";
+  chunk.__treeChunkGroupPaths = null;
+}
+
+function updateTreeGroupBlockSizes(group) {
+  let current = group;
+  while (typeof current?.classList?.contains === "function" && current.classList.contains("tree-group")) {
+    current.style?.setProperty("--tree-intrinsic-block-size", `${Math.max(32, treeElementBlockSize(current))}px`);
+    current = current.parentElement?.closest?.(".tree-group") || null;
+  }
+  const chunk = group.closest?.(".tree-chunk");
+  if (chunk?.style) chunk.style.setProperty("--tree-chunk-intrinsic-block-size", `${treeChunkBlockSize(chunk)}px`);
+}
+
+function appendTreeGroups(target, groups, chunked) {
+  const firstFile = [...target.children].find((item) => !item.classList.contains("tree-group") && !item.classList.contains("tree-chunk"));
+  let chunk = null;
+  [...target.children].reverse().some((item) => {
+    if (!item.classList.contains("tree-chunk")) return false;
+    chunk = item;
+    return true;
+  });
+  let chunkCount = chunk?.children.length || 0;
+  [...groups].forEach((group) => {
+    if (!chunked) {
+      target.insertBefore(group, firstFile || null);
+      return;
+    }
+    if (!chunk || chunkCount >= TREE_CHUNK_SIZE) {
+      chunk = document.createElement("div");
+      chunk.className = "tree-chunk";
+      chunk.dataset.treeChunk = "";
+      target.insertBefore(chunk, firstFile || null);
+      chunkCount = 0;
+    }
+    chunk.append(group);
+    chunkCount += 1;
+    chunk.style.setProperty("--tree-chunk-intrinsic-block-size", `${treeChunkBlockSize(chunk)}px`);
+  });
 }
 
 function mergeFileTreeChildren(target, source) {
   const existingGroups = new Map(
-    [...target.children]
-      .filter((child) => child.classList.contains("tree-group"))
+    treeLevelGroups(target)
       .map((child) => [child.dataset.treePath || "", child])
   );
-  [...source.children].forEach((child) => {
-    if (!child.classList.contains("tree-group")) {
-      target.append(child);
-      return;
-    }
+  const chunked = treeLevelIsChunked(target) || treeLevelIsChunked(source);
+  if (chunked && !treeLevelIsChunked(target)) appendTreeGroups(target, treeLevelGroups(target), true);
+  const newGroups = document.createDocumentFragment();
+  const newFiles = document.createDocumentFragment();
+  let addedBlockSize = 0;
+  treeLevelGroups(source).forEach((child) => {
     const path = child.dataset.treePath || "";
-    const existing = existingGroups.get(path);
+    let existing = existingGroups.get(path);
     if (!existing) {
-      const firstFile = [...target.children].find((item) => !item.classList.contains("tree-group"));
-      target.insertBefore(child, firstFile || null);
+      const hiddenChunk = treeChunks(target).find((chunk) =>
+        chunk.dataset.treeChunkMounted === "false" && chunk.__treeChunkGroupPaths?.includes(path)
+      );
+      if (hiddenChunk) {
+        mountTreeChunk(hiddenChunk);
+        existing = treeLevelGroups(hiddenChunk).find((group) => (group.dataset.treePath || "") === path) || null;
+        if (existing) existingGroups.set(path, existing);
+      }
+    }
+    if (!existing) {
+      newGroups.append(child);
       existingGroups.set(path, child);
+      addedBlockSize += Number.parseFloat(child.style.getPropertyValue("--tree-intrinsic-block-size")) || treeElementBlockSize(child);
       return;
     }
     const targetChildren = [...existing.children].find((item) => item.classList.contains("tree-children"));
     const sourceChildren = [...child.children].find((item) => item.classList.contains("tree-children"));
-    if (targetChildren && sourceChildren) mergeFileTreeChildren(targetChildren, sourceChildren);
+    if (targetChildren && sourceChildren) addedBlockSize += mergeFileTreeChildren(targetChildren, sourceChildren);
+    updateTreeGroupBlockSizes(existing);
   });
+  if (newGroups.childNodes.length) appendTreeGroups(target, newGroups.childNodes, chunked);
+  [...source.children].forEach((child) => {
+    if (child.classList.contains("tree-group") || child.classList.contains("tree-chunk")) return;
+    newFiles.append(child);
+    addedBlockSize += 30;
+  });
+  if (newFiles.childNodes.length) target.append(newFiles);
+  return addedBlockSize;
 }
 
 function fileLeafRowHtml(file, depth, options = {}) {
@@ -153,7 +321,7 @@ function scopedFileStatus(file, scope = "") {
 function bindFileTree(root, options = {}) {
   let binding = fileTreeBindings.get(root);
   if (!binding) {
-    binding = { options: {}, suppressScrollLoad: false };
+    binding = { options: {}, suppressScrollLoad: false, scrollLoadInProgress: false, treeChunkSyncPending: false };
     root.addEventListener("click", (event) => handleFileTreeClick(root, binding, event));
     root.addEventListener("dblclick", (event) => handleFileTreeDoubleClick(root, binding, event));
     root.addEventListener("contextmenu", (event) => handleFileTreeContextMenu(root, binding, event));
@@ -161,6 +329,8 @@ function bindFileTree(root, options = {}) {
     fileTreeBindings.set(root, binding);
   }
   binding.options = { ...options };
+  if (options.loadMoreScope) binding.estimatedScrollHeight = root.scrollHeight;
+  if (options.loadMoreScope) scheduleTreeChunkSync(root, binding);
 
   if (options.mode === "worktree" || options.selectable) {
     return;
@@ -187,7 +357,9 @@ async function handleFileTreeClick(root, binding, event) {
   }
   const head = fileTreeEventTarget(root, event, ".tree-head");
   if (head) {
-    head.closest(".tree-group")?.classList.toggle("collapsed");
+    const group = head.closest(".tree-group");
+    group?.classList.toggle("collapsed");
+    if (group) updateTreeGroupBlockSizes(group);
     const toggle = head.querySelector?.(".tree-toggle");
     if (toggle) toggle.setAttribute("aria-expanded", String(!head.closest(".tree-group")?.classList.contains("collapsed")));
     return;
@@ -242,11 +414,18 @@ function handleFileTreeContextMenu(root, binding, event) {
 }
 
 function handleFileTreeScroll(root, binding) {
-  if (binding.suppressScrollLoad) return;
+  if (binding.suppressScrollLoad || binding.scrollLoadInProgress) return;
+  scheduleTreeChunkSync(root, binding);
   const scope = binding.options?.loadMoreScope || "";
-  if (!scope || root.scrollHeight <= root.clientHeight) return;
-  if (root.scrollHeight - root.scrollTop - root.clientHeight > 120) return;
-  expandWorktreeFileTree(scope);
+  const estimatedScrollHeight = Number.isFinite(binding.estimatedScrollHeight) ? binding.estimatedScrollHeight : root.scrollHeight;
+  if (!scope || estimatedScrollHeight <= root.clientHeight) return;
+  if (estimatedScrollHeight - root.scrollTop - root.clientHeight > 120) return;
+  binding.scrollLoadInProgress = true;
+  try {
+    expandWorktreeFileTree(scope);
+  } finally {
+    binding.scrollLoadInProgress = false;
+  }
 }
 
 function fileTreeEventTarget(root, event, selector) {

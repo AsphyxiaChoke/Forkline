@@ -2165,7 +2165,8 @@ body.resizing .stage-resizer-y::before {
   align-items: center;
   gap: 9px;
   min-width: 0;
-  min-height: 29px;
+  height: 30px;
+  min-height: 30px;
   padding: 4px 8px;
   border-radius: 8px;
   color: var(--text);
@@ -2297,19 +2298,27 @@ button.file-row {
 }
 
 .tree-group,
-.tree-children {
+.tree-children,
+.tree-chunk {
   min-width: 0;
 }
 
-.change-list .file-tree .tree-group {
+.change-list .file-tree .tree-chunk {
+  contain: layout style paint;
+  content-visibility: auto;
+  height: var(--tree-chunk-intrinsic-block-size);
+  contain-intrinsic-block-size: auto var(--tree-chunk-intrinsic-block-size);
+}
+
+.change-list .file-tree .tree-group.virtualized-tree-group {
   contain: layout style paint;
   content-visibility: auto;
   contain-intrinsic-block-size: auto var(--tree-intrinsic-block-size);
 }
 
-.change-list .file-tree .file-row {
+.change-list .file-tree .virtualized-tree-group .file-row {
   content-visibility: auto;
-  contain-intrinsic-block-size: auto 29px;
+  contain-intrinsic-block-size: auto 30px;
 }
 
 .tree-children {

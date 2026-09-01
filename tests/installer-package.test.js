@@ -12,7 +12,7 @@ const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "releas
 const installerInclude = fs.readFileSync(path.join(root, "electron", "installer.nsh"), "utf8");
 
 test("Windows installer is per-user, assisted, x64, and creates standard shortcuts", () => {
-  assert.equal(pkg.version, "0.4.17");
+  assert.equal(pkg.version, "0.4.18");
   assert.equal(pkg.devDependencies.electron, "^43.4.1");
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);

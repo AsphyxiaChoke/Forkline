@@ -356,25 +356,23 @@ function expandWorktreeFileTree(scope) {
   const current = worktreeFileRenderLimit(scope, files);
   if (current >= files.length) return false;
   const root = scope === "staged" ? els.stagedChangeList : els.changeList;
-  const next = Math.min(files.length, current + WORKTREE_FILE_BATCH_SIZE);
   const tree = root.querySelector(".change-section .file-tree");
+  const chunkedTree = tree?.querySelector(":scope > .tree-chunk");
+  const batchSize = chunkedTree ? WORKTREE_FILE_BATCH_SIZE * 2 : WORKTREE_FILE_BATCH_SIZE;
+  const next = Math.min(files.length, current + batchSize);
   if (!tree) {
     state.worktreeRenderLimits[scope] = next;
     renderStage({ refreshDiff: false });
     return true;
   }
-  const distanceFromBottom = Math.max(0, root.scrollHeight - root.scrollTop - root.clientHeight);
-  const batch = files.slice(current, next);
-  appendFileTreeBatch(tree, fileTreeHtml(batch, { selectionScope: scope, totalFiles: files }));
-  const nextScrollTop = Math.max(0, root.scrollHeight - root.clientHeight - distanceFromBottom);
   const binding = fileTreeBindings.get(root);
-  if (binding && Math.abs(root.scrollTop - nextScrollTop) >= 1) {
-    binding.suppressScrollLoad = true;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      binding.suppressScrollLoad = false;
-    }));
+  if (binding) syncTreeChunkWindow(root);
+  const batch = files.slice(current, next);
+  const addedBlockSize = appendFileTreeBatch(tree, fileTreeHtml(batch, { selectionScope: scope, totalFiles: files }));
+  if (binding) {
+    const currentHeight = Number.isFinite(binding.estimatedScrollHeight) ? binding.estimatedScrollHeight : root.scrollHeight;
+    binding.estimatedScrollHeight = currentHeight + addedBlockSize;
   }
-  root.scrollTop = nextScrollTop;
   state.worktreeRenderLimits[scope] = next;
   const more = root.querySelector(`[data-file-tree-more="${scope}"]`);
   if (next >= files.length) {
@@ -383,6 +381,7 @@ function expandWorktreeFileTree(scope) {
     const count = more?.querySelector(".file-tree-more-count");
     if (count) count.textContent = t("已显示 {shown}/{total}", { shown: next, total: files.length });
   }
+  if (binding) scheduleTreeChunkSync(root, binding);
   return true;
 }
 

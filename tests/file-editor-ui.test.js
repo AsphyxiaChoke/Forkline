@@ -271,6 +271,17 @@ test("worktree and staged trees select complete folders without expanding virtua
   assert.match(markup, /class="tree-toggle"/);
   assert.doesNotMatch(sandbox.fileTreeHtml(files.slice(0, 2), { mode: "commit" }), /data-select-folder/);
 
+  const scatteredFiles = Array.from({ length: 400 }, (_value, index) => ({
+    file: `scattered-${String(index).padStart(4, "0")}/file.txt`,
+    state: "M",
+    unstaged: true,
+    staged: false,
+  }));
+  const scatteredMarkup = sandbox.fileTreeHtml(scatteredFiles, { selectionScope: "unstaged", totalFiles: scatteredFiles });
+  assert.equal((scatteredMarkup.match(/class="tree-chunk"/g) || []).length, 4);
+  assert.equal((scatteredMarkup.match(/class="tree-group/g) || []).length, 400);
+  assert.match(scatteredMarkup, /tree-chunk[\s\S]*tree-folder-icon/);
+
   sandbox.selectFolderChanges("unstaged", "src/hidden");
   assert.equal(selectedChanges.size, 1200);
   assert.equal(refreshes, 1);
@@ -668,9 +679,55 @@ test("large files use two lightweight CodeMirror panes instead of MergeView", ()
   assert.match(largeCompare, /editor\.oldCodeMirror = CodeMirror\(oldHost/);
   assert.match(largeCompare, /editor\.codeMirror = CodeMirror\(newHost/);
   assert.doesNotMatch(largeCompare, /MergeView/);
-  assert.match(largeCompare, /editor\.oldCodeMirror\.on\("scroll", editor\.oldScrollHandler\)/);
-  assert.match(editor, /editor\?\.oldCodeMirror && editor\.oldScrollHandler[\s\S]*?\.off\("scroll", editor\.oldScrollHandler\)/);
+  assert.match(largeCompare, /bindFileEditorScrollSync\(editor, \[editor\.oldCodeMirror, editor\.codeMirror\]\)/);
+  assert.match(editor, /element\.addEventListener\("scroll", handler, \{ passive: true \}\)/);
+  assert.match(editor, /editor\?\.scrollSyncHandlers\?\.forEach[\s\S]*?removeEventListener\("scroll", handler\)/);
   assert.match(styles, /\.file-editor-large-compare\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 1px minmax\(0, 1fr\);/s);
+});
+
+test("editor scroll sync ignores a delayed programmatic target scroll event", () => {
+  const frameCallbacks = [];
+  const sandbox = {
+    requestAnimationFrame: (callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    },
+  };
+  const createPane = () => {
+    let top = 0;
+    let left = 0;
+    const element = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    return {
+      getScrollerElement: () => element,
+      getScrollInfo: () => ({ top, left, height: 2000, clientHeight: 500 }),
+      scrollTo: (nextLeft, nextTop) => {
+        left = nextLeft;
+        top = nextTop;
+      },
+      setScrollTop: (nextTop) => {
+        top = nextTop;
+      },
+    };
+  };
+  vm.runInNewContext(editorActions, sandbox);
+  const first = createPane();
+  const second = createPane();
+  const handlers = sandbox.bindFileEditorScrollSync({}, [first, second]);
+
+  let firstTop = 240;
+  first.getScrollInfo = () => ({ top: firstTop, left: 0, height: 2000, clientHeight: 500 });
+  handlers[0].handler();
+  frameCallbacks.shift()();
+  firstTop = 480;
+  handlers[0].handler();
+  frameCallbacks.shift()();
+
+  second.setScrollTop(240);
+  handlers[1].handler();
+  assert.equal(frameCallbacks.length, 0);
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {

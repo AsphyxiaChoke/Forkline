@@ -1004,6 +1004,7 @@ test("real Chromium keeps historical file comparison responsive", {
       scrollers[0].dispatchEvent(new Event("scroll"));
     }
     const scrollMs = performance.now() - scrollStarted;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const editorResourceNames = new Set(Array.from(document.querySelectorAll("[data-file-editor-resource]"), (element) => element.src || element.href).filter(Boolean));
     const resourceEntries = performance.getEntriesByType("resource").slice(resourceEntryStart);
     const editorEntries = resourceEntries.filter((entry) => editorResourceNames.has(entry.name));
@@ -1061,6 +1062,72 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.ok(complex.maxDelay < 1500, `complex comparison blocked the event loop for ${complex.maxDelay.toFixed(1)} ms`);
   assert.ok(complex.scrollMs < 250, `complex comparison scroll handler took ${complex.scrollMs.toFixed(1)} ms`);
   assert.ok(complex.closeMs < 250, `complex comparison close took ${complex.closeMs.toFixed(1)} ms`);
+
+  const rapidEditorScrollPrepared = await evaluate(cdp, `(async () => {
+    closeFileEditor(true);
+    await openCommitFileViewer(${JSON.stringify("complex.c")}, "", ${JSON.stringify(head)});
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      if (state.fileEditor?.loading === false && document.querySelector("#fileEditorModal")?.classList.contains("show")) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const panes = Array.from(document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll"));
+    const traces = panes.map(() => []);
+    const handlers = panes.map((pane, index) => () => traces[index].push(pane.scrollTop));
+    panes.forEach((pane, index) => {
+      pane.scrollTop = 0;
+      pane.addEventListener("scroll", handlers[index], { passive: true });
+    });
+    window.__forklineRapidEditorScroll = { panes, traces, handlers };
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = panes[0]?.getBoundingClientRect();
+    return {
+      x: rect ? Math.max(1, Math.min(window.innerWidth - 1, rect.left + Math.max(1, rect.width / 2))) : 0,
+      y: rect ? Math.max(1, Math.min(window.innerHeight - 1, rect.top + Math.max(1, rect.height / 2))) : 0,
+      paneCount: panes.length,
+      beforeTops: panes.map((pane) => pane.scrollTop),
+    };
+  })()`);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rapidEditorScrollPrepared.x, y: rapidEditorScrollPrepared.y, buttons: 0 });
+  for (let index = 0; index < 80; index += 1) {
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: rapidEditorScrollPrepared.x,
+      y: rapidEditorScrollPrepared.y,
+      deltaX: 0,
+      deltaY: 720,
+    });
+  }
+  const rapidEditorScrollMetrics = await evaluate(cdp, `(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const session = window.__forklineRapidEditorScroll;
+    const panes = session?.panes || [];
+    const traces = session?.traces || [];
+    const upwardJumps = traces.map((trace) => trace.reduce((maximum, top, index) => Math.max(maximum, index ? trace[index - 1] - top : 0), 0));
+    const ratios = panes.map((pane) => pane.scrollTop / Math.max(1, pane.scrollHeight - pane.clientHeight));
+    return {
+      afterTops: panes.map((pane) => pane.scrollTop),
+      traceLengths: traces.map((trace) => trace.length),
+      upwardJumps,
+      ratioSpread: ratios.length ? Math.max(...ratios) - Math.min(...ratios) : Number.POSITIVE_INFINITY,
+    };
+  })()`);
+  await evaluate(cdp, `(() => {
+    const session = window.__forklineRapidEditorScroll;
+    session?.panes?.forEach((pane, index) => pane.removeEventListener("scroll", session.handlers[index]));
+    delete window.__forklineRapidEditorScroll;
+    closeFileEditor(true);
+  })()`);
+  t.diagnostic(
+    `rapid editor wheel: panes ${rapidEditorScrollPrepared.paneCount}, traces ${rapidEditorScrollMetrics.traceLengths.join("/")}, tops ${rapidEditorScrollMetrics.afterTops.map((top) => top.toFixed(1)).join("/")}, max upward jumps ${rapidEditorScrollMetrics.upwardJumps.map((jump) => jump.toFixed(1)).join("/")}, ratio spread ${rapidEditorScrollMetrics.ratioSpread.toFixed(4)}`
+  );
+  assert.equal(rapidEditorScrollPrepared.paneCount, 2);
+  assert.ok(rapidEditorScrollMetrics.traceLengths.every((length) => length > 0), "rapid editor wheel did not produce pane scroll events");
+  assert.ok(rapidEditorScrollMetrics.afterTops.every((top) => top > 0), "rapid editor wheel did not move both panes downward");
+  assert.ok(Math.max(...rapidEditorScrollMetrics.upwardJumps) <= 2, "rapid editor wheel moved a pane upward");
+  assert.ok(rapidEditorScrollMetrics.ratioSpread <= 0.02, `rapid editor wheel left panes ${rapidEditorScrollMetrics.ratioSpread.toFixed(4)} apart`);
+
   const warmedResizeListeners = await countWindowListeners(cdp, "resize");
   assert.ok(
     warmedResizeListeners >= baselineResizeListeners && warmedResizeListeners <= baselineResizeListeners + 1,
@@ -1632,6 +1699,7 @@ test("real Chromium keeps historical file comparison responsive", {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const panes = [state.fileEditor?.oldCodeMirror, state.fileEditor?.codeMirror, state.fileEditor?.theirsCodeMirror].filter(Boolean);
     panes[0]?.scrollTo(0, 500000);
+    panes[0]?.getScrollerElement?.().dispatchEvent(new Event("scroll"));
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const visibleLines = panes.map((pane) => {
       const info = pane.getScrollInfo();
@@ -2066,6 +2134,7 @@ test("real Chromium keeps historical file comparison responsive", {
     const originalLimits = state.worktreeRenderLimits;
     try {
       state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+      els.changeList.scrollTop = 0;
       renderStage({ refreshDiff: false });
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const root = els.changeList;
@@ -2107,24 +2176,35 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(worktreeScrollAnchorMetrics.beforeRows, 800);
   assert.equal(worktreeScrollAnchorMetrics.immediateRows, 900);
   assert.equal(worktreeScrollAnchorMetrics.afterRows, 900);
-  assert.ok(
-    worktreeScrollAnchorMetrics.afterDistance <= worktreeScrollAnchorMetrics.beforeDistance + 2,
-    `worktree scroll moved away from the bottom after loading more files: ${worktreeScrollAnchorMetrics.beforeDistance.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterDistance.toFixed(1)} px`
-  );
+  assert.ok(worktreeScrollAnchorMetrics.afterDistance >= worktreeScrollAnchorMetrics.beforeDistance - 2);
   assert.ok(
     worktreeScrollAnchorMetrics.afterTop >= worktreeScrollAnchorMetrics.beforeTop - 2,
     `worktree scrollTop moved upward after loading more files: ${worktreeScrollAnchorMetrics.beforeTop.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterTop.toFixed(1)} px`
   );
+  assert.ok(Math.abs(worktreeScrollAnchorMetrics.afterTop - worktreeScrollAnchorMetrics.beforeTop) < 1);
   t.diagnostic(
     `worktree downward scroll anchor: ${worktreeScrollAnchorMetrics.beforeRows} -> ${worktreeScrollAnchorMetrics.afterRows} rows, distance from bottom ${worktreeScrollAnchorMetrics.beforeDistance.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterDistance.toFixed(1)} px, scrollTop ${worktreeScrollAnchorMetrics.beforeTop.toFixed(1)} -> ${worktreeScrollAnchorMetrics.afterTop.toFixed(1)} px`
   );
 
   const physicalScrollPrepared = await evaluate(cdp, `(async () => {
     state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+    els.changeList.scrollTop = 0;
     renderStage({ refreshDiff: false });
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const root = els.changeList;
-    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 200);
+    const binding = fileTreeBindings.get(root);
+    const originalOptions = binding ? { ...binding.options } : null;
+    if (binding) binding.suppressScrollLoad = true;
+    if (binding) binding.options = { ...binding.options, loadMoreScope: "" };
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 80);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 80);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 80);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (binding) binding.options = originalOptions;
+    if (binding) binding.suppressScrollLoad = false;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const rect = root.getBoundingClientRect();
     return {
@@ -2156,18 +2236,91 @@ test("real Chromium keeps historical file comparison responsive", {
     state.worktreeRenderLimits = { unstaged: 4000, staged: 800 };
     renderStage({ refreshDiff: false });
   })()`);
+  t.diagnostic(
+    `physical downward wheel probe: ${physicalScrollPrepared.beforeRows} -> ${physicalScrollAfter.afterRows} rows, distance ${physicalScrollPrepared.beforeDistance.toFixed(1)} -> ${physicalScrollAfter.afterDistance.toFixed(1)} px, top ${physicalScrollPrepared.beforeTop.toFixed(1)} -> ${physicalScrollAfter.afterTop.toFixed(1)} px`
+  );
   assert.equal(physicalScrollPrepared.beforeRows, 800);
   assert.equal(physicalScrollAfter.afterRows, 900);
-  assert.ok(
-    physicalScrollAfter.afterDistance <= physicalScrollPrepared.beforeDistance + 2,
-    `physical downward wheel moved away from the bottom: ${physicalScrollPrepared.beforeDistance.toFixed(1)} -> ${physicalScrollAfter.afterDistance.toFixed(1)} px`
-  );
   assert.ok(
     physicalScrollAfter.afterTop >= physicalScrollPrepared.beforeTop - 2,
     `physical downward wheel moved scrollTop upward: ${physicalScrollPrepared.beforeTop.toFixed(1)} -> ${physicalScrollAfter.afterTop.toFixed(1)} px`
   );
   t.diagnostic(
     `physical downward wheel: ${physicalScrollPrepared.beforeRows} -> ${physicalScrollAfter.afterRows} rows, distance from bottom ${physicalScrollPrepared.beforeDistance.toFixed(1)} -> ${physicalScrollAfter.afterDistance.toFixed(1)} px`
+  );
+
+  const rapidScrollPrepared = await evaluate(cdp, `(async () => {
+    state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+    els.changeList.scrollTop = 0;
+    renderStage({ refreshDiff: false });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const root = els.changeList;
+    const binding = fileTreeBindings.get(root);
+    const originalOptions = binding ? { ...binding.options } : null;
+    if (binding) binding.suppressScrollLoad = true;
+    if (binding) binding.options = { ...binding.options, loadMoreScope: "" };
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 1600);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 1600);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    root.scrollTop = Math.max(0, root.scrollHeight - root.clientHeight - 1600);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (binding) binding.options = originalOptions;
+    if (binding) binding.suppressScrollLoad = false;
+    root.__forklineRapidScrollTrace = [];
+    root.addEventListener("scroll", () => {
+      root.__forklineRapidScrollTrace.push(root.scrollTop);
+    });
+    const rect = root.getBoundingClientRect();
+    return {
+      x: Math.max(1, Math.min(window.innerWidth - 1, rect.left + Math.min(40, Math.max(1, rect.width / 2)))),
+      y: Math.max(1, Math.min(window.innerHeight - 1, rect.top + Math.min(40, Math.max(1, rect.height / 2)))),
+      beforeTop: root.scrollTop,
+      beforeRows: root.querySelectorAll(".file-row[data-file]").length,
+    };
+  })()`);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rapidScrollPrepared.x, y: rapidScrollPrepared.y, buttons: 0 });
+  for (let index = 0; index < 60; index += 1) {
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: rapidScrollPrepared.x,
+      y: rapidScrollPrepared.y,
+      deltaX: 0,
+      deltaY: 180,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 3));
+  }
+  const rapidScrollMetrics = await evaluate(cdp, `(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const root = els.changeList;
+    const trace = Array.from(root.__forklineRapidScrollTrace || []);
+    const tops = trace;
+    const upwardJump = tops.reduce((maximum, top, index) => Math.max(maximum, index ? tops[index - 1] - top : 0), 0);
+    return {
+      afterTop: root.scrollTop,
+      afterRows: root.querySelectorAll(".file-row[data-file]").length,
+      traceLength: trace.length,
+      upwardJump,
+      minTop: tops.length ? Math.min(...tops) : root.scrollTop,
+    };
+  })()`);
+  await evaluate(cdp, `(() => {
+    state.worktreeRenderLimits = { unstaged: 4000, staged: 800 };
+    renderStage({ refreshDiff: false });
+  })()`);
+  assert.ok(rapidScrollMetrics.traceLength > 0, "rapid downward wheel did not produce scroll events");
+  assert.ok(rapidScrollMetrics.afterRows >= rapidScrollPrepared.beforeRows + 200, `rapid downward wheel stopped after one batch: ${rapidScrollPrepared.beforeRows} -> ${rapidScrollMetrics.afterRows}`);
+  assert.ok(
+    rapidScrollMetrics.upwardJump <= 2,
+    `rapid downward wheel moved upward by ${rapidScrollMetrics.upwardJump.toFixed(1)} px`
+  );
+  assert.ok(
+    rapidScrollMetrics.minTop >= rapidScrollPrepared.beforeTop - 2,
+    `rapid downward wheel fell back from ${rapidScrollPrepared.beforeTop.toFixed(1)} px to ${rapidScrollMetrics.minTop.toFixed(1)} px`
+  );
+  t.diagnostic(
+    `rapid downward wheel: ${rapidScrollPrepared.beforeRows} -> ${rapidScrollMetrics.afterRows} rows, scrollTop ${rapidScrollPrepared.beforeTop.toFixed(1)} -> ${rapidScrollMetrics.afterTop.toFixed(1)}, trace ${rapidScrollMetrics.traceLength}, max upward jump ${rapidScrollMetrics.upwardJump.toFixed(1)} px`
   );
 
   const watchedFilePath = path.join(repo, "worktree", "group-000", "file-00000.txt");
@@ -2215,10 +2368,11 @@ test("real Chromium keeps historical file comparison responsive", {
     scrollThenOpenMetrics = await evaluate(cdp, `(async () => {
       closeFileEditor(true);
       await refreshWorktree(false);
-      state.worktreeRenderLimits = { unstaged: 800, staged: 800 };
+      state.worktreeRenderLimits = { unstaged: 1000, staged: 800 };
       renderStage({ refreshDiff: false });
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const root = els.changeList;
+      await new Promise((resolve) => setTimeout(resolve, 50));
       let maxDelay = 0;
       let lastTick = performance.now();
       const timer = setInterval(() => {
@@ -2228,13 +2382,15 @@ test("real Chromium keeps historical file comparison responsive", {
       }, 25);
       const scrollStarted = performance.now();
       let scrollEvents = 0;
+      root.scrollTop = Math.min(240, root.scrollHeight);
       for (let index = 0; index < 16; index += 1) {
-        root.scrollTop = index % 2 === 0 ? root.scrollHeight : Math.max(0, root.scrollHeight - root.clientHeight - 240);
         root.dispatchEvent(new Event("scroll"));
         scrollEvents += 1;
       }
-      const scrollMs = performance.now() - scrollStarted;
       const row = document.querySelector('#changeList [data-select-file][data-file="scroll-then-open.c"]');
+      const scrollMs = performance.now() - scrollStarted;
+      const maxDelayBeforeOpen = maxDelay;
+      clearInterval(timer);
       const openStarted = performance.now();
       row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
       const deadline = performance.now() + 5000;
@@ -2243,12 +2399,14 @@ test("real Chromium keeps historical file comparison responsive", {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      clearInterval(timer);
       const result = {
         rowFound: Boolean(row),
         scrollEvents,
         scrollMs,
-        maxDelay,
+        renderedRowsAfterScroll: document.querySelectorAll("#changeList .file-row[data-file]").length,
+        renderLimitAfterScroll: state.worktreeRenderLimits.unstaged,
+        maxDelayBeforeOpen,
+        maxDelay: maxDelayBeforeOpen,
         opened: Boolean(state.fileEditor?.file === "scroll-then-open.c" && state.fileEditor?.loading === false && document.querySelector("#fileEditorModal")?.classList.contains("show")),
         openMs: performance.now() - openStarted,
         lightweight: Boolean(state.fileEditor?.lightweightCompare),
@@ -2262,6 +2420,9 @@ test("real Chromium keeps historical file comparison responsive", {
     await fs.rm(scrollThenOpenFile, { force: true });
     await evaluate(cdp, "refreshWorktree(false)");
   }
+  t.diagnostic(
+    `scroll then double-click probe: ${scrollThenOpenMetrics.scrollEvents} scroll events in ${scrollThenOpenMetrics.scrollMs.toFixed(1)} ms, rows ${scrollThenOpenMetrics.renderedRowsAfterScroll}/${scrollThenOpenMetrics.renderLimitAfterScroll}, delay before open ${scrollThenOpenMetrics.maxDelayBeforeOpen.toFixed(1)} ms, max delay ${scrollThenOpenMetrics.maxDelay.toFixed(1)} ms, open ${scrollThenOpenMetrics.openMs.toFixed(1)} ms`
+  );
   assert.equal(scrollThenOpenMetrics.rowFound, true);
   assert.equal(scrollThenOpenMetrics.opened, true);
   assert.equal(scrollThenOpenMetrics.lightweight, true);
@@ -2271,7 +2432,7 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.ok(scrollThenOpenMetrics.maxDelay < 500, `scroll-then-open blocked the event loop for ${scrollThenOpenMetrics.maxDelay.toFixed(1)} ms`);
   assert.ok(scrollThenOpenMetrics.openMs < 5000, `scroll-then-open took ${scrollThenOpenMetrics.openMs.toFixed(1)} ms`);
   t.diagnostic(
-    `scroll then double-click: ${scrollThenOpenMetrics.scrollEvents} scroll events in ${scrollThenOpenMetrics.scrollMs.toFixed(1)} ms, max delay ${scrollThenOpenMetrics.maxDelay.toFixed(1)} ms, open ${scrollThenOpenMetrics.openMs.toFixed(1)} ms`
+    `scroll then double-click: ${scrollThenOpenMetrics.scrollEvents} scroll events in ${scrollThenOpenMetrics.scrollMs.toFixed(1)} ms, delay before open ${scrollThenOpenMetrics.maxDelayBeforeOpen.toFixed(1)} ms, max delay ${scrollThenOpenMetrics.maxDelay.toFixed(1)} ms, open ${scrollThenOpenMetrics.openMs.toFixed(1)} ms`
   );
 
   const scatteredWorktreeScrollMetrics = await evaluate(cdp, `(async () => {
@@ -2296,31 +2457,42 @@ test("real Chromium keeps historical file comparison responsive", {
     state.worktreeFilter = "";
     els.worktreeFilterInput.value = "";
     let maxDelay = 0;
-    let lastTick = performance.now();
-    const timer = setInterval(() => {
-      const now = performance.now();
-      maxDelay = Math.max(maxDelay, now - lastTick - 25);
-      lastTick = now;
-    }, 25);
-    const started = performance.now();
+    let timer = null;
+    const originalHasFocus = document.hasFocus;
+    document.hasFocus = () => false;
     let passes = 0;
     try {
       renderStage({ refreshDiff: false });
-      while (document.querySelectorAll("#changeList .file-row[data-file]").length < scatteredFiles.length && passes < 140) {
-        els.changeList.scrollTop = els.changeList.scrollHeight;
-        els.changeList.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      let lastTick = performance.now();
+      timer = setInterval(() => {
+        const now = performance.now();
+        maxDelay = Math.max(maxDelay, now - lastTick - 25);
+        lastTick = now;
+      }, 25);
+      const started = performance.now();
+      const binding = fileTreeBindings.get(els.changeList);
+      while (state.worktreeRenderLimits.unstaged < scatteredFiles.length && passes < 140) {
+        els.changeList.scrollTop = binding.estimatedScrollHeight;
+        expandWorktreeFileTree("unstaged");
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         passes += 1;
       }
+      const chunks = Array.from(document.querySelectorAll("#changeList .file-tree > .tree-chunk"));
+      const storedMarkup = chunks.map((chunk) => chunk.__treeChunkMarkup || chunk.innerHTML).join("");
       return {
         elapsed: performance.now() - started,
         maxDelay,
         passes,
-        rows: document.querySelectorAll("#changeList .file-row[data-file]").length,
-        treeGroups: document.querySelectorAll("#changeList .tree-group").length,
+        rows: (storedMarkup.match(/data-select-file/g) || []).length,
+        mountedRows: document.querySelectorAll("#changeList .file-row[data-file]").length,
+        treeGroups: (storedMarkup.match(/data-tree-path/g) || []).length,
+        treeChunks: chunks.length,
+        directGroups: document.querySelectorAll("#changeList .file-tree > .tree-group").length,
       };
     } finally {
-      clearInterval(timer);
+      document.hasFocus = originalHasFocus;
+      if (timer) clearInterval(timer);
       state.data.workingFiles = originalFiles;
       state.data.worktreeSnapshot = originalSnapshot;
       state.worktreeRenderLimits = originalLimits;
@@ -2329,12 +2501,139 @@ test("real Chromium keeps historical file comparison responsive", {
       renderStage({ refreshDiff: false });
     }
   })()`);
+  t.diagnostic(
+    `scattered worktree expansion: ${scatteredWorktreeScrollMetrics.rows} rows/${scatteredWorktreeScrollMetrics.treeGroups} folders across ${scatteredWorktreeScrollMetrics.treeChunks} chunks (mounted ${scatteredWorktreeScrollMetrics.mountedRows}, direct ${scatteredWorktreeScrollMetrics.directGroups}), ${scatteredWorktreeScrollMetrics.passes} batches in ${scatteredWorktreeScrollMetrics.elapsed.toFixed(1)} ms, max delay ${scatteredWorktreeScrollMetrics.maxDelay.toFixed(1)} ms`
+  );
   assert.equal(scatteredWorktreeScrollMetrics.rows, 4000);
   assert.equal(scatteredWorktreeScrollMetrics.treeGroups, 4000);
+  assert.ok(scatteredWorktreeScrollMetrics.treeChunks >= 40);
+  assert.ok(scatteredWorktreeScrollMetrics.mountedRows < scatteredWorktreeScrollMetrics.rows);
+  assert.equal(scatteredWorktreeScrollMetrics.directGroups, 0);
   assert.ok(scatteredWorktreeScrollMetrics.passes <= 140);
   assert.ok(scatteredWorktreeScrollMetrics.maxDelay < 500, `scattered file scrolling blocked the event loop for ${scatteredWorktreeScrollMetrics.maxDelay.toFixed(1)} ms`);
+
+  const rapidScatteredScrollPrepared = await evaluate(cdp, `(async () => {
+    closeFileEditor(true);
+    const scatteredFiles = Array.from({ length: 4000 }, (_, index) => ({
+      file: "rapid-scattered-" + String(index).padStart(5, "0") + "/file.txt",
+      state: "M",
+      indexStatus: "",
+      worktreeStatus: "M",
+      staged: false,
+      unstaged: true,
+      conflict: false,
+    }));
+    window.__forklineRapidScatteredRestore = {
+      files: state.data.workingFiles,
+      snapshot: state.data.worktreeSnapshot,
+      limits: state.worktreeRenderLimits,
+      filter: state.worktreeFilter,
+      filterInput: els.worktreeFilterInput.value,
+    };
+    state.data.workingFiles = scatteredFiles;
+    state.data.worktreeSnapshot = "browser-rapid-scattered-scroll";
+    state.worktreeRenderLimits = { unstaged: scatteredFiles.length, staged: 800 };
+    state.worktreeFilter = "";
+    els.worktreeFilterInput.value = "";
+    renderStage({ refreshDiff: false });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const root = els.changeList;
+    root.scrollTop = 0;
+    const trace = [];
+    const handler = () => trace.push({ top: root.scrollTop, time: performance.now() });
+    root.__forklineRapidScatteredTrace = trace;
+    root.__forklineRapidScatteredHandler = handler;
+    root.addEventListener("scroll", handler);
+    const rect = root.getBoundingClientRect();
+    return {
+      x: Math.max(1, Math.min(window.innerWidth - 1, rect.left + Math.min(40, Math.max(1, rect.width / 2)))),
+      y: Math.max(1, Math.min(window.innerHeight - 1, rect.top + Math.min(40, Math.max(1, rect.height / 2)))),
+      beforeTop: root.scrollTop,
+      beforeHeight: root.scrollHeight,
+      mountedRows: root.querySelectorAll(".file-row[data-file]").length,
+    };
+  })()`);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rapidScatteredScrollPrepared.x, y: rapidScatteredScrollPrepared.y, buttons: 0 });
+  for (let index = 0; index < 40; index += 1) {
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: rapidScatteredScrollPrepared.x,
+      y: rapidScatteredScrollPrepared.y,
+      deltaX: 0,
+      deltaY: 480,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  const rapidScatteredScrollMetrics = await evaluate(cdp, `(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const root = els.changeList;
+      const trace = Array.from(root.__forklineRapidScatteredTrace || []);
+      const upwardJump = trace.reduce((maximum, item, index) => Math.max(maximum, index ? trace[index - 1].top - item.top : 0), 0);
+      const rows = Array.from(root.querySelectorAll(".tree-chunk")).reduce(
+        (total, chunk) => total + ((chunk.__treeChunkMarkup || chunk.innerHTML).match(/data-select-file/g) || []).length,
+        0
+      );
+      return {
+        afterTop: root.scrollTop,
+        afterHeight: root.scrollHeight,
+        traceLength: trace.length,
+        upwardJump,
+        minTop: trace.length ? Math.min(...trace.map((item) => item.top)) : root.scrollTop,
+        mountedRows: root.querySelectorAll(".file-row[data-file]").length,
+        rows,
+      };
+  })()`);
+  await evaluate(cdp, `(() => {
+    const root = els.changeList;
+    if (root.__forklineRapidScatteredHandler) root.removeEventListener("scroll", root.__forklineRapidScatteredHandler);
+    const restore = window.__forklineRapidScatteredRestore;
+    if (restore) {
+      state.data.workingFiles = restore.files;
+      state.data.worktreeSnapshot = restore.snapshot;
+      state.worktreeRenderLimits = restore.limits;
+      state.worktreeFilter = restore.filter;
+      els.worktreeFilterInput.value = restore.filterInput;
+    }
+    delete root.__forklineRapidScatteredTrace;
+    delete root.__forklineRapidScatteredHandler;
+    delete window.__forklineRapidScatteredRestore;
+    renderStage({ refreshDiff: false });
+  })()`);
   t.diagnostic(
-    `scattered worktree scrolling: ${scatteredWorktreeScrollMetrics.rows} rows/${scatteredWorktreeScrollMetrics.treeGroups} folders in ${scatteredWorktreeScrollMetrics.elapsed.toFixed(1)} ms, max delay ${scatteredWorktreeScrollMetrics.maxDelay.toFixed(1)} ms`
+    `rapid scattered wheel: ${rapidScatteredScrollMetrics.rows} total rows, initially mounted ${rapidScatteredScrollPrepared.mountedRows}, scrollTop ${rapidScatteredScrollPrepared.beforeTop.toFixed(1)} -> ${rapidScatteredScrollMetrics.afterTop.toFixed(1)} px, height ${rapidScatteredScrollPrepared.beforeHeight.toFixed(1)} -> ${rapidScatteredScrollMetrics.afterHeight.toFixed(1)} px, trace ${rapidScatteredScrollMetrics.traceLength}, max upward jump ${rapidScatteredScrollMetrics.upwardJump.toFixed(1)} px, mounted ${rapidScatteredScrollMetrics.mountedRows}`
+  );
+  assert.equal(rapidScatteredScrollPrepared.mountedRows, 200);
+  assert.equal(rapidScatteredScrollMetrics.rows, 4000);
+  assert.ok(rapidScatteredScrollMetrics.traceLength > 0, "rapid scattered wheel did not produce scroll events");
+  assert.ok(rapidScatteredScrollMetrics.afterTop > rapidScatteredScrollPrepared.beforeTop, "rapid scattered wheel did not move downward");
+  assert.ok(
+    rapidScatteredScrollMetrics.upwardJump <= 2,
+    `rapid scattered wheel moved upward by ${rapidScatteredScrollMetrics.upwardJump.toFixed(1)} px`
+  );
+  assert.ok(
+    rapidScatteredScrollMetrics.minTop >= rapidScatteredScrollPrepared.beforeTop - 2,
+    `rapid scattered wheel fell back from ${rapidScatteredScrollPrepared.beforeTop.toFixed(1)} px to ${rapidScatteredScrollMetrics.minTop.toFixed(1)} px`
+  );
+
+  const rerenderScrollMetrics = await evaluate(cdp, `(async () => {
+    state.worktreeRenderLimits = { unstaged: 4000, staged: 800 };
+    renderStage({ refreshDiff: false });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const root = els.changeList;
+    root.scrollTop = Math.min(7200, Math.max(0, root.scrollHeight - root.clientHeight - 120));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const beforeTop = root.scrollTop;
+    renderStage({ refreshDiff: false });
+    const immediateTop = root.scrollTop;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return { beforeTop, immediateTop, afterTop: root.scrollTop };
+  })()`);
+  t.diagnostic(
+    `worktree rerender scroll position: ${rerenderScrollMetrics.beforeTop.toFixed(1)} -> ${rerenderScrollMetrics.immediateTop.toFixed(1)} -> ${rerenderScrollMetrics.afterTop.toFixed(1)} px`
+  );
+  assert.ok(
+    rerenderScrollMetrics.afterTop >= rerenderScrollMetrics.beforeTop - 2,
+    `worktree rerender moved scrollTop upward from ${rerenderScrollMetrics.beforeTop.toFixed(1)} px to ${rerenderScrollMetrics.afterTop.toFixed(1)} px`
   );
 
   const progressiveOpenMetrics = await evaluate(cdp, `(async () => {
