@@ -10942,3 +10942,24 @@
 
 - 修改文件：`public/js/features/file-editor-actions.js`：增加目标滚动期望队列和滚轮活动来源抑制；`public/js/features/file-editor-window.js`：清理滚轮计时器并解除 wheel/scroll 监听；`tests/file-editor-ui.test.js`：增加延迟程序滚动事件单测；`tests/browser-performance.test.js`：保留真实快速滚轮回弹门禁；`README.md`、`docs/ARCHITECTURE.md`、`docs/CONTINUE.md`：同步快速滚轮行为、架构边界和续接证据。
 - 回滚方式：提交后使用 `git revert <本轮编辑器快速滚轮修复提交>`；提交前不要对包含此前 v0.4.18 工作的整文件执行 `git restore`，如需撤销只反向应用本轮对应补丁。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-09-01 - Task: 完成 Forkline v0.4.18 快速滚轮修复发布
+
+### What was done
+
+- 将快速滚轮文件列表回弹和轻量文件编辑器双栏/冲突三栏回弹修复提交为 `c2105f1`，推送到 `main`，创建并推送注释标签 `v0.4.18`。
+- 创建中文正式 Release；Windows 安装器和便携包工作流均成功，Release 已上传安装器、blockmap、两个 SHA-256 校验文件、便携 ZIP 和 `latest.yml` 共 6 个附件。
+- 核实电脑中原有的 `Forkline 0.4.18` 安装包实际构建早于最终编辑器修复，旧 `app.asar` 仍使用修复前滚动同步；新 Release 安装包已重新构建并包含最终修复代码。
+
+### Testing
+
+- 本机 `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`404/404` 通过，失败 `0`。
+- 本机安装器构建成功；新 `app.asar` 同时包含 `wheelActive`、`programmaticScrolls` 和文件树滚动加载保护；本机安装器 `Forkline-Setup-0.4.18-windows-x64.exe` 大小 `104612642` 字节。
+- GitHub Actions：安装器工作流 `33487801524`、便携包工作流 `33487801519` 均为 `success`，安装器云端完整自动测试通过。
+- Release 远端 6 个附件的名称、大小和 API SHA-256 digest 已核对；远端安装器为 `104608671` 字节，便携 ZIP 为 `36904250` 字节。下载的两个 `.sha256` 和 `latest.yml` 文件均与 API digest 一致；`latest.yml` 版本为 `0.4.18`、安装器大小和 SHA-512 一致，正文没有字面转义换行。
+- 远端 `main` 与 `v0.4.18` 均指向 `c2105f158cbe654f42a78068326c024ff79fefa4`；`v0.4.17` 仍指向 `8a410c17e19cb7721598d6ed4748d185d3ba0c8d`，`v0.4.0` 仍存在且未移动。受保护未跟踪对象仍未修改、未暂存、未提交；异常文件 SHA-256 仍为 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`progress.md`：追加 v0.4.18 提交、工作流、Release 附件、旧安装包内容核对和受保护对象验收记录。
+- 回滚方式：提交后执行 `git revert <本轮发布验收日志提交>`；代码回滚点为 `c2105f1`，不得删除或移动 `v0.4.18`、`v0.4.17`、`v0.4.0` 标签，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
