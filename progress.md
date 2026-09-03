@@ -11180,3 +11180,26 @@
 
 - 修改文件：`public/file-editor.css`（原生冲突三栏布局）；`public/js/features/file-editor-actions.js`（滚轮帧合并与原生栏同步）；`public/js/features/file-editor-window.js`（销毁阶段清理）；`public/js/features/file-editor.js`（Electron 独立历史/冲突分流）；`tests/electron-file-editor-performance.test.js`（真实历史内存、滚动和冲突保存回归）；`tests/file-editor-ui.test.js`（原生分流与滚轮契约）；`package.json`、`package-lock.json`、`tests/installer-package.test.js`（v0.4.20 版本与安装器契约）；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`（产品边界、实现和发布证据）；`progress.md`（本轮记录）。
 - 提交前回滚可对上述明确文件执行 `git restore -- <file...>`；提交后使用 `git revert <v0.4.20 修复提交>`。不得移动 `v0.4.19` 或更早标签，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 完成 v0.4.20 正式 Release、附件验真和标准安装验收
+
+### What was done
+
+- 创建并发布新的不可移动注释标签与中文正式 Release `v0.4.20`；发布说明详细描述独立历史窗口修复后效果、Electron/Web 功能差异、安装更新边界和未签名风险。
+- 等待安装器和便携包工作流全部成功，下载并核对六个正式附件、两个校验文件、`latest.yml` 和便携包内容；大文件下载只对单次命令使用本机代理，GitHub API digest 仍作为信任根。
+- 使用 GitHub 正式安装器完成隔离安装、真实 Electron 压力测试和卸载；随后把标准当前用户安装更新到 v0.4.20，再次完成真实历史窗口滚动回归，并确认登记、快捷方式和稳定用户偏好保持正确。
+- 在 v0.4.20 全部验收通过后，将未登记的 `D:\Forkline` v0.4.17 移入 Windows 回收站；标准 v0.4.20 安装和真实用户数据保留。
+
+### Testing
+
+- GitHub Actions：安装器工作流 `33758782496`、便携包工作流 `33758782162` 均为 `success`，head SHA 均为 `19dbd2876139402b373c813f02b1dca9bf1532c4`；安装器工作流的普通测试、三倍 Chromium、Electron 回归、构建、校验和上传全部通过。
+- 六个正式附件的本机 SHA-256 全部匹配 GitHub API digest：安装器 `5f698b4a451d848fb1ee85d0bbdb2616ef8cf417047e537f77fa7a9b2b310538`；blockmap `01ab8a41b83150cefdd09e855b1707709e37318e98390e50f17c6e31a1a8df6d`；安装器校验文件 `7515360ac8a13e3f6518031e54f0aa37611d1bb93ecca71cbbfacd27987745fc`；便携 ZIP `b1424f50f37b9208cbba16ca962661a87a686a7e774d41f76af2f12f4fb3286b`；ZIP 校验文件 `9229f722058e4ba8db9b2325b956549b26bbbeadf61e6c45f5bec37a16572e68`；`latest.yml` `5736f9123f07f2c00674f8bfe99d754a5aaf69327a43727d19a0ae26f17799c6`。
+- 两个 `.sha256` 内容分别匹配 EXE 和 ZIP；`latest.yml` 的版本、文件名、大小 `104610046` 和 SHA-512 全部匹配。便携 ZIP 共 `332` 个条目，版本为 `0.4.20`，包含 `.git`、内置 Node、启动脚本、源码和文档；正式安装器 Authenticode 为 `NotSigned`。
+- 正式隔离安装和卸载退出码均为 `0`，卸载后目录不存在。隔离安装版 Electron 回归 `2/2`；用户指定历史窗口峰值约 `284.7 MiB`、停止后约 `233.7 MiB`，DOM 固定 `2813`、绘图元素 `0`、回弹 `0 px`。
+- 标准安装退出码为 `0`，EXE 文件/产品版本为 `0.4.20/0.4.20.0`，ASAR 版本为 `0.4.20`，登记和快捷方式均正确。标准安装版 Electron 回归再次 `2/2`；用户指定历史窗口峰值约 `286.3 MiB`、停止后约 `228.2 MiB`，回弹 `0 px`，测试退出后进程归零。
+- `desktop-preferences.json`、`desktop-recent-repositories.json`、`desktop-ui-preferences.json`、`desktop-window-state.json` 在安装前后长度和 SHA-256 完全一致。`D:\Forkline` v0.4.17 已移入回收站，原路径不存在。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`（追加正式 Release、附件、安装和滚动证据）；`docs/CONTINUE.md`（记录 v0.4.20 已完成状态与不可变边界）；`progress.md`（追加本轮完整闭环、测试、文件和回滚记录）。
+- 仓库回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮发布验收文档提交>`。产品修复如需回滚，应对 `19dbd2876139402b373c813f02b1dca9bf1532c4` 使用 `git revert` 并发布更高版本，不得移动或重建 `v0.4.20`。本机安装可通过标准卸载器移除，旧 `D:\Forkline` 可从 Windows 回收站恢复。不得修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
