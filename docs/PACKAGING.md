@@ -101,7 +101,7 @@ npm.cmd run build:installer
 
 GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git 会返回同一目录的长路径。安装器工作流只在自动测试步骤把 `TEMP` 与 `TMP` 固定为 `${{ runner.temp }}`，避免测试夹具把同一物理仓库误判为不同路径；正式安装器配置和运行时路径处理不受此 CI 设置影响。
 
-Windows runner 上的 Node.js 24 在同一个测试父进程先后管理真实 Chromium 与 Electron 子进程时可能触发 Node 原生回调断言。安装器工作流因此把普通自动测试、真实 Chromium 性能回归和 Electron 文件编辑器回归放在三个独立 Node 进程中执行；测试项、串行语义和 Chromium 的 `3x` 共享 runner 计时系数保持不变，不通过跳过测试或放宽门槛规避失败。
+Windows runner 上的 Node.js 24 在 `node:test` worker 管理 Electron 子进程和临时监听端口时可能触发 Node 原生回调断言。安装器工作流因此把普通自动测试、真实 Chromium 性能回归和 Electron 文件编辑器回归放在三个独立 Node 进程中执行，Electron 专项直接执行测试文件以绕开 `node --test` worker；测试正文、串行语义和 Chromium 的 `3x` 共享 runner 计时系数保持不变，不通过跳过测试或放宽门槛规避失败。
 
 安装器当前没有代码签名。Release 说明必须明确“未知发布者”和 SmartScreen 风险，并要求用户只从官方 Release 下载和核验 SHA-256。
 

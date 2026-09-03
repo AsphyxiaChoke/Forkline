@@ -42,7 +42,7 @@ test("installer release workflow publishes updater metadata and checksums", () =
   assert.match(workflow, /name:\s*Use corrected release browser regression harness[\s\S]*?github\.event_name == 'workflow_dispatch' && \(steps\.release\.outputs\.tag == 'v0\.4\.1' \|\| steps\.release\.outputs\.tag == 'v0\.4\.3'\)[\s\S]*?git restore --source='\$\{\{ github\.sha \}\}' --worktree -- tests\/browser-performance\.test\.js/);
   assert.match(workflow, /name:\s*Run automated tests[\s\S]*?TEMP:\s*\$\{\{ runner\.temp \}\}[\s\S]*?TMP:\s*\$\{\{ runner\.temp \}\}[\s\S]*?Where-Object \{ \$_\.Name -notin @\('browser-performance\.test\.js', 'electron-file-editor-performance\.test\.js'\) \}[\s\S]*?node --test --test-concurrency=1 \$tests/);
   assert.match(workflow, /name:\s*Run Chromium performance regression[\s\S]*?FORKLINE_BROWSER_PERFORMANCE_SCALE:\s*'3'[\s\S]*?node --test --test-concurrency=1 tests\/browser-performance\.test\.js/);
-  assert.match(workflow, /name:\s*Run Electron editor regression[\s\S]*?node --test --test-concurrency=1 tests\/electron-file-editor-performance\.test\.js/);
+  assert.match(workflow, /name:\s*Run Electron editor regression[\s\S]*?node tests\/electron-file-editor-performance\.test\.js/);
   assert.match(workflow, /name:\s*Restore release-tag browser regression harness[\s\S]*?always\(\)[\s\S]*?steps\.release\.outputs\.tag == 'v0\.4\.3'[\s\S]*?git restore --worktree -- tests\/browser-performance\.test\.js/);
   assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY/);
   assert.match(workflow, /npm\.cmd run build:installer/);

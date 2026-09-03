@@ -11045,3 +11045,20 @@
 
 - 修改文件：`.github/workflows/release-installer.yml`：隔离普通、Chromium 和 Electron 测试进程；`tests/installer-package.test.js`：更新安装器工作流契约；`docs/PACKAGING.md`：记录 Node.js 24 Windows runner 的进程隔离边界；`progress.md`：追加本轮工作流故障证据与验证结果。
 - 回滚方式：提交后执行 `git revert <本轮安装器工作流修复提交>`；回滚只恢复工作流、契约测试和文档，不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 绕开 Node.js 24 的 Electron 测试 worker 原生崩溃
+
+### What was done
+
+- 首次拆分后的云端运行确认普通测试和 Chromium 性能回归均通过，但 Electron 专项即使独占一个 `node --test` 进程，仍在测试主体开始前触发 `InternalCallbackScope::Close` 原生断言。
+- 对照 Node.js 已公开的同类 `node:test` 监听回调缺陷和本机直接执行结果，将 Electron 专项改为由 Node 直接执行同一个测试文件，绕开测试 worker；测试正文、断言、超时和 9 条真实滚动路径均未改变。
+
+### Testing
+
+- 本机 Node.js `v24.13.0` 直接执行 `node tests/electron-file-editor-performance.test.js`：`1/1` 通过，内部 `9/9` 滚动路径最大向上跳变 `0 px`、最终栏间偏差 `0 px`、最大心跳延迟 `11.4 ms`、长任务 `0`。
+- 已知缺陷证据：`nodejs/node#65667` 记录 `node:test` 在监听回调异常路径触发相同 `InternalCallbackScope::Close` 与 `execution_async_id` 断言；本轮不修改 Forkline 产品运行代码。
+
+### Notes
+
+- 修改文件：`.github/workflows/release-installer.yml`：Electron 专项改为直接执行测试文件；`tests/installer-package.test.js`：锁定新的工作流命令；`docs/PACKAGING.md`：补充 `node --test` worker 边界；`progress.md`：追加云端拆分验证和已知 Node 缺陷依据。
+- 回滚方式：提交后执行 `git revert <本轮 Node 测试 worker 规避提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
