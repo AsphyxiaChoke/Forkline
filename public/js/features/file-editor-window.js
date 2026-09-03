@@ -221,6 +221,7 @@ function destroyFileEditorInstance() {
     editor.scrollSyncHandlers = null;
     editor.scrollSyncWheelTimers = null;
     editor.scrollSyncFrame = 0;
+    editor.requestScrollSync = null;
     editor.resizeObserver = null;
     editor.buttonObserver = null;
     editor.resizeFrame = 0;

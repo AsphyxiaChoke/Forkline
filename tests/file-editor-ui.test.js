@@ -730,6 +730,53 @@ test("editor scroll sync ignores a delayed programmatic target scroll event", ()
   assert.equal(frameCallbacks.length, 0);
 });
 
+test("editor scroll sync keeps the active wheel pane authoritative and settles its final position", () => {
+  const frameCallbacks = [];
+  const timerCallbacks = [];
+  const sandbox = {
+    requestAnimationFrame: (callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    },
+    setTimeout: (callback) => {
+      timerCallbacks.push(callback);
+      return timerCallbacks.length;
+    },
+    clearTimeout: () => {},
+  };
+  const createPane = () => {
+    let top = 0;
+    const element = { addEventListener: () => {}, removeEventListener: () => {} };
+    return {
+      getScrollerElement: () => element,
+      getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
+      scrollTo: (_left, nextTop) => { top = nextTop; },
+      setScrollTop: (nextTop) => { top = nextTop; },
+    };
+  };
+  vm.runInNewContext(editorActions, sandbox);
+  const first = createPane();
+  const second = createPane();
+  const handlers = sandbox.bindFileEditorScrollSync({}, [first, second]);
+
+  handlers[0].wheelHandler();
+  first.setScrollTop(120);
+  handlers[0].handler();
+  frameCallbacks.shift()();
+  assert.equal(second.getScrollInfo().top, 120);
+
+  second.setScrollTop(0);
+  handlers[1].handler();
+  assert.equal(frameCallbacks.length, 0);
+  assert.equal(first.getScrollInfo().top, 120);
+
+  first.setScrollTop(240);
+  timerCallbacks.shift()();
+  frameCallbacks.shift()();
+  assert.equal(first.getScrollInfo().top, 240);
+  assert.equal(second.getScrollInfo().top, 240);
+});
+
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {
   const simpleModeIndex = editorLoader.indexOf("./vendor/codemirror/addon/mode/simple.js");
   assert.ok(simpleModeIndex > editorLoader.indexOf("./vendor/codemirror/lib/codemirror.js"));

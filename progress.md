@@ -10984,3 +10984,44 @@
 
 - 修改文件：`tests/electron-file-editor-performance.test.js`：新增 Electron 独立子窗口双击和真实高速滚轮端到端回归；`progress.md`：追加旧安装内容、正式覆盖安装和完整验证证据。
 - 仓库回滚方式：提交前执行 `Remove-Item -LiteralPath tests\electron-file-editor-performance.test.js`，并仅反向应用本轮 `progress.md` 末尾追加内容；提交后执行 `git revert <本轮回归测试提交>`。本机安装回滚可运行 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser`；旧临时安装目录仍保留，但其中含已确认的滚动缺陷，不建议恢复使用。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-09-03 - Task: 根治普通文件编辑器滚动回弹并准备 v0.4.19
+
+### What was done
+
+- 稳定复现正式 v0.4.18 中普通 MergeView 快速滚动后 `720/726 px` 回弹及独立文件窗口停止接受输入的问题，确认主窗口和事件循环仍正常，根因是行对齐重算与内置成对滚动同步反向覆盖用户位置。
+- 行对齐重算改为先保存各栏滚动位置；普通工作区双栏、历史只读双栏和普通冲突三栏改用 Forkline 受控同步，以滚轮所在栏作为来源并忽略目标栏程序滚动的反馈事件。同步开关、编辑、暂存、冲突应用、Web 菜单和 Git 语义保持不变。
+- 产品版本升至 `0.4.19`，完成用户文档、架构、桌面说明和打包说明更新；本机完成安装器构建、ASAR 内容核验、隔离安装、安装后真实滚轮回归和卸载。
+
+### Testing
+
+- 修复前普通工作区 MergeView 回归稳定出现双栏 `726/726 px` 向上跳变，另有两次在发送滚轮期间超过 `15 s` 不响应 DevTools 命令；关闭内置同步后不再卡住，证明是滚动反馈循环。
+- 修复后真实 Electron 回归连续通过：普通工作区双栏和历史只读双栏最大向上跳变均为 `0/0 px`；普通冲突三栏为 CodeMirror 长文档高度取整边界 `3/1/3 px`，最终位置完全一致，最大事件循环延迟低于 `36 ms`，最大长任务低于 `66 ms`。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`405/405` 通过，失败 `0`；真实 Chromium专项 `1/1` 通过，快速编辑器滚轮 `0/0 px`，编辑器反复开关后监听器保持 `285 -> 285`。相关 JavaScript `node --check` 与 `git diff --check` 通过。
+- 本机 NSIS 安装器大小 `104613125` 字节、SHA-256 `ea969d8aab5d55c5a30bdf8ebd0d2e229ef091fec88ad657630fe874bf205d18`；`latest.yml` 元数据匹配，Authenticode 为 `NotSigned`，ASAR 版本为 `0.4.19` 且包含关键同步修复。隔离安装和卸载退出码均为 `0`，安装后的 EXE 三场景回归通过，隔离目录已清理。
+- 保护对象复核：`.playwright-cli/` 与 `n+fs.statSync(p.join('public'` 未修改、未暂存、未提交；异常文件仍为 `0` 字节，SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`public/vendor/codemirror/addon/merge/merge.js`：支持 Forkline 接管 MergeView 同步并在行对齐重算前保存位置；`public/js/features/file-editor-actions.js`：让受控同步支持 MergeView 锁定关系和行对齐；`public/js/features/file-editor.js`：普通双栏与冲突三栏启用受控同步；`public/js/features/file-editor-window.js`：销毁时清理同步入口；`tests/electron-file-editor-performance.test.js`：覆盖普通工作区、历史只读、冲突三栏和同步开关的真实 Electron 高速滚轮；`tests/installer-package.test.js`、`package.json`、`package-lock.json`：版本契约升至 `0.4.19`；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`：同步行为、验证和发布边界；`progress.md`：追加本轮记录。
+- 回滚方式：提交前仅反向应用本轮相关补丁；提交后使用 `git revert <v0.4.19 滚动修复提交>`。本机隔离安装目录已由卸载器删除，无需额外清理；不得删除旧的 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.18-silent-20260901`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
+
+## 2026-09-03 - Task: v0.4.19 滚动回弹最终复测与发布前纠正
+
+### What was done
+
+- 追加稳定复现了 `120 px` 小步进快速滚轮时两栏停止相差一格、以及目标栏程序滚动反向覆盖来源造成完整一格回弹的问题；受控同步现在只接受活动滚轮来源的真实 `scroll`，滚轮停止后补一次最终同步。
+- 新增轻量双栏覆盖，并让普通双栏、轻量双栏、历史只读双栏和普通冲突三栏的每一栏分别作为滚轮来源；关闭硬件加速的对照验证不采用为产品方案。
+- 临时隔离安装版再次验证后已卸载，当前用户临时安装目录、卸载登记和相关进程均已清理；正式发布安装器仍待 GitHub Release 工作流生成。
+
+### Testing
+
+- 修复前严格门禁稳定失败：普通双栏停止滚轮时两栏相差 `120 px`；重复压力运行还捕获过 `120 px` 向上回弹和 DevTools 输入通道超过 `15 s` 不响应。修复后最终源码 Electron 回归 `9/9` 通过：所有路径最大向上跳变 `0 px`、最终栏间偏差 `0 px`、心跳最大延迟 `14.0 ms`、长任务 `0`。
+- `node.exe --test tests/file-editor-ui.test.js`：`41/41` 通过；`$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`406/406` 通过，失败 `0`。
+- 新构建 `dist/installer/Forkline-Setup-0.4.19-windows-x64.exe`：`104613359` 字节，SHA-256 `b2db5e6a2daf13436cd9dee4718dabf104c08bea7efa760cc28372d894af5889`；blockmap `111555` 字节、SHA-256 `e91c85fec4362641afdcfa93be4943ead95d97e408587aefb695526e06922a51`；`latest.yml` 为 `372` 字节、SHA-256 `7b8dce0f7bff305ba1e59d1d7c0da7c497c1e3ebf44cdbb7aa933f84bd155e5f`，版本 `0.4.19`、安装器大小和 SHA-512 均匹配；Authenticode 为 `NotSigned`。
+- 新构建 ASAR 版本为 `0.4.19`，包含唯一活动滚轮来源、滚轮结束最终收敛、程序滚动期望队列、MergeView 外部同步和行对齐前位置保存。安装器契约 `2/2`，隔离安装退出码 `0`，安装后 EXE `9/9` 滚动回归通过，静默卸载退出码 `0`。
+
+### Notes
+
+- 修改文件：`public/js/features/file-editor-actions.js`：锁定活动滚轮来源并在静止后最终同步；`tests/file-editor-ui.test.js`：增加来源锁定和最终收敛单测；`tests/electron-file-editor-performance.test.js`：改用 `120 px` 小步进并覆盖轻量双栏和全部栏位来源；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`：补充最终同步语义和最终验证数字；`progress.md`：追加本轮纠正记录。
+- 回滚方式：提交后使用 `git revert <本轮 v0.4.19 滚动复测提交>`；提交前仅反向应用本轮相关补丁。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动已有标签或删除旧临时目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.18-silent-20260901`。

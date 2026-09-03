@@ -460,3 +460,18 @@ GitHub Windows runner 的默认 `%TEMP%` 可能使用 8.3 短路径，而 Git �
 - 真实 Chromium 回归覆盖 `4,000` 个分散目录的完整滚动加载，以及滚动文件列表后立即双击复杂工作区文件；滚动后双击成功打开，复杂文件使用轻量双栏编辑器，不创建 `MergeView`，且只发起一次文件读取请求。此前 `12,000` 个分散目录的旧实现可超过 `30` 秒无响应，修复后 `4,000` 个目录在回归门限内完成。
 - 本地 Windows x64 NSIS 安装器已构建：`dist/installer/Forkline-Setup-0.4.16-windows-x64.exe`，大小 `104610629` 字节，SHA-256 `A49FC6624017F2C6FAF43C0E125B748AF7B0DED6DDBCD01652564CD0DD5FC471`；`dist/installer/latest.yml` 版本为 `0.4.16`，文件名、大小和 SHA-512 与安装器一致。Authenticode 为 `NotSigned`，正式发布说明须继续标注未知发布者和 SmartScreen 风险。
 - 便携包和正式 Release 仍需由 `v0.4.16` 标签触发的 GitHub Windows 工作流生成并验收；正式发布前不得把本机构建产物当作远端附件。保护对象 `n+fs.statSync(p.join('public'` 与 `.playwright-cli/` 未修改、未暂存、未提交；不得移动 `v0.4.0` 至 `v0.4.15` 的任何既有标签。
+
+## v0.4.19 普通编辑器滚动回弹修复准备
+
+- v0.4.19 修复普通工作区双栏、历史只读双栏和普通冲突三栏快速滚轮时的反向位置覆盖。MergeView 行对齐重算先保留滚动位置，跨栏同步改用明确滚轮来源和程序滚动目标队列；同步滚动开关、编辑/暂存/冲突应用和 Web/便携版 Git 语义不变。
+- `package.json`、`package-lock.json` 与安装器契约测试已升至 `0.4.19`。正式发布必须使用新的不可移动注释标签，由安装器和便携包工作流重新测试、构建并上传六个附件；本机构建不能冒充正式附件。
+- 安装器继续按当前用户安装、允许选择目录、默认创建桌面和开始菜单快捷方式；NSIS 安装版继续使用 `electron-updater`，更新前优雅停止 Forkline 后台服务及 Git/SSH 子进程。安装器未签名，中文 Release 必须标注未知发布者与 SmartScreen 风险。
+- 发布前自动回归 `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 为 `405/405`，真实 Chromium 专项为 `1/1`。真实 Electron 独立窗口覆盖普通工作区双栏、历史只读双栏和普通冲突三栏共三种 MergeView；双栏最大向上跳变均为 `0 px`，三栏最终位置完全一致且没有 `720/726 px` 大回弹。
+- 本机安装器 `dist/installer/Forkline-Setup-0.4.19-windows-x64.exe` 为 `104613125` 字节，SHA-256 `ea969d8aab5d55c5a30bdf8ebd0d2e229ef091fec88ad657630fe874bf205d18`；blockmap 为 `111661` 字节，SHA-256 `4d327fee44660bc186d0b5004add833d736776bc89a57415d9b6163ff1149f62`；`latest.yml` 为 `372` 字节，SHA-256 `c53ac9770ccc68ab4618cd38e168a149f50fef3a1f7a08899bbb096bbccaee57`，版本、大小和 SHA-512 `m7APqpoVZw6v5U1O2vdL76NulCprDtIom65TvIJFXR2+pnd93z1sEgnPNevPQ5z4CUem4ndGlNBhEi1xFOpTRA==` 均匹配。Authenticode 为 `NotSigned`。
+- 隔离当前用户安装、安装后 EXE 三场景快速滚轮回归和静默卸载均通过，安装与卸载退出码均为 `0`，隔离目录已删除。正式分发仍只能使用 `v0.4.19` Release 工作流生成的附件，并须重新核对六个附件与远端 digest。
+
+### v0.4.19 滚动修复最终复测
+
+- 重新验证了 `120 px` 小步进快速滚轮：真实 Electron 安装后覆盖普通工作区双栏、轻量双栏、历史只读双栏和普通冲突三栏，每栏分别作为来源共 `9` 条路径；最终栏间偏差和最大向上跳变均为 `0 px`，编辑器心跳最大延迟 `12.2 ms`。
+- 本轮完整自动测试为 `406/406`，失败 `0`；安装器契约 `2/2`；安装后的 EXE 版本为 `0.4.19`。临时隔离安装和卸载退出码均为 `0`，卸载后目录和当前用户登记均不存在。
+- 重新构建的本机安装器 `dist/installer/Forkline-Setup-0.4.19-windows-x64.exe` 大小 `104613359` 字节，SHA-256 `b2db5e6a2daf13436cd9dee4718dabf104c08bea7efa760cc28372d894af5889`；blockmap 大小 `111555` 字节，SHA-256 `e91c85fec4362641afdcfa93be4943ead95d97e408587aefb695526e06922a51`；`latest.yml` SHA-256 `7b8dce0f7bff305ba1e59d1d7c0da7c497c1e3ebf44cdbb7aa933f84bd155e5f`，其版本、安装器大小和 SHA-512 与新构建匹配。Authenticode 仍为 `NotSigned`。

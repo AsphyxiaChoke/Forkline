@@ -443,6 +443,10 @@ function createFileEditorInstance(editor) {
       origRight: editor.conflictVersions.theirs.content,
       highlightDifferences: true,
       connect: "align",
+      externalScrollSync: true,
+      onScrollLockChange: (_side, locked) => {
+        if (locked) editor.requestScrollSync?.(editor.codeMirror);
+      },
       collapseIdentical: false,
       chunkClassLocation: ["background", "gutter"],
       revertButtons: !editor.readOnly,
@@ -452,6 +456,7 @@ function createFileEditorInstance(editor) {
       },
     });
     editor.codeMirror = editor.mergeView.editor();
+    bindMergeViewFileEditorScroll(editor);
     observeFileEditorConflictButtons(editor);
   } else if (editor.largeFile || editor.lightweightCompare) {
     createLargeFileCompare(editor, codeMirrorOptions);
@@ -463,6 +468,10 @@ function createFileEditorInstance(editor) {
       connect: editor.readOnly
         ? editor.compareMode === "align" ? "align" : null
         : "align",
+      externalScrollSync: true,
+      onScrollLockChange: (_side, locked) => {
+        if (locked) editor.requestScrollSync?.(editor.codeMirror);
+      },
       collapseIdentical: false,
       chunkClassLocation: ["background", "gutter"],
       revertButtons: editor.canStage,
@@ -475,6 +484,7 @@ function createFileEditorInstance(editor) {
       },
     });
     editor.codeMirror = editor.mergeView.editor();
+    bindMergeViewFileEditorScroll(editor);
     observeFileEditorChangeMarkers(editor);
     if (editor.canStage) observeFileEditorStageButtons(editor);
   }

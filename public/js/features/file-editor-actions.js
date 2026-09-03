@@ -1,9 +1,11 @@
 // File editor comparison panes, staging, and context actions.
-function bindFileEditorScrollSync(editor, panes) {
+function bindFileEditorScrollSync(editor, panes, options = {}) {
   let frame = 0;
   let pendingSource = null;
+  const canSync = typeof options.canSync === "function" ? options.canSync : () => true;
+  const exactTop = options.exactTop === true;
   const programmaticScrolls = new WeakMap();
-  const wheelActive = new WeakSet();
+  let wheelActive = null;
   const wheelTimers = new Map();
   const entries = panes
     .map((source) => ({ source, element: source.getScrollerElement?.() }))
@@ -19,10 +21,13 @@ function bindFileEditorScrollSync(editor, panes) {
       const sourceInfo = activeSource.getScrollInfo();
       const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
       panes.forEach((target) => {
-        if (target === activeSource) return;
+        if (target === activeSource || !canSync(activeSource, target)) return;
         const targetInfo = target.getScrollInfo();
         const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
-        const nextTop = targetRange * (sourceInfo.top / sourceRange);
+        const nextTop = Math.max(0, Math.min(
+          targetRange,
+          exactTop ? sourceInfo.top : targetRange * (sourceInfo.top / sourceRange)
+        ));
         if (Math.abs(targetInfo.top - nextTop) < 1 && Math.abs(targetInfo.left - sourceInfo.left) < 1) return;
         const expectedPositions = programmaticScrolls.get(target) || [];
         expectedPositions.push({ left: sourceInfo.left, top: nextTop });
@@ -47,18 +52,22 @@ function bindFileEditorScrollSync(editor, panes) {
         }
         programmaticScrolls.delete(source);
       }
-      if (wheelActive.has(source)) return;
+      if (wheelActive) {
+        if (source === wheelActive) schedule(source);
+        return;
+      }
       schedule(source);
     };
     const wheelHandler = () => {
-      wheelActive.add(source);
-      const previousTimer = wheelTimers.get(source);
-      if (previousTimer) clearTimeout(previousTimer);
+      wheelActive = source;
+      wheelTimers.forEach((timer) => clearTimeout(timer));
+      wheelTimers.clear();
       wheelTimers.set(source, setTimeout(() => {
-        wheelActive.delete(source);
+        if (wheelActive !== source) return;
+        wheelActive = null;
         wheelTimers.delete(source);
+        schedule(source);
       }, 200));
-      schedule(source);
     };
     element.addEventListener("wheel", wheelHandler, { passive: true });
     element.addEventListener("scroll", handler, { passive: true });
@@ -66,7 +75,28 @@ function bindFileEditorScrollSync(editor, panes) {
   });
   editor.scrollSyncWheelTimers = wheelTimers;
   editor.scrollSyncHandlers = handlers;
+  editor.requestScrollSync = (source = panes[0]) => schedule(source);
   return handlers;
+}
+
+function bindMergeViewFileEditorScroll(editor) {
+  const mergeView = editor.mergeView;
+  const center = mergeView?.editor?.();
+  const left = mergeView?.leftOriginal?.();
+  const right = mergeView?.rightOriginal?.();
+  const panes = [left, center, right].filter(Boolean);
+  if (!mergeView || panes.length < 2) return;
+  const canSync = (source, target) => {
+    const needsLeft = source === left || target === left;
+    const needsRight = source === right || target === right;
+    if (needsLeft && mergeView.left?.lockScroll === false) return false;
+    if (needsRight && mergeView.right?.lockScroll === false) return false;
+    return true;
+  };
+  bindFileEditorScrollSync(editor, panes, {
+    canSync,
+    exactTop: mergeView.options.connect === "align",
+  });
 }
 
 function createLargeFileCompare(editor, codeMirrorOptions) {

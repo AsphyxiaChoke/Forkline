@@ -148,6 +148,7 @@
   }
 
   function registerScroll(dv, otherDv) {
+    if (dv.mv.options.externalScrollSync) return;
     dv.edit.on("scroll", function() {
       syncScroll(dv, true) && makeConnections(dv);
     });
@@ -212,8 +213,11 @@
 
   function setScrollLock(dv, val, action) {
     dv.lockScroll = val;
-    if (val && action != false) syncScroll(dv, DIFF_INSERT) && makeConnections(dv);
+    if (val && action != false && !dv.mv.options.externalScrollSync)
+      syncScroll(dv, DIFF_INSERT) && makeConnections(dv);
     (val ? CodeMirror.addClass : CodeMirror.rmClass)(dv.lockButton, "CodeMirror-merge-scrolllock-enabled");
+    if (action != false && dv.mv.options.onScrollLockChange)
+      dv.mv.options.onScrollLockChange(dv.type, val);
   }
 
   // Updating the marks for editor content
@@ -438,16 +442,19 @@
     }
     var linesToAlign = findAlignedLines(dv, other);
 
+    var cm = [dv.edit, dv.orig], scroll = [], offset = []
+    if (other) cm.push(other.orig);
+    for (var i = 0; i < cm.length; i++) {
+      scroll.push(cm[i].getScrollInfo().top);
+    }
+
     // Clear old aligners
     var aligners = dv.mv.aligners;
     for (var i = 0; i < aligners.length; i++)
       aligners[i].clear();
     aligners.length = 0;
 
-    var cm = [dv.edit, dv.orig], scroll = [], offset = []
-    if (other) cm.push(other.orig);
     for (var i = 0; i < cm.length; i++) {
-      scroll.push(cm[i].getScrollInfo().top);
       offset.push(-cm[i].getScrollerElement().getBoundingClientRect().top)
     }
 
