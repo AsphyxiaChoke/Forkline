@@ -489,3 +489,14 @@ Electron `43.4.1` 包不再通过自身生命周期脚本自动下载 Windows �
 - 标准安装后的 `app.asar` SHA-256 为 `c625ee30b02147c6c224faf69aae5696711eee6a28f5a282b06723d0a2214e69`，包版本为 `0.4.19`。四个关键滚动文件在统一换行后与 `v0.4.19` 标签逐字节一致；原始字节差异仅来自 Windows 工作流签出时的 CRLF 转换。
 - 直接使用标准安装后的 `Forkline.exe` 执行真实 Electron 快速滚轮回归，普通工作区双栏、轻量双栏、历史只读双栏和普通冲突三栏的全部来源共 `9/9` 通过：每条路径发送 `80` 次 `120 px` 滚轮输入，最大向上跳变 `0 px`、最终栏间偏差 `0 px`、长任务 `0`，最大心跳延迟 `14.6 ms`。测试退出后安装版进程、测试 Git/SSH/Node 子进程均为 `0`，四个稳定用户偏好文件哈希保持不变。
 - 同版本隔离安装阶段已验证安装、启动、滚动和静默卸载退出码均为 `0`；本轮标准安装版按要求保留，不重复卸载。GitHub 当前 #1 至 #10 均为已关闭状态，没有重复评论或重复关闭。保护对象 `n+fs.statSync(p.join('public'` 仍为 `0` 字节、SHA-256 `e3b0c44298fc1c149af4c8996fb92427ae41e4649b934ca495991b7852b855`，`.playwright-cli/` 仍未跟踪，二者均未修改、暂存或提交；旧目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.18-silent-20260901` 未删除。
+
+## v0.4.20 独立历史窗口卡死修复发布准备
+
+- 用户复现场景固定为提交 `1f0f3050fc71f1edebd5cbcc03b78de59d56569c` 的 `tests/electron-file-editor-performance.test.js`：双击历史文件后快速滚动，独立文件窗口可能失去响应，而主窗口仍正常。文件本身约 `22 KB / 498` 行，排除大文件门限问题；诊断期间旧 MergeView 路径原生内存曾达到约 `6.56 GiB`，轻量双 CodeMirror 路径仍曾达到约 `2.08 GiB`。
+- v0.4.20 将 Electron 独立历史窗口固定为双原生只读文本栏，不再创建 CodeMirror、MergeView 或动态差异绘图层；Electron 独立冲突窗口改为原生三栏，左右只读、中间结果可编辑保存。Web 页面完整 MergeView、工作区编辑、Git 操作和 Web/便携版 Git 快进更新语义不变。
+- 受控滚动同步会阻止 Chromium 对已接管滚轮事件的原生滚动，并把同一绘制帧内的滚轮增量合并为一次实际滚动；滚轮活动期间只接受鼠标所在栏作为同步来源，程序滚动或位置校正不会反向抢占。关闭或切换窗口时清理滚轮监听、计时器、待执行帧和动态第三栏。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 为 `411/411`，失败 `0`、跳过 `0`。真实 Chromium 快速向下滚动最大向上跳变 `0 px`；真实 Electron 覆盖普通工作区双栏、轻量双栏、历史原生双栏和冲突原生三栏的全部滚轮来源，并验证冲突中间栏写回磁盘。用户指定历史窗口连续 `8` 轮滚动时 DOM 始终为 `2888`、动态绘图元素始终为 `0`，本轮源码测试渲染进程峰值约 `547.9 MiB` 后回落到约 `297.7 MiB`。
+- 本机构建 `Forkline-Setup-0.4.20-windows-x64.exe` 成功，大小 `104613817` 字节、SHA-256 `82d13958d995041fe1aaf0bee8f66653c65777e27a4f397726b74910d5660af6`；blockmap 大小 `111604` 字节、SHA-256 `a38710145d898613ff0da511faecaa3c6d3e928cc5ad721255126267453ff94d`；`latest.yml` 大小 `372` 字节、SHA-256 `f231d7e49dc0ac8799bc0f98e0b4bd3ff99c589a8809dbaf7ef3ef6be72f2f1f`。`latest.yml` 的版本、文件名、大小和 SHA-512 `4szFy5kE8TVSecu42dweiHBeQyEz3xulpEY85sMfMSmr0KcL/VR6mXppqq/YLnXe6qPmN3yOOzyQgpwxXX4fLA==` 均与安装器一致；Authenticode 为 `NotSigned`。
+- 构建后 `win-unpacked/Forkline.exe` 文件/产品版本为 `0.4.20/0.4.20.0`；`app.asar` 内版本为 `0.4.20`，四个关键编辑器文件与工作区逐字节一致。隔离当前用户安装退出码为 `0`，直接使用已安装 EXE 重跑全部 Electron 回归为 `2/2`；用户指定历史窗口渲染进程峰值约 `628.5 MiB` 后回落到约 `308.9 MiB`，DOM 和绘图层均不增长，全部栏最大向上波动不超过 `0.4 px`。冲突原生三栏权限和保存落盘同时通过。
+- 隔离卸载退出码为 `0`，隔离目录已由卸载器完整删除。测试期间临时改写的当前用户安装登记和两个快捷方式，已使用 SHA-256 为 `616c22ce25043cf2e18aefd82179869e8de13b495b4e520eafe85fa0bc657bcb` 的正式 v0.4.19 Release 安装器恢复；当前登记、桌面和开始菜单快捷方式再次指向 `C:\Users\Administrator\AppData\Local\Programs\Forkline` v0.4.19。未登记的 `D:\Forkline` v0.4.17 未修改。
+- 正式发布仍须提交并推送当前精确差异，创建新的不可移动注释标签 `v0.4.20` 和中文正式 Release，等待安装器与便携包工作流全部成功，再核验六个正式附件、两个 `.sha256`、`latest.yml`、便携 ZIP 内容和远端安装器签名状态。本机构建产物不能冒充正式 Release 附件；发布说明必须继续标注未知发布者和 SmartScreen 风险。

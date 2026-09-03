@@ -7,6 +7,8 @@ function bindFileEditorScrollSync(editor, panes, options = {}) {
   const programmaticScrolls = new WeakMap();
   let wheelActive = null;
   const wheelTimers = new Map();
+  const wheelDeltas = new Map();
+  let wheelFrame = 0;
   const entries = panes
     .map((source) => ({ source, element: source.getScrollerElement?.() }))
     .filter(({ element }) => element);
@@ -51,17 +53,52 @@ function bindFileEditorScrollSync(editor, panes, options = {}) {
           return;
         }
         programmaticScrolls.delete(source);
+        return;
       }
       if (wheelActive) {
-        if (source === wheelActive) schedule(source);
+        if (source === wheelActive) {
+          schedule(source);
+        }
         return;
       }
       schedule(source);
     };
-    const wheelHandler = () => {
+    const wheelHandler = (event) => {
+      programmaticScrolls.delete(source);
       wheelActive = source;
       wheelTimers.forEach((timer) => clearTimeout(timer));
       wheelTimers.clear();
+      const deltaX = Number(event?.deltaX || 0);
+      const deltaY = Number(event?.deltaY || 0);
+      if (event?.cancelable && (Number.isFinite(deltaX) || Number.isFinite(deltaY)) && (deltaX || deltaY)) {
+        const scrollInfo = source.getScrollInfo();
+        const deltaScale = event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? scrollInfo.clientHeight
+            : 1;
+        event.preventDefault();
+        const pendingDelta = wheelDeltas.get(source) || { left: 0, top: 0 };
+        pendingDelta.left += deltaX * deltaScale;
+        pendingDelta.top += deltaY * deltaScale;
+        wheelDeltas.set(source, pendingDelta);
+        if (!wheelFrame) {
+          wheelFrame = requestAnimationFrame(() => {
+            wheelFrame = 0;
+            editor.scrollSyncWheelFrame = 0;
+            const updates = Array.from(wheelDeltas.entries());
+            wheelDeltas.clear();
+            updates.forEach(([target, delta]) => {
+              const targetInfo = target.getScrollInfo();
+              target.scrollTo(
+                Math.max(0, targetInfo.left + delta.left),
+                Math.max(0, targetInfo.top + delta.top)
+              );
+            });
+          });
+          editor.scrollSyncWheelFrame = wheelFrame;
+        }
+      }
       wheelTimers.set(source, setTimeout(() => {
         if (wheelActive !== source) return;
         wheelActive = null;
@@ -69,7 +106,7 @@ function bindFileEditorScrollSync(editor, panes, options = {}) {
         schedule(source);
       }, 200));
     };
-    element.addEventListener("wheel", wheelHandler, { passive: true });
+    element.addEventListener("wheel", wheelHandler, { passive: false });
     element.addEventListener("scroll", handler, { passive: true });
     return { source, element, handler, wheelHandler };
   });
@@ -97,6 +134,35 @@ function bindMergeViewFileEditorScroll(editor) {
     canSync,
     exactTop: mergeView.options.connect === "align",
   });
+}
+
+function bindFallbackFileEditorScroll(editor, elements = [els.fileEditorOldText, els.fileEditorText]) {
+  const paneFor = (element) => ({
+    getScrollerElement: () => element,
+    getScrollInfo: () => ({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+      height: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }),
+    scrollTo: (left, top) => element.scrollTo(left, top),
+  });
+  bindFileEditorScrollSync(editor, elements.map(paneFor));
+}
+
+function createNativeConflictFileCompare(editor) {
+  els.fileEditorFallback.classList.add("is-conflict-three-way");
+  const incoming = document.createElement("textarea");
+  incoming.className = "file-editor-text file-editor-incoming-text";
+  incoming.readOnly = true;
+  incoming.autocomplete = "off";
+  incoming.spellcheck = false;
+  incoming.wrap = "off";
+  incoming.setAttribute("aria-label", t("对方版本"));
+  incoming.value = editor.conflictVersions.theirs.content;
+  els.fileEditorFallback.append(incoming);
+  editor.fallbackIncomingText = incoming;
+  bindFallbackFileEditorScroll(editor, [els.fileEditorOldText, els.fileEditorText, incoming]);
 }
 
 function createLargeFileCompare(editor, codeMirrorOptions) {

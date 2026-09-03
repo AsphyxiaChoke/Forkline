@@ -11158,3 +11158,25 @@
 
 - 修改文件：`docs/PACKAGING.md`：追加正式 Release、附件、安装、ASAR 和安装后滚动回归证据；`progress.md`：追加本轮验收、测试、文件清单和回滚说明。
 - 仓库回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后执行 `git revert <本轮 v0.4.19 发布验收提交>`。本机标准安装如需回滚，可运行 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser`，但本轮按要求保留安装。不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得删除 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.18-silent-20260901`。
+
+## 2026-09-03 - Task: 根治 Electron 独立历史窗口快速滚动卡死并准备 v0.4.20
+
+### What was done
+
+- 对用户指定的提交 `1f0f3050fc71f1edebd5cbcc03b78de59d56569c` 与文件 `tests/electron-file-editor-performance.test.js` 建立真实 Electron 反馈回路，确认卡死局限于独立文件窗口，且约 `22 KB / 498` 行的文件不属于大文件场景。
+- Electron 独立历史窗口改为双原生只读文本栏，彻底避开 CodeMirror、MergeView 和动态差异绘图；Electron 独立冲突窗口改为左右只读、中间可编辑保存的原生三栏。Web MergeView、工作区编辑、暂存/冲突处理和 Git 语义保持不变。
+- 滚轮处理改为阻止已接管事件的 Chromium 原生滚动，并按绘制帧合并增量；滚轮活动期间由鼠标所在栏单向驱动同步，程序位置校正不再反向抢占。关闭窗口时清理新增的帧、计时器、监听和动态第三栏。
+- 产品版本升至 `0.4.20`，同步更新安装器契约、README、桌面说明、架构和打包文档；本机构建、安装、启动、真实滚动、冲突保存、退出、卸载均完成，隔离安装目录已删除，原标准 v0.4.19 登记与快捷方式已恢复。
+
+### Testing
+
+- 语法检查：`public/js/features/file-editor-actions.js`、`file-editor-window.js`、`file-editor.js` 和 Electron 性能测试文件全部通过；编辑器 UI 回归 `45/45`，安装器契约 `2/2`。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`411/411`，失败 `0`、跳过 `0`。真实 Chromium 快速向下滚动最大向上跳变 `0 px`；Electron 覆盖普通工作区双栏、轻量双栏、历史原生双栏和冲突原生三栏全部来源，并验证冲突中间栏保存落盘。
+- 用户指定真实历史窗口连续 `8` 轮快速滚动：源码测试渲染进程峰值约 `547.9 MiB`、停止后约 `297.7 MiB`；安装后 EXE 峰值约 `628.5 MiB`、停止后约 `308.9 MiB`。两次测试 DOM 均固定为 `2888`、动态绘图元素为 `0`，全部栏最大向上波动不超过 `0.4 px`。
+- 本机 NSIS 安装器大小 `104613817` 字节、SHA-256 `82d13958d995041fe1aaf0bee8f66653c65777e27a4f397726b74910d5660af6`；blockmap SHA-256 `a38710145d898613ff0da511faecaa3c6d3e928cc5ad721255126267453ff94d`；`latest.yml` SHA-256 `f231d7e49dc0ac8799bc0f98e0b4bd3ff99c589a8809dbaf7ef3ef6be72f2f1f`，版本、大小和 SHA-512 均匹配。安装器 Authenticode 为 `NotSigned`，ASAR 版本和关键源码核验通过。
+- 隔离安装、已安装 EXE 测试和卸载退出码均为 `0`，卸载后隔离目录不存在；当前无 Forkline 测试进程。正式 v0.4.19 安装登记、桌面和开始菜单快捷方式恢复到 `C:\Users\Administrator\AppData\Local\Programs\Forkline`，未登记的 `D:\Forkline` v0.4.17 保持不变。
+
+### Notes
+
+- 修改文件：`public/file-editor.css`（原生冲突三栏布局）；`public/js/features/file-editor-actions.js`（滚轮帧合并与原生栏同步）；`public/js/features/file-editor-window.js`（销毁阶段清理）；`public/js/features/file-editor.js`（Electron 独立历史/冲突分流）；`tests/electron-file-editor-performance.test.js`（真实历史内存、滚动和冲突保存回归）；`tests/file-editor-ui.test.js`（原生分流与滚轮契约）；`package.json`、`package-lock.json`、`tests/installer-package.test.js`（v0.4.20 版本与安装器契约）；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/PACKAGING.md`、`docs/CONTINUE.md`（产品边界、实现和发布证据）；`progress.md`（本轮记录）。
+- 提交前回滚可对上述明确文件执行 `git restore -- <file...>`；提交后使用 `git revert <v0.4.20 修复提交>`。不得移动 `v0.4.19` 或更早标签，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。

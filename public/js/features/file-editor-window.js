@@ -192,6 +192,7 @@ function destroyFileEditorInstance() {
   endFileEditorResize();
   if (editor?.resizeFrame) cancelAnimationFrame(editor.resizeFrame);
   if (editor?.scrollSyncFrame) cancelAnimationFrame(editor.scrollSyncFrame);
+  if (editor?.scrollSyncWheelFrame) cancelAnimationFrame(editor.scrollSyncWheelFrame);
   editor?.scrollSyncWheelTimers?.forEach((timer) => clearTimeout(timer));
   editor?.scrollSyncWheelTimers?.clear();
   editor?.resizeObserver?.disconnect();
@@ -207,7 +208,9 @@ function destroyFileEditorInstance() {
   if (editor?.changeMarkerFrame) cancelAnimationFrame(editor.changeMarkerFrame);
   editor?.changeMarkerRails?.forEach((rail) => rail.remove());
   editor?.mergeView?.destroy?.();
+  editor?.fallbackIncomingText?.remove();
   if (els.fileEditorMerge) els.fileEditorMerge.replaceChildren();
+  els.fileEditorFallback?.classList.remove("is-conflict-three-way");
   els.fileEditorOldLabel.hidden = false;
   els.fileEditorResultLabel.hidden = true;
   els.fileEditorOldLabel.parentElement?.classList.remove("is-single-pane");
@@ -217,10 +220,12 @@ function destroyFileEditorInstance() {
     editor.oldCodeMirror = null;
     editor.theirsCodeMirror = null;
     editor.mergeView = null;
+    editor.fallbackIncomingText = null;
     editor.conflictScrollHandlers = null;
     editor.scrollSyncHandlers = null;
     editor.scrollSyncWheelTimers = null;
     editor.scrollSyncFrame = 0;
+    editor.scrollSyncWheelFrame = 0;
     editor.requestScrollSync = null;
     editor.resizeObserver = null;
     editor.buttonObserver = null;
