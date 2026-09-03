@@ -11116,3 +11116,22 @@
 
 - 修改文件：`.github/workflows/release-installer.yml`：Electron 专项固定使用 Node.js `22.23.2`，构建前恢复 `24.13.0`；`tests/electron-file-editor-performance.test.js`：撤销无效的端口和管道实验，恢复发布测试；`tests/installer-package.test.js`：锁定双 Node 版本工作流；`docs/PACKAGING.md`：记录测试与构建运行时边界；`progress.md`：追加第四次云端失败和最终隔离方案。
 - 回滚方式：提交后执行 `git revert <本轮 Node.js 22 Electron 专项提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 显式安装 Electron 云端测试运行时
+
+### What was done
+
+- 第五次云端运行使用 Node.js `22.23.2` 后不再触发原生断言，并暴露真实错误：`node_modules/electron/dist/electron.exe` 不存在，Electron 专项以 `ENOENT` 失败。
+- 核实 Electron `43.4.1` 包没有生命周期安装脚本，`npm ci` 只安装了 `289` 个 JS 包而未下载 Electron Windows 运行时；此前 Node.js 24 把该子进程启动错误路径错误表现为原生断言。
+- 安装器工作流改为在 `npm ci` 后显式执行 Electron 官方包内安装入口，并以文件门禁确认 `electron.exe` 存在；撤销临时 Node 22 切换，普通测试、Chromium、Electron 和安装器构建继续统一使用固定 Node.js `24.13.0`。
+
+### Testing
+
+- 云端 Node.js 22 运行明确返回 `spawn ... node_modules\\electron\\dist\\electron.exe ENOENT`，失败发生在滚动测试主体前；普通测试和 Chromium 专项继续通过。
+- 本机 `node_modules/electron/dist/electron.exe` 存在，大小 `235533824` 字节；`node node_modules/electron/install.js` 对已安装运行时成功退出。
+- 安装器工作流契约要求显式运行 Electron 安装入口并检查 EXE 文件，同时继续执行独立 Electron 回归；正式验证以新的 GitHub Windows runner 从空依赖目录下载成功为准。
+
+### Notes
+
+- 修改文件：`.github/workflows/release-installer.yml`：显式安装并验证 Electron 测试运行时，移除临时 Node 22 切换；`tests/installer-package.test.js`：锁定运行时安装门禁；`docs/PACKAGING.md`：记录 Electron `43.4.1` 的显式运行时安装要求；`progress.md`：追加真实 `ENOENT` 根因证据。
+- 回滚方式：提交后执行 `git revert <本轮 Electron 测试运行时安装提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。

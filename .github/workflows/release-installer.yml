@@ -47,6 +47,15 @@ jobs:
       - name: Install dependencies
         run: npm.cmd ci
 
+      - name: Install Electron test runtime
+        shell: pwsh
+        run: |
+          node node_modules/electron/install.js
+          $electron = Join-Path (Get-Location) 'node_modules/electron/dist/electron.exe'
+          if (-not (Test-Path -LiteralPath $electron -PathType Leaf)) {
+            throw "Electron test runtime was not installed: $electron"
+          }
+
       - name: Use corrected release browser regression harness
         if: github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3')
         shell: pwsh
@@ -70,21 +79,11 @@ jobs:
           FORKLINE_BROWSER_PERFORMANCE_SCALE: '3'
         run: node --test --test-concurrency=1 tests/browser-performance.test.js
 
-      - name: Set up Node.js for Electron regression
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.23.2
-
       - name: Run Electron editor regression
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
         run: node --test --test-concurrency=1 tests/electron-file-editor-performance.test.js
-
-      - name: Restore Node.js for installer build
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.13.0
 
       - name: Restore release-tag browser regression harness
         if: always() && github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3')
