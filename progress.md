@@ -11025,3 +11025,23 @@
 
 - 修改文件：`public/js/features/file-editor-actions.js`：锁定活动滚轮来源并在静止后最终同步；`tests/file-editor-ui.test.js`：增加来源锁定和最终收敛单测；`tests/electron-file-editor-performance.test.js`：改用 `120 px` 小步进并覆盖轻量双栏和全部栏位来源；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`：补充最终同步语义和最终验证数字；`progress.md`：追加本轮纠正记录。
 - 回滚方式：提交后使用 `git revert <本轮 v0.4.19 滚动复测提交>`；提交前仅反向应用本轮相关补丁。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动已有标签或删除旧临时目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.18-silent-20260901`。
+
+## 2026-09-03 - Task: 稳定 v0.4.19 Windows 安装器发布工作流
+
+### What was done
+
+- 核实安装器工作流连续两次都在同一个全量 Node.js 24 测试父进程启动 Electron 文件编辑器专项时触发原生回调断言，安装器构建和附件上传因此没有执行；授权、Tag、产品源码和便携包均不是失败原因。
+- 将安装器工作流中的普通自动测试、真实 Chromium 性能回归和 Electron 文件编辑器回归拆为三个独立 Node 进程，继续执行全部 `406` 项检查，并保留 Chromium 在 GitHub 共享 Windows runner 上既有的 `3x` 计时系数。
+- 更新安装器工作流契约和发布文档；未修改、移动或重建不可变 `v0.4.19` 标签，后续通过默认分支上的手动工作流对该标签重新构建安装器。
+
+### Testing
+
+- 修改后的普通测试组：`404/404` 通过，失败 `0`。
+- 独立 Chromium 性能回归：`1/1` 通过；大型工作区冷 API 为 `312.8 ms`，快速编辑器滚轮最大向上跳变 `0 px`，快速文件树滚轮最大向上跳变 `0 px`。
+- 独立 Electron 文件编辑器回归：`1/1` 通过；普通、轻量、历史双栏和冲突三栏共 `9/9` 路径最大向上跳变均为 `0 px`，最终栏间偏差 `0 px`，最大心跳延迟 `19.0 ms`，长任务 `0`。
+- 三组测试合计仍为 `406/406`；`tests/installer-package.test.js` 已随普通测试组通过，确认发布工作流继续执行全部测试、构建、校验和上传步骤。
+
+### Notes
+
+- 修改文件：`.github/workflows/release-installer.yml`：隔离普通、Chromium 和 Electron 测试进程；`tests/installer-package.test.js`：更新安装器工作流契约；`docs/PACKAGING.md`：记录 Node.js 24 Windows runner 的进程隔离边界；`progress.md`：追加本轮工作流故障证据与验证结果。
+- 回滚方式：提交后执行 `git revert <本轮安装器工作流修复提交>`；回滚只恢复工作流、契约测试和文档，不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
