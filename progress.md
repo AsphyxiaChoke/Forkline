@@ -10963,3 +10963,24 @@
 
 - 修改文件：`progress.md`：追加 v0.4.18 提交、工作流、Release 附件、旧安装包内容核对和受保护对象验收记录。
 - 回滚方式：提交后执行 `git revert <本轮发布验收日志提交>`；代码回滚点为 `c2105f1`，不得删除或移动 `v0.4.18`、`v0.4.17`、`v0.4.0` 标签，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 核实并消除独立文件窗口滚动卡住
+
+### What was done
+
+- 确认开始菜单仍指向旧的临时静默安装目录；该目录虽然标记为 `0.4.18`，但 `app.asar` 不含最终的 `wheelActive` 和 `programmaticScrolls` 滚动修复，实际运行内容早于正式 Release。
+- 增加 Windows Electron 独立编辑器真实回归：启动独立 Electron 实例、双击大型工作区文件、连接子窗口 renderer、发送 240 次真实高速滚轮输入，并检查双栏回弹、同步比例、事件循环心跳、长任务和最终响应状态；测试使用独立用户数据目录，可与正常打开的 Forkline 并行。
+- 下载 GitHub `v0.4.18` 正式安装器并核对 SHA-256 后，覆盖安装到标准当前用户目录 `C:\Users\Administrator\AppData\Local\Programs\Forkline`；开始菜单已切换到新目录，旧临时目录保留且未删除，新安装 `app.asar` 已确认包含最终滚动修复。
+
+### Testing
+
+- 同一 Electron 子窗口回归对旧临时安装包稳定失败：两栏均出现约 `907.5 px` 向上跳变；对当前源码、正式构建目录和覆盖安装后的正式 EXE 均通过，向上跳变为 `0 px`。
+- 覆盖安装后的正式 EXE：240 次高速滚轮后两栏继续向下滚动，比例差 `0.0007`，最大事件循环延迟 `22.2 ms`，最大长任务约 `70 ms`，子窗口仍可响应。
+- GitHub Release 正式安装器大小 `104608671` 字节，本机下载 SHA-256 为 `16f81adbb9d95b1e77f6180fcde3f77adbc476cd5346e004969e610a8920dd97`，与 Release API digest 完全一致。
+- 最终 `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test`：`405/405` 通过，失败 `0`；其中 Electron 独立编辑器回归向上跳变 `0 px`、最大事件循环延迟 `13.3 ms`、最大长任务 `70 ms`。正常用户实例保持打开时，定向回归也通过。
+- 保护对象保持未修改、未暂存、未提交；异常文件仍为 `0` 字节，SHA-256 仍为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- 修改文件：`tests/electron-file-editor-performance.test.js`：新增 Electron 独立子窗口双击和真实高速滚轮端到端回归；`progress.md`：追加旧安装内容、正式覆盖安装和完整验证证据。
+- 仓库回滚方式：提交前执行 `Remove-Item -LiteralPath tests\electron-file-editor-performance.test.js`，并仅反向应用本轮 `progress.md` 末尾追加内容；提交后执行 `git revert <本轮回归测试提交>`。本机安装回滚可运行 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser`；旧临时安装目录仍保留，但其中含已确认的滚动缺陷，不建议恢复使用。不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得移动任何既有标签。
