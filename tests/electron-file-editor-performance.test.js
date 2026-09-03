@@ -3,17 +3,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
-const fsSync = require("node:fs");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
-const { execFileSync, spawn } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const { once } = require("node:events");
+const { promisify } = require("node:util");
 
+const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(__dirname, "..");
 const packagedElectronExecutable = String(process.env.FORKLINE_ELECTRON_EXE || "").trim();
 const electronExecutable = packagedElectronExecutable || path.join(projectRoot, "node_modules", "electron", "dist", "electron.exe");
-const configuredCdpPort = Number(process.env.FORKLINE_ELECTRON_CDP_PORT);
 const nullConfig = process.platform === "win32" ? "NUL" : "/dev/null";
 const cdpCommandTimeoutMs = 15000;
 
@@ -25,27 +25,16 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
   const repo = path.join(root, "repo");
   const appData = path.join(root, "appdata");
   const localAppData = path.join(root, "localappdata");
-  const port = Number.isInteger(configuredCdpPort) && configuredCdpPort >= 1024 && configuredCdpPort <= 65535
-    ? configuredCdpPort
-    : await freePort();
+  const port = await freePort();
   let electronProcess = null;
   let mainCdp = null;
   let editorCdp = null;
-  let electronLogFd = null;
-  const electronLogPath = path.join(root, "electron.log");
-  const readElectronLog = () => {
-    try {
-      return fsSync.readFileSync(electronLogPath, "utf8").slice(-20000);
-    } catch {
-      return "";
-    }
-  };
+  let electronLog = "";
 
   t.after(async () => {
     editorCdp?.close();
     mainCdp?.close();
     await stopProcessTree(electronProcess);
-    if (electronLogFd !== null) fsSync.closeSync(electronLogFd);
     await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
@@ -53,7 +42,6 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
   await fs.mkdir(appData, { recursive: true });
   await fs.mkdir(localAppData, { recursive: true });
 
-  electronLogFd = fsSync.openSync(electronLogPath, "a");
   electronProcess = spawn(electronExecutable, [
     ...(packagedElectronExecutable ? [] : [projectRoot]),
     `--remote-debugging-port=${port}`,
@@ -72,11 +60,17 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
       GCM_INTERACTIVE: "never",
       ELECTRON_ENABLE_LOGGING: "1",
     },
-    stdio: ["ignore", electronLogFd, electronLogFd],
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
+  electronProcess.stdout.on("data", (chunk) => {
+    electronLog = appendLog(electronLog, chunk);
+  });
+  electronProcess.stderr.on("data", (chunk) => {
+    electronLog = appendLog(electronLog, chunk);
+  });
 
-  const mainTarget = await waitForTarget(port, electronProcess, readElectronLog, (target) => (
+  const mainTarget = await waitForTarget(port, electronProcess, () => electronLog, (target) => (
     target.type === "page" && !target.url.includes("fileEditorWindow=1")
   ));
   mainCdp = await CdpClient.connect(mainTarget.webSocketDebuggerUrl);
@@ -98,7 +92,7 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
   })()`);
   assert.equal(opened, true, "ordinary worktree file row was not available for double-click");
 
-  const editorTarget = await waitForTarget(port, electronProcess, readElectronLog, (target) => (
+  const editorTarget = await waitForTarget(port, electronProcess, () => electronLog, (target) => (
     target.type === "page" && target.url.includes("fileEditorWindow=1")
   ));
   editorCdp = await CdpClient.connect(editorTarget.webSocketDebuggerUrl);
@@ -346,7 +340,7 @@ async function createFixture(repo) {
 
 async function git(repo, args) {
   const fullArgs = repo ? ["-C", repo, ...args] : args;
-  const stdout = execFileSync("git", fullArgs, {
+  const { stdout } = await execFileAsync("git", fullArgs, {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
     windowsHide: true,
@@ -486,15 +480,17 @@ class CdpClient {
 async function stopProcessTree(processHandle) {
   if (!processHandle || processHandle.exitCode !== null) return;
   if (process.platform === "win32") {
-    try {
-      execFileSync("taskkill", ["/PID", String(processHandle.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-    } catch {}
+    await execFileAsync("taskkill", ["/PID", String(processHandle.pid), "/T", "/F"], { windowsHide: true }).catch(() => {});
     return;
   }
   const exited = once(processHandle, "exit");
   processHandle.kill();
   await Promise.race([exited, delay(3000)]);
   if (processHandle.exitCode === null) processHandle.kill("SIGKILL");
+}
+
+function appendLog(current, chunk) {
+  return `${current}${String(chunk || "")}`.slice(-20000);
 }
 
 function delay(ms) {

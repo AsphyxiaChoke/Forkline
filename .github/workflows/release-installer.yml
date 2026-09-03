@@ -52,11 +52,6 @@ jobs:
         shell: pwsh
         run: git restore --source='${{ github.sha }}' --worktree -- tests/browser-performance.test.js
 
-      - name: Use corrected release Electron regression harness
-        if: github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.19'
-        shell: pwsh
-        run: git restore --source='${{ github.sha }}' --worktree -- tests/electron-file-editor-performance.test.js
-
       - name: Run automated tests
         env:
           TEMP: ${{ runner.temp }}
@@ -75,30 +70,26 @@ jobs:
           FORKLINE_BROWSER_PERFORMANCE_SCALE: '3'
         run: node --test --test-concurrency=1 tests/browser-performance.test.js
 
+      - name: Set up Node.js for Electron regression
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+
       - name: Run Electron editor regression
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
-        shell: pwsh
-        run: |
-          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-          try {
-            $listener.Start()
-            $env:FORKLINE_ELECTRON_CDP_PORT = [string]$listener.LocalEndpoint.Port
-          } finally {
-            $listener.Stop()
-          }
-          node tests/electron-file-editor-performance.test.js
+        run: node --test --test-concurrency=1 tests/electron-file-editor-performance.test.js
+
+      - name: Restore Node.js for installer build
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
 
       - name: Restore release-tag browser regression harness
         if: always() && github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3')
         shell: pwsh
         run: git restore --worktree -- tests/browser-performance.test.js
-
-      - name: Restore release-tag Electron regression harness
-        if: always() && github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.19'
-        shell: pwsh
-        run: git restore --worktree -- tests/electron-file-editor-performance.test.js
 
       - name: Build unsigned Windows x64 installer
         shell: pwsh

@@ -11098,3 +11098,21 @@
 
 - 修改文件：`tests/electron-file-editor-performance.test.js`：同步准备 Git 夹具并使用文件承接 Electron 日志；`docs/PACKAGING.md`：记录 Windows runner 的异步管道边界；`progress.md`：追加第三次云端失败证据和本机验证。
 - 回滚方式：提交后执行 `git revert <本轮异步子进程管道修复提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 以 Node.js 22 隔离 Electron 云端回归
+
+### What was done
+
+- 第四次云端运行证明同步 Git 和文件日志仍不能消除 Node.js `24.13.0` 原生断言，因此回退所有已证明无效的 Electron 测试夹具复杂化；测试文件恢复为与不可变 `v0.4.19` 标签完全一致。
+- 安装器工作流继续分开普通、Chromium 和 Electron 三组测试，只让 Electron 专项使用仍受支持的 Node.js `22.23.2`；专项完成后重新设置固定 Node.js `24.13.0` 构建安装器，产品构建工具链不变。
+
+### Testing
+
+- `npx.cmd --yes node@22.23.2 --test --test-concurrency=1 tests/electron-file-editor-performance.test.js`：`1/1` 通过；内部 `9/9` 路径最大向上跳变 `0 px`、最终栏间偏差 `0 px`、最大心跳延迟 `12.9 ms`、长任务 `0`。
+- `git diff v0.4.19 -- tests/electron-file-editor-performance.test.js` 无输出，确认测试正文恢复为发布标签内容。
+- `node --check tests/electron-file-editor-performance.test.js`、`git diff --check` 和安装器契约 `2/2` 均通过；Electron Builder `26.15.3` 声明支持 Node.js `>=14.0.0`，Node 22 专项不会改变安装包依赖或运行时。
+
+### Notes
+
+- 修改文件：`.github/workflows/release-installer.yml`：Electron 专项固定使用 Node.js `22.23.2`，构建前恢复 `24.13.0`；`tests/electron-file-editor-performance.test.js`：撤销无效的端口和管道实验，恢复发布测试；`tests/installer-package.test.js`：锁定双 Node 版本工作流；`docs/PACKAGING.md`：记录测试与构建运行时边界；`progress.md`：追加第四次云端失败和最终隔离方案。
+- 回滚方式：提交后执行 `git revert <本轮 Node.js 22 Electron 专项提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
