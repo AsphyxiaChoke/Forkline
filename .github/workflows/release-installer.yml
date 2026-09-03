@@ -52,6 +52,11 @@ jobs:
         shell: pwsh
         run: git restore --source='${{ github.sha }}' --worktree -- tests/browser-performance.test.js
 
+      - name: Use corrected release Electron regression harness
+        if: github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.19'
+        shell: pwsh
+        run: git restore --source='${{ github.sha }}' --worktree -- tests/electron-file-editor-performance.test.js
+
       - name: Run automated tests
         env:
           TEMP: ${{ runner.temp }}
@@ -74,12 +79,26 @@ jobs:
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
-        run: node tests/electron-file-editor-performance.test.js
+        shell: pwsh
+        run: |
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          try {
+            $listener.Start()
+            $env:FORKLINE_ELECTRON_CDP_PORT = [string]$listener.LocalEndpoint.Port
+          } finally {
+            $listener.Stop()
+          }
+          node tests/electron-file-editor-performance.test.js
 
       - name: Restore release-tag browser regression harness
         if: always() && github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3')
         shell: pwsh
         run: git restore --worktree -- tests/browser-performance.test.js
+
+      - name: Restore release-tag Electron regression harness
+        if: always() && github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.19'
+        shell: pwsh
+        run: git restore --worktree -- tests/electron-file-editor-performance.test.js
 
       - name: Build unsigned Windows x64 installer
         shell: pwsh

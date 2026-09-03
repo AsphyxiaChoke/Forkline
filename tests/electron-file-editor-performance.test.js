@@ -14,6 +14,7 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(__dirname, "..");
 const packagedElectronExecutable = String(process.env.FORKLINE_ELECTRON_EXE || "").trim();
 const electronExecutable = packagedElectronExecutable || path.join(projectRoot, "node_modules", "electron", "dist", "electron.exe");
+const configuredCdpPort = Number(process.env.FORKLINE_ELECTRON_CDP_PORT);
 const nullConfig = process.platform === "win32" ? "NUL" : "/dev/null";
 const cdpCommandTimeoutMs = 15000;
 
@@ -25,7 +26,9 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
   const repo = path.join(root, "repo");
   const appData = path.join(root, "appdata");
   const localAppData = path.join(root, "localappdata");
-  const port = await freePort();
+  const port = Number.isInteger(configuredCdpPort) && configuredCdpPort >= 1024 && configuredCdpPort <= 65535
+    ? configuredCdpPort
+    : await freePort();
   let electronProcess = null;
   let mainCdp = null;
   let editorCdp = null;

@@ -11062,3 +11062,21 @@
 
 - 修改文件：`.github/workflows/release-installer.yml`：Electron 专项改为直接执行测试文件；`tests/installer-package.test.js`：锁定新的工作流命令；`docs/PACKAGING.md`：补充 `node --test` worker 边界；`progress.md`：追加云端拆分验证和已知 Node 缺陷依据。
 - 回滚方式：提交后执行 `git revert <本轮 Node 测试 worker 规避提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 修正 Windows runner 的 Electron 调试端口探测
+
+### What was done
+
+- 云端直接执行 Electron 测试文件后仍在约 `1.1 s` 触发相同 Node.js 原生断言，证明绕开 `node --test` worker 不足以解决问题；失败发生在 9 条滚动路径开始前。
+- 将 Electron 回归的调试端口改为优先接受固定环境变量；安装器工作流由 PowerShell 先绑定并释放一个可用回环端口，再把端口交给 Node 测试，避免 Node.js 24 在该 runner 上执行已知有缺陷的临时监听探测。
+- `v0.4.19` 手动构建在签出不可变 Tag 后只临时借用默认分支的修正测试文件，回归结束后恢复 Tag 原文件再构建；产品源码、安装包输入和标签提交不变。
+
+### Testing
+
+- 前两次拆分后的云端运行均确认普通测试和 Chromium 专项通过；Electron 专项分别使用 `node --test` 和直接 `node` 时都在测试主体开始前触发同一 `InternalCallbackScope::Close` 断言。
+- 本轮保留无环境变量时原有 `freePort()` 本机路径，并新增由工作流提供 `FORKLINE_ELECTRON_CDP_PORT` 的 CI 路径；两条路径执行相同测试正文和断言。
+
+### Notes
+
+- 修改文件：`tests/electron-file-editor-performance.test.js`：允许使用工作流预先分配的调试端口；`.github/workflows/release-installer.yml`：由 PowerShell 分配端口并为不可变 `v0.4.19` 临时借用/恢复修正测试；`tests/installer-package.test.js`：锁定端口和 Tag 恢复契约；`docs/PACKAGING.md`：记录 Windows runner 规避方式；`progress.md`：追加两次云端失败的纠正结论。
+- 回滚方式：提交后执行 `git revert <本轮调试端口探测修复提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
