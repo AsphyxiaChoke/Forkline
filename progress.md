@@ -11135,3 +11135,26 @@
 
 - 修改文件：`.github/workflows/release-installer.yml`：显式安装并验证 Electron 测试运行时，移除临时 Node 22 切换；`tests/installer-package.test.js`：锁定运行时安装门禁；`docs/PACKAGING.md`：记录 Electron `43.4.1` 的显式运行时安装要求；`progress.md`：追加真实 `ENOENT` 根因证据。
 - 回滚方式：提交后执行 `git revert <本轮 Electron 测试运行时安装提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 完成 v0.4.19 正式发布附件与标准安装验收
+
+### What was done
+
+- 核实不可移动 `v0.4.19` 标签仍固定指向产品提交，安装器和便携包工作流均已成功，正式 Release 为正常中文正式版且包含完整六个附件。
+- 重新下载并验真六个正式附件、两个校验文件和 `latest.yml`，确认便携包保留 Git 快进更新所需内容，安装器继续遵守当前用户安装、`electron-updater` 分流和未签名风险说明。
+- 将正式安装器安装到标准当前用户目录，核对版本、卸载登记、桌面/开始菜单快捷方式和安装后 ASAR，并直接使用正式安装后的 EXE 完成全部快速滚轮压力回归。标准 v0.4.19 安装版按要求保留，原有未登记的 `D:\Forkline` v0.4.17 保持不动。
+- 查询 GitHub Issue 状态，确认 #1 至 #10 均已关闭，没有重复评论或重复关闭。
+
+### Testing
+
+- GitHub Actions：安装器工作流 `33732264301`、便携包工作流 `33724714676` 均为 `success`；安装器工作流中的普通自动测试、Chromium 性能回归、Electron 文件窗口回归、构建、校验和上传步骤全部成功。
+- 六个附件本机 SHA-256 全部匹配 GitHub API digest；安装器、blockmap、安装器校验文件、便携 ZIP、便携 ZIP 校验文件和 `latest.yml` 的 SHA-256 分别为 `616c22ce25043cf2e18aefd82179869e8de13b495b4e520eafe85fa0bc657bcb`、`9100ed3e7399cbc39790bbcb39271057e500eb106a4294832514997c2865477d`、`55ebcbd8a85a97191cdd88f5757913b26f37b513b0073b66ecd1ee3a3ef90975`、`d98e8709f85af9948ca3b46f4361117e9d42693a9e9d39ceb0cca27086bd8187`、`f2d6ddd435cecb15f7bfa1533870a5c2fa4336c1667a73c247f625803eb3a90b`、`4b5b103ba8ac9cb943869373da58b0dab199309d044c9917176672d93f92effe`。
+- `latest.yml` 的版本、文件名、大小 `104608860` 和安装器 SHA-512 `A0/MrtJbDn/Fzax71bjTlOmK4Jc5aqvMqQ6o12H4bEyj6K4MPmQQySz7uOee6WmDkRXQZ/2ptWxDGbjEOOSYnA==` 全部匹配；安装器 Authenticode 为 `NotSigned`，便携 ZIP 的 332 个条目包含 `.git/`、内置 Node、启动脚本、源码和文档。
+- 标准安装退出码为 `0`；安装后 EXE 文件/产品版本为 `0.4.19/0.4.19.0`，HKCU 卸载登记和两个快捷方式均指向 `C:\Users\Administrator\AppData\Local\Programs\Forkline`。安装后 ASAR 版本为 `0.4.19`，四个关键滚动文件在归一化换行后与不可变标签完全一致。
+- 使用标准安装后的 EXE 执行 Electron 回归为 `1/1` 通过，内部 `9/9` 滚动路径最大向上跳变 `0 px`、最终栏间偏差 `0 px`、长任务 `0`，最大心跳延迟 `14.6 ms`；测试后相关进程归零，四个稳定用户偏好文件长度和 SHA-256 与安装前一致。
+- 发布前同版本隔离安装、启动、滚动和静默卸载均已通过；本轮不重复卸载标准安装版。保护文件和旧 v0.4.18 临时目录均保持原样。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`：追加正式 Release、附件、安装、ASAR 和安装后滚动回归证据；`progress.md`：追加本轮验收、测试、文件清单和回滚说明。
+- 仓库回滚方式：提交前执行 `git restore -- docs/PACKAGING.md progress.md`；提交后执行 `git revert <本轮 v0.4.19 发布验收提交>`。本机标准安装如需回滚，可运行 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser`，但本轮按要求保留安装。不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，不得删除 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.18-silent-20260901`。
