@@ -11080,3 +11080,21 @@
 
 - 修改文件：`tests/electron-file-editor-performance.test.js`：允许使用工作流预先分配的调试端口；`.github/workflows/release-installer.yml`：由 PowerShell 分配端口并为不可变 `v0.4.19` 临时借用/恢复修正测试；`tests/installer-package.test.js`：锁定端口和 Tag 恢复契约；`docs/PACKAGING.md`：记录 Windows runner 规避方式；`progress.md`：追加两次云端失败的纠正结论。
 - 回滚方式：提交后执行 `git revert <本轮调试端口探测修复提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-03 - Task: 移除 Electron 云端回归的异步子进程管道
+
+### What was done
+
+- 预分配调试端口后的第三次云端运行仍在 Electron 专项开始阶段触发同一断言，原生栈稳定落在 `uv_pipe_connect2`，排除了产品页面、滚动同步和调试端口选择本身。
+- Electron 测试夹具改用同步 Git 子进程准备压力仓库，并把 Electron 标准输出和错误写入临时日志文件，移除会触发 Node.js 24 原生断言的异步 Windows 命名管道；测试失败时仍会读取日志文件提供 Electron 启动证据。
+- 产品代码、测试正文、滚动断言、不可变标签和安装器打包输入均未改变。
+
+### Testing
+
+- 预分配端口后执行 `node tests/electron-file-editor-performance.test.js`：`1/1` 通过，内部 `9/9` 路径最大向上跳变 `0 px`、最终栏间偏差 `0 px`、最大心跳延迟 `12.2 ms`、长任务 `0`。
+- `node --check tests/electron-file-editor-performance.test.js`、`git diff --check` 和 `node --test tests/installer-package.test.js` 均通过；安装器契约为 `2/2`。
+
+### Notes
+
+- 修改文件：`tests/electron-file-editor-performance.test.js`：同步准备 Git 夹具并使用文件承接 Electron 日志；`docs/PACKAGING.md`：记录 Windows runner 的异步管道边界；`progress.md`：追加第三次云端失败证据和本机验证。
+- 回滚方式：提交后执行 `git revert <本轮异步子进程管道修复提交>`；不得移动或重建 `v0.4.19`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
