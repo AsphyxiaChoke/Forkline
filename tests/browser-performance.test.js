@@ -1004,7 +1004,7 @@ test("real Chromium keeps historical file comparison responsive", {
       scrollers[0].dispatchEvent(new Event("scroll"));
     }
     const scrollMs = performance.now() - scrollStarted;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const editorResourceNames = new Set(Array.from(document.querySelectorAll("[data-file-editor-resource]"), (element) => element.src || element.href).filter(Boolean));
     const resourceEntries = performance.getEntriesByType("resource").slice(resourceEntryStart);
     const editorEntries = resourceEntries.filter((entry) => editorResourceNames.has(entry.name));
@@ -1100,7 +1100,7 @@ test("real Chromium keeps historical file comparison responsive", {
     });
   }
   const rapidEditorScrollMetrics = await evaluate(cdp, `(async () => {
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const session = window.__forklineRapidEditorScroll;
     const panes = session?.panes || [];
     const traces = session?.traces || [];
@@ -1700,7 +1700,7 @@ test("real Chromium keeps historical file comparison responsive", {
     const panes = [state.fileEditor?.oldCodeMirror, state.fileEditor?.codeMirror, state.fileEditor?.theirsCodeMirror].filter(Boolean);
     panes[0]?.scrollTo(0, 500000);
     panes[0]?.getScrollerElement?.().dispatchEvent(new Event("scroll"));
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const visibleLines = panes.map((pane) => {
       const info = pane.getScrollInfo();
       return pane.lineAtHeight(info.top, "local");

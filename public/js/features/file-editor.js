@@ -226,12 +226,7 @@ async function switchOpenFileEditor(filePath, previousFilePath = "") {
 function updateFileEditorModeUi(editor) {
   const readOnly = Boolean(editor.readOnly);
   const commitView = editor.source === "commit";
-  const lightweightCompare = Boolean(
-    editor.largeFile ||
-    editor.lightweightCompare ||
-    usesStandaloneHistoryCompare(editor) ||
-    usesStandaloneConflictCompare(editor)
-  );
+  const lightweightCompare = Boolean(editor.largeFile || editor.lightweightCompare);
   els.fileEditorForm.classList.toggle("is-readonly", readOnly);
   els.fileEditorForm.classList.toggle("is-large-file", Boolean(editor.largeFile));
   els.fileEditorForm.classList.toggle("is-lightweight-compare", lightweightCompare);
@@ -266,27 +261,9 @@ function normalizeFileEditorCompareMode(mode) {
   return mode === "align" ? "align" : "connect";
 }
 
-function usesStandaloneHistoryCompare(editor) {
-  return Boolean(
-    typeof isStandaloneFileEditorWindow === "function" &&
-    isStandaloneFileEditorWindow() &&
-    editor?.source === "commit" &&
-    editor.readOnly &&
-    !editor.conflict
-  );
-}
-
-function usesStandaloneConflictCompare(editor) {
-  return Boolean(
-    typeof isStandaloneFileEditorWindow === "function" &&
-    isStandaloneFileEditorWindow() &&
-    editor?.conflict
-  );
-}
-
 function updateFileEditorCompareModeUi(editor, forceDisabled = false) {
   const commitView = editor.source === "commit";
-  const showCompareMode = commitView && !usesStandaloneHistoryCompare(editor) && !editor.largeFile && !editor.lightweightCompare && !editor.conflict;
+  const showCompareMode = commitView && !editor.largeFile && !editor.lightweightCompare && !editor.conflict;
   const hasMergeView = typeof CodeMirror === "function" && typeof CodeMirror.MergeView === "function";
   els.fileEditorCompareMode.hidden = !showCompareMode || !hasMergeView;
   els.fileEditorCompareMode.setAttribute("aria-label", t("历史对照方式"));
@@ -303,7 +280,7 @@ function updateFileEditorCompareModeUi(editor, forceDisabled = false) {
 
 function setFileEditorCompareMode(mode) {
   const editor = state.fileEditor;
-  if (!editor || editor.source !== "commit" || usesStandaloneHistoryCompare(editor) || editor.largeFile || editor.lightweightCompare || editor.conflict || editor.loading || editor.saving || editor.operating) return false;
+  if (!editor || editor.source !== "commit" || editor.largeFile || editor.lightweightCompare || editor.conflict || editor.loading || editor.saving || editor.operating) return false;
   const nextMode = normalizeFileEditorCompareMode(mode);
   if (editor.compareMode === nextMode) return true;
 
@@ -419,28 +396,6 @@ function createFileEditorInstance(editor) {
   editor.conflictFallback = false;
   const canUseCodeMirror = typeof CodeMirror === "function";
   const canUseMergeView = canUseCodeMirror && typeof CodeMirror.MergeView === "function";
-  const standaloneHistoryCompare = usesStandaloneHistoryCompare(editor);
-  const standaloneConflictCompare = usesStandaloneConflictCompare(editor);
-  if (standaloneHistoryCompare) {
-    els.fileEditorMerge.hidden = true;
-    els.fileEditorFallback.hidden = false;
-    els.fileEditorOldText.value = editor.oldContent;
-    els.fileEditorText.value = editor.initialContent;
-    els.fileEditorText.disabled = false;
-    els.fileEditorText.readOnly = true;
-    bindFallbackFileEditorScroll(editor);
-    return;
-  }
-  if (standaloneConflictCompare) {
-    els.fileEditorMerge.hidden = true;
-    els.fileEditorFallback.hidden = false;
-    els.fileEditorOldText.value = editor.conflictVersions.ours.content;
-    els.fileEditorText.value = editor.initialContent;
-    els.fileEditorText.disabled = false;
-    els.fileEditorText.readOnly = editor.readOnly;
-    createNativeConflictFileCompare(editor);
-    return;
-  }
   if (!canUseCodeMirror || (!editor.conflict && !editor.largeFile && !editor.lightweightCompare && !canUseMergeView)) {
     editor.conflictFallback = Boolean(editor.conflict);
     els.fileEditorMerge.hidden = true;

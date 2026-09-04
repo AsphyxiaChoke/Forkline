@@ -11203,3 +11203,25 @@
 
 - 修改文件：`docs/PACKAGING.md`（追加正式 Release、附件、安装和滚动证据）；`docs/CONTINUE.md`（记录 v0.4.20 已完成状态与不可变边界）；`progress.md`（追加本轮完整闭环、测试、文件和回滚记录）。
 - 仓库回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮发布验收文档提交>`。产品修复如需回滚，应对 `19dbd2876139402b373c813f02b1dca9bf1532c4` 使用 `git revert` 并发布更高版本，不得移动或重建 `v0.4.20`。本机安装可通过标准卸载器移除，旧 `D:\Forkline` 可从 Windows 回收站恢复。不得修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`。
+
+## 2026-09-04 - Task: 恢复 MergeView 并根治快速滚动、任务栏和最大化问题
+
+### What was done
+
+- 恢复 Electron 独立历史窗口的完整 MergeView 差异连线、行对齐和语法高亮，并恢复普通冲突窗口的三栏 MergeView；左右栏保持只读，中间栏继续支持编辑保存。
+- 将快速滚轮处理提前到捕获阶段，只移动当前操作栏，并在滚轮停止后同步最终位置；快速拖动滚动条期间不再逐帧反写其他栏，保留 MergeView 能力的同时消除反馈竞争造成的回弹和假死。
+- 将文件编辑器独立窗口改为真正的顶级窗口，使其显示独立任务栏项；独立窗口不再使用网页浮窗固定尺寸定位，最大化后编辑内容随窗口铺满。
+- 产品版本升至 `0.4.21`，同步更新用户说明、架构、桌面说明、安装器契约和发布准备文档；本机安装器构建、ASAR、隔离安装、真实 Electron 压力回归、卸载和标准安装均已完成。
+
+### Testing
+
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 连续三轮均为 `409/409`，失败 `0`、跳过 `0`；Chromium 快速滚轮最大向上跳变 `0 px`。
+- 真实 Electron 普通双栏、轻量双栏、历史双栏和冲突三栏共 `9` 条滚轮来源均为最大向上跳变 `0 px`、最终栏间偏差 `0 px`、长任务 `0`；用户指定历史场景连续快速拖动滚动条 `8` 轮时 DOM 与绘图层无持续增长。
+- 源码、打包 EXE 和安装版历史场景峰值分别约 `351.0 MiB`、`337.0 MiB` 和 `342.1 MiB`；打包 EXE 停止后约 `297.6 MiB`，安装版停止后约 `336.7 MiB`。最大化视口和内容实际尺寸均为 `1900 x 1000`。
+- Windows 窗口探针为 `visible=true`、`owner=0`、`toolWindow=false`。隔离安装、安装版 `2/2` 回归和卸载退出码均为 `0`；标准版启动、显示、正常退出后 Forkline/Node 残留进程为 `0`，四个稳定用户偏好文件哈希未变。
+- 本机安装器大小 `104613145` 字节、SHA-256 `6d81f20b3ae5c7882d71b6a67ba1fd4916dd12eca1bc1908c4363966315fdab4`；blockmap SHA-256 `de579f2789750e9f7860fb2c2d6a814fd794029d64bfd13b55feee745dfe350a`；`latest.yml` 的版本、名称、大小和 SHA-512 均匹配，Authenticode 为 `NotSigned`。
+
+### Notes
+
+- 修改文件：`electron/main.js`（独立窗口任务栏关系）；`public/file-editor.css`（恢复 MergeView 三栏布局）；`public/js/features/file-editor-actions.js`（捕获阶段滚轮与拖动结束同步）；`public/js/features/file-editor-window.js`（独立窗口铺满与同步资源清理）；`public/js/features/file-editor.js`（恢复历史和冲突 MergeView）；`tests/browser-performance.test.js`、`tests/electron-file-editor-performance.test.js`、`tests/electron-shell.test.js`、`tests/file-editor-ui.test.js`（快速滚轮、拖动、任务栏、最大化和 MergeView 回归）；`package.json`、`package-lock.json`、`tests/installer-package.test.js`（v0.4.21 版本与安装器契约）；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`（产品行为和发布说明）；`progress.md`（本轮记录）。
+- 回滚点为本轮起点 `de9c8e846cc8259f60c546991c9ad761f9dfe61d`；提交前可对上述明确文件执行 `git restore -- <file...>`，提交后使用 `git revert <v0.4.21 修复提交>` 并发布更高版本。不得移动或重建 `v0.4.20`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，也不得暂存仅有换行状态的 `public/js/i18n-catalog.js` 和 `public/vendor/codemirror/addon/merge/merge.js`。

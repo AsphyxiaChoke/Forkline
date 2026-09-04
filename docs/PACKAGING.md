@@ -513,3 +513,13 @@ Electron `43.4.1` 包不再通过自身生命周期脚本自动下载 Windows �
 - 正式附件先完成隔离安装，EXE 文件/产品版本为 `0.4.20/0.4.20.0`，ASAR 版本和四个关键修复文件与产品提交一致；直接使用该 EXE 的 Electron 回归为 `2/2`，用户指定历史窗口连续 `8` 轮滚动的渲染进程峰值约 `284.7 MiB`、停止后约 `233.7 MiB`，DOM 固定 `2813`、动态绘图元素 `0`、最大向上跳变 `0 px`。隔离卸载退出码为 `0`，目录已完整删除。
 - 同一正式安装器随后把标准目录 `C:\Users\Administrator\AppData\Local\Programs\Forkline` 更新到 v0.4.20；HKCU 卸载登记、桌面和开始菜单快捷方式均指向标准目录。标准安装后的 Electron 回归再次为 `2/2`，用户指定历史窗口峰值约 `286.3 MiB`、停止后约 `228.2 MiB`，DOM 和绘图层保持稳定，最大向上跳变 `0 px`；测试退出后无 Forkline 进程。
 - 四个稳定用户偏好文件在标准安装前后长度和 SHA-256 完全一致。按既有清理要求，未登记的 `D:\Forkline` v0.4.17 已在 v0.4.20 验收通过后移入 Windows 回收站，原路径不存在且可恢复。GitHub #1 至 #10 均保持关闭，没有重复评论或重复关闭；受保护异常文件与 `.playwright-cli/` 仍未修改、未暂存、未提交。
+
+## v0.4.21 MergeView、快速滚动和独立窗口修复发布准备
+
+- v0.4.21 恢复 Electron 独立历史窗口的完整 MergeView 差异连线、行对齐和语法高亮，并恢复普通冲突窗口的三栏 MergeView；左右栏只读，中间栏可编辑并保存。Web 页面、工作区编辑、Git 语义、源码克隆和便携版 Git 快进更新保持不变。
+- 快速滚轮改由捕获阶段受控同步先于 CodeMirror 处理：阻止同一事件继续触发内置滚动预处理，只滚动当前操作栏，并在停止 `200 ms` 后把最终位置同步到其他栏一次。滚动条快速拖动期间不再逐帧回写其他栏，松开后再同步最终位置；完全取消 Forkline 接管的对照会重新出现约 `625 px` 回弹，因此没有采用。
+- Electron 文件编辑器窗口移除主窗口 `parent` 关系并显式 `skipTaskbar: false`，Windows 探针结果为 `visible=true`、`owner=0`、`toolWindow=false`，满足独立任务栏显示条件。独立窗口同时禁用网页浮窗固定尺寸定位，最大化视口与内容实际尺寸均为 `1900 x 1000`。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 连续三轮均为 `409/409`，失败 `0`、跳过 `0`。Chromium 快速滚轮最大向上跳变 `0 px`；Electron 普通双栏、轻量双栏、历史双栏、冲突三栏共 `9` 条滚轮来源的回弹、最终偏差和长任务均为 `0`。
+- 用户指定历史场景连续快速拖动滚动条 `8` 轮：源码测试峰值约 `351.0 MiB`，打包 EXE 峰值约 `337.0 MiB`、停止后约 `297.6 MiB`，安装版峰值约 `342.1 MiB`、停止后约 `336.7 MiB`；DOM 与动态绘图层均无持续增长。隔离当前用户安装、安装版 `2/2` 回归和卸载退出码均为 `0`，标准版启动、显示、正常退出后无残留 Forkline/Node 进程，四个稳定用户偏好文件哈希未变。
+- 本机安装器 `dist/installer/Forkline-Setup-0.4.21-windows-x64.exe` 大小 `104613145` 字节、SHA-256 `6d81f20b3ae5c7882d71b6a67ba1fd4916dd12eca1bc1908c4363966315fdab4`；blockmap 大小 `111584` 字节、SHA-256 `de579f2789750e9f7860fb2c2d6a814fd794029d64bfd13b55feee745dfe350a`。`latest.yml` 的版本、名称、大小和 SHA-512 `oiZ1mNCBXdEgJK+WGRMrebb8Xm1+OlPTGiM1GlPRmX0ijxMws6dfL7ADgJMFSECyVn05zHRXsXcwURu4XZfXBw==` 均匹配；Authenticode 为 `NotSigned`。
+- 正式发布必须使用新的不可移动注释标签 `v0.4.21` 触发安装器和便携包工作流，核验六个附件、GitHub digest、两个 `.sha256`、`latest.yml` 和便携 ZIP 内容。Release 说明必须继续标注当前用户安装、可选目录、默认桌面/开始菜单快捷方式、NSIS `electron-updater`、更新前优雅停止 Forkline/Git/SSH 子进程，以及未知发布者和 SmartScreen 风险。

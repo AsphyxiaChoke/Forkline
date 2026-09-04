@@ -624,21 +624,18 @@ test("replaced MergeView instances release global resize tracking immediately", 
   assert.match(mergeAddon, /destroy: function\(\) \{[\s\S]*?clearInterval\(this\._resizeInterval\)[\s\S]*?CodeMirror\.off\(window, "resize", this\._onResize\)/);
 });
 
-test("standalone historical comparison uses native text panes instead of CodeMirror or MergeView", () => {
-  assert.match(editor, /function usesStandaloneHistoryCompare\(editor\)[\s\S]*?isStandaloneFileEditorWindow\(\)[\s\S]*?editor\.source === "commit"[\s\S]*?editor\.readOnly[\s\S]*?!editor\.conflict/);
-  assert.match(editor, /const lightweightCompare = Boolean\([\s\S]*?editor\.largeFile[\s\S]*?editor\.lightweightCompare[\s\S]*?usesStandaloneHistoryCompare\(editor\)[\s\S]*?usesStandaloneConflictCompare\(editor\)[\s\S]*?\);/);
-  assert.match(editor, /const showCompareMode = commitView && !usesStandaloneHistoryCompare\(editor\)/);
-  assert.match(editor, /function setFileEditorCompareMode[\s\S]*?usesStandaloneHistoryCompare\(editor\)[\s\S]*?return false/);
-  assert.match(editor, /const standaloneHistoryCompare = usesStandaloneHistoryCompare\(editor\)/);
-  assert.match(editor, /if \(standaloneHistoryCompare[\s\S]*?fileEditorFallback\.hidden = false[\s\S]*?bindFallbackFileEditorScroll\(editor\)[\s\S]*?return/);
-  assert.match(editorActions, /function bindFallbackFileEditorScroll\(editor, elements = \[els\.fileEditorOldText, els\.fileEditorText\]\)[\s\S]*?bindFileEditorScrollSync/);
-  assert.doesNotMatch(editor, /drawConnectors/);
-  assert.doesNotMatch(mergeAddon, /options\.drawConnectors/);
+test("standalone historical comparison retains MergeView connectors, alignment, and syntax highlighting", () => {
+  assert.doesNotMatch(editor, /usesStandaloneHistoryCompare|bindFallbackFileEditorScroll/);
+  assert.match(editor, /const showCompareMode = commitView && !editor\.largeFile && !editor\.lightweightCompare && !editor\.conflict/);
+  assert.match(editor, /editor\.mergeView = CodeMirror\.MergeView\(els\.fileEditorMerge/);
+  assert.match(editor, /connect:\s*editor\.readOnly\s*\?\s*editor\.compareMode === "align" \? "align" : null\s*:\s*"align"/s);
+  assert.match(editor, /bindMergeViewFileEditorScroll\(editor\)/);
+  assert.match(editor, /lineNumbers:\s*true/);
 });
 
 test("large historical files keep the lightweight comparison path", () => {
-  assert.match(editor, /const showCompareMode = commitView && !usesStandaloneHistoryCompare\(editor\) && !editor\.largeFile && !editor\.lightweightCompare && !editor\.conflict/);
-  assert.match(editor, /if \(!editor \|\| editor\.source !== "commit" \|\| usesStandaloneHistoryCompare\(editor\) \|\| editor\.largeFile \|\| editor\.lightweightCompare \|\| editor\.conflict/);
+  assert.match(editor, /const showCompareMode = commitView && !editor\.largeFile && !editor\.lightweightCompare && !editor\.conflict/);
+  assert.match(editor, /if \(!editor \|\| editor\.source !== "commit" \|\| editor\.largeFile \|\| editor\.lightweightCompare \|\| editor\.conflict/);
 });
 
 test("historical comparison switches complex files to the lightweight path", () => {
@@ -692,79 +689,38 @@ test("large files use two lightweight CodeMirror panes instead of MergeView", ()
   assert.match(largeCompare, /editor\.codeMirror = CodeMirror\(newHost/);
   assert.doesNotMatch(largeCompare, /MergeView/);
   assert.match(largeCompare, /bindFileEditorScrollSync\(editor, \[editor\.oldCodeMirror, editor\.codeMirror\]\)/);
-  assert.match(editor, /element\.addEventListener\("wheel", wheelHandler, \{ passive: false \}\)/);
+  assert.match(editor, /element\.addEventListener\("wheel", wheelHandler, \{ capture: true, passive: false \}\)/);
   assert.match(editor, /element\.addEventListener\("scroll", handler, \{ passive: true \}\)/);
-  assert.match(editor, /editor\?\.scrollSyncHandlers\?\.forEach[\s\S]*?removeEventListener\("scroll", handler\)/);
+  assert.match(editor, /editor\.scrollSyncTimers = scrollTimers/);
+  assert.match(editor, /editor\?\.scrollSyncHandlers\?\.forEach[\s\S]*?removeEventListener\("wheel", wheelHandler, true\)[\s\S]*?removeEventListener\("scroll", handler\)/);
   assert.match(styles, /\.file-editor-large-compare\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 1px minmax\(0, 1fr\);/s);
 });
 
-test("editor scroll sync ignores a delayed programmatic target scroll event", () => {
+test("editor scroll sync waits for rapid scrollbar movement to settle and applies the final position once", () => {
   const frameCallbacks = [];
-  const sandbox = {
-    requestAnimationFrame: (callback) => {
-      frameCallbacks.push(callback);
-      return frameCallbacks.length;
-    },
-  };
-  const createPane = () => {
-    let top = 0;
-    let left = 0;
-    const element = {
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    };
-    return {
-      getScrollerElement: () => element,
-      getScrollInfo: () => ({ top, left, height: 2000, clientHeight: 500 }),
-      scrollTo: (nextLeft, nextTop) => {
-        left = nextLeft;
-        top = nextTop;
-      },
-      setScrollTop: (nextTop) => {
-        top = nextTop;
-      },
-    };
-  };
-  vm.runInNewContext(editorActions, sandbox);
-  const first = createPane();
-  const second = createPane();
-  const handlers = sandbox.bindFileEditorScrollSync({}, [first, second]);
-
-  let firstTop = 240;
-  first.getScrollInfo = () => ({ top: firstTop, left: 0, height: 2000, clientHeight: 500 });
-  handlers[0].handler();
-  frameCallbacks.shift()();
-  firstTop = 480;
-  handlers[0].handler();
-  frameCallbacks.shift()();
-
-  second.setScrollTop(240);
-  handlers[1].handler();
-  assert.equal(frameCallbacks.length, 0);
-});
-
-test("editor scroll sync keeps the active wheel pane authoritative and settles its final position", () => {
-  const frameCallbacks = [];
-  const timerCallbacks = [];
+  const timers = [];
   const sandbox = {
     requestAnimationFrame: (callback) => {
       frameCallbacks.push(callback);
       return frameCallbacks.length;
     },
     setTimeout: (callback) => {
-      timerCallbacks.push(callback);
-      return timerCallbacks.length;
+      const timer = { callback, cancelled: false };
+      timers.push(timer);
+      return timer;
     },
-    clearTimeout: () => {},
+    clearTimeout: (timer) => { timer.cancelled = true; },
   };
   const createPane = () => {
     let top = 0;
+    let scrollCalls = 0;
     const element = { addEventListener: () => {}, removeEventListener: () => {} };
     return {
       getScrollerElement: () => element,
       getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
-      scrollTo: (_left, nextTop) => { top = nextTop; },
+      scrollTo: (_left, nextTop) => { scrollCalls += 1; top = nextTop; },
       setScrollTop: (nextTop) => { top = nextTop; },
+      getScrollCalls: () => scrollCalls,
     };
   };
   vm.runInNewContext(editorActions, sandbox);
@@ -772,37 +728,35 @@ test("editor scroll sync keeps the active wheel pane authoritative and settles i
   const second = createPane();
   const handlers = sandbox.bindFileEditorScrollSync({}, [first, second]);
 
-  handlers[0].wheelHandler();
   first.setScrollTop(120);
   handlers[0].handler();
-  frameCallbacks.shift()();
-  assert.equal(second.getScrollInfo().top, 120);
-
-  second.setScrollTop(0);
-  handlers[1].handler();
   assert.equal(frameCallbacks.length, 0);
-  assert.equal(first.getScrollInfo().top, 120);
-
   first.setScrollTop(240);
-  timerCallbacks.shift()();
+  handlers[0].handler();
+  assert.equal(frameCallbacks.length, 0);
+  assert.equal(second.getScrollInfo().top, 0);
+
+  timers.findLast((timer) => !timer.cancelled).callback();
   frameCallbacks.shift()();
   assert.equal(first.getScrollInfo().top, 240);
   assert.equal(second.getScrollInfo().top, 240);
+  assert.equal(second.getScrollCalls(), 1);
 });
 
-test("editor scroll sync ignores a corrected target position while settling wheel input", () => {
+test("editor scroll sync ignores delayed programmatic target scroll events", () => {
   const frameCallbacks = [];
-  const timerCallbacks = [];
+  const timers = [];
   const sandbox = {
     requestAnimationFrame: (callback) => {
       frameCallbacks.push(callback);
       return frameCallbacks.length;
     },
     setTimeout: (callback) => {
-      timerCallbacks.push(callback);
-      return timerCallbacks.length;
+      const timer = { callback, cancelled: false };
+      timers.push(timer);
+      return timer;
     },
-    clearTimeout: () => {},
+    clearTimeout: (timer) => { timer.cancelled = true; },
   };
   const createPane = () => {
     let top = 0;
@@ -819,107 +773,66 @@ test("editor scroll sync ignores a corrected target position while settling whee
   const second = createPane();
   const handlers = sandbox.bindFileEditorScrollSync({}, [first, second]);
 
-  handlers[0].wheelHandler();
   first.setScrollTop(120);
   handlers[0].handler();
+  timers.findLast((timer) => !timer.cancelled).callback();
   frameCallbacks.shift()();
   assert.equal(second.getScrollInfo().top, 120);
 
-  timerCallbacks.shift()();
-  second.setScrollTop(90);
+  first.setScrollTop(240);
+  handlers[0].handler();
+  timers.findLast((timer) => !timer.cancelled).callback();
+  frameCallbacks.shift()();
+  assert.equal(second.getScrollInfo().top, 240);
+
+  second.setScrollTop(120);
   handlers[1].handler();
-  frameCallbacks.shift()();
-
-  assert.equal(first.getScrollInfo().top, 120);
-  assert.equal(second.getScrollInfo().top, 120);
+  assert.equal(frameCallbacks.length, 0);
+  assert.equal(first.getScrollInfo().top, 240);
 });
 
-test("editor wheel input uses CodeMirror scrolling instead of Chromium native scrolling", () => {
-  const frameCallbacks = [];
-  const timerCallbacks = [];
+test("editor wheel input runs before CodeMirror and moves the visible scrollbar without scrollTo", () => {
+  const listeners = {};
+  const vertical = { scrollTop: 0 };
+  const element = {
+    addEventListener: (type, handler, options) => { listeners[type] = { handler, options }; },
+    removeEventListener: () => {},
+  };
   const sandbox = {
-    requestAnimationFrame: (callback) => {
-      frameCallbacks.push(callback);
-      return frameCallbacks.length;
-    },
-    setTimeout: (callback) => {
-      timerCallbacks.push(callback);
-      return timerCallbacks.length;
-    },
+    requestAnimationFrame: () => 1,
+    setTimeout: () => 1,
     clearTimeout: () => {},
   };
-  const createPane = () => {
-    let top = 0;
-    const element = { addEventListener: () => {}, removeEventListener: () => {} };
-    return {
-      getScrollerElement: () => element,
-      getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
-      scrollTo: (_left, nextTop) => { top = nextTop; },
-    };
+  let scrollToCalls = 0;
+  const pane = {
+    getScrollerElement: () => element,
+    getWrapperElement: () => ({
+      querySelector: (selector) => selector === ".CodeMirror-vscrollbar" ? vertical : null,
+    }),
+    getScrollInfo: () => ({ top: vertical.scrollTop, left: 0, height: 2000, clientHeight: 500 }),
+    scrollTo: () => { scrollToCalls += 1; },
   };
   vm.runInNewContext(editorActions, sandbox);
-  const first = createPane();
-  const second = createPane();
-  const handlers = sandbox.bindFileEditorScrollSync({}, [first, second]);
+  const [binding] = sandbox.bindFileEditorScrollSync({}, [pane]);
   let prevented = false;
-
-  handlers[0].wheelHandler({
+  let stopped = false;
+  binding.wheelHandler({
     cancelable: true,
     deltaMode: 0,
     deltaX: 0,
     deltaY: 120,
     preventDefault: () => { prevented = true; },
+    stopImmediatePropagation: () => { stopped = true; },
   });
-  frameCallbacks.shift()();
-  handlers[0].handler();
-  frameCallbacks.shift()();
 
   assert.equal(prevented, true);
-  assert.equal(first.getScrollInfo().top, 120);
-  assert.equal(second.getScrollInfo().top, 120);
-});
-
-test("editor wheel input coalesces rapid deltas into one CodeMirror scroll per frame", () => {
-  const frameCallbacks = [];
-  const sandbox = {
-    requestAnimationFrame: (callback) => {
-      frameCallbacks.push(callback);
-      return frameCallbacks.length;
-    },
-    setTimeout: () => 1,
-    clearTimeout: () => {},
-  };
-  let top = 0;
-  let scrollCalls = 0;
-  const element = { addEventListener: () => {}, removeEventListener: () => {} };
-  const pane = {
-    getScrollerElement: () => element,
-    getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
-    scrollTo: (_left, nextTop) => {
-      scrollCalls += 1;
-      top = nextTop;
-    },
-  };
-  vm.runInNewContext(editorActions, sandbox);
-  const [handler] = sandbox.bindFileEditorScrollSync({}, [pane]);
-  let prevented = 0;
-  const event = {
-    cancelable: true,
-    deltaMode: 0,
-    deltaX: 0,
-    deltaY: 120,
-    preventDefault: () => { prevented += 1; },
-  };
-
-  handler.wheelHandler(event);
-  handler.wheelHandler(event);
-
-  assert.equal(prevented, 2);
-  assert.equal(scrollCalls, 0);
-  assert.equal(frameCallbacks.length, 1);
-  frameCallbacks.shift()();
-  assert.equal(scrollCalls, 1);
-  assert.equal(top, 240);
+  assert.equal(stopped, true);
+  assert.equal(vertical.scrollTop, 120);
+  assert.equal(scrollToCalls, 0);
+  assert.equal(listeners.wheel.options.capture, true);
+  assert.equal(listeners.wheel.options.passive, false);
+  assert.equal(typeof listeners.scroll.handler, "function");
+  assert.equal(listeners.scroll.options.passive, true);
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {
@@ -973,9 +886,7 @@ test("conflict file editor uses current, result, and incoming panes", () => {
   assert.match(editor, /editor\.conflictVersions = normalizeFileEditorConflictVersions\(data\.conflictVersions\)/);
   assert.match(editor, /detectFileEditorLightweightCompare\(\s*"commit",\s*editor\.conflictVersions\.ours\.content,\s*editor\.conflictVersions\.theirs\.content/s);
   assert.match(editor, /else if \(editor\.conflict\) \{\s*editor\.mergeView = CodeMirror\.MergeView/s);
-  assert.match(editor, /function usesStandaloneConflictCompare\(editor\)[\s\S]*?isStandaloneFileEditorWindow\(\)[\s\S]*?editor\?\.conflict/);
-  assert.match(editor, /if \(standaloneConflictCompare[\s\S]*?fileEditorFallback\.hidden = false[\s\S]*?createNativeConflictFileCompare\(editor\)[\s\S]*?return/);
-  assert.match(editorActions, /function createNativeConflictFileCompare\(editor\)[\s\S]*?fileEditorFallback\.classList\.add\("is-conflict-three-way"\)[\s\S]*?bindFallbackFileEditorScroll/);
+  assert.doesNotMatch(editor, /usesStandaloneConflictCompare|createNativeConflictFileCompare/);
   assert.match(editor, /if \(editor\.conflict && \(editor\.lightweightCompare \|\| !canUseMergeView\)\) \{\s*createConflictFileCompare\(editor, codeMirrorOptions\);/s);
   assert.match(editor, /function createConflictFileCompare\(/);
   assert.match(editor, /function bindConflictFileEditorScroll\(/);
@@ -1141,6 +1052,7 @@ test("Electron file editor uses a standalone window while Web keeps the in-page 
   assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-compare-labels\s*\{[^}]*grid-row:\s*4/s);
   assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-body\s*\{[^}]*grid-row:\s*5/s);
   assert.match(styles, /html\[data-window="file-editor"\] \.file-editor-footer\s*\{[^}]*grid-row:\s*6/s);
+  assert.match(editorWindow, /function fileEditorWindowCanFloat\(\) \{\s*return !isStandaloneFileEditorWindow\(\) && !window\.matchMedia\(FILE_EDITOR_COMPACT_MEDIA\)\.matches;\s*\}/);
 });
 
 test("standalone file editors receive the active theme from the main window", () => {

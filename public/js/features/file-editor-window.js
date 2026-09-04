@@ -59,7 +59,7 @@ function fileEditorIncomingCodeMirror(editor) {
 }
 
 function fileEditorWindowCanFloat() {
-  return !window.matchMedia(FILE_EDITOR_COMPACT_MEDIA).matches;
+  return !isStandaloneFileEditorWindow() && !window.matchMedia(FILE_EDITOR_COMPACT_MEDIA).matches;
 }
 
 function prepareFileEditorWindow() {
@@ -192,9 +192,8 @@ function destroyFileEditorInstance() {
   endFileEditorResize();
   if (editor?.resizeFrame) cancelAnimationFrame(editor.resizeFrame);
   if (editor?.scrollSyncFrame) cancelAnimationFrame(editor.scrollSyncFrame);
-  if (editor?.scrollSyncWheelFrame) cancelAnimationFrame(editor.scrollSyncWheelFrame);
-  editor?.scrollSyncWheelTimers?.forEach((timer) => clearTimeout(timer));
-  editor?.scrollSyncWheelTimers?.clear();
+  editor?.scrollSyncTimers?.forEach((timer) => clearTimeout(timer));
+  editor?.scrollSyncTimers?.clear();
   editor?.resizeObserver?.disconnect();
   editor?.buttonObserver?.disconnect();
   if (editor?.searchTimer) clearTimeout(editor.searchTimer);
@@ -202,15 +201,13 @@ function destroyFileEditorInstance() {
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
   if (editor?.codeMirror && editor.diffUpdateHandler) editor.codeMirror.off("updateDiff", editor.diffUpdateHandler);
   editor?.scrollSyncHandlers?.forEach(({ element, handler, wheelHandler }) => {
-    element?.removeEventListener("wheel", wheelHandler);
+    element?.removeEventListener("wheel", wheelHandler, true);
     element?.removeEventListener("scroll", handler);
   });
   if (editor?.changeMarkerFrame) cancelAnimationFrame(editor.changeMarkerFrame);
   editor?.changeMarkerRails?.forEach((rail) => rail.remove());
   editor?.mergeView?.destroy?.();
-  editor?.fallbackIncomingText?.remove();
   if (els.fileEditorMerge) els.fileEditorMerge.replaceChildren();
-  els.fileEditorFallback?.classList.remove("is-conflict-three-way");
   els.fileEditorOldLabel.hidden = false;
   els.fileEditorResultLabel.hidden = true;
   els.fileEditorOldLabel.parentElement?.classList.remove("is-single-pane");
@@ -220,12 +217,10 @@ function destroyFileEditorInstance() {
     editor.oldCodeMirror = null;
     editor.theirsCodeMirror = null;
     editor.mergeView = null;
-    editor.fallbackIncomingText = null;
     editor.conflictScrollHandlers = null;
     editor.scrollSyncHandlers = null;
-    editor.scrollSyncWheelTimers = null;
+    editor.scrollSyncTimers = null;
     editor.scrollSyncFrame = 0;
-    editor.scrollSyncWheelFrame = 0;
     editor.requestScrollSync = null;
     editor.resizeObserver = null;
     editor.buttonObserver = null;

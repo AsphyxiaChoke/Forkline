@@ -17,7 +17,7 @@ const electronExecutable = packagedElectronExecutable || path.join(projectRoot, 
 const nullConfig = process.platform === "win32" ? "NUL" : "/dev/null";
 const cdpCommandTimeoutMs = 15000;
 
-test("Electron standalone file editor stays responsive during rapid wheel scrolling", {
+test("Electron standalone file editor stays responsive during rapid scrolling", {
   skip: process.platform === "win32" ? false : "Windows Electron regression",
   timeout: 120000,
 }, async (t) => {
@@ -85,7 +85,7 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
   const opened = await evaluate(mainCdp, `(async () => {
     await refreshWorktree(false);
     renderStage({ refreshDiff: false });
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     const row = document.querySelector('#changeList [data-select-file][data-file="ordinary-scroll.c"]');
     row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
     return Boolean(row);
@@ -106,6 +106,16 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
     document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length === 1 &&
     document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 2
   )`, 30000);
+
+  const topLevelWindows = await readTopLevelWindows(electronProcess.pid);
+  const editorWindow = topLevelWindows.find((window) => (
+    window.visible && window.owner === 0 && window.title.startsWith("Forkline") && window.title !== "Forkline Web"
+  ));
+  t.diagnostic(`Electron 顶层窗口：${JSON.stringify(topLevelWindows)}`);
+  assert.ok(editorWindow, "standalone editor did not create a top-level Windows window");
+  assert.equal(editorWindow.visible, true, "standalone editor top-level window was not visible");
+  assert.equal(editorWindow.owner, 0, "standalone editor still had an owner window");
+  assert.equal(editorWindow.toolWindow, false, "standalone editor used the taskbar-hidden tool window style");
 
   for (let sourceIndex = 0; sourceIndex < 2; sourceIndex += 1) {
     const worktreeMetrics = await measureRapidWheel(editorCdp, sourceIndex);
@@ -166,13 +176,13 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
     state.fileEditor?.commit === ${JSON.stringify(fixture.head)} &&
     state.fileEditor?.loading === false &&
     state.fileEditor?.lightweightCompare === false &&
-    document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 0 &&
-    document.querySelector("#fileEditorFallback")?.hidden === false &&
-    document.querySelectorAll("#fileEditorFallback .file-editor-text").length === 2
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length === 1 &&
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 2 &&
+    document.querySelector("#fileEditorFallback")?.hidden === true
   )`, 30000);
   for (let sourceIndex = 0; sourceIndex < 2; sourceIndex += 1) {
-    const historyMetrics = await measureRapidWheel(editorCdp, sourceIndex, "#fileEditorFallback .file-editor-text");
-    assertRapidWheel(t, `历史只读双栏（来源 ${sourceIndex + 1}）`, historyMetrics, 2);
+    const historyMetrics = await measureRapidWheel(editorCdp, sourceIndex);
+    assertRapidWheel(t, `历史 MergeView 双栏（来源 ${sourceIndex + 1}）`, historyMetrics, 2);
   }
 
   const conflictRequested = await evaluate(mainCdp, `window.forklineDesktop.openFileEditorWindow(
@@ -185,45 +195,43 @@ test("Electron standalone file editor stays responsive during rapid wheel scroll
     state.fileEditor?.conflict === true &&
     state.fileEditor?.loading === false &&
     state.fileEditor?.lightweightCompare === false &&
-    document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length === 0 &&
-    document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 0 &&
-    document.querySelector("#fileEditorFallback")?.hidden === false &&
-    document.querySelectorAll("#fileEditorFallback .file-editor-text").length === 3
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-3pane").length === 1 &&
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 3 &&
+    document.querySelector("#fileEditorFallback")?.hidden === true
   )`, 30000);
   for (let sourceIndex = 0; sourceIndex < 3; sourceIndex += 1) {
-    const conflictMetrics = await measureRapidWheel(editorCdp, sourceIndex, "#fileEditorFallback .file-editor-text");
-    assertRapidWheel(t, `普通冲突三栏（来源 ${sourceIndex + 1}）`, conflictMetrics, 3, { exactTop: false });
+    const conflictMetrics = await measureRapidWheel(editorCdp, sourceIndex);
+    assertRapidWheel(t, `普通冲突 MergeView 三栏（来源 ${sourceIndex + 1}）`, conflictMetrics, 3);
   }
   const conflictSave = await evaluate(editorCdp, `(async () => {
-    const panes = Array.from(document.querySelectorAll("#fileEditorFallback .file-editor-text"));
-    const marker = "// Forkline native conflict save regression";
-    const permissions = panes.map((pane) => pane.readOnly);
-    els.fileEditorText.value = els.fileEditorText.value + "\\n" + marker + "\\n";
-    els.fileEditorText.dispatchEvent(new Event("input", { bubbles: true }));
+    const panes = [state.fileEditor.mergeView.leftOriginal(), state.fileEditor.codeMirror, state.fileEditor.mergeView.rightOriginal()];
+    const marker = "// Forkline MergeView conflict save regression";
+    const permissions = panes.map((pane) => Boolean(pane.getOption("readOnly")));
+    state.fileEditor.codeMirror.setValue(state.fileEditor.codeMirror.getValue() + "\\n" + marker + "\\n");
     const dirtyBeforeSave = fileEditorDirty();
     await submitFileEditor();
     return {
       permissions,
       dirtyBeforeSave,
-      savedValue: els.fileEditorText.value,
+      savedValue: state.fileEditor.codeMirror.getValue(),
       loading: state.fileEditor?.loading,
       saving: state.fileEditor?.saving,
     };
   })()`);
-  assert.deepEqual(conflictSave.permissions, [true, false, true], "native conflict pane permissions changed");
-  assert.equal(conflictSave.dirtyBeforeSave, true, "native conflict result did not become dirty");
-  assert.match(conflictSave.savedValue, /Forkline native conflict save regression/, "native conflict result was not reloaded after save");
-  assert.equal(conflictSave.loading, false, "native conflict editor was still loading after save");
-  assert.equal(conflictSave.saving, false, "native conflict editor was still saving after save");
+  assert.deepEqual(conflictSave.permissions, [true, false, true], "MergeView conflict pane permissions changed");
+  assert.equal(conflictSave.dirtyBeforeSave, true, "MergeView conflict result did not become dirty");
+  assert.match(conflictSave.savedValue, /Forkline MergeView conflict save regression/, "MergeView conflict result was not reloaded after save");
+  assert.equal(conflictSave.loading, false, "MergeView conflict editor was still loading after save");
+  assert.equal(conflictSave.saving, false, "MergeView conflict editor was still saving after save");
   assert.match(
     await fs.readFile(path.join(repo, "conflict-scroll.c"), "utf8"),
-    /Forkline native conflict save regression/,
-    "native conflict result was not written to disk"
+    /Forkline MergeView conflict save regression/,
+    "MergeView conflict result was not written to disk"
   );
   assert.equal(await evaluate(editorCdp, "document.title"), "Forkline 编辑器");
 });
 
-test("Electron standalone history comparison stays responsive and memory-bounded after rapid wheel scrolling", {
+test("Electron standalone history comparison stays responsive and memory-bounded after rapid scrollbar dragging", {
   skip: process.platform === "win32" ? false : "Windows Electron regression",
   timeout: 120000,
 }, async (t) => {
@@ -340,6 +348,8 @@ test("Electron standalone history comparison stays responsive and memory-bounded
       fallbackPanes: 0,
       fallbackVisible: false,
       compareModeHidden: false,
+      syntaxTokens: 0,
+      drawingElements: 0,
       resourceScripts: document.querySelectorAll("script[data-file-editor-resource]").length,
       resourcePending: document.querySelectorAll("script[data-file-editor-resource]:not([data-loaded=true])").length,
       mergeTextLength: document.querySelector("#fileEditorMerge")?.textContent?.length || 0,
@@ -355,6 +365,8 @@ test("Electron standalone history comparison stays responsive and memory-bounded
       fallbackPanes: document.querySelectorAll("#fileEditorFallback .file-editor-text").length,
       fallbackVisible: document.querySelector("#fileEditorFallback")?.hidden === false,
       compareModeHidden: Boolean(document.querySelector("#fileEditorCompareMode")?.hidden),
+      syntaxTokens: document.querySelectorAll("#fileEditorMerge .cm-keyword, #fileEditorMerge .cm-def, #fileEditorMerge .cm-variable").length,
+      drawingElements: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-gap > svg, #fileEditorMerge .CodeMirror-merge-connect-canvas").length,
       resourceScripts: document.querySelectorAll("script[data-file-editor-resource]").length,
       resourcePending: document.querySelectorAll("script[data-file-editor-resource]:not([data-loaded=true])").length,
       mergeTextLength: document.querySelector("#fileEditorMerge")?.textContent?.length || 0,
@@ -365,45 +377,116 @@ test("Electron standalone history comparison stays responsive and memory-bounded
       && stateSnapshot.source === "commit"
       && stateSnapshot.commit === commit
       && stateSnapshot.loading === false
-      && stateSnapshot.mergeViews === 0
+      && stateSnapshot.mergeViews === 1
       && stateSnapshot.lightweightCompares === 0
-      && stateSnapshot.scrollers === 0
+      && stateSnapshot.scrollers === 2
       && stateSnapshot.fallbackPanes === 2
-      && stateSnapshot.fallbackVisible
-      && stateSnapshot.compareModeHidden;
+      && !stateSnapshot.fallbackVisible
+      && !stateSnapshot.compareModeHidden
+      && stateSnapshot.syntaxTokens > 0
+      && stateSnapshot.drawingElements > 0;
     if (editorReady || privateBytes >= 1024 * 1024 * 1024) break;
     await delay(500);
   }
   t.diagnostic(`真实历史双击加载快照：${JSON.stringify(loadingSnapshots)}`);
   assert.equal(editorReady, true, "real history editor did not finish loading before the renderer memory limit");
   const readySnapshot = loadingSnapshots.at(-1);
-  assert.equal(readySnapshot.mergeViews, 0, "standalone history editor created a MergeView");
-  assert.equal(readySnapshot.lightweightCompares, 0, "standalone history editor created a CodeMirror comparison");
-  assert.equal(readySnapshot.scrollers, 0, "standalone history editor created a CodeMirror scroller");
-  assert.equal(readySnapshot.fallbackPanes, 2, "standalone history editor did not create two native text panes");
-  assert.equal(readySnapshot.fallbackVisible, true, "standalone history editor did not show the native text comparison");
-  assert.equal(readySnapshot.compareModeHidden, true, "standalone history editor exposed the MergeView mode switch");
+  assert.equal(readySnapshot.mergeViews, 1, "standalone history editor did not create a MergeView");
+  assert.equal(readySnapshot.lightweightCompares, 0, "standalone history editor entered lightweight comparison unexpectedly");
+  assert.equal(readySnapshot.scrollers, 2, "standalone history editor did not create two CodeMirror scrollers");
+  assert.equal(readySnapshot.fallbackVisible, false, "standalone history editor showed the native fallback");
+  assert.equal(readySnapshot.compareModeHidden, false, "standalone history editor hid the MergeView mode switch");
+  assert.ok(readySnapshot.syntaxTokens > 0, "standalone history editor lost syntax highlighting");
+  assert.ok(readySnapshot.drawingElements > 0, "standalone history editor lost connector drawing");
 
-  const memory = await measureStandaloneHistoryMemoryAfterWheel(editorCdp, electronProcess.pid, 8, (sample) => {
-    t.diagnostic(`历史原生双栏第 ${sample.cycle} 轮：JS ${(sample.usedSize / 1048576).toFixed(1)} MiB，渲染进程 ${(sample.privateBytes / 1048576).toFixed(1)} MiB，DOM ${sample.nodes}，绘制元素 ${sample.drawingElements}`);
+  await editorCdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1900,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
   });
-  t.diagnostic(`真实历史原生双栏循环滚动：${memory.samples.map((sample) => `${sample.cycle}:${(sample.usedSize / 1048576).toFixed(1)}/${(sample.privateBytes / 1048576).toFixed(1)}MiB,dom=${sample.nodes},draw=${sample.drawingElements}`).join(" | ")}`);
-  t.diagnostic(`真实历史原生双栏滚动内存：JS 初始 ${(memory.initialUsedSize / 1048576).toFixed(1)} MiB，峰值 ${(memory.maxUsedSize / 1048576).toFixed(1)} MiB，增长 ${(memory.growth / 1048576).toFixed(1)} MiB；渲染进程初始 ${(memory.initialPrivateBytes / 1048576).toFixed(1)} MiB，峰值 ${(memory.maxPrivateBytes / 1048576).toFixed(1)} MiB，停止后 ${(memory.settledPrivateBytes / 1048576).toFixed(1)} MiB；DOM ${memory.initialNodes} -> ${memory.maxNodes}，绘制元素峰值 ${memory.maxDrawingElements}`);
+  await delay(500);
+  const maximizedLayout = await evaluate(editorCdp, `(() => {
+    const rect = els.fileEditorForm.getBoundingClientRect();
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      dialog: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      positioned: els.fileEditorForm.classList.contains("is-positioned"),
+      inline: { left: els.fileEditorForm.style.left, top: els.fileEditorForm.style.top, width: els.fileEditorForm.style.width, height: els.fileEditorForm.style.height },
+    };
+  })()`);
+  t.diagnostic(`独立编辑器最大化布局：${JSON.stringify(maximizedLayout)}`);
+  assert.ok(Math.abs(maximizedLayout.dialog.left) <= 1 && Math.abs(maximizedLayout.dialog.top) <= 1, "standalone editor content did not start at the maximized viewport origin");
+  assert.ok(Math.abs(maximizedLayout.dialog.width - maximizedLayout.viewport.width) <= 1, "standalone editor content did not fill the maximized viewport width");
+  assert.ok(Math.abs(maximizedLayout.dialog.height - maximizedLayout.viewport.height) <= 1, "standalone editor content did not fill the maximized viewport height");
+  assert.equal(maximizedLayout.positioned, false, "standalone editor retained in-page floating positioning");
+  assert.deepEqual(maximizedLayout.inline, { left: "", top: "", width: "", height: "" }, "standalone editor retained fixed inline bounds after maximizing");
+
+  const wheelOwnership = await evaluate(editorCdp, `(async () => {
+    const bindings = state.fileEditor?.scrollSyncHandlers || [];
+    const source = bindings[0]?.source;
+    const element = bindings[0]?.element;
+    let sourceScrollToCalls = 0;
+    const originalScrollTo = source.scrollTo.bind(source);
+    source.scrollTo = (...args) => {
+      sourceScrollToCalls += 1;
+      return originalScrollTo(...args);
+    };
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+      deltaY: 120,
+    });
+    element.dispatchEvent(wheel);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    source.scrollTo = originalScrollTo;
+    return { defaultPrevented: wheel.defaultPrevented, sourceScrollToCalls };
+  })()`);
+  assert.equal(wheelOwnership.defaultPrevented, true, "standalone history editor did not take ownership of wheel scrolling");
+  assert.equal(wheelOwnership.sourceScrollToCalls, 0, "standalone history editor rewrote the active pane during wheel input");
+
+  const scrollbarOwnership = await measureRapidScrollbarDrag(editorCdp);
+  t.diagnostic(`历史 MergeView 快速拖动滚动条：来源 ${scrollbarOwnership.tops[0].toFixed(1)}，目标 ${scrollbarOwnership.tops[1].toFixed(1)}，程序滚动 ${scrollbarOwnership.scrollToCalls.join("/")}，坐标 ${JSON.stringify(scrollbarOwnership.point)}，滚动条 ${JSON.stringify(scrollbarOwnership.scrollbar)}`);
+  assert.ok(scrollbarOwnership.tops[0] > 0, "standalone history scrollbar drag did not move the active pane");
+  assert.ok(scrollbarOwnership.ratioSpread <= 0.02, `standalone history scrollbar drag left panes ${scrollbarOwnership.ratioSpread.toFixed(4)} apart`);
+  assert.equal(scrollbarOwnership.scrollToCalls[0], 0, "standalone history editor rewrote the actively dragged pane");
+  assert.ok(scrollbarOwnership.scrollToCalls[1] <= 1, `standalone history editor rewrote the target pane ${scrollbarOwnership.scrollToCalls[1]} times during one drag`);
+
+  await evaluate(editorCdp, `document.querySelector('[data-file-editor-compare-mode="align"]')?.click()`);
+  await waitForExpression(editorCdp, `Boolean(
+    state.fileEditor?.compareMode === "align" &&
+    state.fileEditor?.mergeView?.options?.connect === "align" &&
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-spacer").length > 0
+  )`, 10000);
+  const alignedSpacers = await evaluate(editorCdp, `document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-spacer").length`);
+  assert.ok(alignedSpacers > 0, "standalone history editor lost aligned spacer rows");
+  await evaluate(editorCdp, `document.querySelector('[data-file-editor-compare-mode="connect"]')?.click()`);
+  await waitForExpression(editorCdp, `Boolean(
+    state.fileEditor?.compareMode === "connect" &&
+    state.fileEditor?.mergeView?.options?.connect !== "align" &&
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-gap > svg").length > 0
+  )`, 10000);
+
+  const memory = await measureStandaloneHistoryMemoryAfterScroll(editorCdp, electronProcess.pid, 8, (sample) => {
+    t.diagnostic(`历史 MergeView 双栏第 ${sample.cycle} 轮：JS ${(sample.usedSize / 1048576).toFixed(1)} MiB，渲染进程 ${(sample.privateBytes / 1048576).toFixed(1)} MiB，DOM ${sample.nodes}，绘制元素 ${sample.drawingElements}`);
+  });
+  t.diagnostic(`真实历史 MergeView 双栏循环滚动：${memory.samples.map((sample) => `${sample.cycle}:${(sample.usedSize / 1048576).toFixed(1)}/${(sample.privateBytes / 1048576).toFixed(1)}MiB,dom=${sample.nodes},draw=${sample.drawingElements}`).join(" | ")}`);
+  t.diagnostic(`真实历史 MergeView 双栏滚动内存：JS 初始 ${(memory.initialUsedSize / 1048576).toFixed(1)} MiB，峰值 ${(memory.maxUsedSize / 1048576).toFixed(1)} MiB，增长 ${(memory.growth / 1048576).toFixed(1)} MiB；渲染进程初始 ${(memory.initialPrivateBytes / 1048576).toFixed(1)} MiB，峰值 ${(memory.maxPrivateBytes / 1048576).toFixed(1)} MiB，停止后 ${(memory.settledPrivateBytes / 1048576).toFixed(1)} MiB；DOM ${memory.initialNodes} -> ${memory.maxNodes}，绘制元素峰值 ${memory.maxDrawingElements}`);
   assert.ok(memory.growth < 64 * 1024 * 1024, `history renderer retained ${(memory.growth / 1048576).toFixed(1)} MiB after scrolling`);
   assert.ok(memory.maxPrivateBytes < 1024 * 1024 * 1024, `history renderer process peaked at ${(memory.maxPrivateBytes / 1048576).toFixed(1)} MiB`);
   assert.ok(memory.settledPrivateGrowth < 256 * 1024 * 1024, `history renderer process retained ${(memory.settledPrivateGrowth / 1048576).toFixed(1)} MiB after scrolling`);
   assert.ok(memory.maxNodes <= memory.initialNodes + 2000, `history renderer DOM grew from ${memory.initialNodes} to ${memory.maxNodes}`);
-  assert.equal(memory.maxDrawingElements, 0, `standalone history comparison created ${memory.maxDrawingElements} dynamic drawing layers`);
-  assert.equal(memory.settledStructure.drawingElements, 0, "standalone history comparison restored a dynamic drawing layer");
-  assert.equal(memory.settledStructure.mergeViews, 0, "standalone history comparison restored a MergeView");
+  assert.ok(memory.maxDrawingElements > 0, "standalone history comparison lost connector drawing during scrolling");
+  assert.ok(memory.settledStructure.drawingElements > 0, "standalone history comparison lost its connector drawing layer");
+  assert.equal(memory.settledStructure.mergeViews, 1, "standalone history comparison lost its MergeView");
   assert.equal(memory.settledStructure.lightweightCompares, 0, "standalone history comparison restored a CodeMirror comparison");
-  assert.equal(memory.settledStructure.scrollers, 0, "standalone history comparison restored a CodeMirror scroller");
-  assert.equal(memory.settledStructure.fallbackPanes, 2, "standalone history comparison lost a native text pane");
-  assert.equal(memory.settledStructure.fallbackVisible, true, "standalone history comparison hid the native text panes");
-  assert.equal(memory.settledStructure.compareModeHidden, true, "standalone history comparison exposed the MergeView mode switch after scrolling");
+  assert.equal(memory.settledStructure.scrollers, 2, "standalone history comparison lost a CodeMirror scroller");
+  assert.equal(memory.settledStructure.fallbackVisible, false, "standalone history comparison exposed the native fallback");
+  assert.equal(memory.settledStructure.compareModeHidden, false, "standalone history comparison hid the MergeView mode switch after scrolling");
 });
 
-async function measureStandaloneHistoryMemoryAfterWheel(cdp, browserPid, cycles = 1, onSample = () => {}) {
+async function measureStandaloneHistoryMemoryAfterScroll(cdp, browserPid, cycles = 1, onSample = () => {}) {
   const initialRenderer = await evaluate(cdp, `({
     usedSize: performance.memory?.usedJSHeapSize || 0,
     nodes: document.querySelectorAll("*").length,
@@ -415,22 +498,16 @@ async function measureStandaloneHistoryMemoryAfterWheel(cdp, browserPid, cycles 
   let maxDrawingElements = 0;
   const samples = [];
   for (let cycle = 0; cycle < cycles; cycle += 1) {
-    const point = await evaluate(cdp, `(() => {
-      const panes = Array.from(document.querySelectorAll("#fileEditorFallback .file-editor-text"));
-      panes.forEach((pane) => { pane.scrollTop = 0; });
-      const pane = panes[${0}];
-      const rect = pane.getBoundingClientRect();
-      return {
-        x: Math.max(1, Math.min(window.innerWidth - 1, rect.left + rect.width / 2)),
-        y: Math.max(1, Math.min(window.innerHeight - 1, rect.top + rect.height / 2)),
-      };
+    await evaluate(cdp, `(() => {
+      const bindings = state.fileEditor?.scrollSyncHandlers || [];
+      bindings.forEach(({ source }) => source.scrollTo(null, 0));
     })()`);
     await delay(100);
     try {
-      await dispatchWheel(cdp, point);
+      await dispatchScrollbarDrag(cdp);
     } catch (error) {
       const privateBytes = await readRendererPrivateBytes(browserPid);
-      throw new Error(`history wheel cycle ${cycle + 1} stopped responding at ${(privateBytes / 1048576).toFixed(1)} MiB renderer private memory; completed samples: ${JSON.stringify(samples)}; ${error.message}`);
+      throw new Error(`history scrollbar cycle ${cycle + 1} stopped responding at ${(privateBytes / 1048576).toFixed(1)} MiB renderer private memory; completed samples: ${JSON.stringify(samples)}; ${error.message}`);
     }
     await delay(300);
     const renderer = await evaluate(cdp, `({
@@ -482,6 +559,51 @@ async function readRendererPrivateBytes(browserPid) {
   const command = `$ids=@(Get-CimInstance Win32_Process -Filter "ParentProcessId = ${Number(browserPid)}" | Where-Object {$_.CommandLine -like '*--type=renderer*'} | Select-Object -ExpandProperty ProcessId); if($ids.Count){(Get-Process -Id $ids -ErrorAction SilentlyContinue | Measure-Object -Property PrivateMemorySize64 -Sum).Sum}else{0}`;
   const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", command], { windowsHide: true });
   return Number(String(stdout || "").trim()) || 0;
+}
+
+async function readTopLevelWindows(browserPid) {
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class ForklineWindowProbe {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+  [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+}
+'@
+$windows = [Collections.Generic.List[object]]::new()
+$callback = [ForklineWindowProbe+EnumWindowsProc]{
+  param([IntPtr]$handle, [IntPtr]$state)
+  [uint32]$windowProcessId = 0
+  [ForklineWindowProbe]::GetWindowThreadProcessId($handle, [ref]$windowProcessId) | Out-Null
+  if ($windowProcessId -eq ${Number(browserPid)}) {
+    $length = [ForklineWindowProbe]::GetWindowTextLength($handle)
+    $builder = [Text.StringBuilder]::new($length + 1)
+    [ForklineWindowProbe]::GetWindowText($handle, $builder, $builder.Capacity) | Out-Null
+    $extendedStyle = [ForklineWindowProbe]::GetWindowLongPtr($handle, -20).ToInt64()
+    $windows.Add([pscustomobject]@{
+      title = $builder.ToString()
+      visible = [ForklineWindowProbe]::IsWindowVisible($handle)
+      owner = [ForklineWindowProbe]::GetWindow($handle, 4).ToInt64()
+      toolWindow = (($extendedStyle -band 0x80) -ne 0)
+      appWindow = (($extendedStyle -band 0x40000) -ne 0)
+    })
+  }
+  return $true
+}
+[ForklineWindowProbe]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
+ConvertTo-Json -Compress -InputObject @($windows)
+`;
+  const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", command], { windowsHide: true });
+  const parsed = JSON.parse(String(stdout || "[]").trim() || "[]");
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
 async function measureRapidWheel(cdp, sourceIndex, paneSelector = "#fileEditorMerge .CodeMirror-scroll") {
@@ -567,6 +689,71 @@ async function dispatchWheel(cdp, point, bursts = 4, eventsPerBurst = 20) {
     }
     await delay(120);
   }
+}
+
+async function measureRapidScrollbarDrag(cdp) {
+  const point = await evaluate(cdp, `(() => {
+    const bindings = state.fileEditor?.scrollSyncHandlers || [];
+    const scrollToCalls = bindings.map(() => 0);
+    const originals = bindings.map(({ source }, index) => {
+      const original = source.scrollTo.bind(source);
+      source.scrollTo = (...args) => {
+        scrollToCalls[index] += 1;
+        return original(...args);
+      };
+      return original;
+    });
+    bindings.forEach(({ source }) => source.scrollTo(null, 0));
+    scrollToCalls.fill(0);
+    const scrollbar = bindings[0]?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
+    const rect = scrollbar.getBoundingClientRect();
+    const thumbHeight = Math.max(20, rect.height * (rect.height / Math.max(rect.height, scrollbar.scrollHeight)));
+    window.__forklineScrollbarDragProbe = { bindings, originals, scrollToCalls };
+    return {
+      x: rect.left + rect.width / 2,
+      startY: rect.top + thumbHeight / 2,
+      endY: rect.bottom - thumbHeight / 2,
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+      clientHeight: scrollbar.clientHeight,
+      scrollHeight: scrollbar.scrollHeight,
+    };
+  })()`);
+  await delay(100);
+  await dispatchScrollbarDrag(cdp);
+  await delay(350);
+  return evaluate(cdp, `(() => {
+    const probe = window.__forklineScrollbarDragProbe;
+    const tops = probe.bindings.map(({ source }) => source.getScrollInfo().top);
+    const ratios = probe.bindings.map(({ source }) => {
+      const info = source.getScrollInfo();
+      return info.top / Math.max(1, info.height - info.clientHeight);
+    });
+    probe.bindings.forEach(({ source }, index) => { source.scrollTo = probe.originals[index]; });
+    delete window.__forklineScrollbarDragProbe;
+    return {
+      tops,
+      topSpread: Math.max(...tops) - Math.min(...tops),
+      ratioSpread: Math.max(...ratios) - Math.min(...ratios),
+      scrollToCalls: probe.scrollToCalls,
+      point: ${JSON.stringify(point)},
+      scrollbar: (() => {
+        const bar = probe.bindings[0]?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
+        return { top: bar?.scrollTop || 0, clientHeight: bar?.clientHeight || 0, scrollHeight: bar?.scrollHeight || 0 };
+      })(),
+    };
+  })()`);
+}
+
+async function dispatchScrollbarDrag(cdp, steps = 36) {
+  await evaluate(cdp, `(() => {
+    const binding = state.fileEditor?.scrollSyncHandlers?.[0];
+    const scrollbar = binding?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
+    const maximum = Math.max(0, scrollbar.scrollHeight - scrollbar.clientHeight);
+    for (let step = 1; step <= ${Number(steps)}; step += 1) {
+      scrollbar.scrollTop = maximum * (step / ${Number(steps)});
+      scrollbar.dispatchEvent(new Event("scroll"));
+    }
+  })()`);
 }
 
 function assertRapidWheel(t, label, metrics, paneCount, { exactTop = true } = {}) {

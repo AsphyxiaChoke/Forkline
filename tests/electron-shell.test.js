@@ -63,7 +63,7 @@ test("Electron reuses the web app behind an isolated desktop shell", () => {
   assert.match(preload, /dataset\.shell\s*=\s*"electron"/);
 });
 
-test("Electron opens file editors in a separate restricted child window", () => {
+test("Electron opens file editors in a separate restricted top-level window", () => {
   const main = read("electron/main.js");
   const preload = read("electron/preload.js");
   const bootstrap = read("public/js/bootstrap.js");
@@ -71,7 +71,10 @@ test("Electron opens file editors in a separate restricted child window", () => 
 
   assert.match(main, /fileEditorWindow/);
   assert.match(main, /forkline:file-editor:open/);
-  assert.match(main, /new BrowserWindow\(\{[\s\S]*parent:\s*mainWindow/);
+  const editorWindowOptions = main.match(/function createFileEditorWindow\(request\) \{[\s\S]*?new BrowserWindow\(\{([\s\S]*?)\n  \}\);/)?.[1] || "";
+  assert.ok(editorWindowOptions, "file editor BrowserWindow options were not found");
+  assert.doesNotMatch(editorWindowOptions, /parent:\s*mainWindow/);
+  assert.match(editorWindowOptions, /skipTaskbar:\s*false/);
   assert.match(main, /event\.sender !== mainWindow\.webContents/);
   assert.match(main, /forkline:file-editor:close/);
   assert.match(preload, /openFileEditorWindow/);

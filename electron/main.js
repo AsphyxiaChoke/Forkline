@@ -455,7 +455,7 @@ function createFileEditorWindow(request) {
     backgroundColor: "#0e1117",
     title: "Forkline 编辑器",
     icon: DESKTOP_ICON_PATH,
-    parent: mainWindow,
+    skipTaskbar: false,
     ...desktopWindowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

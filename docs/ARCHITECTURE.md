@@ -53,8 +53,8 @@
 - `public/js/features/diff-workbench-loader.js`：首屏 Diff 轻量门面，保留文件状态/范围判断、活动 Diff 清理、弹窗关闭和焦点恢复能力；第一次显式打开“查看对照”时并行载入 `diff-workbench.css` 与有序脚本链 `diff-selection.js`、`diff-workbench.js`，三者完成后才进入工作台。并发入口共用一个 Promise，脚本或样式失败时只移除并重试失败资源。
 - `public/js/features/diff-workbench.js`、`diff-selection.js`：按需载入后负责工作区 Diff 读取、反馈、最大化渲染、按块/按行操作和滚动位置恢复。已从布局移除的内联对照容器只保留活动 Diff 状态并清空旧节点，不再生成隐藏副本；实际行节点只在最大化弹窗中按首批最多 1000 行渲染。
 - `public/js/features/file-editor-loader.js`：首屏文件编辑器门面；第一次打开文件时先复用右键菜单样式，并等待 `file-editor.css` 与 CodeMirror 样式全部就绪。脚本按依赖层载入：同层 CodeMirror 插件和语言模式并行请求，`JSX / HTMLMixed / Markdown / Dockerfile` 等待各自基础模式，PHP 再等待 HTMLMixed 与 C-like；五个 Forkline 编辑器模块继续按原顺序执行。所有入口共享同一个进行中的加载 Promise；同一仓库、文件、来源和查看上下文的切换/打开请求还共享同一个进行中的打开 Promise，避免单击与双击在文件尚未显示时重复创建编辑器。仓库切换、文件或来源变化会形成不同请求，失败后只重试未成功资源，再绑定编辑器专属事件。
-- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：按需载入后分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和编辑器初始化。Web 普通冲突使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；Electron 独立冲突窗口使用三个原生文本栏。所有路径都只允许编辑中间的合并结果。
-- 工作区与 Web 历史文件共用复杂度判断：内容达到 `768 KiB`、行数达到 `20,000`，或连续差异达到 `2,000` 行/`32` 个区段时，在创建 `MergeView` 前直接进入轻量双栏 CodeMirror；普通小文件仍保留完整对照和暂存能力。Electron 独立历史窗口固定使用两个原生只读文本栏，不创建 CodeMirror 或 `MergeView`。
+- `public/js/features/file-editor-utils.js`、`file-editor-actions.js`、`file-editor-window.js`、`file-editor-search.js`、`file-editor.js`：按需载入后分别负责文件类型与轻量对照判断、暂存/还原和冲突块应用、浮窗生命周期、查找替换，以及打开/加载/保存和编辑器初始化。Web 与 Electron 独立窗口的普通冲突都使用三栏 MergeView，复杂冲突使用三个轻量 CodeMirror；所有路径都只允许编辑中间的合并结果。
+- 工作区、Web 历史文件与 Electron 独立历史窗口共用复杂度判断：内容达到 `768 KiB`、行数达到 `20,000`，或连续差异达到 `2,000` 行/`32` 个区段时，在创建 `MergeView` 前直接进入轻量双栏 CodeMirror；普通小文件保留完整差异连线、行对齐、语法高亮和暂存能力。
 - `public/app.js`：旧入口兼容占位，不在这里新增功能代码。
 - `public/js/bootstrap.js`：启动顺序，对外暴露 `Forkline.start`，并在全部脚本加载后启动应用。
 - `public/index.html`：静态结构和有序脚本加载。
@@ -169,8 +169,8 @@
 - `GET /api/worktree-file` 发现未合并状态时，从 Git index stage 2 和 stage 3 分别读取当前版本与对方版本；工作区文件继续作为可编辑的合并结果。缺失版本、编码错误、二进制和 `16 MiB` 上限沿用普通文件读取边界。
 - `GET /api/commit` 以一条 `show -s` 同时取得提交元数据、父提交和完整正文，并与第一父提交文件清单、可选 Diff 同轮启动；根提交和合并提交的展示语义保持不变。结果会把 `仓库路径 + 提交 SHA -> 第一父提交` 写入 512 项 LRU；`GET /api/commit-file` 优先复用，未命中时仍执行一次 `rev-list --parents -n 1 <sha>^{commit}` 并回填。根提交用空父提交值缓存，仓库间不会共享结果，文件内容仍分别通过 `cat-file blob` 并行读取。
 - Web 普通冲突创建“当前版本 / 合并结果 / 对方版本”三栏 MergeView，左右差异块按钮只把对应内容应用到中间；按钮观察器只能在文案或定位真实变化时更新 DOM，避免观察器回调再次触发自身。复杂 Web 冲突使用三个轻量 CodeMirror。
-- Electron 独立历史窗口创建两个原生只读文本栏；Electron 独立冲突窗口创建三个原生文本栏，左右只读、中间可编辑保存。关闭、切换文件或切换仓库时必须解除原生栏滚动监听、移除动态第三栏、销毁可能存在的 MergeView，并清空编辑器 DOM。
-- MergeView、轻量 CodeMirror 与 Electron 原生文本栏共用受控滚动同步：每个目标栏维护程序滚动期望队列，明确滚轮输入在短活动窗口内作为唯一用户来源，同一绘制帧内累计的滚轮增量只触发一次实际滚动，滚轮停止后再执行一次最终收敛；程序滚动和 CodeMirror 内部位置校正不能反向驱动原栏。MergeView 保留原同步滚动开关；三栏按滚动比例保持相同文档进度。滚动条、键盘和普通程序化滚动仍由原生 `scroll` 路径同步，关闭或切换时解除监听并取消待执行帧。
+- Electron 独立历史窗口创建双栏 MergeView；普通冲突窗口创建三栏 MergeView，左右只读、中间可编辑保存。复杂文件仍创建轻量 CodeMirror 双栏或三栏。独立窗口在 Electron 主进程中不设置父窗口并显式允许任务栏显示；页面检测到独立窗口后禁用 Web 浮窗定位，使最大化视口直接决定编辑器尺寸。关闭、切换文件或切换仓库时必须解除滚动监听、销毁 MergeView 并清空编辑器 DOM。
+- MergeView 与轻量 CodeMirror 共用受控滚动同步：捕获阶段的非被动滚轮监听先于 CodeMirror 内置滚轮预处理执行，并阻止同一事件继续传播，只推动当前来源栏的可见滚动条。普通 `scroll` 事件在每次输入后重置 `200 ms` 计时器，稳定后只按最终比例或行对齐位置回写其他栏一次；每个目标栏的程序滚动期望队列阻止它反向成为来源。MergeView 保留同步滚动开关，三栏按滚动比例保持相同文档进度；关闭或切换时解除监听并取消计时器。
 - 保存接口只写工作区并保持编码、BOM、换行和快照保护，不自动执行 `git add`；新内容先写入目标文件同目录的独占临时文件并执行 `fsync`，替换前再次核对原文件 SHA-256，最后使用同文件系统原子重命名替换。写入、刷盘、快照复核或重命名失败时删除临时文件并保留原文件；用户仍需在冲突解决后显式暂存文件，再继续合并、变基、挑选或还原。
 - 普通 MergeView 同步测量构建耗时；超过 `250 ms` 时立即销毁并按当前文件类型重建为轻量双栏或三栏，同时把仓库、版本和文件快照键保存在 `sessionStorage`。同一浏览器会话再次打开相同版本时跳过 MergeView，普通工作区文件的轻量右栏仍可编辑和保存。
 
