@@ -11337,3 +11337,28 @@
 - `docs/CONTINUE.md`：记录 v0.4.22 待发布状态及后续不可变步骤。
 - `progress.md`：追加本轮实现、验证、文件清单和回滚点。
 - 回滚点为 `1d3000f99d3693bfbd5129ae642f4d938ba12e00`。提交前可对以上 15 个允许文件执行显式 `git restore -- <file list>`；提交后使用 `git revert <v0.4.22 产品提交>` 并发布更高版本。不得移动或覆盖 `v0.4.21` 及更早标签，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`、`public/js/i18n-catalog.js`、`public/vendor/codemirror/addon/merge/merge.js`。
+
+## 2026-09-04 - Task: 隔离 v0.4.22 安装器工作流的浏览器压力夹具
+
+### What was done
+
+- 读取安装器 Run `33886532954` 三次失败日志，确认产品普通测试均通过，失败发生在 Chromium 共享 Runner：两次合成的 4000 分散目录被后台工作区轮询替换，一次设置面板载入短暂超过三倍时序容差。
+- 让快速分散目录物理滚轮夹具在运行期间暂时报告页面无焦点，阻止后台轮询覆盖合成状态；夹具结束后恢复原 `document.hasFocus`。没有修改产品文件树、性能门限或断言结果。
+- 将 v0.4.22 加入既有手动安装器重建白名单：工作流从默认分支借用修正后的浏览器测试，全部测试结束后恢复不可变标签中的原测试文件，再构建和上传 v0.4.22 产品。
+
+### Testing
+
+- 失败证据一/三：页面实际挂载 `4000` 行，滚动约 `0 -> 19215 px`、向上跳变 `0 px`，但夹具虚拟块计数 `0` 且高度 `248061 -> 123293 px`，证明合成目录被真实仓库状态替换。失败证据二：设置面板 `3256.5 ms`，其余指标未指向本轮产品回归。
+- `node --check tests/browser-performance.test.js tests/installer-package.test.js` 通过；`node --test tests/installer-package.test.js` 为 `2/2`。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd run test:browser` 为 `1/1`；修正后的分散目录为 `4000` 行、`4000` 文件夹、`40` 个虚拟块，快速滚轮高度保持 `248061 px`，轨迹 `41` 次、最大向上跳变 `0 px`。
+- `git diff --check` 通过；无临时调试标记或脚本。v0.4.22 标签仍解引用到 `353c9e865d09908224b9d2f30b389eb57aa06d86`，没有移动任何标签；受保护文件和异常未跟踪对象未修改、未暂存。
+
+### Notes
+
+- `tests/browser-performance.test.js`：在快速分散目录夹具期间暂停聚焦态工作区轮询，并在结束时恢复。
+- `.github/workflows/release-installer.yml`：允许手动重建 v0.4.22 时临时借用修正测试，构建前恢复标签文件。
+- `tests/installer-package.test.js`：固定 v0.4.22 手动重建与恢复契约。
+- `docs/PACKAGING.md`：记录三次失败证据、根因、测试隔离和不可变构建边界。
+- `docs/CONTINUE.md`：记录已发布便携包及安装器手动重建状态。
+- `progress.md`：追加本轮诊断、验证、文件和回滚记录。
+- 回滚方式：提交前对以上 6 个文件执行显式 `git restore -- <file list>`；提交后使用 `git revert <本轮测试/工作流提交>`。若回滚后仍需生成 v0.4.22 安装器，只能发布更高版本或重新引入等价测试隔离，不得移动 `v0.4.22`，不得删除 Release 已有便携附件，不得触碰四个受保护对象。

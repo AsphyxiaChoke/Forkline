@@ -2529,7 +2529,9 @@ test("real Chromium keeps historical file comparison responsive", {
       limits: state.worktreeRenderLimits,
       filter: state.worktreeFilter,
       filterInput: els.worktreeFilterInput.value,
+      hasFocus: document.hasFocus,
     };
+    document.hasFocus = () => false;
     state.data.workingFiles = scatteredFiles;
     state.data.worktreeSnapshot = "browser-rapid-scattered-scroll";
     state.worktreeRenderLimits = { unstaged: scatteredFiles.length, staged: 800 };
@@ -2588,6 +2590,7 @@ test("real Chromium keeps historical file comparison responsive", {
     if (root.__forklineRapidScatteredHandler) root.removeEventListener("scroll", root.__forklineRapidScatteredHandler);
     const restore = window.__forklineRapidScatteredRestore;
     if (restore) {
+      document.hasFocus = restore.hasFocus;
       state.data.workingFiles = restore.files;
       state.data.worktreeSnapshot = restore.snapshot;
       state.worktreeRenderLimits = restore.limits;

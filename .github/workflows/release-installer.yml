@@ -57,7 +57,7 @@ jobs:
           }
 
       - name: Use corrected release browser regression harness
-        if: github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3')
+        if: github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3' || steps.release.outputs.tag == 'v0.4.22')
         shell: pwsh
         run: git restore --source='${{ github.sha }}' --worktree -- tests/browser-performance.test.js
 
@@ -86,7 +86,7 @@ jobs:
         run: node --test --test-concurrency=1 tests/electron-file-editor-performance.test.js
 
       - name: Restore release-tag browser regression harness
-        if: always() && github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3')
+        if: always() && github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3' || steps.release.outputs.tag == 'v0.4.22')
         shell: pwsh
         run: git restore --worktree -- tests/browser-performance.test.js
 
