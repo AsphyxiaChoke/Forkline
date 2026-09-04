@@ -11362,3 +11362,28 @@
 - `docs/CONTINUE.md`：记录已发布便携包及安装器手动重建状态。
 - `progress.md`：追加本轮诊断、验证、文件和回滚记录。
 - 回滚方式：提交前对以上 6 个文件执行显式 `git restore -- <file list>`；提交后使用 `git revert <本轮测试/工作流提交>`。若回滚后仍需生成 v0.4.22 安装器，只能发布更高版本或重新引入等价测试隔离，不得移动 `v0.4.22`，不得删除 Release 已有便携附件，不得触碰四个受保护对象。
+
+## 2026-09-04 - Task: 完成 v0.4.22 正式 Release、附件验真和标准安装验收
+
+### What was done
+
+- 完成中文正式 Release v0.4.22；便携包工作流成功，修正后的手动安装器工作流完整通过测试、恢复标签测试、构建、校验和附件上传。
+- 下载并核验六个正式附件的 GitHub API digest、两个 `.sha256`、`latest.yml` 和便携 ZIP 内容；确认便携包保留 Git 快进更新所需的浅层仓库、官方 origin、main、内置 Node 和启动脚本。
+- 使用 GitHub 正式安装器完成隔离安装、真实 Electron 压力回归、卸载，再安装到标准当前用户目录；登记、桌面/开始菜单快捷方式、版本、用户偏好和退出状态均完成复核。
+
+### Testing
+
+- Release `https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.22` 为 Latest、非草稿、非预发布；Release ID `382809557`。注释标签对象 `8c9367f4e04b500bf603ae929b7042630a205fcf` 解引用到产品提交 `353c9e865d09908224b9d2f30b389eb57aa06d86`。
+- 便携包工作流 `33886533217` 为 `success`；手动安装器工作流 `33888762128` 为 `success`，普通测试 `408/408`、Chromium `1/1`、Electron `2/2` 均为 0 失败，修正测试在构建前已恢复为标签内容。
+- 六附件 SHA-256 均匹配 GitHub API digest：EXE `2bd0de7b22fadb7dd46e01f6c2a06d916bbe33d7c5c04c50787aa52c39af7664`；blockmap `30c25e2a7f944f1c69d6d6b2f1fe1e33efa8583b657079d19962389f1e9fece7`；EXE 校验文件 `10539c0f547c2998b6fe438501f12e468e05f200d9f7d393e3fcf5996724476b`；便携 ZIP `0df7b41fcd89d9b3d4881133ab48f33e9802203b4a874c0765105a10dca08a7a`；ZIP 校验文件 `bd1121c1c6db043dd1b0a2eee9e4de9d4b97be9b87e8588e69d8f65866d693a2`；`latest.yml` `b2f85bf82474a2f667a03cefb85bc5fa5cf8d84eb0db6382c14b0eb05d118380`。
+- 两个校验文件内容正确；`latest.yml` 的 v0.4.22、文件名、大小 `104611043` 和 SHA-512 全部匹配。安装器 Authenticode 为 `NotSigned`。便携 ZIP 共 `332` 个条目，包版本、浅层 main 产品提交和官方 origin 正确。
+- GitHub 正式隔离安装和卸载退出码均为 `0`；EXE/ASAR 哈希为 `d3509284b5b408262ce2a26fb02b0aa06d982b329898ba93ec3d8bccce6706b4` / `ab82326d685d0f2a3c36c9beaea67089ecda889dea6f0c485cc3282ef5deee82`，ASAR 版本与行对齐门禁正确。隔离安装版 Electron `2/2`，行对齐拖到底 `9593/9593`，卸载后临时目录和登记均不存在。
+- 标准安装退出码 `0`，当前版本为 `0.4.22/0.4.22.0`，EXE/ASAR 哈希与隔离安装一致，HKCU 登记和两个快捷方式均指向标准目录。标准安装版 Electron 再次 `2/2`；行对齐峰值约 `421.6 MiB`，连续 8 轮后约 `245.6 MiB`，测试结束后无 Forkline 产品进程残留。四个稳定用户偏好文件 SHA-256 未变化。
+- `git diff --check`、受保护对象哈希和标签目标将在收尾提交前后再次复核。大附件只通过受限加速 URL 传输，最终内容由官方 digest 和校验元数据验真。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加正式 Release、工作流、六附件、网络传输边界和两轮正式安装验收证据。
+- `docs/CONTINUE.md`：记录 v0.4.22 已完成状态及不可变后续边界。
+- `progress.md`：追加正式发布闭环、测试、文件和回滚记录。
+- 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮 v0.4.22 发布验收文档提交>`。产品修复回滚必须对 `353c9e865d09908224b9d2f30b389eb57aa06d86` 创建后续 revert 并发布更高版本，不得移动或重建 v0.4.22。标准安装可通过 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser` 移除，但本轮按发布结果保留；不得触碰四个受保护对象。
