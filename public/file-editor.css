@@ -456,6 +456,23 @@ body.file-editor-window-resizing * {
   background: rgba(var(--teal-rgb), 0.08);
 }
 
+.file-editor-scrollbar-shield {
+  position: absolute;
+  z-index: 9;
+  touch-action: none;
+  user-select: none;
+  background: transparent;
+  cursor: default;
+}
+
+.file-editor-scrollbar-shield[hidden] {
+  display: none;
+}
+
+.file-editor-merge .CodeMirror.has-file-editor-scrollbar-shield .file-editor-change-rail {
+  right: 15px;
+}
+
 .file-editor-merge .CodeMirror-matchingbracket {
   outline: 1px solid var(--teal);
   color: var(--text) !important;

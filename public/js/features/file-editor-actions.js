@@ -1,39 +1,173 @@
 // File editor comparison panes, staging, and context actions.
+function refreshFileEditorMergeConnections(editor) {
+  const mergeView = editor?.mergeView;
+  if (!mergeView || mergeView.options?.connect === "align") return;
+  mergeView.left?.forceUpdate?.();
+  mergeView.right?.forceUpdate?.();
+}
+
+function bindFileEditorScrollbarShield(source, syncSource, wheelHandler) {
+  if (typeof document !== "object") return null;
+  const wrapper = source.getWrapperElement?.();
+  const vertical = wrapper?.querySelector?.(".CodeMirror-vscrollbar");
+  if (!wrapper || !vertical) return null;
+
+  const shield = document.createElement("div");
+  shield.className = "file-editor-scrollbar-shield";
+  shield.setAttribute("aria-hidden", "true");
+  let pointerId = null;
+  let dragOffset = 0;
+  let pendingClientY = null;
+  let dragFrame = 0;
+
+  const refresh = () => {
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const verticalRect = vertical.getBoundingClientRect();
+    shield.hidden = verticalRect.width < 1 || verticalRect.height < 1 || vertical.style?.display === "none";
+    shield.style.left = `${Math.max(0, verticalRect.left - wrapperRect.left)}px`;
+    shield.style.top = `${Math.max(0, verticalRect.top - wrapperRect.top)}px`;
+    shield.style.width = `${Math.max(0, verticalRect.width)}px`;
+    shield.style.height = `${Math.max(0, verticalRect.height)}px`;
+  };
+  const metrics = () => {
+    const rect = shield.getBoundingClientRect();
+    const info = source.getScrollInfo();
+    const range = Math.max(0, info.height - info.clientHeight);
+    const thumbHeight = Math.min(rect.height, Math.max(
+      20,
+      rect.height * (info.clientHeight / Math.max(info.clientHeight, info.height))
+    ));
+    const travel = Math.max(0, rect.height - thumbHeight);
+    const thumbTop = travel * (info.top / Math.max(1, range));
+    return { rect, info, range, thumbHeight, travel, thumbTop };
+  };
+  const applyPendingDrag = () => {
+    dragFrame = 0;
+    if (pendingClientY == null) return;
+    const clientY = pendingClientY;
+    pendingClientY = null;
+    const current = metrics();
+    if (current.range <= 0 || current.travel <= 0) return;
+    const ratio = Math.max(0, Math.min(
+      1,
+      (clientY - current.rect.top - dragOffset) / current.travel
+    ));
+    const nextTop = current.range * ratio;
+    if (Math.abs(current.info.top - nextTop) < 1) return;
+    source.scrollTo(current.info.left, nextTop);
+    syncSource(source);
+  };
+  const queueDrag = (clientY, immediate = false) => {
+    pendingClientY = clientY;
+    if (immediate) {
+      if (dragFrame) cancelAnimationFrame(dragFrame);
+      applyPendingDrag();
+      return;
+    }
+    if (!dragFrame) dragFrame = requestAnimationFrame(applyPendingDrag);
+  };
+  const pointerDown = (event) => {
+    if (event.button !== 0 || !Number.isFinite(event.clientY)) return;
+    refresh();
+    const current = metrics();
+    if (current.range <= 0 || current.rect.height < 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pointerId = event.pointerId;
+    const localY = event.clientY - current.rect.top;
+    dragOffset = localY >= current.thumbTop && localY <= current.thumbTop + current.thumbHeight
+      ? localY - current.thumbTop
+      : current.thumbHeight / 2;
+    shield.setPointerCapture?.(pointerId);
+    queueDrag(event.clientY, true);
+  };
+  const pointerMove = (event) => {
+    if (pointerId == null || event.pointerId !== pointerId || !Number.isFinite(event.clientY)) return;
+    event.preventDefault();
+    queueDrag(event.clientY);
+  };
+  const finishPointer = (event) => {
+    if (pointerId == null || event.pointerId !== pointerId) return;
+    event.preventDefault();
+    if (Number.isFinite(event.clientY)) queueDrag(event.clientY, true);
+    shield.releasePointerCapture?.(pointerId);
+    pointerId = null;
+  };
+  const cancelPointer = (event) => {
+    if (pointerId == null || event.pointerId !== pointerId) return;
+    if (dragFrame) cancelAnimationFrame(dragFrame);
+    dragFrame = 0;
+    pendingClientY = null;
+    pointerId = null;
+  };
+
+  shield.addEventListener("pointerdown", pointerDown);
+  shield.addEventListener("pointermove", pointerMove);
+  shield.addEventListener("pointerup", finishPointer);
+  shield.addEventListener("pointercancel", cancelPointer);
+  shield.addEventListener("lostpointercapture", cancelPointer);
+  shield.addEventListener("wheel", wheelHandler, { passive: false });
+  wrapper.classList?.add("has-file-editor-scrollbar-shield");
+  wrapper.append(shield);
+  refresh();
+
+  return {
+    element: shield,
+    refresh,
+    destroy: () => {
+      if (dragFrame) cancelAnimationFrame(dragFrame);
+      shield.removeEventListener("pointerdown", pointerDown);
+      shield.removeEventListener("pointermove", pointerMove);
+      shield.removeEventListener("pointerup", finishPointer);
+      shield.removeEventListener("pointercancel", cancelPointer);
+      shield.removeEventListener("lostpointercapture", cancelPointer);
+      shield.removeEventListener("wheel", wheelHandler);
+      shield.remove();
+      wrapper.classList?.remove("has-file-editor-scrollbar-shield");
+    },
+  };
+}
+
 function bindFileEditorScrollSync(editor, panes, options = {}) {
   let frame = 0;
   let pendingSource = null;
   const canSync = typeof options.canSync === "function" ? options.canSync : () => true;
   const exactTop = options.exactTop === true;
+  const wheelSurface = options.wheelSurface || null;
   const programmaticScrolls = new WeakMap();
   let activeSource = null;
   const scrollTimers = new Map();
   const entries = panes
     .map((source) => ({ source, element: source.getScrollerElement?.() }))
     .filter(({ element }) => element);
+  const sync = (source) => {
+    const sourceInfo = source.getScrollInfo();
+    const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
+    panes.forEach((target) => {
+      if (target === source || !canSync(source, target)) return;
+      const targetInfo = target.getScrollInfo();
+      const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
+      const nextTop = Math.max(0, Math.min(
+        targetRange,
+        exactTop ? sourceInfo.top : targetRange * (sourceInfo.top / sourceRange)
+      ));
+      if (Math.abs(targetInfo.top - nextTop) < 1 && Math.abs(targetInfo.left - sourceInfo.left) < 1) return;
+      const expectedPositions = programmaticScrolls.get(target) || [];
+      expectedPositions.push({ left: sourceInfo.left, top: nextTop });
+      programmaticScrolls.set(target, expectedPositions);
+      target.scrollTo(sourceInfo.left, nextTop);
+    });
+    refreshFileEditorMergeConnections(editor);
+  };
   const schedule = (source) => {
     pendingSource = source;
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      const activeSource = pendingSource;
+      const source = pendingSource;
       pendingSource = null;
-      if (!activeSource) return;
-      const sourceInfo = activeSource.getScrollInfo();
-      const sourceRange = Math.max(1, sourceInfo.height - sourceInfo.clientHeight);
-      panes.forEach((target) => {
-        if (target === activeSource || !canSync(activeSource, target)) return;
-        const targetInfo = target.getScrollInfo();
-        const targetRange = Math.max(0, targetInfo.height - targetInfo.clientHeight);
-        const nextTop = Math.max(0, Math.min(
-          targetRange,
-          exactTop ? sourceInfo.top : targetRange * (sourceInfo.top / sourceRange)
-        ));
-        if (Math.abs(targetInfo.top - nextTop) < 1 && Math.abs(targetInfo.left - sourceInfo.left) < 1) return;
-        const expectedPositions = programmaticScrolls.get(target) || [];
-        expectedPositions.push({ left: sourceInfo.left, top: nextTop });
-        programmaticScrolls.set(target, expectedPositions);
-        target.scrollTo(sourceInfo.left, nextTop);
-      });
+      if (!source) return;
+      sync(source);
     });
     editor.scrollSyncFrame = frame;
   };
@@ -49,6 +183,9 @@ function bindFileEditorScrollSync(editor, panes, options = {}) {
     }, 200));
   };
   const handlers = entries.map(({ source, element }) => {
+    let wheelFrame = 0;
+    let pendingWheelX = 0;
+    let pendingWheelY = 0;
     const handler = () => {
       const expectedPositions = programmaticScrolls.get(source);
       if (expectedPositions?.length) {
@@ -64,7 +201,29 @@ function bindFileEditorScrollSync(editor, panes, options = {}) {
         programmaticScrolls.delete(source);
         return;
       }
+      if (activeSource && activeSource !== source) return;
       settle(source);
+      schedule(source);
+    };
+    const flushWheel = () => {
+      wheelFrame = 0;
+      const deltaX = pendingWheelX;
+      const deltaY = pendingWheelY;
+      pendingWheelX = 0;
+      pendingWheelY = 0;
+      if (!deltaX && !deltaY) return;
+      const scrollInfo = source.getScrollInfo();
+      const maxLeft = Math.max(0, Number(scrollInfo.width || 0) - Number(scrollInfo.clientWidth || 0));
+      const maxTop = Math.max(0, scrollInfo.height - scrollInfo.clientHeight);
+      const nextLeft = Math.max(0, Math.min(maxLeft, scrollInfo.left + deltaX));
+      const nextTop = Math.max(0, Math.min(maxTop, scrollInfo.top + deltaY));
+      if (Math.abs(scrollInfo.top - nextTop) < 1 && Math.abs(scrollInfo.left - nextLeft) < 1) return;
+      const expectedPositions = programmaticScrolls.get(source) || [];
+      expectedPositions.push({ left: nextLeft, top: nextTop });
+      programmaticScrolls.set(source, expectedPositions);
+      source.scrollTo(nextLeft, nextTop);
+      settle(source);
+      sync(source);
     };
     const wheelHandler = (event) => {
       const deltaX = Number(event?.deltaX || 0);
@@ -76,21 +235,65 @@ function bindFileEditorScrollSync(editor, panes, options = {}) {
         : event.deltaMode === 2
           ? scrollInfo.clientHeight
           : 1;
-      const wrapper = source.getWrapperElement?.();
-      const vertical = wrapper?.querySelector?.(".CodeMirror-vscrollbar");
-      const horizontal = wrapper?.querySelector?.(".CodeMirror-hscrollbar");
       event.preventDefault();
       event.stopImmediatePropagation();
       programmaticScrolls.delete(source);
-      if (vertical && deltaY) vertical.scrollTop = Math.max(0, vertical.scrollTop + deltaY * deltaScale);
-      if (horizontal && deltaX) horizontal.scrollLeft = Math.max(0, horizontal.scrollLeft + deltaX * deltaScale);
+      pendingWheelX += deltaX * deltaScale;
+      pendingWheelY += deltaY * deltaScale;
+      if (!wheelFrame) wheelFrame = requestAnimationFrame(flushWheel);
     };
+    const scrollbarShield = typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow()
+      ? bindFileEditorScrollbarShield(source, () => {
+        programmaticScrolls.delete(source);
+        settle(source);
+        sync(source);
+      }, wheelHandler)
+      : null;
     element.addEventListener("wheel", wheelHandler, { capture: true, passive: false });
     element.addEventListener("scroll", handler, { passive: true });
-    return { source, element, handler, wheelHandler };
+    return {
+      source,
+      element,
+      handler,
+      wheelHandler,
+      scrollbarShield,
+      cancelWheel: () => {
+        if (wheelFrame) cancelAnimationFrame(wheelFrame);
+        wheelFrame = 0;
+        pendingWheelX = 0;
+        pendingWheelY = 0;
+      },
+    };
   });
+  const surfaceWheelHandler = wheelSurface ? (event) => {
+    const paneHit = handlers.some(({ source }) => source.getWrapperElement?.()?.contains?.(event.target));
+    if (paneHit) return;
+    const clientX = Number(event?.clientX);
+    let nearest = handlers[0] || null;
+    let nearestDistance = Infinity;
+    if (Number.isFinite(clientX)) {
+      handlers.forEach((handler) => {
+        const rect = handler.source.getWrapperElement?.()?.getBoundingClientRect?.();
+        if (!rect) return;
+        const distance = clientX < rect.left
+          ? rect.left - clientX
+          : clientX > rect.right
+            ? clientX - rect.right
+            : 0;
+        if (distance < nearestDistance) {
+          nearest = handler;
+          nearestDistance = distance;
+        }
+      });
+    }
+    nearest?.wheelHandler(event);
+  } : null;
+  if (surfaceWheelHandler) {
+    wheelSurface.addEventListener("wheel", surfaceWheelHandler, { capture: true, passive: false });
+  }
   editor.scrollSyncTimers = scrollTimers;
   editor.scrollSyncHandlers = handlers;
+  editor.scrollSyncSurface = surfaceWheelHandler ? { element: wheelSurface, handler: surfaceWheelHandler } : null;
   editor.requestScrollSync = (source = panes[0]) => schedule(source);
   return handlers;
 }
@@ -112,6 +315,9 @@ function bindMergeViewFileEditorScroll(editor) {
   bindFileEditorScrollSync(editor, panes, {
     canSync,
     exactTop: mergeView.options.connect === "align",
+    wheelSurface: typeof isStandaloneFileEditorWindow === "function" && isStandaloneFileEditorWindow()
+      ? els.fileEditorMerge
+      : null,
   });
 }
 

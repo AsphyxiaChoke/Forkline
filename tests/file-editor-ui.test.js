@@ -629,6 +629,7 @@ test("standalone historical comparison retains MergeView connectors, alignment, 
   assert.match(editor, /const showCompareMode = commitView && !editor\.largeFile && !editor\.lightweightCompare && !editor\.conflict/);
   assert.match(editor, /editor\.mergeView = CodeMirror\.MergeView\(els\.fileEditorMerge/);
   assert.match(editor, /connect:\s*editor\.readOnly\s*\?\s*editor\.compareMode === "align" \? "align" : null\s*:\s*"align"/s);
+  assert.match(editor, /viewportMargin:\s*editor\.source === "commit" && !editor\.largeFile && !editor\.lightweightCompare && editor\.compareMode === "align" \? Infinity : 10/);
   assert.match(editor, /bindMergeViewFileEditorScroll\(editor\)/);
   assert.match(editor, /lineNumbers:\s*true/);
 });
@@ -693,10 +694,11 @@ test("large files use two lightweight CodeMirror panes instead of MergeView", ()
   assert.match(editor, /element\.addEventListener\("scroll", handler, \{ passive: true \}\)/);
   assert.match(editor, /editor\.scrollSyncTimers = scrollTimers/);
   assert.match(editor, /editor\?\.scrollSyncHandlers\?\.forEach[\s\S]*?removeEventListener\("wheel", wheelHandler, true\)[\s\S]*?removeEventListener\("scroll", handler\)/);
+  assert.match(editor, /scrollSyncSurface\?\.element\?\.removeEventListener\("wheel", editor\.scrollSyncSurface\.handler, true\)/);
   assert.match(styles, /\.file-editor-large-compare\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 1px minmax\(0, 1fr\);/s);
 });
 
-test("editor scroll sync waits for rapid scrollbar movement to settle and applies the final position once", () => {
+test("editor scroll sync follows the active scrollbar once per frame and settles the final position", () => {
   const frameCallbacks = [];
   const timers = [];
   const sandbox = {
@@ -730,17 +732,27 @@ test("editor scroll sync waits for rapid scrollbar movement to settle and applie
 
   first.setScrollTop(120);
   handlers[0].handler();
+  assert.equal(frameCallbacks.length, 1);
+  frameCallbacks.shift()();
+  assert.equal(second.getScrollInfo().top, 120);
+  handlers[1].handler();
   assert.equal(frameCallbacks.length, 0);
+  handlers[1].handler();
+  assert.equal(frameCallbacks.length, 0);
+
   first.setScrollTop(240);
   handlers[0].handler();
+  assert.equal(frameCallbacks.length, 1);
+  frameCallbacks.shift()();
+  assert.equal(second.getScrollInfo().top, 240);
+  handlers[1].handler();
   assert.equal(frameCallbacks.length, 0);
-  assert.equal(second.getScrollInfo().top, 0);
 
   timers.findLast((timer) => !timer.cancelled).callback();
   frameCallbacks.shift()();
   assert.equal(first.getScrollInfo().top, 240);
   assert.equal(second.getScrollInfo().top, 240);
-  assert.equal(second.getScrollCalls(), 1);
+  assert.equal(second.getScrollCalls(), 2);
 });
 
 test("editor scroll sync ignores delayed programmatic target scroll events", () => {
@@ -791,48 +803,238 @@ test("editor scroll sync ignores delayed programmatic target scroll events", () 
   assert.equal(first.getScrollInfo().top, 240);
 });
 
-test("editor wheel input runs before CodeMirror and moves the visible scrollbar without scrollTo", () => {
+test("standalone editor shields the native CodeMirror scrollbar and coalesces pointer dragging", () => {
+  const frameCallbacks = [];
+  const listeners = new Map();
+  const shield = {
+    className: "",
+    hidden: false,
+    style: {},
+    attributes: new Map(),
+    addEventListener: (type, handler) => listeners.set(type, handler),
+    removeEventListener: (type) => listeners.delete(type),
+    setAttribute: (name, value) => shield.attributes.set(name, value),
+    setPointerCapture: (pointerId) => { shield.captured = pointerId; },
+    releasePointerCapture: (pointerId) => { shield.released = pointerId; },
+    getBoundingClientRect: () => ({ left: 188, top: 0, right: 200, bottom: 200, width: 12, height: 200 }),
+    remove: () => { shield.removed = true; },
+  };
+  const vertical = {
+    style: { display: "block" },
+    getBoundingClientRect: () => ({ left: 188, top: 0, right: 200, bottom: 200, width: 12, height: 200 }),
+  };
+  const wrapperClasses = new Set();
+  const wrapper = {
+    classList: {
+      add: (name) => wrapperClasses.add(name),
+      remove: (name) => wrapperClasses.delete(name),
+    },
+    querySelector: (selector) => selector === ".CodeMirror-vscrollbar" ? vertical : null,
+    append: (element) => { wrapper.child = element; },
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200 }),
+  };
+  const sandbox = {
+    document: { createElement: () => shield },
+    isStandaloneFileEditorWindow: () => true,
+    requestAnimationFrame: (callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    },
+    cancelAnimationFrame: () => {},
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  };
+  const createPane = (withWrapper = false) => {
+    let top = 0;
+    const element = { addEventListener: () => {}, removeEventListener: () => {} };
+    return {
+      getScrollerElement: () => element,
+      getWrapperElement: () => withWrapper ? wrapper : null,
+      getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
+      scrollTo: (_left, nextTop) => { top = nextTop; },
+    };
+  };
+  vm.runInNewContext(editorActions, sandbox);
+  const source = createPane(true);
+  const target = createPane();
+  const [binding] = sandbox.bindFileEditorScrollSync({}, [source, target]);
+
+  assert.equal(binding.scrollbarShield.element, shield);
+  assert.equal(wrapper.child, shield);
+  assert.equal(wrapperClasses.has("has-file-editor-scrollbar-shield"), true);
+  assert.deepEqual(shield.style, { left: "188px", top: "0px", width: "12px", height: "200px" });
+
+  let prevented = 0;
+  const pointer = (clientY) => ({
+    button: 0,
+    pointerId: 7,
+    clientY,
+    preventDefault: () => { prevented += 1; },
+    stopPropagation: () => {},
+  });
+  listeners.get("pointerdown")(pointer(10));
+  listeners.get("pointermove")(pointer(190));
+  assert.equal(frameCallbacks.length, 1);
+  frameCallbacks.shift()();
+  assert.equal(source.getScrollInfo().top, 1500);
+  assert.equal(target.getScrollInfo().top, 1500);
+  listeners.get("pointerup")(pointer(190));
+  assert.equal(shield.captured, 7);
+  assert.equal(shield.released, 7);
+  assert.ok(prevented >= 3);
+
+  binding.scrollbarShield.destroy();
+  assert.equal(shield.removed, true);
+  assert.equal(wrapperClasses.has("has-file-editor-scrollbar-shield"), false);
+});
+
+test("editor wheel input runs before CodeMirror and coalesces through the editor API", () => {
+  const frameCallbacks = [];
   const listeners = {};
-  const vertical = { scrollTop: 0 };
+  let nativeScrollTop = 0;
+  let nativeScrollWrites = 0;
+  const vertical = {};
+  Object.defineProperty(vertical, "scrollTop", {
+    get: () => nativeScrollTop,
+    set: (value) => {
+      nativeScrollTop = value;
+      nativeScrollWrites += 1;
+    },
+  });
   const element = {
     addEventListener: (type, handler, options) => { listeners[type] = { handler, options }; },
     removeEventListener: () => {},
   };
   const sandbox = {
-    requestAnimationFrame: () => 1,
+    requestAnimationFrame: (callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    },
     setTimeout: () => 1,
     clearTimeout: () => {},
   };
-  let scrollToCalls = 0;
-  const pane = {
-    getScrollerElement: () => element,
-    getWrapperElement: () => ({
-      querySelector: (selector) => selector === ".CodeMirror-vscrollbar" ? vertical : null,
-    }),
-    getScrollInfo: () => ({ top: vertical.scrollTop, left: 0, height: 2000, clientHeight: 500 }),
-    scrollTo: () => { scrollToCalls += 1; },
+  const createPane = (withScrollbar = false) => {
+    let top = 0;
+    let scrollToCalls = 0;
+    return {
+      getScrollerElement: () => element,
+      getWrapperElement: () => ({
+        querySelector: (selector) => withScrollbar && selector === ".CodeMirror-vscrollbar" ? vertical : null,
+      }),
+      getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
+      scrollTo: (_left, nextTop) => {
+        scrollToCalls += 1;
+        top = nextTop;
+      },
+      scrollToCalls: () => scrollToCalls,
+    };
   };
+  const source = createPane(true);
+  const target = createPane();
   vm.runInNewContext(editorActions, sandbox);
-  const [binding] = sandbox.bindFileEditorScrollSync({}, [pane]);
-  let prevented = false;
-  let stopped = false;
-  binding.wheelHandler({
+  const [binding] = sandbox.bindFileEditorScrollSync({}, [source, target]);
+  let prevented = 0;
+  let stopped = 0;
+  const wheel = {
     cancelable: true,
     deltaMode: 0,
     deltaX: 0,
     deltaY: 120,
-    preventDefault: () => { prevented = true; },
-    stopImmediatePropagation: () => { stopped = true; },
-  });
+    preventDefault: () => { prevented += 1; },
+    stopImmediatePropagation: () => { stopped += 1; },
+  };
 
-  assert.equal(prevented, true);
-  assert.equal(stopped, true);
-  assert.equal(vertical.scrollTop, 120);
-  assert.equal(scrollToCalls, 0);
+  binding.wheelHandler(wheel);
+  binding.wheelHandler(wheel);
+  binding.wheelHandler(wheel);
+
+  assert.equal(prevented, 3);
+  assert.equal(stopped, 3);
+  assert.equal(frameCallbacks.length, 1);
+  assert.equal(source.scrollToCalls(), 0);
+  assert.equal(nativeScrollWrites, 0);
+  frameCallbacks.shift()();
+  assert.equal(source.getScrollInfo().top, 360);
+  assert.equal(target.getScrollInfo().top, 360);
+  assert.equal(source.scrollToCalls(), 1);
+  assert.equal(target.scrollToCalls(), 1);
+  assert.equal(nativeScrollWrites, 0);
   assert.equal(listeners.wheel.options.capture, true);
   assert.equal(listeners.wheel.options.passive, false);
   assert.equal(typeof listeners.scroll.handler, "function");
   assert.equal(listeners.scroll.options.passive, true);
+});
+
+test("standalone MergeView wheel surface routes connector input to the nearest pane", () => {
+  const frameCallbacks = [];
+  const surfaceListeners = {};
+  const insideLeft = {};
+  const leftWrapper = {
+    contains: (target) => target === insideLeft,
+    getBoundingClientRect: () => ({ left: 0, right: 100 }),
+  };
+  const rightWrapper = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ left: 140, right: 240 }),
+  };
+  const wheelSurface = {
+    addEventListener: (type, handler, options) => { surfaceListeners[type] = { handler, options }; },
+    removeEventListener: () => {},
+  };
+  const sandbox = {
+    requestAnimationFrame: (callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    },
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  };
+  const createPane = (wrapper) => {
+    let top = 0;
+    let scrollToCalls = 0;
+    return {
+      getScrollerElement: () => ({ addEventListener: () => {}, removeEventListener: () => {} }),
+      getWrapperElement: () => wrapper,
+      getScrollInfo: () => ({ top, left: 0, height: 2000, clientHeight: 500 }),
+      scrollTo: (_left, nextTop) => {
+        scrollToCalls += 1;
+        top = nextTop;
+      },
+      scrollToCalls: () => scrollToCalls,
+    };
+  };
+  vm.runInNewContext(editorActions, sandbox);
+  const editorState = {};
+  const left = createPane(leftWrapper);
+  const right = createPane(rightWrapper);
+  sandbox.bindFileEditorScrollSync(editorState, [left, right], { wheelSurface });
+
+  surfaceListeners.wheel.handler({ target: insideLeft });
+  assert.equal(frameCallbacks.length, 0, "pane wheel input should remain owned by its pane listener");
+
+  let prevented = 0;
+  let stopped = 0;
+  surfaceListeners.wheel.handler({
+    target: {},
+    clientX: 125,
+    cancelable: true,
+    deltaMode: 0,
+    deltaX: 0,
+    deltaY: 120,
+    preventDefault: () => { prevented += 1; },
+    stopImmediatePropagation: () => { stopped += 1; },
+  });
+  assert.equal(frameCallbacks.length, 1);
+  frameCallbacks.shift()();
+  assert.equal(left.getScrollInfo().top, 120);
+  assert.equal(right.getScrollInfo().top, 120);
+  assert.equal(left.scrollToCalls(), 1);
+  assert.equal(right.scrollToCalls(), 1);
+  assert.equal(prevented, 1);
+  assert.equal(stopped, 1);
+  assert.equal(surfaceListeners.wheel.options.capture, true);
+  assert.equal(surfaceListeners.wheel.options.passive, false);
+  assert.equal(editorState.scrollSyncSurface.element, wheelSurface);
 });
 
 test("file editor loads local CodeMirror MergeView with line numbers and syntax modes", () => {

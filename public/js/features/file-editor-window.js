@@ -12,6 +12,7 @@ function refreshFileEditorCodeMirror(editor) {
   editor.theirsCodeMirror?.refresh();
   editor.mergeView?.leftOriginal()?.refresh();
   editor.mergeView?.rightOriginal()?.refresh();
+  editor.scrollSyncHandlers?.forEach(({ scrollbarShield }) => scrollbarShield?.refresh());
   refreshFileEditorStageButtons(editor);
   refreshFileEditorConflictButtons(editor);
   positionFileEditorChangeMarkers(editor);
@@ -200,10 +201,13 @@ function destroyFileEditorInstance() {
   clearFileEditorSearchMarks();
   if (editor?.codeMirror && editor.changeHandler) editor.codeMirror.off("change", editor.changeHandler);
   if (editor?.codeMirror && editor.diffUpdateHandler) editor.codeMirror.off("updateDiff", editor.diffUpdateHandler);
-  editor?.scrollSyncHandlers?.forEach(({ element, handler, wheelHandler }) => {
+  editor?.scrollSyncHandlers?.forEach(({ element, handler, wheelHandler, scrollbarShield, cancelWheel }) => {
     element?.removeEventListener("wheel", wheelHandler, true);
     element?.removeEventListener("scroll", handler);
+    cancelWheel?.();
+    scrollbarShield?.destroy();
   });
+  editor?.scrollSyncSurface?.element?.removeEventListener("wheel", editor.scrollSyncSurface.handler, true);
   if (editor?.changeMarkerFrame) cancelAnimationFrame(editor.changeMarkerFrame);
   editor?.changeMarkerRails?.forEach((rail) => rail.remove());
   editor?.mergeView?.destroy?.();
@@ -219,6 +223,7 @@ function destroyFileEditorInstance() {
     editor.mergeView = null;
     editor.conflictScrollHandlers = null;
     editor.scrollSyncHandlers = null;
+    editor.scrollSyncSurface = null;
     editor.scrollSyncTimers = null;
     editor.scrollSyncFrame = 0;
     editor.requestScrollSync = null;

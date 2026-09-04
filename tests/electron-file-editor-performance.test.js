@@ -104,7 +104,8 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     state.fileEditor?.lightweightCompare === false &&
     Boolean(state.fileEditor?.mergeView) &&
     document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length === 1 &&
-    document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 2
+    document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 2 &&
+    document.querySelectorAll("#fileEditorMerge .file-editor-scrollbar-shield").length === 2
   )`, 30000);
 
   const topLevelWindows = await readTopLevelWindows(electronProcess.pid);
@@ -118,7 +119,7 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
   assert.equal(editorWindow.toolWindow, false, "standalone editor used the taskbar-hidden tool window style");
 
   for (let sourceIndex = 0; sourceIndex < 2; sourceIndex += 1) {
-    const worktreeMetrics = await measureRapidWheel(editorCdp, sourceIndex);
+    const worktreeMetrics = await measureRapidWheelWithMemory(editorCdp, electronProcess, sourceIndex);
     assertRapidWheel(t, `普通工作区双栏（来源 ${sourceIndex + 1}）`, worktreeMetrics, 2);
   }
 
@@ -162,7 +163,7 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length === 2
   )`, 30000);
   for (let sourceIndex = 0; sourceIndex < 2; sourceIndex += 1) {
-    const lightweightMetrics = await measureRapidWheel(editorCdp, sourceIndex);
+    const lightweightMetrics = await measureRapidWheelWithMemory(editorCdp, electronProcess, sourceIndex);
     assertRapidWheel(t, `轻量双栏（来源 ${sourceIndex + 1}）`, lightweightMetrics, 2);
   }
 
@@ -181,7 +182,7 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     document.querySelector("#fileEditorFallback")?.hidden === true
   )`, 30000);
   for (let sourceIndex = 0; sourceIndex < 2; sourceIndex += 1) {
-    const historyMetrics = await measureRapidWheel(editorCdp, sourceIndex);
+    const historyMetrics = await measureRapidWheelWithMemory(editorCdp, electronProcess, sourceIndex, "#fileEditorMerge .CodeMirror-scroll", 8, 40);
     assertRapidWheel(t, `历史 MergeView 双栏（来源 ${sourceIndex + 1}）`, historyMetrics, 2);
   }
 
@@ -200,7 +201,7 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     document.querySelector("#fileEditorFallback")?.hidden === true
   )`, 30000);
   for (let sourceIndex = 0; sourceIndex < 3; sourceIndex += 1) {
-    const conflictMetrics = await measureRapidWheel(editorCdp, sourceIndex);
+    const conflictMetrics = await measureRapidWheelWithMemory(editorCdp, electronProcess, sourceIndex);
     assertRapidWheel(t, `普通冲突 MergeView 三栏（来源 ${sourceIndex + 1}）`, conflictMetrics, 3);
   }
   const conflictSave = await evaluate(editorCdp, `(async () => {
@@ -345,6 +346,7 @@ test("Electron standalone history comparison stays responsive and memory-bounded
       mergeViews: 0,
       lightweightCompares: 0,
       scrollers: 0,
+      scrollbarShields: 0,
       fallbackPanes: 0,
       fallbackVisible: false,
       compareModeHidden: false,
@@ -362,6 +364,7 @@ test("Electron standalone history comparison stays responsive and memory-bounded
       mergeViews: document.querySelectorAll("#fileEditorMerge .CodeMirror-merge").length,
       lightweightCompares: document.querySelectorAll("#fileEditorMerge .file-editor-large-compare").length,
       scrollers: document.querySelectorAll("#fileEditorMerge .CodeMirror-scroll").length,
+      scrollbarShields: document.querySelectorAll("#fileEditorMerge .file-editor-scrollbar-shield").length,
       fallbackPanes: document.querySelectorAll("#fileEditorFallback .file-editor-text").length,
       fallbackVisible: document.querySelector("#fileEditorFallback")?.hidden === false,
       compareModeHidden: Boolean(document.querySelector("#fileEditorCompareMode")?.hidden),
@@ -380,6 +383,7 @@ test("Electron standalone history comparison stays responsive and memory-bounded
       && stateSnapshot.mergeViews === 1
       && stateSnapshot.lightweightCompares === 0
       && stateSnapshot.scrollers === 2
+      && stateSnapshot.scrollbarShields === 2
       && stateSnapshot.fallbackPanes === 2
       && !stateSnapshot.fallbackVisible
       && !stateSnapshot.compareModeHidden
@@ -394,10 +398,28 @@ test("Electron standalone history comparison stays responsive and memory-bounded
   assert.equal(readySnapshot.mergeViews, 1, "standalone history editor did not create a MergeView");
   assert.equal(readySnapshot.lightweightCompares, 0, "standalone history editor entered lightweight comparison unexpectedly");
   assert.equal(readySnapshot.scrollers, 2, "standalone history editor did not create two CodeMirror scrollers");
+  assert.equal(readySnapshot.scrollbarShields, 2, "standalone history editor did not shield both native scrollbars");
   assert.equal(readySnapshot.fallbackVisible, false, "standalone history editor showed the native fallback");
   assert.equal(readySnapshot.compareModeHidden, false, "standalone history editor hid the MergeView mode switch");
   assert.ok(readySnapshot.syntaxTokens > 0, "standalone history editor lost syntax highlighting");
   assert.ok(readySnapshot.drawingElements > 0, "standalone history editor lost connector drawing");
+  const scrollbarCoverage = await evaluate(editorCdp, `(() => (
+    (state.fileEditor?.scrollSyncHandlers || []).map(({ source, scrollbarShield }) => {
+      const nativeRect = source.getWrapperElement().querySelector(".CodeMirror-vscrollbar").getBoundingClientRect();
+      const shieldRect = scrollbarShield.element.getBoundingClientRect();
+      const hit = document.elementFromPoint(nativeRect.left + nativeRect.width / 2, nativeRect.top + nativeRect.height / 2);
+      return {
+        nativeRect: { left: nativeRect.left, top: nativeRect.top, right: nativeRect.right, bottom: nativeRect.bottom },
+        shieldRect: { left: shieldRect.left, top: shieldRect.top, right: shieldRect.right, bottom: shieldRect.bottom },
+        hitShield: hit === scrollbarShield.element,
+      };
+    })
+  ))()`);
+  assert.equal(scrollbarCoverage.length, 2, "standalone history editor did not expose two scrollbar shields");
+  scrollbarCoverage.forEach((coverage) => {
+    assert.deepEqual(coverage.shieldRect, coverage.nativeRect, "scrollbar shield did not exactly cover its native scrollbar");
+    assert.equal(coverage.hitShield, true, "native scrollbar remained directly hit-testable");
+  });
 
   await editorCdp.send("Emulation.setDeviceMetricsOverride", {
     width: 1900,
@@ -421,6 +443,8 @@ test("Electron standalone history comparison stays responsive and memory-bounded
   assert.ok(Math.abs(maximizedLayout.dialog.height - maximizedLayout.viewport.height) <= 1, "standalone editor content did not fill the maximized viewport height");
   assert.equal(maximizedLayout.positioned, false, "standalone editor retained in-page floating positioning");
   assert.deepEqual(maximizedLayout.inline, { left: "", top: "", width: "", height: "" }, "standalone editor retained fixed inline bounds after maximizing");
+  await editorCdp.send("Emulation.clearDeviceMetricsOverride");
+  await delay(500);
 
   const wheelOwnership = await evaluate(editorCdp, `(async () => {
     const bindings = state.fileEditor?.scrollSyncHandlers || [];
@@ -444,14 +468,49 @@ test("Electron standalone history comparison stays responsive and memory-bounded
     return { defaultPrevented: wheel.defaultPrevented, sourceScrollToCalls };
   })()`);
   assert.equal(wheelOwnership.defaultPrevented, true, "standalone history editor did not take ownership of wheel scrolling");
-  assert.equal(wheelOwnership.sourceScrollToCalls, 0, "standalone history editor rewrote the active pane during wheel input");
+  assert.equal(wheelOwnership.sourceScrollToCalls, 1, "standalone history editor did not route wheel input through CodeMirror once per frame");
 
-  const scrollbarOwnership = await measureRapidScrollbarDrag(editorCdp);
-  t.diagnostic(`历史 MergeView 快速拖动滚动条：来源 ${scrollbarOwnership.tops[0].toFixed(1)}，目标 ${scrollbarOwnership.tops[1].toFixed(1)}，程序滚动 ${scrollbarOwnership.scrollToCalls.join("/")}，坐标 ${JSON.stringify(scrollbarOwnership.point)}，滚动条 ${JSON.stringify(scrollbarOwnership.scrollbar)}`);
+  const mergeGapPoint = await evaluate(editorCdp, `(() => {
+    const bindings = state.fileEditor?.scrollSyncHandlers || [];
+    bindings.forEach(({ source }) => source.scrollTo(null, 0));
+    const gap = document.querySelector("#fileEditorMerge .CodeMirror-merge-gap");
+    const rect = gap.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + Math.min(180, rect.height / 2),
+    };
+  })()`);
+  await delay(350);
+  await dispatchWheel(editorCdp, mergeGapPoint, 1, 1);
+  await delay(350);
+  const mergeGapTops = await evaluate(editorCdp, `(
+    state.fileEditor?.scrollSyncHandlers || []
+  ).map(({ source }) => source.getScrollInfo().top)`);
+  assert.ok(mergeGapTops.every((top) => top > 0), `standalone history merge gap did not scroll the comparison: ${mergeGapTops.join("/")}`);
+
+  const scrollbarOwnership = await measureRapidScrollbarDrag(editorCdp, electronProcess);
+  t.diagnostic(`历史 MergeView 快速拖动滚动条：来源 ${scrollbarOwnership.tops[0].toFixed(1)}，目标 ${scrollbarOwnership.tops[1].toFixed(1)}，实时样本 ${scrollbarOwnership.liveSampleCount}，最大实时比例差 ${scrollbarOwnership.maxLiveRatioSpread.toFixed(4)}，程序滚动 ${scrollbarOwnership.scrollToCalls.join("/")}，坐标 ${JSON.stringify(scrollbarOwnership.point)}，滚动条 ${JSON.stringify(scrollbarOwnership.scrollbar)}`);
   assert.ok(scrollbarOwnership.tops[0] > 0, "standalone history scrollbar drag did not move the active pane");
+  assert.ok(scrollbarOwnership.liveSampleCount > 0, "standalone history scrollbar drag did not capture live samples");
   assert.ok(scrollbarOwnership.ratioSpread <= 0.02, `standalone history scrollbar drag left panes ${scrollbarOwnership.ratioSpread.toFixed(4)} apart`);
-  assert.equal(scrollbarOwnership.scrollToCalls[0], 0, "standalone history editor rewrote the actively dragged pane");
-  assert.ok(scrollbarOwnership.scrollToCalls[1] <= 1, `standalone history editor rewrote the target pane ${scrollbarOwnership.scrollToCalls[1]} times during one drag`);
+  assert.ok(scrollbarOwnership.scrollToCalls[0] >= 1, "standalone history scrollbar shield did not move the active pane");
+  assert.ok(scrollbarOwnership.scrollToCalls[1] >= 1, "standalone history editor did not update the target pane after dragging");
+  assert.ok(Math.max(...scrollbarOwnership.scrollToCalls) <= scrollbarOwnership.liveSampleCount + 2, `standalone history editor made ${scrollbarOwnership.scrollToCalls.join("/")} scroll calls for ${scrollbarOwnership.liveSampleCount} samples`);
+
+  const rightScrollbarOwnership = await measureRapidScrollbarDrag(editorCdp, electronProcess, true, 1, 36);
+  t.diagnostic(`历史 MergeView 右栏快速拖动：来源 ${rightScrollbarOwnership.tops[1].toFixed(1)}，目标 ${rightScrollbarOwnership.tops[0].toFixed(1)}，实时样本 ${rightScrollbarOwnership.liveSampleCount}，最大实时比例差 ${rightScrollbarOwnership.maxLiveRatioSpread.toFixed(4)}，程序滚动 ${rightScrollbarOwnership.scrollToCalls.join("/")}`);
+  assert.ok(rightScrollbarOwnership.ratioSpread <= 0.02, `standalone history right scrollbar drag left panes ${rightScrollbarOwnership.ratioSpread.toFixed(4)} apart`);
+  assert.ok(rightScrollbarOwnership.scrollToCalls[1] >= 1, "standalone history right scrollbar shield did not move the active pane");
+  assert.ok(rightScrollbarOwnership.scrollToCalls[0] >= 1, "standalone history editor did not update the left target pane after a right drag");
+
+  const pacedScrollbarOwnership = await measureRapidScrollbarDrag(editorCdp, electronProcess, false);
+  t.diagnostic(`历史 MergeView 连续拖动滚动条：来源 ${pacedScrollbarOwnership.tops[0].toFixed(1)}，目标 ${pacedScrollbarOwnership.tops[1].toFixed(1)}，实时样本 ${pacedScrollbarOwnership.liveSampleCount}，拖动样本 ${pacedScrollbarOwnership.liveConnectorSamples}，连线实时更新 ${pacedScrollbarOwnership.liveConnectorUpdated}，最大实时比例差 ${pacedScrollbarOwnership.maxLiveRatioSpread.toFixed(4)}，程序滚动 ${pacedScrollbarOwnership.scrollToCalls.join("/")}`);
+  assert.ok(pacedScrollbarOwnership.scrollToCalls[1] > 1, "standalone history editor did not continuously update the target pane during a paced drag");
+  assert.ok(pacedScrollbarOwnership.maxLiveRatioSpread <= 0.05, `standalone history paced scrollbar drag fell too far apart while moving: ${pacedScrollbarOwnership.maxLiveRatioSpread.toFixed(4)}`);
+  assert.ok(pacedScrollbarOwnership.ratioSpread <= 0.02, `standalone history paced scrollbar drag left panes ${pacedScrollbarOwnership.ratioSpread.toFixed(4)} apart`);
+  assert.ok(pacedScrollbarOwnership.scrollToCalls[0] > 1, "standalone history scrollbar shield did not continuously move the active pane");
+  assert.ok(pacedScrollbarOwnership.liveConnectorSamples > 0, "standalone history scrollbar drag did not sample the connector while moving");
+  assert.equal(pacedScrollbarOwnership.liveConnectorUpdated, true, "standalone history connector did not redraw while the scrollbar was moving");
 
   await evaluate(editorCdp, `document.querySelector('[data-file-editor-compare-mode="align"]')?.click()`);
   await waitForExpression(editorCdp, `Boolean(
@@ -461,6 +520,22 @@ test("Electron standalone history comparison stays responsive and memory-bounded
   )`, 10000);
   const alignedSpacers = await evaluate(editorCdp, `document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-spacer").length`);
   assert.ok(alignedSpacers > 0, "standalone history editor lost aligned spacer rows");
+
+  const alignedWheel = await measureRapidWheelWithMemory(
+    editorCdp,
+    electronProcess,
+    0,
+    "#fileEditorMerge .CodeMirror-scroll",
+    1,
+    12
+  );
+  assertRapidWheel(t, "历史 MergeView 行对齐快速滚轮", alignedWheel, 2);
+
+  const alignedScrollbar = await measureRapidScrollbarDrag(editorCdp, electronProcess, true, 0, 12);
+  t.diagnostic(`历史 MergeView 行对齐快速拖动：来源 ${alignedScrollbar.tops[0].toFixed(1)}，目标 ${alignedScrollbar.tops[1].toFixed(1)}，实时样本 ${alignedScrollbar.liveSampleCount}，最大实时比例差 ${alignedScrollbar.maxLiveRatioSpread.toFixed(4)}，程序滚动 ${alignedScrollbar.scrollToCalls.join("/")}`);
+  assert.ok(alignedScrollbar.tops[0] > 0, "aligned history scrollbar drag did not move the active pane");
+  assert.ok(alignedScrollbar.ratioSpread <= 0.02, `aligned history scrollbar drag left panes ${alignedScrollbar.ratioSpread.toFixed(4)} apart`);
+
   await evaluate(editorCdp, `document.querySelector('[data-file-editor-compare-mode="connect"]')?.click()`);
   await waitForExpression(editorCdp, `Boolean(
     state.fileEditor?.compareMode === "connect" &&
@@ -468,7 +543,7 @@ test("Electron standalone history comparison stays responsive and memory-bounded
     document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-gap > svg").length > 0
   )`, 10000);
 
-  const memory = await measureStandaloneHistoryMemoryAfterScroll(editorCdp, electronProcess.pid, 8, (sample) => {
+  const memory = await measureStandaloneHistoryMemoryAfterScroll(editorCdp, electronProcess, 8, (sample) => {
     t.diagnostic(`历史 MergeView 双栏第 ${sample.cycle} 轮：JS ${(sample.usedSize / 1048576).toFixed(1)} MiB，渲染进程 ${(sample.privateBytes / 1048576).toFixed(1)} MiB，DOM ${sample.nodes}，绘制元素 ${sample.drawingElements}`);
   });
   t.diagnostic(`真实历史 MergeView 双栏循环滚动：${memory.samples.map((sample) => `${sample.cycle}:${(sample.usedSize / 1048576).toFixed(1)}/${(sample.privateBytes / 1048576).toFixed(1)}MiB,dom=${sample.nodes},draw=${sample.drawingElements}`).join(" | ")}`);
@@ -486,12 +561,12 @@ test("Electron standalone history comparison stays responsive and memory-bounded
   assert.equal(memory.settledStructure.compareModeHidden, false, "standalone history comparison hid the MergeView mode switch after scrolling");
 });
 
-async function measureStandaloneHistoryMemoryAfterScroll(cdp, browserPid, cycles = 1, onSample = () => {}) {
+async function measureStandaloneHistoryMemoryAfterScroll(cdp, processHandle, cycles = 1, onSample = () => {}) {
   const initialRenderer = await evaluate(cdp, `({
     usedSize: performance.memory?.usedJSHeapSize || 0,
     nodes: document.querySelectorAll("*").length,
   })`);
-  const initialPrivateBytes = await readRendererPrivateBytes(browserPid);
+  const initialPrivateBytes = await readRendererPrivateBytes(processHandle.pid);
   let maxUsedSize = initialRenderer.usedSize;
   let maxPrivateBytes = initialPrivateBytes;
   let maxNodes = initialRenderer.nodes;
@@ -502,11 +577,12 @@ async function measureStandaloneHistoryMemoryAfterScroll(cdp, browserPid, cycles
       const bindings = state.fileEditor?.scrollSyncHandlers || [];
       bindings.forEach(({ source }) => source.scrollTo(null, 0));
     })()`);
-    await delay(100);
+    await delay(350);
     try {
-      await dispatchScrollbarDrag(cdp);
+      const point = await readScrollbarDragPoint(cdp, cycle % 2);
+      await runWithRendererMemoryGuard(processHandle, () => dispatchScrollbarDrag(cdp, point));
     } catch (error) {
-      const privateBytes = await readRendererPrivateBytes(browserPid);
+      const privateBytes = await readRendererPrivateBytes(processHandle.pid);
       throw new Error(`history scrollbar cycle ${cycle + 1} stopped responding at ${(privateBytes / 1048576).toFixed(1)} MiB renderer private memory; completed samples: ${JSON.stringify(samples)}; ${error.message}`);
     }
     await delay(300);
@@ -514,7 +590,7 @@ async function measureStandaloneHistoryMemoryAfterScroll(cdp, browserPid, cycles
       usedSize: performance.memory?.usedJSHeapSize || 0,
       nodes: document.querySelectorAll("*").length,
     })`);
-    const privateBytes = await readRendererPrivateBytes(browserPid);
+    const privateBytes = await readRendererPrivateBytes(processHandle.pid);
     const drawingElements = await evaluate(cdp, `document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-gap > svg, #fileEditorMerge .CodeMirror-merge-connect-canvas").length`);
     maxUsedSize = Math.max(maxUsedSize, renderer.usedSize);
     maxPrivateBytes = Math.max(maxPrivateBytes, privateBytes);
@@ -537,7 +613,7 @@ async function measureStandaloneHistoryMemoryAfterScroll(cdp, browserPid, cycles
       compareModeHidden: Boolean(document.querySelector("#fileEditorCompareMode")?.hidden),
     };
   })()`);
-  const settledPrivateBytes = await readRendererPrivateBytes(browserPid);
+  const settledPrivateBytes = await readRendererPrivateBytes(processHandle.pid);
   return {
     initialUsedSize: initialRenderer.usedSize,
     maxUsedSize,
@@ -606,7 +682,15 @@ ConvertTo-Json -Compress -InputObject @($windows)
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
-async function measureRapidWheel(cdp, sourceIndex, paneSelector = "#fileEditorMerge .CodeMirror-scroll") {
+async function measureRapidWheelWithMemory(cdp, processHandle, sourceIndex, paneSelector = "#fileEditorMerge .CodeMirror-scroll", bursts = 4, eventsPerBurst = 20) {
+  const guarded = await runWithRendererMemoryGuard(
+    processHandle,
+    () => measureRapidWheel(cdp, sourceIndex, paneSelector, bursts, eventsPerBurst)
+  );
+  return { ...guarded.result, peakPrivateBytes: guarded.peak };
+}
+
+async function measureRapidWheel(cdp, sourceIndex, paneSelector = "#fileEditorMerge .CodeMirror-scroll", bursts = 4, eventsPerBurst = 20) {
   const selector = JSON.stringify(paneSelector);
   await evaluate(cdp, `(async () => {
     const panes = Array.from(document.querySelectorAll(${selector}));
@@ -639,7 +723,7 @@ async function measureRapidWheel(cdp, sourceIndex, paneSelector = "#fileEditorMe
       paneCount: panes.length,
     };
   })()`);
-  await dispatchWheel(cdp, prepared);
+  await dispatchWheel(cdp, prepared, bursts, eventsPerBurst);
   return evaluate(cdp, `(async () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const session = window.__forklineElectronScrollTest;
@@ -691,7 +775,12 @@ async function dispatchWheel(cdp, point, bursts = 4, eventsPerBurst = 20) {
   }
 }
 
-async function measureRapidScrollbarDrag(cdp) {
+async function measureRapidScrollbarDrag(cdp, processHandle, batched = true, sourceIndex = 0, steps = 36) {
+  await evaluate(cdp, `(() => {
+    const bindings = state.fileEditor?.scrollSyncHandlers || [];
+    bindings.forEach(({ source }) => source.scrollTo(null, 0));
+  })()`);
+  await delay(350);
   const point = await evaluate(cdp, `(() => {
     const bindings = state.fileEditor?.scrollSyncHandlers || [];
     const scrollToCalls = bindings.map(() => 0);
@@ -703,15 +792,41 @@ async function measureRapidScrollbarDrag(cdp) {
       };
       return original;
     });
-    bindings.forEach(({ source }) => source.scrollTo(null, 0));
-    scrollToCalls.fill(0);
-    const scrollbar = bindings[0]?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
+    const scrollbar = bindings[${Number(sourceIndex)}]?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
     const rect = scrollbar.getBoundingClientRect();
     const thumbHeight = Math.max(20, rect.height * (rect.height / Math.max(rect.height, scrollbar.scrollHeight)));
-    window.__forklineScrollbarDragProbe = { bindings, originals, scrollToCalls };
+    const maximum = Math.max(1, scrollbar.scrollHeight - scrollbar.clientHeight);
+    const thumbTop = rect.top + Math.max(0, rect.height - thumbHeight) * (scrollbar.scrollTop / maximum);
+    const connectorState = () => Array.from(
+      document.querySelectorAll("#fileEditorMerge .CodeMirror-merge-gap svg"),
+      (svg) => svg.innerHTML
+    ).join("|");
+    const probe = {
+      bindings,
+      originals,
+      scrollToCalls,
+      samples: [],
+      sampleFrame: 0,
+      dragging: false,
+      initialConnectorState: connectorState(),
+    };
+    const sample = () => {
+      const ratios = bindings.map(({ source }) => {
+        const info = source.getScrollInfo();
+        return info.top / Math.max(1, info.height - info.clientHeight);
+      });
+      probe.samples.push({
+        ratioSpread: Math.max(...ratios) - Math.min(...ratios),
+        dragging: probe.dragging,
+        connectorState: connectorState(),
+      });
+      probe.sampleFrame = requestAnimationFrame(sample);
+    };
+    probe.sampleFrame = requestAnimationFrame(sample);
+    window.__forklineScrollbarDragProbe = probe;
     return {
       x: rect.left + rect.width / 2,
-      startY: rect.top + thumbHeight / 2,
+      startY: thumbTop + thumbHeight / 2,
       endY: rect.bottom - thumbHeight / 2,
       rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
       clientHeight: scrollbar.clientHeight,
@@ -719,46 +834,150 @@ async function measureRapidScrollbarDrag(cdp) {
     };
   })()`);
   await delay(100);
-  await dispatchScrollbarDrag(cdp);
-  await delay(350);
+  const guarded = await runWithRendererMemoryGuard(processHandle, async () => {
+    await evaluate(cdp, `window.__forklineScrollbarDragProbe.dragging = true`);
+    try {
+      await dispatchScrollbarDrag(cdp, point, steps, batched);
+    } finally {
+      await evaluate(cdp, `window.__forklineScrollbarDragProbe.dragging = false`).catch(() => {});
+    }
+    await delay(350);
+    return evaluate(cdp, `(() => {
+      const probe = window.__forklineScrollbarDragProbe;
+      cancelAnimationFrame(probe.sampleFrame);
+      const tops = probe.bindings.map(({ source }) => source.getScrollInfo().top);
+      const ratios = probe.bindings.map(({ source }) => {
+        const info = source.getScrollInfo();
+        return info.top / Math.max(1, info.height - info.clientHeight);
+      });
+      probe.bindings.forEach(({ source }, index) => { source.scrollTo = probe.originals[index]; });
+      delete window.__forklineScrollbarDragProbe;
+      return {
+        tops,
+        topSpread: Math.max(...tops) - Math.min(...tops),
+        ratioSpread: Math.max(...ratios) - Math.min(...ratios),
+        liveSampleCount: probe.samples.length,
+        liveConnectorSamples: probe.samples.filter((sample) => sample.dragging).length,
+        liveConnectorUpdated: probe.samples.some(
+          (sample) => sample.dragging && sample.connectorState !== probe.initialConnectorState
+        ),
+        maxLiveRatioSpread: Math.max(0, ...probe.samples.map((sample) => sample.ratioSpread)),
+        scrollToCalls: probe.scrollToCalls,
+        point: ${JSON.stringify(point)},
+        scrollbar: (() => {
+          const bar = probe.bindings[0]?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
+          return { top: bar?.scrollTop || 0, clientHeight: bar?.clientHeight || 0, scrollHeight: bar?.scrollHeight || 0 };
+        })(),
+      };
+    })()`);
+  });
+  return { ...guarded.result, privateBytes: guarded.privateBytes };
+}
+
+async function readScrollbarDragPoint(cdp, sourceIndex = 0) {
   return evaluate(cdp, `(() => {
-    const probe = window.__forklineScrollbarDragProbe;
-    const tops = probe.bindings.map(({ source }) => source.getScrollInfo().top);
-    const ratios = probe.bindings.map(({ source }) => {
-      const info = source.getScrollInfo();
-      return info.top / Math.max(1, info.height - info.clientHeight);
-    });
-    probe.bindings.forEach(({ source }, index) => { source.scrollTo = probe.originals[index]; });
-    delete window.__forklineScrollbarDragProbe;
+    const binding = state.fileEditor?.scrollSyncHandlers?.[${Number(sourceIndex)}];
+    const scrollbar = binding?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
+    const rect = scrollbar.getBoundingClientRect();
+    const thumbHeight = Math.max(20, rect.height * (rect.height / Math.max(rect.height, scrollbar.scrollHeight)));
     return {
-      tops,
-      topSpread: Math.max(...tops) - Math.min(...tops),
-      ratioSpread: Math.max(...ratios) - Math.min(...ratios),
-      scrollToCalls: probe.scrollToCalls,
-      point: ${JSON.stringify(point)},
-      scrollbar: (() => {
-        const bar = probe.bindings[0]?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
-        return { top: bar?.scrollTop || 0, clientHeight: bar?.clientHeight || 0, scrollHeight: bar?.scrollHeight || 0 };
-      })(),
+      x: rect.left + rect.width / 2,
+      startY: rect.top + thumbHeight / 2,
+      endY: rect.bottom - thumbHeight / 2,
     };
   })()`);
 }
 
-async function dispatchScrollbarDrag(cdp, steps = 36) {
-  await evaluate(cdp, `(() => {
-    const binding = state.fileEditor?.scrollSyncHandlers?.[0];
-    const scrollbar = binding?.source?.getWrapperElement?.().querySelector(".CodeMirror-vscrollbar");
-    const maximum = Math.max(0, scrollbar.scrollHeight - scrollbar.clientHeight);
-    for (let step = 1; step <= ${Number(steps)}; step += 1) {
-      scrollbar.scrollTop = maximum * (step / ${Number(steps)});
-      scrollbar.dispatchEvent(new Event("scroll"));
+async function dispatchScrollbarDrag(cdp, point, steps = 36, batched = true) {
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: point.x,
+    y: point.startY,
+    buttons: 0,
+  });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: point.x,
+    y: point.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1,
+  });
+  try {
+    if (batched) {
+      const moves = [];
+      for (let step = 1; step <= steps; step += 1) {
+        moves.push(cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          x: point.x,
+          y: point.startY + (point.endY - point.startY) * (step / steps),
+          button: "left",
+          buttons: 1,
+        }));
+      }
+      await Promise.all(moves);
+    } else {
+      for (let step = 1; step <= steps; step += 1) {
+        await cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          x: point.x,
+          y: point.startY + (point.endY - point.startY) * (step / steps),
+          button: "left",
+          buttons: 1,
+        });
+        await delay(2);
+      }
     }
-  })()`);
+  } finally {
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: point.x,
+      y: point.endY,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    }).catch(() => {});
+  }
+}
+
+async function runWithRendererMemoryGuard(processHandle, action, limit = 1024 * 1024 * 1024) {
+  let actionDone = false;
+  let exceeded = 0;
+  let peak = 0;
+  const samples = [];
+  const monitor = (async () => {
+    do {
+      const privateBytes = await readRendererPrivateBytes(processHandle.pid);
+      samples.push(privateBytes);
+      peak = Math.max(peak, privateBytes);
+      if (privateBytes >= limit) {
+        exceeded = privateBytes;
+        await stopProcessTree(processHandle);
+        break;
+      }
+      if (!actionDone) await delay(25);
+    } while (!actionDone && processHandle.exitCode === null);
+  })();
+  let result;
+  let actionError;
+  try {
+    result = await action();
+  } catch (error) {
+    actionError = error;
+  } finally {
+    actionDone = true;
+    await monitor;
+  }
+  if (exceeded) {
+    throw new Error(`renderer private memory exceeded ${(limit / 1048576).toFixed(0)} MiB during editor scroll input: ${(exceeded / 1048576).toFixed(1)} MiB; samples ${samples.map((value) => (value / 1048576).toFixed(1)).join("/")}`);
+  }
+  if (actionError) throw actionError;
+  return { result, privateBytes: samples, peak };
 }
 
 function assertRapidWheel(t, label, metrics, paneCount, { exactTop = true } = {}) {
   t.diagnostic(
-    `${label}: traces ${metrics.traceLengths.join("/")}, tops ${metrics.tops.map((top) => top.toFixed(1)).join("/")}, upward ${metrics.upwardJumps.map((jump) => jump.toFixed(1)).join("/")}, top spread ${metrics.topSpread.toFixed(1)}, ratio spread ${metrics.ratioSpread.toFixed(4)}, heartbeat ${metrics.heartbeatTicks} ticks / ${metrics.maxHeartbeatDelay.toFixed(1)} ms max delay, long tasks ${metrics.longTaskCount} / ${metrics.maxLongTask.toFixed(1)} ms max`
+    `${label}: traces ${metrics.traceLengths.join("/")}, tops ${metrics.tops.map((top) => top.toFixed(1)).join("/")}, upward ${metrics.upwardJumps.map((jump) => jump.toFixed(1)).join("/")}, top spread ${metrics.topSpread.toFixed(1)}, ratio spread ${metrics.ratioSpread.toFixed(4)}, heartbeat ${metrics.heartbeatTicks} ticks / ${metrics.maxHeartbeatDelay.toFixed(1)} ms max delay, long tasks ${metrics.longTaskCount} / ${metrics.maxLongTask.toFixed(1)} ms max, renderer peak ${(metrics.peakPrivateBytes / 1048576).toFixed(1)} MiB`
   );
   assert.equal(metrics.paneCount, paneCount, `${label} pane count`);
   assert.ok(metrics.traceLengths.every((length) => length > 0), `${label} did not produce scroll events in every pane`);
@@ -771,6 +990,7 @@ function assertRapidWheel(t, label, metrics, paneCount, { exactTop = true } = {}
   assert.ok(metrics.heartbeatTicks >= 10, `${label} heartbeat stopped during wheel scrolling`);
   assert.ok(metrics.maxHeartbeatDelay < 500, `${label} blocked for ${metrics.maxHeartbeatDelay.toFixed(1)} ms`);
   assert.ok(metrics.maxLongTask < 500, `${label} produced a ${metrics.maxLongTask.toFixed(1)} ms long task`);
+  assert.ok(metrics.peakPrivateBytes < 768 * 1024 * 1024, `${label} renderer peaked at ${(metrics.peakPrivateBytes / 1048576).toFixed(1)} MiB`);
 }
 
 async function createFixture(repo) {

@@ -1527,3 +1527,10 @@
 - 六个正式附件、两个 `.sha256`、`latest.yml`、GitHub digest 和便携 ZIP 内容均已核验；正式安装器为 `NotSigned`，发布说明已明确未知发布者和 SmartScreen 风险。
 - GitHub 正式安装器已完成隔离安装、真实 Electron `2/2` 回归和卸载，随后安装回标准目录 `C:\Users\Administrator\AppData\Local\Programs\Forkline`；登记、桌面/开始菜单快捷方式和用户偏好均正确，测试后无 Forkline 进程残留。
 - 当前后续发现问题时只能修复并发布更高版本，不得替换 v0.4.21 附件或移动标签。保护对象 `.playwright-cli/`、`n+fs.statSync(p.join('public'` 及两个仅换行状态文件继续保持未提交。
+
+## 2026-09-04 - v0.4.22 行对齐快速滚动卡死修复待正式发布
+
+- v0.4.22 保留 MergeView 的连线、行对齐和语法高亮，以及普通冲突三栏和实时双栏/三栏同步。普通历史文件切到“行对齐”时改为一次性创建保护门限内的全部行和 spacer，避免快速滚轮或拖动滚动条期间反复重排虚拟视口；复杂文件继续使用轻量 CodeMirror。
+- 最终文件编辑器单测 `45/45`、三倍性能完整回归 `411/411` 均通过。真实 Electron 行对齐快速滚轮无回弹、无长任务，峰值约 `458.6 MiB`；快速拖到底两栏均为 `9593`，连续 8 轮后内存回落到约 `266.5 MiB`，DOM 和连线绘图层稳定。
+- `0.4.22-test.6` 打包 EXE 与 ASAR 已验明版本和哈希，打包版 Electron `2/2` 通过；用户在真实窗口复测后明确反馈“不卡了”。应用、锁文件和安装器契约已升至 `0.4.22`。
+- 本机正式安装器、打包 ASAR、已安装 EXE 的 Electron `2/2`、当前用户临时安装、登记/快捷方式、启动和卸载闭环均已通过；卸载后已把 GitHub 正式 v0.4.21 原哈希安装恢复到标准目录，四个稳定用户偏好哈希未变。下一步只允许显式暂存本轮批准文件并提交推送，创建新的不可移动 `v0.4.22` 注释标签和中文正式 Release，等待安装器、便携包工作流成功并核验六个正式附件。不得移动 v0.4.21 或更早标签，不得触碰 `.playwright-cli/`、`n+fs.statSync(p.join('public'`、`public/js/i18n-catalog.js`、`public/vendor/codemirror/addon/merge/merge.js`。

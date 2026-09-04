@@ -535,3 +535,23 @@ Electron `43.4.1` 包不再通过自身生命周期脚本自动下载 Windows �
 - 同一正式安装器随后安装回标准目录 `C:\Users\Administrator\AppData\Local\Programs\Forkline`，退出码为 `0`；标准 EXE SHA-256 为 `28c2866c0049d50c19c7920370954dc526802c73cbe1171dd4ef8a8d8ca1af2f`，`app.asar` SHA-256 为 `b815194b21899cc3ea502a4efbcc8392a97f70d4e4f314f08102ae7ad16da8d6`。HKCU 登记为 `Forkline 0.4.21`，桌面和开始菜单快捷方式均指向标准目录。
 - 标准安装版 Electron 回归再次为 `2/2`；9 条滚轮路径全部回弹 `0 px`、最终偏差 `0 px`、长任务 `0`，历史窗口峰值约 `304.4 MiB`、停止后约 `299.5 MiB`，最大化内容为 `1900 x 1000`。测试退出后标准目录 Forkline 进程为 `0`，四个稳定用户偏好文件长度和 SHA-256 与安装前完全一致。
 - 大附件直连曾停留在部分下载，仅对两条正式大附件下载命令使用本机 `127.0.0.1:7897` 代理并断点续传；未修改系统或 Git 全局代理，最终信任依据仍是 GitHub API digest。审计目录为 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.21-release-audit-20260904-1112`。
+
+## v0.4.22-test.1 本机实时滚动测试包
+
+- 此产物只用于验证 v0.4.21 之后的双栏/三栏实时滚动改动，不是 GitHub Release，不创建或移动标签，也不作为 `electron-updater` 的正式更新来源。源码 `package.json` 仍保持 `0.4.21`，测试版号仅通过 electron-builder 的 `extraMetadata.version` 写入本机打包内容。
+- 本机测试安装器位于 `C:\Users\Administrator\AppData\Local\Temp\forkline-live-scroll-test-20260904-01\Forkline-Setup-0.4.22-test.1-windows-x64.exe`，大小 `104613517` 字节、SHA-256 `3eb211c08a066b560f8c2ed440a29edc072f6ded72a2de92c1cc7057b0b454bf`；blockmap 大小 `111504` 字节、SHA-256 `927432878959286ce2dbf9ed251638603aa33f6d4da725ab56981530bdda02a9`；`latest.yml` SHA-256 `76e2348948aa69fc929115a11df90223031119d20450275edfb17b174fea8d97`，版本、文件名、大小和 SHA-512 与安装器匹配。Authenticode 为 `NotSigned`。
+- 直连构建首次在 GitHub 组件下载阶段超时，单次代理重试又被服务器中断；未改变系统或 Git 全局代理。随后先使用已校验的 Electron 缓存构建 `win-unpacked`，再通过 `--prepackaged` 生成 NSIS 安装器，避免重复网络下载。
+- `win-unpacked/resources/app.asar` 大小 `5294026` 字节、SHA-256 `99ba634e25763a3d31300ded371af5935952fa39fef277fadd5aaf98887554d0`，包版本为 `0.4.22-test.1`；直接读取 ASAR 确认包含逐帧同步、程序滚动期望队列和 `200 ms` 最终校准。
+- 使用该 `win-unpacked/Forkline.exe` 和隔离用户数据运行 Electron 回归 `2/2`：9 条快速滚轮来源全部回弹 `0 px`、最终偏差 `0 px`、长任务 `0`；真实历史拖动采集 `36` 个过程样本、目标栏更新 `35` 次、来源栏程序回写 `0` 次，连续 `8` 轮保持 MergeView、绘图元素和语法高亮。
+- 为避免测试安装器改写正式 v0.4.21 的当前用户卸载登记与快捷方式，本轮没有执行安装；改为从 `win-unpacked` 启动可见测试实例，使用独立目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-live-scroll-manual-userdata-20260904-01`。正式 EXE/ASAR 哈希仍为 `28c2866c0049d50c19c7920370954dc526802c73cbe1171dd4ef8a8d8ca1af2f` / `b815194b21899cc3ea502a4efbcc8392a97f70d4e4f314f08102ae7ad16da8d6`，卸载登记和两个快捷方式仍指向标准目录。启动测试实例后复核时标准目录进程为 `0`，现有证据不能判断是用户关闭还是实例自行退出，因此未声称正式进程持续运行，也未擅自重启；现场人工拖动结论等待用户确认。
+
+## v0.4.22 行对齐快速滚动卡死修复发布准备
+
+- v0.4.22 保留历史 MergeView 的差异连线、行对齐和语法高亮，也保留普通冲突三栏与实时双栏/三栏同步。最终修复只让已经通过体积、行数和差异复杂度门限的普通历史文件在“行对齐”模式一次性渲染全部行；连线模式、工作区、冲突和复杂文件轻量路径不改变。
+- 修复前复现场景仅 12 次滚轮输入就使渲染进程从约 `427.4 MiB` 增长到 `734.5 MiB`、再到 `1052.4 MiB`，原因是 CodeMirror 虚拟视口与 MergeView 对齐 spacer 在快速滚动时反复重排。最终源码回归中，行对齐快速滚轮峰值约 `458.6 MiB`，无长任务；快速拖到底后两栏均为 `9593`，连续 8 轮后渲染进程约 `266.5 MiB`，DOM 固定为 `3902`、绘图元素保持 `1`。
+- `node --check` 覆盖全部本轮 JavaScript 源码和测试；文件编辑器单测 `45/45`，三倍性能系数完整回归 `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 为 `411/411`，失败 `0`、跳过 `0`。真实 Chromium 快速滚轮两栏最终均为 `56880 px`、最大向上跳变 `0 px`；真实 Electron 两项专项均通过。
+- 用户最终验收的是 `0.4.22-test.6` 打包 EXE：`C:\Users\Administrator\AppData\Local\Temp\forkline-live-scroll-test-20260904-07\win-unpacked\Forkline.exe`，大小 `235534336` 字节、SHA-256 `34dccb019b46786f0227c24084216d8b9afbc12292f90b8ec8a4d0bc48a976f7`；`app.asar` 大小 `5302515` 字节、SHA-256 `8bc3b8f07c38193b17cc98bf91b3d1e43d13664cc35bc9ce87847391fb48c3b9`。用户在真实窗口中复测后明确反馈“不卡了”。
+- 本机正式安装器 `dist/installer/Forkline-Setup-0.4.22-windows-x64.exe` 大小 `104614398` 字节、SHA-256 `221e259c55ee11e6d33aa6117233716c34dfbefc79171d602144e96ca2dfabf4`；blockmap 大小 `111721` 字节、SHA-256 `a2374de721898a91300ca36566bcc81d537987da07459e7a75e65325672805d8`；`latest.yml` SHA-256 `30ffff729a4696e336002f8c7f530e7ca1e0e1c0b6cf840ac827391612592bc7`，版本、文件名、大小和 SHA-512 `+r4AyrUKnQiAQmjfL5sLlOK7WGbjdTjeZgDTRCtFsb1V7nB2HbimOxo47ymN1FEPb+2vr/BBiSsOU+pl0JlF0Q==` 均匹配。正式打包 ASAR 为 `5302570` 字节、SHA-256 `f5056fbcee615f53c689ffd8480b2475f175e3c6f019d57a38e25c1e5a0a0ca9`，内部版本和行对齐修复门禁正确；安装器 Authenticode 为 `NotSigned`。
+- 正式安装器在临时目录完成当前用户静默安装，退出码 `0`；HKCU 登记、桌面和开始菜单快捷方式均指向临时目录，安装后 EXE/ASAR 与 `win-unpacked` 哈希一致。已安装 EXE 的真实 Electron 回归为 `2/2`，行对齐快速滚轮峰值约 `399.3 MiB`、拖到底 `9593/9593`，连续 8 轮后约 `248.8 MiB`，DOM 和绘图层稳定。静默卸载退出码 `0`，临时目录、登记和快捷方式均移除。
+- 隔离卸载后使用已核验的 GitHub v0.4.21 正式安装器恢复标准目录；EXE/ASAR 哈希恢复为 `28c2866c0049d50c19c7920370954dc526802c73cbe1171dd4ef8a8d8ca1af2f` / `b815194b21899cc3ea502a4efbcc8392a97f70d4e4f314f08102ae7ad16da8d6`，登记和两个快捷方式重新指向标准目录，四个稳定用户偏好文件哈希未变。
+- 正式应用、锁文件和安装器契约已升至 `0.4.22`。正式 Release 仍需由不可移动的 `v0.4.22` 注释标签触发安装器和便携包工作流；NSIS 安装器保持当前用户安装、可选目录、桌面/开始菜单快捷方式、`electron-updater` 和更新前优雅停止后台服务及 Git/SSH 子进程的既有边界，并继续公开未签名、未知发布者和 SmartScreen 风险。

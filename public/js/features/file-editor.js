@@ -414,6 +414,7 @@ function createFileEditorInstance(editor) {
     mode: editor.mode.mode,
     lineNumbers: true,
     lineWrapping: false,
+    viewportMargin: editor.source === "commit" && !editor.largeFile && !editor.lightweightCompare && editor.compareMode === "align" ? Infinity : 10,
     indentUnit: 2,
     tabSize: 4,
     indentWithTabs: false,

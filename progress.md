@@ -11247,3 +11247,93 @@
 
 - 修改文件：`docs/PACKAGING.md`（追加正式 Release、工作流重跑、附件、安装和回归证据）；`docs/CONTINUE.md`（记录 v0.4.21 已完成状态与不可变边界）；`progress.md`（追加本轮完整闭环、测试、文件和回滚记录）。
 - 仓库回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮 v0.4.21 发布验收文档提交>`。产品修复如需回滚，应对 `a76b5d4991c1393354717262bf6b7dfd9ab9f5e0` 创建 `git revert` 并发布更高版本，不得移动或重建 `v0.4.21`。本机标准安装可通过 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser` 移除，但本轮按要求保留；不得修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`、`public/js/i18n-catalog.js`、`public/vendor/codemirror/addon/merge/merge.js`。
+
+## 2026-09-04 - Task: 让文件对照栏在快速滚动期间实时同步
+
+### What was done
+
+- 保留 MergeView、差异连线、行对齐和语法高亮，只调整共用滚动控制器：当前操作栏每次真实滚动都会安排下一动画帧同步其他栏，原有 `200 ms` 定时器继续负责停止后的最终位置校准。
+- 继续使用程序滚动期望队列过滤目标栏事件，避免目标栏反向抢占滚动来源；快速滚轮仍只直接移动用户正在操作的栏。
+- 将真实 Electron 滚动条回归从“只检查松手后的最终位置”增强为逐帧采样，要求拖动期间目标栏持续更新、最多落后一帧，并限制程序滚动次数。
+
+### Testing
+
+- 修复前运行定向单元回归，稳定失败于拖动事件后动画帧数量为 `0`；修复后滚动同步、延迟程序事件过滤和滚轮所有权 `3/3` 通过，完整文件编辑器单测 `43/43` 通过。
+- 真实 Electron 历史 MergeView 快速拖动采集 `36` 个过程样本，目标栏更新 `35` 次，当前操作栏程序回写 `0` 次，最大过程比例差 `0.0278`，等于一个采样帧；最终比例差不超过 `0.02`。
+- 真实 Electron 历史窗口连续快速拖动 `8` 轮均完成，JS 堆无持续增长，DOM 固定为 `4142`，绘图元素保持 `1`；MergeView 连线、行对齐、语法高亮和最大化布局回归通过。
+- 普通双栏、轻量双栏、历史 MergeView 双栏和冲突 MergeView 三栏共 `9` 条快速滚轮来源全部向上回弹 `0 px`、最终栏间偏差 `0 px`、长任务 `0`，心跳最大延迟约 `13.3 ms`。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 全量 `409/409` 通过，失败 `0`、跳过 `0`；真实 Chromium 快速编辑器滚动两栏轨迹均为 `79` 次、最终位置均为 `56880 px`、最大向上跳变 `0 px`。
+- `git diff --check` 通过。
+
+### Notes
+
+- `public/js/features/file-editor-actions.js`：真实滚动事件在保留最终校准的同时立即安排逐帧同步。
+- `tests/file-editor-ui.test.js`：把延迟同步契约改为逐帧跟随，并继续验证程序滚动不会反向驱动来源栏。
+- `tests/electron-file-editor-performance.test.js`：逐帧采集真实滚动条拖动轨迹并验证来源所有权、跟随延迟和连续压力表现。
+- `README.md`：更新用户可见的滚动同步行为说明。
+- `docs/ARCHITECTURE.md`：记录单帧合并、程序事件过滤和最终校准机制。
+- `progress.md`：追加本轮实现、验证和回滚记录。
+- 回滚点为本轮开始前的 `1d3000f99d3693bfbd5129ae642f4d938ba12e00`。提交前可执行 `git restore -- public/js/features/file-editor-actions.js tests/file-editor-ui.test.js tests/electron-file-editor-performance.test.js README.md docs/ARCHITECTURE.md progress.md`；提交后使用 `git revert <本轮提交>`。不得修改或覆盖 `v0.4.21`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`、`public/js/i18n-catalog.js`、`public/vendor/codemirror/addon/merge/merge.js`。
+
+## 2026-09-04 - Task: 生成并启动实时滚动本机测试包
+
+### What was done
+
+- 使用 electron-builder 的测试元数据生成 `0.4.22-test.1` Windows x64 NSIS 安装器，源码版本和既有标签保持不变；该产物明确只供本机验证，不是正式 Release。
+- 将打包拆为已校验 Electron 缓存生成 `win-unpacked`、验明 ASAR、再通过 `--prepackaged` 生成安装器，绕过两次 GitHub 组件下载中断；代理仅作用于单次构建命令。
+- 未执行会改写正式卸载登记和快捷方式的测试安装，改为使用隔离用户数据启动可见的 `win-unpacked` 测试实例，供现场直接拖动验证；正式 v0.4.21 的程序文件、登记和快捷方式未被覆盖。
+
+### Testing
+
+- 测试安装器大小 `104613517` 字节、SHA-256 `3eb211c08a066b560f8c2ed440a29edc072f6ded72a2de92c1cc7057b0b454bf`；blockmap 大小 `111504` 字节、SHA-256 `927432878959286ce2dbf9ed251638603aa33f6d4da725ab56981530bdda02a9`；`latest.yml` SHA-256 `76e2348948aa69fc929115a11df90223031119d20450275edfb17b174fea8d97`，元数据与安装器匹配，签名状态为 `NotSigned`。
+- `app.asar` 大小 `5294026` 字节、SHA-256 `99ba634e25763a3d31300ded371af5935952fa39fef277fadd5aaf98887554d0`，内部版本为 `0.4.22-test.1`，逐帧同步、程序滚动过滤和最终校准三个门禁均存在。
+- 直接使用最终打包 EXE 的 Electron 回归 `2/2` 通过；9 条快速滚轮路径均回弹 `0 px`、最终偏差 `0 px`、长任务 `0`。历史 MergeView 拖动 `36` 个样本中目标栏更新 `35` 次、来源栏程序回写 `0` 次，连续 `8` 轮后绘图元素保持 `1`、JS 堆增长约 `0.7 MiB`。
+- 隔离测试实例主进程 PID 为 `29276`，可执行文件路径和 `--user-data-dir` 均指向本轮两个明确临时目录；启动后共存在主进程、GPU、网络服务、后台服务和渲染进程。复核时标准目录进程为 `0`，未在证据不足时归因或擅自重启；标准 EXE/ASAR 哈希仍为 `28c2866c0049d50c19c7920370954dc526802c73cbe1171dd4ef8a8d8ca1af2f` / `b815194b21899cc3ea502a4efbcc8392a97f70d4e4f314f08102ae7ad16da8d6`，卸载登记和两个快捷方式仍指向标准目录。
+- `git diff --check` 通过；受保护异常文件 SHA-256 仍为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
+
+### Notes
+
+- `docs/PACKAGING.md`：记录测试版边界、构建故障处理、产物哈希、ASAR 门禁和打包 EXE 回归。
+- `progress.md`：追加测试包构建、启动、验证和回滚记录。
+- 代码、测试和行为文档文件沿用上一轮明确清单，本轮没有修改版本文件、标签、GitHub Release、正式安装目录、卸载登记或快捷方式。
+- Git 回滚仍以 `1d3000f99d3693bfbd5129ae642f4d938ba12e00` 为起点；提交前可对上一轮六个代码/文档文件以及本轮 `docs/PACKAGING.md`、`progress.md` 执行明确 `git restore -- <file...>`。本机测试完成后，先正常关闭测试实例，再删除明确目录 `C:\Users\Administrator\AppData\Local\Temp\forkline-live-scroll-test-20260904-01` 和 `C:\Users\Administrator\AppData\Local\Temp\forkline-live-scroll-manual-userdata-20260904-01`；不得按进程名批量结束 Forkline，也不得影响正式 v0.4.21。
+
+## 2026-09-04 - Task: 根治历史文件行对齐快速滚动卡死并准备 v0.4.22
+
+### What was done
+
+- 保留 MergeView 连线、行对齐、语法高亮、普通冲突三栏和实时跨栏同步；只让通过现有复杂度门限的普通历史文件在“行对齐”模式一次性创建全部行和 spacer，避免滚动期间虚拟视口反复重排。
+- 为独立编辑器的滚轮、滚动条和中间连线区域统一受控输入：积压位置按动画帧合并、目标栏实时跟随、程序滚动反馈被过滤，停止 `200 ms` 后再做最终校准；关闭窗口时清理覆盖层、监听和计时器。
+- 将应用、锁文件和安装器契约升至 `0.4.22`，同步更新用户说明、架构、Electron 桌面边界、打包说明和续接状态；用户完成 `0.4.22-test.6` 真实窗口复测并确认“不卡了”。
+
+### Testing
+
+- 修复前固定历史场景仅 12 次滚轮输入就使渲染进程约 `427.4 -> 734.5 -> 1052.4 MiB`，触发 1 GiB 保护；最终实现不再出现该增长链。
+- `node --check` 覆盖本轮 6 个 JavaScript 源码/测试文件，全部通过；`node --test --test-concurrency=1 tests/file-editor-ui.test.js` 为 `45/45`。
+- `$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; npm.cmd test` 为 `411/411`，失败 `0`、跳过 `0`。真实 Chromium 快速滚轮两栏均到 `56880 px`、最大向上跳变 `0 px`。
+- 真实 Electron 行对齐快速滚轮两栏均到 `1440 px`，回弹和最终偏差为 `0`、长任务为 `0`，渲染进程峰值约 `458.6 MiB`；快速拖到底两栏均为 `9593`，连续 8 轮后约 `266.5 MiB`，DOM 固定 `3902`、绘图元素保持 `1`。
+- `0.4.22-test.6` 打包 EXE 大小 `235534336` 字节、SHA-256 `34dccb019b46786f0227c24084216d8b9afbc12292f90b8ec8a4d0bc48a976f7`；ASAR 大小 `5302515` 字节、SHA-256 `8bc3b8f07c38193b17cc98bf91b3d1e43d13664cc35bc9ce87847391fb48c3b9`，内部版本正确，打包版 Electron `2/2` 通过，用户人工复测通过。
+- 本机正式安装器大小 `104614398` 字节、SHA-256 `221e259c55ee11e6d33aa6117233716c34dfbefc79171d602144e96ca2dfabf4`；blockmap 为 `111721` 字节 / `a2374de721898a91300ca36566bcc81d537987da07459e7a75e65325672805d8`；`latest.yml` 为 `372` 字节 / `30ffff729a4696e336002f8c7f530e7ca1e0e1c0b6cf840ac827391612592bc7`，版本、名称、大小和 SHA-512 与安装器匹配。ASAR 版本为 `0.4.22`、SHA-256 `f5056fbcee615f53c689ffd8480b2475f175e3c6f019d57a38e25c1e5a0a0ca9`，行对齐门禁存在，Authenticode 为 `NotSigned`。
+- 正式 `win-unpacked` EXE 的 Electron 回归 `2/2` 通过；行对齐快速滚轮峰值约 `438.8 MiB`、拖到底 `9593/9593`，连续 8 轮后约 `282.3 MiB`。
+- 临时当前用户安装退出码 `0`，HKCU 登记和两个快捷方式均正确；安装后 EXE/ASAR 哈希与正式打包内容一致。已安装 EXE 的 Electron 回归再次 `2/2`，行对齐峰值约 `399.3 MiB`，8 轮后约 `248.8 MiB`。卸载退出码 `0`，临时目录、登记和快捷方式均移除。
+- 使用 SHA-256 为 `7d3409b22450636f38a23939d40643f0de3d1bb8fc2bb4d0290f381cfffd5b20` 的 GitHub v0.4.21 正式安装器恢复标准目录；恢复后的 EXE/ASAR 哈希、HKCU 登记、桌面/开始菜单快捷方式与测试前一致，四个稳定用户偏好文件哈希未变。
+- `git diff --check` 通过；临时调试脚本不存在，源码无 `[DEBUG-...]` 残留。异常文件仍为 0 字节、SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`；两份受保护跟踪文件与 HEAD 内容对象一致。
+
+### Notes
+
+- `public/file-editor.css`：增加独立编辑器滚动条覆盖层及受控滚动所需样式。
+- `public/js/features/file-editor-actions.js`：合并滚动输入、实时同步目标栏、过滤程序反馈，并接管独立窗口滚动条和连线区域输入。
+- `public/js/features/file-editor-window.js`：关闭或重建编辑器时清理新增的滚动控制资源。
+- `public/js/features/file-editor.js`：普通历史行对齐使用一次性视口，其余路径保留有界视口或轻量模式。
+- `tests/file-editor-ui.test.js`：覆盖逐帧同步、滚动条覆盖层、连线区域滚轮和行对齐一次性视口契约。
+- `tests/electron-file-editor-performance.test.js`：覆盖真实物理滚轮/滚动条、内存熔断、行对齐到底和连续压力场景。
+- `package.json`：正式版本升至 `0.4.22`。
+- `package-lock.json`：同步根包版本。
+- `tests/installer-package.test.js`：同步 v0.4.22 安装器版本契约。
+- `README.md`：说明行对齐卡死修复、实时同步和保留能力。
+- `docs/ARCHITECTURE.md`：记录行对齐一次性视口的精确适用边界。
+- `docs/ELECTRON_DESKTOP.md`：更新独立窗口滚动控制、资源清理和 v0.4.22 定位。
+- `docs/PACKAGING.md`：记录根因、最终自动/人工验证、测试包哈希和正式发布边界。
+- `docs/CONTINUE.md`：记录 v0.4.22 待发布状态及后续不可变步骤。
+- `progress.md`：追加本轮实现、验证、文件清单和回滚点。
+- 回滚点为 `1d3000f99d3693bfbd5129ae642f4d938ba12e00`。提交前可对以上 15 个允许文件执行显式 `git restore -- <file list>`；提交后使用 `git revert <v0.4.22 产品提交>` 并发布更高版本。不得移动或覆盖 `v0.4.21` 及更早标签，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`、`public/js/i18n-catalog.js`、`public/vendor/codemirror/addon/merge/merge.js`。
