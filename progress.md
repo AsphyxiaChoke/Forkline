@@ -11225,3 +11225,25 @@
 
 - 修改文件：`electron/main.js`（独立窗口任务栏关系）；`public/file-editor.css`（恢复 MergeView 三栏布局）；`public/js/features/file-editor-actions.js`（捕获阶段滚轮与拖动结束同步）；`public/js/features/file-editor-window.js`（独立窗口铺满与同步资源清理）；`public/js/features/file-editor.js`（恢复历史和冲突 MergeView）；`tests/browser-performance.test.js`、`tests/electron-file-editor-performance.test.js`、`tests/electron-shell.test.js`、`tests/file-editor-ui.test.js`（快速滚轮、拖动、任务栏、最大化和 MergeView 回归）；`package.json`、`package-lock.json`、`tests/installer-package.test.js`（v0.4.21 版本与安装器契约）；`README.md`、`docs/ARCHITECTURE.md`、`docs/ELECTRON_DESKTOP.md`、`docs/CONTINUE.md`、`docs/PACKAGING.md`（产品行为和发布说明）；`progress.md`（本轮记录）。
 - 回滚点为本轮起点 `de9c8e846cc8259f60c546991c9ad761f9dfe61d`；提交前可对上述明确文件执行 `git restore -- <file...>`，提交后使用 `git revert <v0.4.21 修复提交>` 并发布更高版本。不得移动或重建 `v0.4.20`，不得删除、修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`，也不得暂存仅有换行状态的 `public/js/i18n-catalog.js` 和 `public/vendor/codemirror/addon/merge/merge.js`。
+
+## 2026-09-04 - Task: 完成 v0.4.21 正式 Release、附件验真和标准安装验收
+
+### What was done
+
+- 推送产品提交，创建新的不可移动注释标签和中文正式 Release `v0.4.21`；Release 详细说明 MergeView、滚动、任务栏、最大化、安装更新方式和未签名风险，并成为当前 Latest。
+- 等待便携包和安装器工作流成功；安装器工作流前两次出现不同的 GitHub Runner 时序波动，读取日志确认目标滚动结果正常后，在同一不可变标签上重跑，第三次完整通过所有测试、构建、校验和上传步骤。
+- 下载并核验六个正式附件、两个校验文件、`latest.yml` 和便携 ZIP 内容；大附件仅在单次下载命令上使用本机代理和断点续传，未改变系统或 Git 全局网络配置。
+- 使用 GitHub 正式安装器完成隔离安装、安装后 ASAR、真实 Electron 压力回归和卸载；随后把同一正式附件安装回标准当前用户目录，再次完成真实回归并确认登记、快捷方式、用户偏好和进程退出状态。
+
+### Testing
+
+- GitHub Actions：便携包工作流 `33830924733` 为 `success`；安装器工作流 `33830924570` 第三次尝试为 `success`，head SHA 均为 `a76b5d4991c1393354717262bf6b7dfd9ab9f5e0`，完整自动测试、三倍 Chromium、Electron `2/2`、安装器构建、校验和上传均通过。
+- 六个正式附件 SHA-256 全部匹配 GitHub API digest：安装器 `7d3409b22450636f38a23939d40643f0de3d1bb8fc2bb4d0290f381cfffd5b20`；blockmap `19e62ba8f9cdb986ce40ded100ce2a8aa4a9417cb0bfe5ae3198b4c8c36b124c`；安装器校验文件 `01c218d444d207f2488628131e258407e4dc7c8b098931901a77e17801300faa`；便携 ZIP `49fbc448114895b984a8123b3684a67333a3b7b262387986853a35bf6aee84ae`；ZIP 校验文件 `e773fba19de9f8f2a5841162a8620dc6d0ea951361f98315fd1afd07109f21be`；`latest.yml` `5b33eca5d67192d62697a4cf2cf34eb90e270ee7ee06282f31ab270c79a9d49c`。
+- 两个 `.sha256`、`latest.yml` 版本/名称/大小/SHA-512 全部匹配；便携 ZIP 为 v0.4.21，共 `332` 个条目，包含 Git 元数据、内置 Node、启动脚本和文档。正式安装器 Authenticode 为 `NotSigned`。
+- 正式隔离安装和卸载退出码均为 `0`；安装版 ASAR 版本及四项关键修复门禁通过，Electron 回归 `2/2`。9 条滚轮路径全部回弹 `0 px`、最终偏差 `0 px`、长任务 `0`；历史拖动峰值约 `309.0 MiB`，DOM 和绘图层稳定，卸载后隔离目录和登记不存在。
+- 正式标准安装退出码为 `0`，文件/产品版本为 `0.4.21/0.4.21.0`，EXE SHA-256 为 `28c2866c0049d50c19c7920370954dc526802c73cbe1171dd4ef8a8d8ca1af2f`，ASAR SHA-256 为 `b815194b21899cc3ea502a4efbcc8392a97f70d4e4f314f08102ae7ad16da8d6`。登记和两个快捷方式正确，标准安装版 Electron 回归再次 `2/2`，测试后 Forkline 进程为 `0`，四个稳定用户偏好哈希未变。
+
+### Notes
+
+- 修改文件：`docs/PACKAGING.md`（追加正式 Release、工作流重跑、附件、安装和回归证据）；`docs/CONTINUE.md`（记录 v0.4.21 已完成状态与不可变边界）；`progress.md`（追加本轮完整闭环、测试、文件和回滚记录）。
+- 仓库回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后执行 `git revert <本轮 v0.4.21 发布验收文档提交>`。产品修复如需回滚，应对 `a76b5d4991c1393354717262bf6b7dfd9ab9f5e0` 创建 `git revert` 并发布更高版本，不得移动或重建 `v0.4.21`。本机标准安装可通过 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser` 移除，但本轮按要求保留；不得修改、暂存或提交 `.playwright-cli/`、`n+fs.statSync(p.join('public'`、`public/js/i18n-catalog.js`、`public/vendor/codemirror/addon/merge/merge.js`。
