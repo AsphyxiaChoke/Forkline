@@ -11489,3 +11489,31 @@
 - `progress.md`：末尾追加本轮版本准备、验证及回滚记录；此前 44 文件功能改动清单见上一任务。
 - 发布审计目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.23-release-f4ec7db3695e41cda0481888938ccfab`，契约日志为 `release-contract-tests.log`。
 - 回滚点为 `99c1e1908c8626d9c8363104ba41faa5a2d34e9a`：提交后用 `git revert <v0.4.23 产品提交>` 生成后续修复，不移动已有标签，不覆盖已公开资产。发布后修复必须使用更高版本。正式安装与用户数据不属于本轮写入范围。
+
+## 2026-09-07 - Task: 完成 v0.4.23 正式发布、八附件验真与绿色版实测
+
+### What was done
+
+- 产品提交 `09c8a5e9ad5797fa6a60fb2d11deda2efe31b3ba` 已推送 main，新注释标签 v0.4.23 已发布；中文正式 Release 为 Latest，包含安装版、绿色免安装版、Web 包及配套校验/更新附件。
+- 两条正式工作流均成功，下载并核验全部八个正式附件，直接解包两种 Electron 包检查运行源码，再运行正式绿色版和 Web 包验收。
+- 补充中文发布说明和正式附件证据；没有移动旧标签、覆盖旧附件、评论或关闭 Issue，也未安装、卸载或覆盖用户的标准软件目录。
+
+### Testing
+
+- Release ID `383822633`，URL `https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.23`，非草稿、非预发布；注释标签对象 `352061766b626ee1312eba7b193f1b7a5e5e5fcb` 在本地与远端一致，指向产品提交 `09c8a5e9ad5797fa6a60fb2d11deda2efe31b3ba`。
+- 安装器/绿色版 Run `34081964198`、Web Run `34081964202` 均为 success。正式标签普通测试 425/425、Chromium 1/1、Electron 2/2，共 428 项全部通过，失败/跳过均为 0；完整日志为审计目录 `installer-workflow.log`。
+- 八附件大小与 SHA-256 均匹配官方 API digest，三个 `.sha256` 均匹配对应主文件；安装器 latest.yml 的 v0.4.23、名称、96,135,246 字节和 SHA-512 全部一致。八附件完整哈希清单见 docs/PACKAGING.md 的 v0.4.23 表格及审计 `verified-assets.json`。
+- 主下载 SHA-256：安装器 `845a826336753c03bfa4011008d5d32d33d2ecf0a927655953d06037dd4930f2`；绿色 ZIP `0032723fad10980ad9f1d4e32a4401f786d7876ce5450499bbfeeb8a20fd2bb1`；Web ZIP `c0d81df18ddf3ebe73938654215723a9956027acd631413c6aa441d87ddaf947`。安装器约 91.7 MiB、绿色 ZIP 128.3 MiB、Web ZIP 35.4 MiB；主 EXE 224.6 MiB，体积问题仅部分改善，未签名说明保留。
+- 两份正式 Electron ASAR SHA-256 均为 `c6bc1b1edd12a44bb43283e88993917aa3f32203c4c66d2bb9e6ef4903486ca2`，版本正确，各 168 个仓库内运行文件与发布源码一致，仅按 Git 换行规则及 electron-builder 标准 package.json 清理处理比较差异。绿色清单 23 个文件完整，无 data/开发仓库/测试记录，NSIS 载荷不含绿色版识别标记。
+- 下载后的正式绿色 EXE 运行专项 2/2，0 失败/跳过，用时约 96 秒。确认 portable 模式与状态栏 26px；9 条快速滚轮路径回弹、最终偏差和长任务均为 0。行对齐拖到底两栏 9593/9593px，8 轮后渲染进程 223.3 MiB、DOM 3830、绘制元素 1 保持稳定；结束后无 Forkline 测试进程残留。详见 `official-green-electron-test.log`。
+- 正式 Web 包 main、官方 origin、产品 HEAD 和干净工作区正确；内置 Node v24.13.0 打开仓库成功，首页与打开/状态 API 均 HTTP 200，退出码 0，54366 端口释放。详见 `web-runtime-verification.json`。
+- 标签推送两次直连 443 超时后，使用当前命令的 `http.proxy=http://127.0.0.1:7897` 成功；附件下载使用同样的进程级代理。没有重新要求 GitHub 授权或更改全局代理。为直接读取 NSIS 载荷，仅在审计目录解包官方 7-Zip 工具，没有运行其安装器。
+- 源码行为未在发布后修改；收尾只有文档更新。`git diff --check`、旧标签和四项保护对象在文档提交前后复核；线上绿色版跨版本更新仍留待后续版本验证，不将隔离夹具结果表述为已完成该线上场景。
+
+### Notes
+
+- `docs/PACKAGING.md`：追加 Release、工作流、八附件哈希和两类正式运行包验证证据。
+- `docs/RELEASE_NOTES_v0.4.23.md`：将验证说明更新为正式标签与正式绿色附件的实测结果，并同步 GitHub 发布说明。
+- `progress.md`：仅在末尾追加本轮发布闭环与边界记录。
+- 审计目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.23-release-f4ec7db3695e41cda0481888938ccfab`。
+- 回滚方式：文档提交后使用 `git revert <本轮发布验收文档提交>`；产品需要回滚时对 `09c8a5e9ad5797fa6a60fb2d11deda2efe31b3ba` 创建后续 revert 并发布更高版本。v0.4.23 及更早标签和公开附件不可覆盖；保留所有受保护文件和当前标准安装。

@@ -591,3 +591,26 @@ NSIS 与桌面 ZIP 统一只保留 `zh-CN`、`en-US` 两套 Electron 语言资�
 - GitHub 正式安装器的隔离安装退出码为 `0`，安装后 EXE 文件/产品版本为 `0.4.22/0.4.22.0`，EXE/ASAR SHA-256 为 `d3509284b5b408262ce2a26fb02b0aa06d982b329898ba93ec3d8bccce6706b4` / `ab82326d685d0f2a3c36c9beaea67089ecda889dea6f0c485cc3282ef5deee82`，ASAR 内部版本和行对齐门禁正确。HKCU 登记和两个快捷方式指向隔离目录，真实 Electron `2/2` 通过；行对齐拖到底 `9593/9593`，峰值约 `424.2 MiB`，连续 8 轮后约 `254.8 MiB`。卸载退出码 `0`，隔离目录、登记和快捷方式均移除。
 - 同一正式安装器随后安装到标准目录 `C:\Users\Administrator\AppData\Local\Programs\Forkline`，退出码 `0`；版本、EXE/ASAR 哈希与隔离安装一致，HKCU 登记为 `Forkline 0.4.22`，桌面和开始菜单快捷方式均指向标准目录。标准安装版 Electron 再次 `2/2` 通过；行对齐拖到底同步，峰值约 `421.6 MiB`，连续 8 轮后约 `245.6 MiB`。测试退出后无 Forkline 产品进程残留，四个稳定用户偏好文件哈希与发布前一致。
 - 正式附件审计目录为 `C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.22-release-audit-20260904-final`。GitHub 大附件直连长时间只取得约 `2.4 MiB`，本机代理端口未监听，随后仅对两个大附件使用产品既有的 `ghfast.top/官方 GitHub URL` 断点续传；最终信任依据仍是 GitHub API digest、两个校验文件和 `latest.yml`。
+
+## v0.4.23 正式发布与绿色版验收
+
+- 中文正式 Release：[Forkline v0.4.23](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.23)，Release ID `383822633`，为 Latest、非草稿、非预发布。产品提交为 `09c8a5e9ad5797fa6a60fb2d11deda2efe31b3ba`；注释标签对象 `352061766b626ee1312eba7b193f1b7a5e5e5fcb` 指向该提交，旧标签及附件未移动或覆盖。
+- 安装器与绿色版工作流 [34081964198](https://github.com/AsphyxiaChoke/Forkline/actions/runs/34081964198) 和 Web 包工作流 [34081964202](https://github.com/AsphyxiaChoke/Forkline/actions/runs/34081964202) 均成功。正式标签上的普通测试 `425/425`、Chromium `1/1`、Electron `2/2` 全部通过，测试失败/跳过均为 0。
+- 八个正式附件均已下载，大小和 SHA-256 全部匹配 GitHub API digest；三个主要文件各自的 `.sha256` 正确，`latest.yml` 的版本、名称、大小和 SHA-512 与安装器一致。
+
+| 正式附件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| Forkline-Setup-0.4.23-windows-x64.exe | 96,135,246 | `845a826336753c03bfa4011008d5d32d33d2ecf0a927655953d06037dd4930f2` |
+| Forkline-Setup-0.4.23-windows-x64.exe.blockmap | 103,160 | `2548411021a90996dd2cb8afce142fb3a6cc9aadaf3e9bb49f19cd16176f85e0` |
+| Forkline-Setup-0.4.23-windows-x64.exe.sha256 | 103 | `a3f9c4d2a2be543f183d02b78777a1ca7b13d52175a5afe8c7d84ecdfbc9a365` |
+| Forkline-v0.4.23-windows-x64-portable.zip | 134,577,713 | `0032723fad10980ad9f1d4e32a4401f786d7876ce5450499bbfeeb8a20fd2bb1` |
+| Forkline-v0.4.23-windows-x64-portable.zip.sha256 | 108 | `993bf372493831b0ec95640cdf39e2db959d6f3d6b9bc04408c70c1bae065607` |
+| Forkline-v0.4.23-windows-x64-web.zip | 37,067,899 | `c0d81df18ddf3ebe73938654215723a9956027acd631413c6aa441d87ddaf947` |
+| Forkline-v0.4.23-windows-x64-web.zip.sha256 | 104 | `40face0898caf4c42898241b74ef82c1751e786cf2bf9a84a24785a0a6e9970e` |
+| latest.yml | 371 | `a3114e97668dc643459566b51969c84b464792711f3518acaa96eb14a9c053c6` |
+
+- NSIS 安装器约 `91.7 MiB`，比 v0.4.22 约少 `8.1 MiB`，Authenticode 为 `NotSigned`。绿色 ZIP 约 `128.3 MiB`；主 EXE 仍为 `235,533,824` 字节 / `224.6 MiB`，#14 仅部分改善。绿色包文件/产品版本为 `0.4.23/0.4.23.0`，23 个产品文件及清单完整，不含用户 data、开发 Git 或测试记录。
+- 直接解包 NSIS 和绿色 ZIP，不执行安装：两份 ASAR SHA-256 同为 `c6bc1b1edd12a44bb43283e88993917aa3f32203c4c66d2bb9e6ef4903486ca2`。各自 168 个仓库内运行文件与发布源码吻合；比较时仅处理 Git 的 CRLF/LF 差异和 electron-builder 已有的 package.json 开发元数据清理，没有修改包或源码。
+- 下载得到的正式绿色 EXE 用隔离数据直接运行，实际专项为 `2/2`，0 失败/跳过；运行模式 portable 与 26px 状态栏正确，9 条滚轮路径均无回弹、最终同步偏差及长任务。行对齐快速拖到底为 `9593/9593px`；8 轮连续拖动后渲染进程约 `223.3 MiB`，DOM 固定 `3830`、绘制元素 `1`，保留连线及语法高亮。
+- 正式 Web 包解压后为 main、官方 origin、产品提交 `09c8a5e9ad5797fa6a60fb2d11deda2efe31b3ba`，工作区干净。内置 Node v24.13.0 正常启动，打开仓库后首页、打开仓库和状态接口均 HTTP 200；正常退出码 0，54366 端口释放。
+- 审计目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.23-release-f4ec7db3695e41cda0481888938ccfab`。只在临时目录解包和运行正式绿色版，没有安装/卸载或改写标准安装和既有用户数据；测试结束后没有 Forkline 测试进程残留。标签推送和大附件下载仅在本次命令使用已有本机代理，未修改系统或 Git 全局代理。
