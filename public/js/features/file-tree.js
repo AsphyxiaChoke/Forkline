@@ -380,7 +380,7 @@ async function handleFileTreeClick(root, binding, event) {
     else selectWorkingFile(filePath);
     return;
   }
-  if (options.mode === "commit") selectCommitFile(filePath);
+  if (options.mode === "commit") selectCommitFile(filePath, options.commitSha);
   if (options.mode === "sync") selectSyncPreviewFile(filePath);
   if (options.mode === "compare") selectCompareFile(filePath);
 }
@@ -406,6 +406,13 @@ function handleFileTreeDoubleClick(root, binding, event) {
 function handleFileTreeContextMenu(root, binding, event) {
   const options = binding.options || {};
   if (options.mode !== "worktree" && !options.selectable) return;
+  const folder = fileTreeEventTarget(root, event, ".tree-head")?.querySelector("[data-select-folder]");
+  if (folder) {
+    event.preventDefault();
+    event.stopPropagation();
+    showFileContextMenuLazy(event, folder.dataset.folderPath || "", folder.dataset.scope || "", true).catch((error) => toast(error.message));
+    return;
+  }
   const row = fileTreeEventTarget(root, event, "[data-select-file]");
   if (!row) return;
   event.preventDefault();
@@ -619,9 +626,10 @@ function worktreeFolderSelectionStates(files, scope) {
   return states;
 }
 
-function selectCommitFile(filePath) {
-  if (!filePath || filePath === state.selectedCommitFile) return;
+function selectCommitFile(filePath, sha = state.selectedSha) {
+  if (!filePath || (filePath === state.selectedCommitFile && sha === state.selectedCommitFileSha)) return;
   state.selectedCommitFile = filePath;
+  state.selectedCommitFileSha = sha;
   markCommitFile();
 }
 
@@ -670,7 +678,8 @@ function markCompareFile() {
 
 function markCommitFile() {
   els.detailBody.querySelectorAll("[data-select-file]").forEach((row) => {
-    row.classList.toggle("selected", row.dataset.file === state.selectedCommitFile);
+    const groupSha = row.closest("[data-commit-group]")?.dataset.commitGroup;
+    row.classList.toggle("selected", row.dataset.file === state.selectedCommitFile && (!groupSha || groupSha === state.selectedCommitFileSha));
   });
 }
 

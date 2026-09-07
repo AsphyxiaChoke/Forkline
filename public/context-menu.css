@@ -45,6 +45,10 @@
   white-space: nowrap;
 }
 
+.context-menu button[data-file-action][hidden] {
+  display: none;
+}
+
 .menu-label {
   min-width: 0;
   overflow: hidden;

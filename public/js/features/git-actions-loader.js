@@ -137,8 +137,8 @@ async function runSingleFileAction(action, file) {
   return runLazyGitAction("runSingleFileAction", [action, file]);
 }
 
-async function runFileBatchAction(action, scope, button) {
-  return runLazyGitAction("runFileBatchAction", [action, scope, button]);
+async function runFileBatchAction(action, scope, button, paths) {
+  return runLazyGitAction("runFileBatchAction", [action, scope, button, paths]);
 }
 
 async function rewordSelectedCommit(form) {

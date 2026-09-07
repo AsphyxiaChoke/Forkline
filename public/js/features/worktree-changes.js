@@ -3,6 +3,7 @@ const WORKTREE_FILE_INITIAL_LIMIT = 800;
 const WORKTREE_FILE_BATCH_SIZE = 100;
 
 function renderStage(options = {}) {
+  if (typeof renderDesktopStatus === "function") renderDesktopStatus();
   const refreshDiff = options.refreshDiff !== false;
   els.changeList.innerHTML = "";
   els.stagedChangeList.innerHTML = "";

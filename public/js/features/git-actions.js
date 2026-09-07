@@ -914,10 +914,13 @@ function conflictResolveConfirmMessage(action, file) {
   return t("确认使用{side}解决冲突并暂存？\n\n文件：{file}\n这会覆盖此文件里的冲突标记。", { side, file });
 }
 
-async function runFileBatchAction(action, scope, button) {
+async function runFileBatchAction(action, scope, button, paths) {
   if (!state.data) return;
   const groups = changeGroups(state.data.workingFiles || []);
-  const files = selectedFilesInScope(scope, groups[scope] || []).map((file) => file.file);
+  const candidates = groups[scope] || [];
+  const files = Array.isArray(paths)
+    ? [...new Set(paths)].filter((path) => candidates.some((file) => file.file === path))
+    : selectedFilesInScope(scope, candidates).map((file) => file.file);
   if (!files.length) return;
   const names = { stageFile: "暂存", unstageFile: "取消暂存", discardWorktreeFile: "丢弃", discardStagedFile: "丢弃" };
   const name = names[action] || "操作";

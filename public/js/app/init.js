@@ -109,7 +109,7 @@ async function checkForAppUpdate() {
   try {
     const installerUpdate = await checkForInstallerUpdate();
     const update = installerUpdate || await api("/api/app-update");
-    const lastResult = state.appUpdate?.lastResult || null;
+    const lastResult = update?.lastResult || state.appUpdate?.lastResult || null;
     state.appUpdate = {
       status: update?.available ? "available" : update?.latestVersion ? "current" : "unavailable",
       currentVersion: String(update?.currentVersion || ""),
@@ -151,7 +151,8 @@ async function checkForInstallerUpdate() {
     latestVersion: update.latestVersion,
     url: update.url,
     installSupported: Boolean(update.installSupported),
-    installMode: "nsis",
+    installMode: update.installMode === "portable" ? "portable" : "nsis",
+    lastResult: update.lastResult || null,
     installTotal: update.installTotal,
     downloadPercent: update.downloadPercent,
   };
@@ -167,7 +168,8 @@ function applyInstallerUpdateState(update) {
     latestVersion: String(update.latestVersion || previous.latestVersion || ""),
     url: String(update.url || previous.url || ""),
     installSupported: Boolean(update.installSupported),
-    installMode: "nsis",
+    installMode: update.installMode === "portable" ? "portable" : "nsis",
+    lastResult: update.lastResult || previous.lastResult || null,
     installing: Boolean(update.installing),
     installError: String(update.installError || ""),
     installState: String(update.installState || ""),
@@ -387,6 +389,7 @@ function renderAll() {
 }
 
 function renderRepo() {
+  renderDesktopStatus();
   const repo = state.data.repo;
   els.repoName.textContent = repo.name;
   const repoPath = repo.isSample ? t(repo.path) : repo.path;

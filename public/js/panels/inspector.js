@@ -37,6 +37,10 @@ function renderInspector() {
     renderInspectorPanelLazy("workspaces");
     return;
   }
+  if (typeof selectedCommitRecords === "function" && selectedCommitRecords().length > 1) {
+    renderMultipleCommits();
+    return;
+  }
   const commit = commitRecordForSha(state.selectedSha);
   if (!commit) {
     els.detailTitle.textContent = t("没有提交");
@@ -157,6 +161,46 @@ function renderDetailsTab(commit, detail) {
       ${renderHistoryRewriteQueue()}
     </details>
   `;
+}
+
+function renderMultipleCommits() {
+  const commits = selectedCommitRecords();
+  const limit = state.commitSelectionLimit || 80;
+  els.detailTitle.textContent = t("已选择 {count} 个提交", { count: commits.length });
+  els.detailSub.textContent = t("Ctrl 点选 / Shift 连选；展开提交查看各自的更改");
+  els.detailNode.style.borderColor = "var(--blue)";
+  els.detailBody.innerHTML = commits.slice(0, limit).map((commit) => `
+    <details class="multi-commit-group" data-commit-group="${escapeAttr(commit.sha)}" ${state.expandedCommitShas?.has(commit.sha) ? "open" : ""}>
+      <summary><strong>${escapeHtml(commit.message)}</strong><span>${escapeHtml(commit.short)} · ${escapeHtml(commit.author)} · ${escapeHtml(commit.time)}</span></summary>
+      <div class="multi-commit-content"></div>
+    </details>`).join("") + (commits.length > limit ? `<button class="mini-btn" data-more-selected-commits type="button">${t("显示更多所选提交")}</button>` : "");
+  els.detailBody.querySelector("[data-more-selected-commits]")?.addEventListener("click", () => {
+    state.commitSelectionLimit = limit + 80;
+    renderMultipleCommits();
+  });
+  els.detailBody.querySelectorAll("[data-commit-group]").forEach((group) => {
+    const sha = group.dataset.commitGroup;
+    const renderFiles = () => {
+      const detail = state.commitDetails.get(sha);
+      const content = group.querySelector(".multi-commit-content");
+      content.innerHTML = detail
+        ? (detail.files?.length ? fileTreeHtml(detail.files) : `<div class="empty-panel compact">${t("没有文件变化")}</div>`)
+        : `<div class="empty-panel compact">${state.loadingCommitDetails.has(sha) ? t("正在加载提交文件") : t("展开查看此提交的文件")}</div>`;
+      if (detail) bindFileTree(content, { mode: "commit", commitSha: sha });
+    };
+    renderFiles();
+    group.addEventListener("toggle", async () => {
+      if (!group.open) { state.expandedCommitShas.delete(sha); return; }
+      state.expandedCommitShas.add(sha);
+      if (state.commitDetails.has(sha)) return;
+      const repoPath = repoPathSnapshot();
+      const loading = loadCommit(sha);
+      renderFiles();
+      await loading;
+      if (!isCurrentRepoPath(repoPath) || !group.isConnected) return;
+      renderFiles();
+    });
+  });
 }
 
 function commitMessageParts(commit, detail) {

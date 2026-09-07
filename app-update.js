@@ -194,5 +194,6 @@ module.exports = {
   compareVersions,
   createAppUpdateChecker,
   normalizeVersion,
+  requestJsonUrl,
   requestLatestReleaseRedirect,
 };

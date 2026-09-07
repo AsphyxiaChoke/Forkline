@@ -12,7 +12,7 @@ const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "releas
 const installerInclude = fs.readFileSync(path.join(root, "electron", "installer.nsh"), "utf8");
 
 test("Windows installer is per-user, assisted, x64, and creates standard shortcuts", () => {
-  assert.equal(pkg.version, "0.4.22");
+  assert.equal(pkg.version, "0.4.23");
   assert.equal(pkg.devDependencies.electron, "^43.4.1");
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);
@@ -33,6 +33,9 @@ test("Windows installer is per-user, assisted, x64, and creates standard shortcu
   assert.equal(pkg.build.nsis.createDesktopShortcut, "always");
   assert.equal(pkg.build.nsis.createStartMenuShortcut, true);
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
+  assert.equal(pkg.build.compression, "maximum");
+  assert.deepEqual(pkg.build.electronLanguages, ["zh-CN", "en-US"]);
+  assert.equal(pkg.scripts["build:desktop-portable"], "node scripts/build-electron-portable.js");
 });
 
 test("installer release workflow publishes updater metadata and checksums", () => {
@@ -51,4 +54,7 @@ test("installer release workflow publishes updater metadata and checksums", () =
   assert.match(workflow, /Forkline-Setup-\*-windows-x64\.exe\.sha256/);
   assert.match(workflow, /dist\/installer\/latest\.yml/);
   assert.match(workflow, /gh release upload/);
+  assert.match(workflow, /npm\.cmd run build:desktop-portable/);
+  assert.match(workflow, /dist\/desktop-portable\/Forkline-v\*-windows-x64-portable\.zip/);
+  assert.doesNotMatch(workflow, /--clobber/);
 });

@@ -364,13 +364,21 @@ function refColor(ref) {
   return laneColor(1);
 }
 
+const commitDetailRequests = new Map();
+
 async function loadCommit(sha, options = {}) {
   const includeDiff = Boolean(options.includeDiff);
   if (!sha) return null;
   const cached = state.commitDetails.get(sha);
   if (cached && (!includeDiff || cached.diffLoaded)) return cached;
-  if (state.loadingCommitDetails.has(sha)) return null;
   const repoPath = repoPathSnapshot();
+  const pending = commitDetailRequests.get(sha);
+  if (pending?.repoPath === repoPath) {
+    await pending.promise;
+    if (!isCurrentRepoPath(repoPath)) return null;
+    if (includeDiff && !pending.includeDiff) return loadCommit(sha, options);
+    return state.commitDetails.get(sha) || null;
+  }
   const commit = state.data.commits.find((item) => item.sha === sha);
   if ((commit?.files?.length || commit?.diff?.length) && (!includeDiff || commit?.diff?.length)) {
     const detail = { files: commit.files || [], diff: includeDiff ? commit.diff || [] : [], diffLoaded: includeDiff };
@@ -378,18 +386,26 @@ async function loadCommit(sha, options = {}) {
     return detail;
   }
   state.loadingCommitDetails.add(sha);
-  try {
-    const detail = await api(`/api/commit?sha=${encodeURIComponent(sha)}${includeDiff ? "&diff=1" : ""}`);
-    if (!isCurrentRepoPath(repoPath)) return null;
-    const next = { ...(cached || {}), ...detail, diff: includeDiff ? detail.diff || [] : cached?.diff || detail.diff || [] };
-    state.commitDetails.set(sha, next);
-    return next;
-  } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return null;
-    toast(error.message);
-    return null;
-  } finally {
-    state.loadingCommitDetails.delete(sha);
-  }
+  const request = { repoPath, includeDiff, promise: null };
+  request.promise = (async () => {
+    try {
+      const detail = await api(`/api/commit?sha=${encodeURIComponent(sha)}${includeDiff ? "&diff=1" : ""}`);
+      if (!isCurrentRepoPath(repoPath)) return null;
+      const next = { ...(cached || {}), ...detail, diff: includeDiff ? detail.diff || [] : cached?.diff || detail.diff || [] };
+      state.commitDetails.set(sha, next);
+      return next;
+    } catch (error) {
+      if (!isCurrentRepoPath(repoPath)) return null;
+      toast(error.message);
+      return null;
+    } finally {
+      if (commitDetailRequests.get(sha) === request) {
+        state.loadingCommitDetails.delete(sha);
+        commitDetailRequests.delete(sha);
+      }
+    }
+  })();
+  commitDetailRequests.set(sha, request);
+  return request.promise;
 }
 

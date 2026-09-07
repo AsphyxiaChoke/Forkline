@@ -9,6 +9,10 @@ function createInstallerUpdateController(options = {}) {
   const updater = options.updater;
   const supported = Boolean(options.supported);
   const currentVersion = normalizeVersion(options.currentVersion);
+  const portable = options.installMode === "portable";
+  const checkingMessage = portable ? "正在检查 Electron 便携版更新" : "正在检查安装版更新";
+  const downloadingMessage = portable ? "正在下载并校验便携 ZIP 更新" : "正在下载安装版更新";
+  const stoppingMessage = portable ? "便携 ZIP 已就绪，正在停止 Forkline 后台服务" : "安装包下载完成，正在停止 Forkline 后台服务";
   const prepareInstall = options.prepareInstall || (() => Promise.resolve());
   const onState = options.onState || (() => {});
   if (!updater || typeof updater.on !== "function") {
@@ -23,7 +27,8 @@ function createInstallerUpdateController(options = {}) {
     latestVersion: "",
     url: "",
     installSupported: supported,
-    installMode: supported ? "nsis" : "",
+    installMode: supported ? (portable ? "portable" : "nsis") : "",
+    lastResult: options.lastResult || null,
     installing: false,
     installState: "",
     installMessage: "",
@@ -70,7 +75,7 @@ function createInstallerUpdateController(options = {}) {
     updateState({
       installing: true,
       installState: "downloading",
-      installMessage: "正在下载安装版更新",
+      installMessage: downloadingMessage,
       installStep: 2,
       downloadPercent: percent,
     });
@@ -79,7 +84,7 @@ function createInstallerUpdateController(options = {}) {
     updateState({
       installing: true,
       installState: "stopping",
-      installMessage: "安装包下载完成，正在停止 Forkline 后台服务",
+      installMessage: stoppingMessage,
       installStep: 3,
       downloadPercent: 100,
     });
@@ -101,7 +106,7 @@ function createInstallerUpdateController(options = {}) {
       updateState({
         status: "loading",
         installState: "checking",
-        installMessage: "正在检查安装版更新",
+        installMessage: checkingMessage,
         installStep: 1,
         installError: "",
       });
@@ -141,7 +146,7 @@ function createInstallerUpdateController(options = {}) {
       updateState({
         installing: true,
         installState: "downloading",
-        installMessage: "正在下载安装版更新",
+        installMessage: downloadingMessage,
         installStep: 2,
         downloadPercent: 0,
         installError: "",
@@ -150,7 +155,7 @@ function createInstallerUpdateController(options = {}) {
       updateState({
         installing: true,
         installState: "stopping",
-        installMessage: "安装包下载完成，正在停止 Forkline 后台服务",
+        installMessage: stoppingMessage,
         installStep: 3,
         downloadPercent: 100,
       });
@@ -158,12 +163,13 @@ function createInstallerUpdateController(options = {}) {
       updateState({
         installing: true,
         installState: "installing",
-        installMessage: "正在启动安装程序并重启 Forkline",
+        installMessage: portable ? "正在替换便携版文件并重启 Forkline" : "正在启动安装程序并重启 Forkline",
         installStep: 4,
       });
       updater.quitAndInstall(false, true);
       return snapshot();
     })().catch((error) => {
+      updater.cancelInstall?.();
       updateState({
         installing: false,
         installState: "error",

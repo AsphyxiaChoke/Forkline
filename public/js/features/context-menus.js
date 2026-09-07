@@ -191,12 +191,35 @@ function showBranchContextMenu(event, branch, options = {}) {
   positionContextMenu(menu, event, 330);
 }
 
-function showFileContextMenu(event, filePath, scope = "") {
+function showFileContextMenu(event, filePath, scope = "", isDirectory = false) {
   hideCommitContextMenu();
   hideBranchContextMenu();
   hideTagContextMenu();
   hideRemoteContextMenu();
   hideReflogContextMenu();
+  const menu = els.fileContextMenu;
+  menu.querySelectorAll("[data-file-action]").forEach((button) => { button.hidden = false; });
+  if (isDirectory) {
+    const files = changeGroups(filterWorkingFiles(state.data?.workingFiles || []))[scope] || [];
+    const descendants = files.filter((file) => treeFileIsInFolder(file.file, filePath));
+    if (!descendants.length) return;
+    if (!descendants.every((file) => state.selectedChanges.has(changeKey(scope, file.file)))) {
+      state.selectedChanges.clear();
+      descendants.forEach((file) => state.selectedChanges.add(changeKey(scope, file.file)));
+    }
+    state.lastChangeSelection = { scope, key: changeKey(scope, filePath), folder: true };
+    state.contextFile = { file: filePath, scope, isDirectory: true, files: selectedFilesInScope(scope, files).map((file) => file.file) };
+    refreshChangeSelectionUi();
+    const actions = scope === "staged" ? ["unstageFile", "discardStagedFile", "stash"] : ["stageFile", "discardWorktreeFile", "stash"];
+    menu.querySelectorAll("[data-file-action]").forEach((button) => {
+      button.hidden = !actions.includes(button.dataset.fileAction);
+      button.disabled = Boolean(state.data?.progressive);
+    });
+    menu.classList.add("show");
+    menu.setAttribute("aria-hidden", "false");
+    positionContextMenu(menu, event, 130);
+    return;
+  }
   const fileInfo = contextWorkingFileInfo(filePath, scope);
   if (!fileInfo) return;
   const resolvedScope = scope || (fileInfo.unstaged ? "unstaged" : fileInfo.staged ? "staged" : "");
@@ -214,8 +237,8 @@ function showFileContextMenu(event, filePath, scope = "") {
     state.selectedFile = filePath;
     markSelectedFile();
   }
-  const menu = els.fileContextMenu;
   const { hasUnstaged, hasStaged } = fileChangeFlags(fileInfo);
+  menu.querySelectorAll("[data-file-action]").forEach((button) => { button.disabled = false; });
   const hasConflict = Boolean(fileInfo?.conflict);
   const canIgnore = isUntrackedFile(fileInfo);
   const canIgnoreDirectory = canIgnore && filePath.replaceAll("\\", "/").includes("/");
@@ -300,8 +323,16 @@ function showReflogContextMenu(event, entry) {
 
 async function runFileContextAction(action) {
   const context = state.contextFile;
+  const selectedFiles = context?.isDirectory ? context.files : selectedContextFiles();
   hideFileContextMenu();
   if (!context?.file) return;
+  if (context.isDirectory) {
+    if (action === "stash") await createStashFromSelection(selectedFiles);
+    else if (["stageFile", "unstageFile", "discardWorktreeFile", "discardStagedFile"].includes(action)) {
+      await runFileBatchAction(action, context.scope, null, selectedFiles);
+    }
+    return;
+  }
   if (action === "edit") {
     await openFileEditorLazy(context.file, context.previousFile || "");
     return;
@@ -322,7 +353,7 @@ async function runFileContextAction(action) {
     return;
   }
   if (action === "stash") {
-    await createStashFromSelection(selectedContextFiles());
+    await createStashFromSelection(selectedFiles);
     return;
   }
   if (action === "ignoreFile" || action === "ignoreDirectory") {

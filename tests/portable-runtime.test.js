@@ -74,10 +74,10 @@ test("portable release build preserves Git updates and verifies bundled Node", (
   assert.match(buildScript, /Forkline\.cmd/);
   assert.match(buildScript, /tar\.exe -a -c -f/);
   assert.match(buildScript, /\$packageName\/\.git\/HEAD/);
-  assert.match(buildScript, /\$packageName = "Forkline-\$ReleaseTag-windows-x64-portable"/);
+  assert.match(buildScript, /\$packageName = "Forkline-\$ReleaseTag-windows-x64-web"/);
   assert.match(workflow, /release:\s*\n\s*types: \[published\]/);
-  assert.match(workflow, /dist\/Forkline-v\*-windows-x64-portable\.zip/);
-  assert.match(workflow, /dist\/Forkline-v\*-windows-x64-portable\.zip\.sha256/);
+  assert.match(workflow, /dist\/Forkline-v\*-windows-x64-web\.zip/);
+  assert.match(workflow, /dist\/Forkline-v\*-windows-x64-web\.zip\.sha256/);
   assert.doesNotMatch(workflow, /gh release upload \$tag dist\/\*\.zip/);
   assert.match(readme, /Forkline-v\*-windows-x64-portable\.zip/);
   assert.match(readme, /GitHub 自动生成的[\s\S]*Source code \(zip\)[\s\S]*只是源码/);

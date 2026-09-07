@@ -24,6 +24,7 @@ function reportElectronUpdateReady(env = process.env, options = {}) {
   const payload = {
     ready: true,
     targetVersion,
+    ...(options.version ? { actualVersion: options.version } : {}),
     pid: Number(options.pid || process.pid),
   };
   try {

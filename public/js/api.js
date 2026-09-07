@@ -363,6 +363,7 @@ function refreshOperationProgress() {
 }
 
 function renderOperationProgressIfVisible() {
+  if (typeof renderDesktopStatus === "function") renderDesktopStatus();
   if (state.selectedTab !== "logs" || typeof renderInspector !== "function" || !els?.detailBody) return;
   const panel = els.detailBody;
   const previousTop = panel.scrollTop;

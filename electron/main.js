@@ -4,6 +4,7 @@ const { fork } = require("node:child_process");
 const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
+const fs = require("node:fs");
 const {
   DEFAULT_ZOOM_FACTOR,
   normalizeZoomFactor,
@@ -25,6 +26,7 @@ const { createRepositoryOpenCoordinator } = require("./repository-open-coordinat
 const { reportElectronUpdateReady } = require("./self-update-health");
 const { createInstallerUpdateController } = require("./installer-update-controller");
 const { createForklineAutoUpdater } = require("./installer-update-accelerator");
+const { ForklinePortableUpdater, desktopDistribution } = require("./portable-updater");
 const { shutdownServerProcess } = require("./server-process-shutdown");
 const { findStartupRepository } = require("./startup-repository");
 const {
@@ -73,7 +75,16 @@ let fileEditorWindow = null;
 let fileEditorWindowReady = false;
 let fileEditorWindowCloseAllowed = false;
 let pendingFileEditorWindowRequest = null;
-const autoUpdater = process.platform === "win32" ? createForklineAutoUpdater() : electronUpdater.autoUpdater;
+const distribution = desktopDistribution({ packaged: app.isPackaged, platform: process.platform, executable: process.execPath });
+const portableDirectory = path.dirname(process.execPath);
+if (distribution === "portable") {
+  const userData = path.join(portableDirectory, "data");
+  fs.mkdirSync(userData, { recursive: true });
+  app.setPath("userData", userData);
+}
+const autoUpdater = distribution === "portable"
+  ? new ForklinePortableUpdater({ installDirectory: portableDirectory, currentVersion: app.getVersion(), quit: () => app.quit() })
+  : process.platform === "win32" ? createForklineAutoUpdater() : electronUpdater.autoUpdater;
 const rendererDraftStore = createRendererDraftStore();
 
 const repositoryOpenCoordinator = createRepositoryOpenCoordinator({
@@ -263,9 +274,15 @@ async function prepareInstallerInstall() {
 }
 
 function registerInstallerUpdates() {
+  let lastResult = null;
+  if (distribution === "portable") {
+    try { lastResult = JSON.parse(fs.readFileSync(path.join(portableDirectory, "data", "portable-update-result.json"), "utf8")); } catch {}
+  }
   installerUpdateController = createInstallerUpdateController({
     updater: autoUpdater,
-    supported: app.isPackaged && process.platform === "win32",
+    supported: app.isPackaged && process.platform === "win32" && ["nsis", "portable"].includes(distribution),
+    installMode: distribution,
+    lastResult,
     currentVersion: app.getVersion(),
     prepareInstall: prepareInstallerInstall,
     onState: sendInstallerUpdateState,
@@ -786,7 +803,7 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => {
     if (desktopWindowState.isMaximized) mainWindow.maximize();
     mainWindow.show();
-    reportElectronUpdateReady();
+    reportElectronUpdateReady(process.env, { version: app.getVersion() });
     void installerUpdateController?.checkForUpdates();
   });
   mainWindow.on("move", scheduleDesktopWindowStateSave);

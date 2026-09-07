@@ -71,7 +71,7 @@ els.commitGraph.addEventListener("click", (event) => {
   }
   const row = event.target.closest(".commit-row[data-sha]");
   if (!row) return;
-  selectCommit(row.dataset.sha || "").catch((error) => toast(error.message));
+  selectCommit(row.dataset.sha || "", event).catch((error) => toast(error.message));
 });
 els.commitGraph.addEventListener("contextmenu", async (event) => {
   const row = event.target.closest(".commit-row[data-sha]");

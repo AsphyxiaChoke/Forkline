@@ -2787,6 +2787,79 @@ test("real Chromium keeps historical file comparison responsive", {
   t.diagnostic(
     `soak switches: ${switchMetrics.elapsed.toFixed(1)} ms; API median/min/max open ${switchMetrics.open.medianMs.toFixed(1)}/${switchMetrics.open.minMs.toFixed(1)}/${switchMetrics.open.maxMs.toFixed(1)} ms, details ${switchMetrics.openDetails.medianMs.toFixed(1)}/${switchMetrics.openDetails.minMs.toFixed(1)}/${switchMetrics.openDetails.maxMs.toFixed(1)} ms, commit ${switchMetrics.commit.medianMs.toFixed(1)}/${switchMetrics.commit.minMs.toFixed(1)}/${switchMetrics.commit.maxMs.toFixed(1)} ms; calls ${switchMetrics.open.count}/${switchMetrics.openDetails.count}/${switchMetrics.stateRef.count}/${switchMetrics.lightweightRef.count}/${switchMetrics.commit.count}; editor open-close 30x ${editorSoak.elapsed.toFixed(1)} ms; resize listeners ${soakResizeListenersBefore} -> ${soakResizeListenersAfter}; DOM documents/nodes/listeners ${soakMemoryBefore.documents}/${soakMemoryBefore.nodes}/${soakMemoryBefore.jsEventListeners} -> ${soakMemoryAfter.documents}/${soakMemoryAfter.nodes}/${soakMemoryAfter.jsEventListeners}; heap ${(soakMemoryBefore.heapUsed / 1024 / 1024).toFixed(1)} MiB -> ${(soakMemoryAfter.heapUsed / 1024 / 1024).toFixed(1)} MiB`
   );
+  const issueInteractions = await evaluate(cdp, `(async () => {
+    const commits = state.data.commits.slice(0, 3);
+    await selectCommit(commits[0].sha);
+    const row = document.querySelector('.commit-row[data-sha="' + commits[1].sha + '"]');
+    row.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline && (state.loadingCommitDetails.size || !document.querySelector('[data-commit-group] [data-select-file]'))) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const result = {
+      selected: document.querySelectorAll('.commit-row.selected').length,
+      groups: document.querySelectorAll('[data-commit-group]').length,
+      filesLoaded: Boolean(document.querySelector('[data-commit-group] [data-select-file]')),
+    };
+    const handle = document.querySelector('[data-history-column="message"] [data-history-resizer]');
+    const message = document.querySelector('[data-history-column="message"]');
+    const initialMessage = message.getBoundingClientRect().width;
+    for (let i = 0; i < 100; i++) {
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+    result.messageGrowth = message.getBoundingClientRect().width - initialMessage;
+    result.messageWidth = message.getBoundingClientRect().width;
+    result.messagePreference = document.documentElement.style.getPropertyValue('--history-message-w');
+    result.historyColumns = getComputedStyle(document.querySelector('.history-head')).gridTemplateColumns;
+    result.horizontalOverflow = document.querySelector('.history').scrollWidth > document.querySelector('.history').clientWidth;
+    const worktree = document.querySelector('.worktree-changes');
+    const beforeStage = worktree.getBoundingClientRect().width;
+    document.querySelector('[data-stage-resizer="0"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    result.stageGrowth = worktree.getBoundingClientRect().width - beforeStage;
+    result.stageWidth = beforeStage;
+    result.stageColumns = getComputedStyle(document.querySelector('.stage')).gridTemplateColumns;
+    result.stageSaved = Boolean(localStorage.getItem('forkline-stage-columns'));
+    result.webStatusHidden = getComputedStyle(document.querySelector('#desktopStatus')).display === 'none';
+    resetLayoutPreferences();
+    await selectCommit(commits[0].sha);
+    result.singleSelected = document.querySelectorAll('.commit-row.selected').length;
+    result.singleGroups = document.querySelectorAll('[data-commit-group]').length;
+    const workingFiles = state.data.workingFiles;
+    try {
+      state.data.workingFiles = [
+        { file: 'issue-folder/a.c', state: 'M', worktreeStatus: 'M', indexStatus: ' ', unstaged: true },
+        { file: 'issue-folder/sub/b.c', state: 'M', worktreeStatus: 'M', indexStatus: ' ', unstaged: true },
+      ];
+      renderStage({ refreshDiff: false });
+      const folder = document.querySelector('#changeList [data-select-folder]');
+      folder.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
+      const menuDeadline = Date.now() + 5000;
+      while (!state.contextFile?.isDirectory && Date.now() < menuDeadline) await new Promise((resolve) => setTimeout(resolve, 25));
+      result.folderFiles = state.contextFile?.files?.length || 0;
+      result.folderActions = [...document.querySelectorAll('#fileContextMenu [data-file-action]')].filter((button) => getComputedStyle(button).display !== 'none').map((button) => button.dataset.fileAction);
+      hideFileContextMenu();
+    } finally {
+      state.data.workingFiles = workingFiles;
+      renderStage({ refreshDiff: false });
+    }
+    return result;
+  })()`);
+  assert.equal(issueInteractions.selected, 2, JSON.stringify(issueInteractions));
+  assert.equal(issueInteractions.groups, 2, JSON.stringify(issueInteractions));
+  assert.equal(issueInteractions.filesLoaded, true, JSON.stringify(issueInteractions));
+  assert.ok(issueInteractions.messageWidth > 1000, JSON.stringify(issueInteractions));
+  assert.ok(Math.abs(issueInteractions.messageWidth - parseFloat(issueInteractions.messagePreference)) <= 1, JSON.stringify(issueInteractions));
+  assert.equal(issueInteractions.horizontalOverflow, true, JSON.stringify(issueInteractions));
+  assert.ok(issueInteractions.stageGrowth > 1, JSON.stringify(issueInteractions));
+  assert.equal(issueInteractions.stageSaved, true);
+  assert.equal(issueInteractions.webStatusHidden, true);
+  assert.equal(issueInteractions.singleSelected, 1);
+  assert.equal(issueInteractions.singleGroups, 0);
+  assert.equal(issueInteractions.folderFiles, 2);
+  assert.deepEqual(issueInteractions.folderActions, ['stash', 'stageFile', 'discardWorktreeFile']);
+  t.diagnostic('issue interactions: ' + JSON.stringify(issueInteractions));
 });
 
 class CdpClient {

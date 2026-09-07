@@ -18,7 +18,7 @@ test("commit rows use container event delegation instead of per-row listeners", 
   assert.doesNotMatch(historySource, /row\.addEventListener\("(?:click|contextmenu)"/);
   assert.match(eventsSource, /els\.commitGraph\.addEventListener\("click"[\s\S]*?\.commit-row\[data-sha\]/);
   assert.match(eventsSource, /els\.commitGraph\.addEventListener\("contextmenu"[\s\S]*?showCommitContextMenuLazy/);
-  assert.match(historySource, /async function selectCommit\(sha\)/);
+  assert.match(historySource, /async function selectCommit\(sha, event = \{\}\)/);
   assert.doesNotMatch(contextMenuSource, /async function selectCommit\(sha\)/);
 });
 
@@ -149,11 +149,14 @@ test("selecting a visible commit updates the selected row without rebuilding the
           const match = selector.match(/^\.commit-row\[data-sha="([0-9a-f]+)"\]$/);
           return match ? rows.find((row) => row.sha === match[1]) || null : null;
         },
+        querySelectorAll: () => rows,
       },
     },
     setInspectorContext: () => {},
     renderCommits: () => { renderCommitsCount += 1; },
     loadCommit: async (sha) => { loadCommitSha = sha; },
+    repoPathSnapshot: () => "repo",
+    isCurrentRepoPath: () => true,
     renderInspector: () => { inspectorRenderCount += 1; },
   });
   vm.runInContext(historySource, context);
@@ -188,6 +191,8 @@ test("selecting a commit outside the rendered graph keeps the full render fallba
     setInspectorContext: () => {},
     renderCommits: () => { renderCommitsCount += 1; },
     loadCommit: async () => {},
+    repoPathSnapshot: () => "repo",
+    isCurrentRepoPath: () => true,
     renderInspector: () => {},
   });
   vm.runInContext(historySource, context);
@@ -202,10 +207,13 @@ function commitRow(sha, selected) {
   const classes = new Set(selected ? ["selected"] : []);
   return {
     sha,
+    dataset: { sha },
+    setAttribute: () => {},
     classList: {
       add: (name) => classes.add(name),
       remove: (name) => classes.delete(name),
       contains: (name) => classes.has(name),
+      toggle: (name, value) => value ? classes.add(name) : classes.delete(name),
     },
   };
 }

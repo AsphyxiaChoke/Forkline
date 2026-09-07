@@ -10,6 +10,7 @@ const themeCatalog = [
 const historyColumnStorageKey = "forkline-history-columns";
 const historyColumnVariables = {
   graph: "--history-graph-col-w",
+  message: "--history-message-w",
   author: "--history-author-w",
   time: "--history-time-w",
   sha: "--history-sha-w",
@@ -110,6 +111,8 @@ function resetLayoutPreferences() {
   } catch {
   }
   historyColumnPreferences = {};
+  (window.ForklinePreferenceStorage?.storage || localStorage).removeItem("forkline-stage-columns");
+  ["--stage-worktree-w", "--stage-index-w", "--stage-commit-w"].forEach((variable) => document.documentElement.style.removeProperty(variable));
   Object.values(historyColumnVariables).forEach((variable) => document.documentElement.style.removeProperty(variable));
   if (typeof scheduleCommitViewportRender === "function") scheduleCommitViewportRender();
   toast(t("布局已恢复默认"));
@@ -119,9 +122,9 @@ function resetLayoutPreferences() {
 function initLayoutResizers() {
   const root = document.documentElement;
   const configs = {
-    sidebar: { varName: "--sidebar-w", store: "forkline-sidebar-w", preferred: 240, min: 160, max: () => layoutMax("sidebar"), axis: "x", sign: 1 },
-    inspector: { varName: "--inspector-w", store: "forkline-inspector-w", preferred: 340, min: 220, max: () => layoutMax("inspector"), axis: "x", sign: -1 },
-    stage: { varName: "--stage-h", store: "forkline-stage-h", preferred: 300, min: 220, max: () => layoutMax("stage"), axis: "y", sign: -1 },
+    sidebar: { varName: "--sidebar-w", store: "forkline-sidebar-w", preferred: 240, min: 120, max: () => layoutMax("sidebar"), axis: "x", sign: 1 },
+    inspector: { varName: "--inspector-w", store: "forkline-inspector-w", preferred: 340, min: 160, max: () => layoutMax("inspector"), axis: "x", sign: -1 },
+    stage: { varName: "--stage-h", store: "forkline-stage-h", preferred: 300, min: 120, max: () => layoutMax("stage"), axis: "y", sign: -1 },
   };
   document.querySelectorAll("[data-resizer]").forEach((handle) => {
     const config = configs[handle.dataset.resizer];
@@ -145,14 +148,68 @@ function initLayoutResizers() {
         document.body.classList.remove("resizing");
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp, { once: true });
+      document.addEventListener("pointercancel", onUp, { once: true });
     });
   });
   window.addEventListener("resize", () => clampLayoutVars(configs));
   clampLayoutVars(configs);
   initHistoryColumnResizers();
+  initStageColumnResizers();
+}
+
+function initStageColumnResizers() {
+  const stage = document.querySelector(".stage");
+  if (!stage) return;
+  const variables = ["--stage-worktree-w", "--stage-index-w", "--stage-commit-w"];
+  const storage = window.ForklinePreferenceStorage?.storage || localStorage;
+  const apply = (widths) => widths.forEach((width, index) => {
+    document.documentElement.style.setProperty(variables[index], `${width}fr`);
+  });
+  try {
+    const stored = JSON.parse(storage.getItem("forkline-stage-columns") || "null");
+    if (Array.isArray(stored) && stored.length === 3 && stored.every((width) => Number.isFinite(width) && width > 0)) apply(stored);
+  } catch {}
+  stage.querySelectorAll("[data-stage-resizer]").forEach((handle) => {
+    const sizes = () => [...stage.querySelectorAll(":scope > .changes, :scope > .commit-form")].map((panel) => panel.getBoundingClientRect().width);
+    const resize = (widths, delta) => {
+      const index = Number(handle.dataset.stageResizer);
+      const pair = widths[index] + widths[index + 1];
+      const next = [...widths];
+      next[index] = clamp(widths[index] + delta, 100, pair - 100);
+      next[index + 1] = pair - next[index];
+      apply(next);
+      return next;
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const widths = sizes();
+      const startX = event.clientX;
+      let next = widths;
+      handle.setPointerCapture?.(event.pointerId);
+      document.body.classList.add("resizing");
+      const move = (input) => { next = resize(widths, input.clientX - startX); };
+      const stop = () => {
+        storage.setItem("forkline-stage-columns", JSON.stringify(next));
+        document.body.classList.remove("resizing");
+        document.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerup", stop);
+        document.removeEventListener("pointercancel", stop);
+      };
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", stop, { once: true });
+      document.addEventListener("pointercancel", stop, { once: true });
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      storage.setItem("forkline-stage-columns", JSON.stringify(resize(sizes(), event.key === "ArrowRight" ? 8 : -8)));
+    });
+  });
 }
 
 function initHistoryColumnResizers() {
@@ -232,27 +289,9 @@ function freezeVisibleHistoryColumnWidths(cells = visibleHistoryColumnCells()) {
 }
 
 function resizeHistoryBoundary(leftName, rightName, leftWidth, rightWidth, delta) {
-  const pairWidth = leftWidth + rightWidth;
-  if (leftName === "graph" && rightName === "message") {
-    const limit = historyColumnLimit("graph");
-    const next = clamp(leftWidth + delta, limit.min, Math.min(limit.max, pairWidth - historyMessageMinimumWidth()));
-    updateHistoryColumnPreference("graph", next);
-    return;
-  }
-  if (leftName === "message" && historyColumnVariables[rightName]) {
-    const limit = historyColumnLimit(rightName);
-    const next = clamp(rightWidth - delta, limit.min, Math.min(limit.max, pairWidth - historyMessageMinimumWidth()));
-    updateHistoryColumnPreference(rightName, next);
-    return;
-  }
-  if (!historyColumnVariables[leftName] || !historyColumnVariables[rightName]) return;
-  const leftLimit = historyColumnLimit(leftName);
-  const rightLimit = historyColumnLimit(rightName);
-  const min = Math.max(leftLimit.min, pairWidth - rightLimit.max);
-  const max = Math.min(leftLimit.max, pairWidth - rightLimit.min);
-  const nextLeft = clamp(leftWidth + delta, min, max);
-  updateHistoryColumnPreference(leftName, nextLeft);
-  updateHistoryColumnPreference(rightName, pairWidth - nextLeft);
+  if (!historyColumnVariables[leftName]) return;
+  const limit = historyColumnLimit(leftName);
+  updateHistoryColumnPreference(leftName, clamp(leftWidth + delta, limit.min, limit.max));
 }
 
 function updateHistoryColumnPreference(name, width) {
@@ -274,34 +313,12 @@ function applyHistoryColumnPreferences() {
     const limit = historyColumnLimit(name);
     setHistoryColumnWidth(name, clamp(width, limit.min, limit.max));
   });
-  fitHistoryColumnPreferences();
-}
-
-function fitHistoryColumnPreferences() {
-  const head = document.querySelector(".history-head");
-  const cells = visibleHistoryColumnCells();
-  if (!head || !cells.length) return;
-  const fixed = cells
-    .map((cell) => ({ cell, name: cell.dataset.historyColumn }))
-    .filter((item) => historyColumnVariables[item.name]);
-  let overflow = fixed.reduce((total, item) => total + item.cell.getBoundingClientRect().width, 0) + historyMessageMinimumWidth() - head.clientWidth;
-  ["author", "time", "sha", "graph"].forEach((name) => {
-    if (overflow <= 0) return;
-    const item = fixed.find((entry) => entry.name === name);
-    if (!item) return;
-    const current = item.cell.getBoundingClientRect().width;
-    const minimum = historyColumnLimit(name).min;
-    const reduction = Math.min(overflow, Math.max(0, current - minimum));
-    if (reduction > 0) setHistoryColumnWidth(name, current - reduction);
-    overflow -= reduction;
-  });
 }
 
 function historyColumnLimit(name) {
-  if (name === "graph") return { min: historyGraphMinimumWidth(), max: 420 };
-  if (name === "author") return { min: 72, max: 220 };
-  if (name === "time") return { min: 64, max: 160 };
-  return { min: 64, max: 160 };
+  if (name === "graph") return { min: historyGraphMinimumWidth(), max: Infinity };
+  if (name === "message") return { min: historyMessageMinimumWidth(), max: Infinity };
+  return { min: 56, max: Infinity };
 }
 
 function historyGraphMinimumWidth() {
@@ -311,8 +328,7 @@ function historyGraphMinimumWidth() {
 }
 
 function historyMessageMinimumWidth() {
-  const width = document.querySelector(".history-head")?.clientWidth || window.innerWidth || 800;
-  return width <= 500 ? 96 : 140;
+  return 80;
 }
 
 function loadHistoryColumnPreferences() {
@@ -347,15 +363,14 @@ function layoutMax(kind) {
   const sidebar = numericCssVar("--sidebar-w") || 240;
   const inspector = numericCssVar("--inspector-w") || 340;
   if (portraitWorkspaceActive()) {
-    const portraitMainMin = width <= 840 ? 420 : width <= 1120 ? 560 : 680;
-    if (kind === "sidebar") return Math.max(160, Math.min(420, width - 7 - portraitMainMin));
-    if (kind === "inspector") return Math.max(220, Math.min(560, width - 28));
+    if (kind === "sidebar") return Math.max(120, width - 7 - 240);
+    if (kind === "inspector") return Math.max(160, width - 28);
   }
   const resizers = 14;
-  const mainMin = width <= 840 ? 360 : width <= 960 ? 420 : width <= 1120 ? 480 : 560;
-  if (kind === "sidebar") return Math.max(160, Math.min(420, width - inspector - resizers - mainMin));
-  if (kind === "inspector") return Math.max(220, Math.min(560, width - sidebar - resizers - mainMin));
-  if (kind === "stage") return Math.max(240, Math.min(500, height - 260));
+  const mainMin = 240;
+  if (kind === "sidebar") return Math.max(120, width - inspector - resizers - mainMin);
+  if (kind === "inspector") return Math.max(160, width - sidebar - resizers - mainMin);
+  if (kind === "stage") return Math.max(120, height - 220);
   return 520;
 }
 
@@ -401,6 +416,16 @@ function dismissToast() {
   els.toast.classList.remove("show");
   els.toast.setAttribute("aria-hidden", "true");
   if (els.toastClose) els.toastClose.disabled = true;
+}
+
+function renderDesktopStatus() {
+  const status = document.getElementById("desktopStatus");
+  if (!status) return;
+  const repo = state.data?.repo;
+  const operations = state.data?.runningOperations || [];
+  const activity = operations.length ? t(operations[0].label || "Git 操作") : t("就绪");
+  status.textContent = repo ? `${repo.name} · ${repo.branch} | ${t("{count} 个更改", { count: state.data?.workingFiles?.length || 0 })} | ${activity}` : t("未打开仓库");
+  status.title = repo?.path || "";
 }
 
 function toast(message) {

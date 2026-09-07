@@ -22,6 +22,7 @@ function renderCommits(options = {}) {
     ? state.data.commits
     : state.data.commits.filter((commit) => commitMatchesSearch(commit, terms));
   updateCommitSearchMeta(terms, state.filtered.length, state.data.commits.length);
+  reconcileCommitSelection(terms);
 
   const selectedVisible = state.filtered.some((commit) => commit.sha === state.selectedSha);
   const selectedLoadedInGraph = isGraphCommitLoaded(state.selectedSha);
@@ -78,7 +79,9 @@ function createCommitRows(start, end) {
     const index = start + offset;
     const headCommit = isHeadCommit(commit);
     const row = document.createElement("button");
-    row.className = `commit-row ${index % 2 === 1 ? "row-alt" : ""} ${commit.sha === state.selectedSha ? "selected" : ""} ${headCommit ? "current-head" : ""}`;
+    const selected = commitIsSelected(commit.sha);
+    row.className = `commit-row ${index % 2 === 1 ? "row-alt" : ""} ${selected ? "selected" : ""} ${headCommit ? "current-head" : ""}`;
+    row.setAttribute("aria-pressed", String(selected));
     row.type = "button";
     row.dataset.sha = commit.sha;
     row.dataset.rowIndex = String(index);
@@ -262,19 +265,70 @@ function updateCommitSelection(nextSha) {
     }
   }
   if (!nextRow) return false;
-  const selectedRow = els.commitGraph.querySelector(".commit-row.selected");
-  if (selectedRow !== nextRow) selectedRow?.classList.remove("selected");
-  nextRow.classList.add("selected");
+  els.commitGraph.querySelectorAll(".commit-row[data-sha]").forEach((row) => {
+    const selected = commitIsSelected(row.dataset.sha);
+    row.classList.toggle("selected", selected);
+    row.setAttribute("aria-pressed", String(selected));
+  });
   return true;
 }
 
-async function selectCommit(sha) {
+function commitIsSelected(sha) {
+  return state.selectedCommitShas?.size ? state.selectedCommitShas.has(sha) : sha === state.selectedSha;
+}
+
+function selectedCommitRecords() {
+  return (state.filtered || []).filter((commit) => state.selectedCommitShas?.has(commit.sha));
+}
+
+function reconcileCommitSelection(terms = commitSearchTerms()) {
+  const context = `${repoPathSnapshot()}\n${state.selectedRef}\n${terms.join(" ")}`;
+  if (context !== state.commitSelectionContext || (state.selectedCommitShas?.size && !state.selectedCommitShas.has(state.selectedSha))) {
+    state.selectedCommitShas = new Set();
+    state.expandedCommitShas = new Set();
+    state.commitSelectionAnchor = "";
+    state.commitSelectionContext = context;
+  }
+  const visible = new Set(state.filtered.map((commit) => commit.sha));
+  state.selectedCommitShas = new Set([...(state.selectedCommitShas || [])].filter((sha) => visible.has(sha)));
+  if (state.selectedCommitShas.size && !state.selectedCommitShas.has(state.selectedSha)) state.selectedSha = [...state.selectedCommitShas][0];
+  state.expandedCommitShas = new Set([...(state.expandedCommitShas || [])].filter((sha) => state.selectedCommitShas.has(sha)));
+}
+
+function changeCommitSelection(sha, event = {}) {
+  const selected = new Set(state.selectedCommitShas?.size ? state.selectedCommitShas : state.selectedSha ? [state.selectedSha] : []);
+  const additive = Boolean(event.ctrlKey || event.metaKey);
+  const anchor = state.commitSelectionAnchor || state.selectedSha || sha;
+  const commits = state.filtered || [];
+  const start = commits.findIndex((commit) => commit.sha === anchor);
+  const end = commits.findIndex((commit) => commit.sha === sha);
+  if (event.shiftKey && start >= 0 && end >= 0) {
+    if (!additive) selected.clear();
+    commits.slice(Math.min(start, end), Math.max(start, end) + 1).forEach((commit) => selected.add(commit.sha));
+  } else {
+    if (!additive) selected.clear();
+    if (additive && selected.has(sha)) selected.delete(sha);
+    else selected.add(sha);
+    state.commitSelectionAnchor = sha;
+  }
+  state.selectedCommitShas = selected;
+  state.selectedSha = selected.has(sha) ? sha : [...selected].at(-1) || "";
+  state.expandedCommitShas = new Set(state.selectedSha ? [state.selectedSha] : []);
+  state.commitSelectionLimit = 80;
+}
+
+async function selectCommit(sha, event = {}) {
   if (!sha) return;
+  const repoPath = repoPathSnapshot();
   if (state.historyPlan?.sha !== sha) state.historyPlan = null;
   setInspectorContext("commit", inspectorTabs.commit.includes(state.selectedTab) ? state.selectedTab : "details");
-  state.selectedSha = sha;
+  changeCommitSelection(sha, event);
   if (!updateCommitSelection(sha)) renderCommits({ inspector: "never" });
-  await loadCommit(sha);
+  const activeSha = state.selectedSha;
+  const loading = loadCommit(activeSha);
+  if (state.selectedCommitShas.size > 1) renderInspector();
+  await loading;
+  if (!isCurrentRepoPath(repoPath) || state.selectedSha !== activeSha) return;
   renderInspector();
 }
 

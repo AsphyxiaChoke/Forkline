@@ -11387,3 +11387,105 @@
 - `docs/CONTINUE.md`：记录 v0.4.22 已完成状态及不可变后续边界。
 - `progress.md`：追加正式发布闭环、测试、文件和回滚记录。
 - 回滚方式：提交前执行 `git restore -- docs/PACKAGING.md docs/CONTINUE.md progress.md`；提交后使用 `git revert <本轮 v0.4.22 发布验收文档提交>`。产品修复回滚必须对 `353c9e865d09908224b9d2f30b389eb57aa06d86` 创建后续 revert 并发布更高版本，不得移动或重建 v0.4.22。标准安装可通过 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Uninstall Forkline.exe /currentuser` 移除，但本轮按发布结果保留；不得触碰四个受保护对象。
+
+## 2026-09-07 - Task: 集中完成 Issue #3、#10、#11、#12、#13、#14、#15 改动并统一验证
+
+### What was done
+
+- 按用户“全部改完最后一起测试”的要求，集中完成布局自由调整、文件夹右键批量操作、桌面状态栏和提交多选分组查看，再统一运行自动回归与包验收。
+- #3 放宽侧栏、详情和底部尺寸限制，提交信息列独立调整并允许横向滚动，底部工作区/暂存区/提交区之间可拖动或用键盘调宽并保存。
+- #10 / #11 新增绿色版，即免安装的 Electron 便携 ZIP：解压后运行 Forkline.exe，整个文件夹可移动，个人设置放在同目录 data；更新校验官方 ZIP，先停止后台及其 Git/SSH 子进程，再替换程序，失败回滚并保留个人数据。原 Web 包独立命名并保留 Git 快进更新。
+- #12 文件夹菜单作用于后代文件并保存菜单打开时的路径快照，保留 Windows 文件列表式选择及既有危险操作确认；#13 仅在 Electron 增加 26px 底部仓库、分支、更改数和操作状态栏。
+- #15 增加 Ctrl 多选/取消、Shift 连选和 Ctrl+Shift 追加范围，详情按提交分组按需载入，正确区分不同提交中的同名文件，并在仓库、分支、筛选或历史变更后清理失效选择。
+- #14 精简附带语言资源、排除 source map 并加强压缩，安装包减少约 8.0 MiB；主 EXE 仍为 224.6 MiB，此项仅部分改善，不宣称已解决主程序体积问题。
+- 同步用户说明和打包文档，明确便携包就是绿色版及 v0.4.22 旧 portable 附件仍为 Web 包。本轮未提交、推送、发布或评论/关闭 Issue，版本仍为 0.4.22。
+
+### Testing
+
+- 完整回归：`$env:FORKLINE_BROWSER_PERFORMANCE_SCALE='3'; $env:FORKLINE_REQUIRE_BROWSER='1'; node --test --test-reporter=tap --test-concurrency=1 tests/*.test.js`，428/428 通过，失败/取消/跳过均为 0，用时约 244.4 秒。完整日志为下述审计目录的 `full-test-validated.log`。
+- 真实 Chromium 验证两提交多选分组及文件载入、信息列拉宽超过 1000px 后横向滚动、底部列键盘调整并保存，以及文件夹仅提供其作用域可用的批量操作；Web 页面不显示桌面状态栏。对应交互和 ZIP 更新单元/集成测试均通过。
+- 前期自动 Electron 输入出现 CDP 超时，未改动的 v0.4.22 旧包对照也可复现。测试改为输入前激活目标页面，并仅在测试启动参数中禁用后台窗口节流；产品 MergeView、滚动实现和性能阈值未变。调整后完整回归通过，保留 `electron-baseline-focused.log` 和 `electron-input-probe.log` 对照证据。
+- 新绿色版 `desktop-verified/win-unpacked/Forkline.exe` 真实专项 2/2，0 失败/跳过，用时约 93.6 秒；断言运行模式为 portable 且状态栏高度 26px。9 条滚轮路径的回弹、最终同步偏差及长任务均为 0；行对齐快速滚轮为 1440/1440px、拖到底为 9593/9593px，连续 8 轮后渲染进程约 234.5 MiB，DOM 4092、绘制元素 1 保持稳定。详见 `portable-electron-test.log`。
+- ZIP 更新助手在中文临时路径与隔离可执行夹具中验证成功替换、删除旧产品文件、保留 data/个人文件、启动失败回滚，以及错误版本、哈希、个人文件冲突、清单多余文件、取消和 `../` 越界拒绝。真实绿色版 EXE 的启动/滚动另行通过；本轮未执行官方线上跨版本更新。
+- NSIS 构建成功：`Forkline-Setup-0.4.22-windows-x64.exe` 为 96,222,868 字节，SHA-256 `1377dba093ae8b5616777a549f45f0b60a1f323c62557a4bf18ec2eb7443e188`，Authenticode 为 NotSigned。`latest.yml` 版本、名称、大小和 SHA-512 全部匹配；旧正式安装包为 104,611,043 字节。仅构建与解包内容验收，未运行安装/卸载。
+- 绿色版 ZIP 构建成功：134,665,693 字节，SHA-256 `8572bc656c585c5e11c41454726a86f42e96a8828c67e1f4f8e5012ea24f1296`，25 个产品文件/27 个 ZIP 条目，不含 data、.git、.github、测试和开发记录；仅保留 zh-CN/en-US 语言。主 EXE 为 235,534,336 字节。ZIP 校验文件正确，两个 Electron ASAR 的关键运行文件与工作区逐字节一致，详见 `package-verification.json`。
+- Web ZIP 构建成功：37,029,549 字节，SHA-256 `02e65fe3b10690d3bf1f2f54a771b884139ab8105de8f52c67915d9fb5e528f4`。由隔离快照 `74bd3fb557740d4a761568ad895e5dc73eef454e` 构建，正式库及标签未变；仅本次命令将 Git 下载指向该快照。解压后 main、HEAD、官方 origin、干净状态及内置 Node v24.13.0 均正确；打开该仓库后首页和两个 API 均为 HTTP 200，正常退出码 0，58045 端口释放，详见 `web-runtime-verification.json`。审计子进程沿用构建时 core.autocrlf=true；禁用该配置时仅出现换行状态差异，普通本机配置下状态为空。
+- 本机 Electron 下载在 100% 后曾停滞，最终构建用官方 electronDist 配置指向已核验本地运行时，覆盖仅写在审计辅助脚本/命令中，正式构建配置未增加本机路径。所有三个包均为未发布审计产物，沿用 0.4.22 版号，不得上传替换旧 Release。
+- 31 个本轮 JavaScript 文件 `node --check` 通过，2 个 PowerShell 文件 Parser 通过，`git diff --check` 通过；main/HEAD 为 `99c1e1908c8626d9c8363104ba41faa5a2d34e9a`，索引为空，package-lock.json 未变。v0.4.0 与 v0.4.22 标签分别仍指向 `ba897f0d67a53b7c67437a4ae195c1447e211d53` / `353c9e865d09908224b9d2f30b389eb57aa06d86`。
+- 四项保护对象 SHA-256 与开工基线一致：i18n-catalog `D01B4723BFF1300525F09034357D3DFF60DB3662652275B5748ABD34FA575D29`；MergeView vendor `13F08394D8477C758FFE61E86E838252E7F9D3896B8034379FE23E985424FBE8`；异常文件仍 0 字节 / `E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855`；既有 Playwright YAML `AE2CF2493859986BF75A498D8786CC8AD3C04DBA1D6B0FC9E5E7D1B502171D99`。没有修改、暂存或删除它们。
+
+### Notes
+
+- `.github/workflows/release-installer.yml`：在同一版本构建绿色版 ZIP 及校验文件，并停止覆盖已有同名 Release 附件。
+- `.github/workflows/release-portable.yml`：将原浏览器运行包命名为 Web 包，上传范围使用独立文件名。
+- `README.md`：说明绿色版免安装、同目录数据与三种包的运行和历史命名边界。
+- `app-update.js`：导出已有官方 Release JSON 读取能力供绿色版更新复用。
+- `docs/PACKAGING.md`：补充绿色版构建、ZIP 更新与恢复流程，明确未发布状态及旧包命名。
+- `docs/ISSUE_FIXES_2026-09.md`：记录七项改动的使用效果、统一验证结果和 #14 的部分改善边界。
+- `electron/desktop-preference-store.js`：允许持久化底部三栏宽度设置。
+- `electron/installer-update-controller.js`：复用受限更新控制器分流绿色版 ZIP 与 NSIS，并支持失败取消。
+- `electron/main.js`：识别运行形态，为绿色版使用同目录 data，并接入更新结果与实际启动版本。
+- `electron/self-update-health.js`：在更新就绪记录中附带实际应用版本，供替换助手核验。
+- `electron/portable-updater.js`：新增官方绿色版资产筛选、流式校验下载与替换助手调度。
+- `electron/apply-portable-update.ps1`：校验 ZIP 与清单，备份替换产品文件并在启动失败时回滚。
+- `package.json`：增加绿色版构建入口，收紧 Electron 语言资源并启用最大压缩。
+- `public/context-menu.css`：确保隐藏的文件操作按钮不受菜单网格布局覆盖而误显示。
+- `public/index.html`：增加底部三栏分隔条与桌面状态栏节点。
+- `public/js/api.js`：在 Git 操作进度改变时刷新桌面状态栏。
+- `public/js/app/events.js`：将 Ctrl/Shift 选择修饰键传递给提交选择逻辑。
+- `public/js/app/init.js`：保留绿色版更新模式与上次结果，并在仓库渲染时更新状态栏。
+- `public/js/app/layout-utils.js`：放宽布局尺寸约束，增加底部宽度调整、保存和重置。
+- `public/js/core.js`：增加提交多选、展开分组和跨提交文件选择状态。
+- `public/js/features/context-menu-loader.js`：为惰性目录菜单传递目录上下文。
+- `public/js/features/context-menus.js`：按目录后代文件快照构建批量菜单并保持既有确认流程。
+- `public/js/features/file-tree.js`：接入目录右键菜单，并按提交 SHA 区分多组中的同名文件。
+- `public/js/features/git-actions-loader.js`：向批量文件操作转交菜单打开时保存的路径快照。
+- `public/js/features/git-actions.js`：按显式路径快照执行现有批量 Git 操作。
+- `public/js/features/graph.js`：复用正在进行的提交详情读取，保证多个展开分组等待真实结果。
+- `public/js/features/history-list.js`：实现 Ctrl/Shift 多选、连选及上下文变化时清理选择。
+- `public/js/features/worktree-changes.js`：工作区变更刷新后同步桌面更改计数。
+- `public/js/panels/inspector.js`：按提交分组展示多选文件并按需展开，限制首批分组数量。
+- `public/js/panels/settings.js`：说明各运行形态的更新方式，并将绿色版更新接入既有按钮。
+- `public/styles.css`：支持历史横向滚动、底部三栏分隔、提交分组与桌面状态栏布局。
+- `scripts/build-portable.ps1`：将原 Web ZIP 与附带说明改为独立 Web 命名。
+- `scripts/build-electron-portable.js`：生成无开发记录的绿色版目录、产品清单、ZIP 和 SHA-256。
+- `tests/browser-performance.test.js`：增加真实浏览器多选、文件夹菜单与布局交互回归。
+- `tests/commit-selection-performance.test.js`：为现有提交选择性能夹具补齐多选状态。
+- `tests/electron-file-editor-performance.test.js`：检查状态栏和运行模式，并隔离自动输入受后台窗口节流的影响。
+- `tests/installer-package.test.js`：覆盖绿色版构建、语言精简和无附件覆盖的打包契约。
+- `tests/installer-update-controller.test.js`：覆盖绿色版更新顺序、服务停止与失败取消。
+- `tests/layout-ui.test.js`：更新底部可调列和滚动布局契约。
+- `tests/portable-runtime.test.js`：覆盖 Web 包命名和既有 Git 更新运行约定。
+- `tests/portable-updater.test.js`：验证绿色版类型分流、下载完整性、真实 PowerShell 替换和回滚。
+- `tests/issue-interactions.test.js`：验证提交多选、重复请求、同名文件、目录快照与状态栏内容。
+- `tests/fixtures/portable-update-app.cs`：提供隔离更新测试的可执行启动成功/失败夹具。
+- `progress.md`：仅在末尾追加本轮集中改动、统一验证、文件清单和回滚点。
+- 审计目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-issues-20260907-886dc55d2f2b48d899416dbacaa88c5c`。构建输出、隔离源码快照和验证脚本均留在此目录，没有放入正式仓库或覆盖标准安装；Web 快照先于最终测试/文档收尾，不代表最终发布提交。
+- 回滚点：`99c1e1908c8626d9c8363104ba41faa5a2d34e9a`。提交前只对上述本轮已跟踪文件逐项执行 `git restore --source=99c1e1908c8626d9c8363104ba41faa5a2d34e9a -- <明确文件>`；本轮 7 个新增文件先核对清单再逐个移至隔离备份。若已提交则使用 `git revert <本轮产品提交>`；不得全量清理，不得恢复或移除四个保护对象，不得移动或覆盖已有发布标签/附件。
+
+## 2026-09-07 - Task: 准备并提交 v0.4.23 中文正式发布
+
+### What was done
+
+- 用户明确要求“发布”后，将本轮绿色免安装版、ZIP 更新、布局、文件夹菜单、状态栏和提交多选改动准备为 v0.4.23，正式版本及锁文件同步升版，依赖版本保持不变。
+- 整理中文发布说明和三种附件选择，明确旧 portable 包仍是 Web 包、绿色版同目录数据及更新方式，以及未签名和主 EXE 体积限制。
+- 只将前轮已验证的 44 个文件与本轮新增锁文件改动、中文发布说明加入显式提交清单；四个保护对象继续排除。后续只创建新的 v0.4.23 标签，已有标签和 Release 附件保持不变。
+
+### Testing
+
+- 发布前核对 GitHub 登录有效，账号 AsphyxiaChoke；远端 main 与本地 HEAD 均为 `99c1e1908c8626d9c8363104ba41faa5a2d34e9a`，最新 Release 为 v0.4.22，远端不存在 v0.4.23 标签。
+- 复用前轮完成的 428/428 全量回归、绿色版 EXE 2/2 与三个包的内容/启动验收；升版后运行安装器、Web 打包和桌面更新控制器契约测试，12/12 通过，0 失败/跳过。
+- `git diff --check` 通过；四项保护对象与前轮 SHA-256 一致。发布工作流将在新的不可变标签上重新运行自动测试并生成正式包，正式附件结果另行追加，不将旧版号审计包直接发布。
+
+### Notes
+
+- `package.json`：产品版本升至 0.4.23。
+- `package-lock.json`：仅同步根包的两个版本字段，不更新依赖。
+- `tests/installer-package.test.js`：同步正式版号断言。
+- `README.md`：将开发期说明更新为 v0.4.23 功能和绿色版下载约定。
+- `docs/PACKAGING.md`：明确 v0.4.23 起的三种发布包命名。
+- `docs/ISSUE_FIXES_2026-09.md`：将七项改动归入 v0.4.23，并保留升版前审计证据的历史边界。
+- `docs/RELEASE_NOTES_v0.4.23.md`：新增中文发布说明、下载选择、更新边界和验证限制。
+- `progress.md`：末尾追加本轮版本准备、验证及回滚记录；此前 44 文件功能改动清单见上一任务。
+- 发布审计目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.23-release-f4ec7db3695e41cda0481888938ccfab`，契约日志为 `release-contract-tests.log`。
+- 回滚点为 `99c1e1908c8626d9c8363104ba41faa5a2d34e9a`：提交后用 `git revert <v0.4.23 产品提交>` 生成后续修复，不移动已有标签，不覆盖已公开资产。发布后修复必须使用更高版本。正式安装与用户数据不属于本轮写入范围。

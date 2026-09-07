@@ -39,6 +39,30 @@ test("NSIS update controller checks without downloading automatically", async ()
   assert.match(state.url, /releases\/tag\/v0\.4\.1$/);
 });
 
+test("portable controller prepares ZIP then stops services and cancels if shutdown fails", async () => {
+  for (const failShutdown of [false, true]) {
+    const updater = new EventEmitter();
+    const actions = [];
+    updater.checkForUpdates = async () => ({ updateInfo: { version: "0.4.23" } });
+    updater.downloadUpdate = async () => { actions.push("zip-ready"); };
+    updater.quitAndInstall = () => { actions.push("replace"); };
+    updater.cancelInstall = () => { actions.push("cancel"); };
+    const controller = createInstallerUpdateController({
+      updater, supported: true, currentVersion: "0.4.22", installMode: "portable",
+      prepareInstall: async () => { actions.push("stop"); if (failShutdown) throw new Error("still busy"); },
+    });
+    assert.equal(controller.getState().installMode, "portable");
+    if (failShutdown) {
+      await assert.rejects(controller.install("0.4.23"), /still busy/);
+      assert.deepEqual(actions, ["zip-ready", "stop", "cancel"]);
+    } else {
+      await controller.install("0.4.23");
+      assert.deepEqual(actions, ["zip-ready", "stop", "replace"]);
+      assert.match(controller.getState().installMessage, /便携版/);
+    }
+  }
+});
+
 test("NSIS update controller never displays an older release as the latest version", async () => {
   const updater = new EventEmitter();
   updater.checkForUpdates = async () => ({ updateInfo: { version: "0.4.0" } });

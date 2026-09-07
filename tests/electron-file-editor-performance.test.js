@@ -46,6 +46,9 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     ...(packagedElectronExecutable ? [] : [projectRoot]),
     `--remote-debugging-port=${port}`,
     "--remote-allow-origins=*",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
     `--user-data-dir=${localAppData}`,
     repo,
   ], {
@@ -91,6 +94,17 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     return Boolean(row);
   })()`);
   assert.equal(opened, true, "ordinary worktree file row was not available for double-click");
+
+  const desktopStatus = await evaluate(mainCdp, `(() => {
+    const status = document.querySelector('#desktopStatus');
+    return { height: status?.getBoundingClientRect().height || 0, text: status?.textContent || '', repo: state.data.repo.name };
+  })()`);
+  assert.equal(desktopStatus.height, 26);
+  assert.ok(desktopStatus.text.includes(desktopStatus.repo));
+  if (process.env.FORKLINE_EXPECT_INSTALL_MODE) {
+    const updateState = await evaluate(mainCdp, "window.forklineDesktop.getInstallerUpdateState()");
+    assert.equal(updateState.installMode, process.env.FORKLINE_EXPECT_INSTALL_MODE);
+  }
 
   const editorTarget = await waitForTarget(port, electronProcess, () => electronLog, (target) => (
     target.type === "page" && target.url.includes("fileEditorWindow=1")
@@ -260,6 +274,9 @@ test("Electron standalone history comparison stays responsive and memory-bounded
     ...(packagedElectronExecutable ? [] : [projectRoot]),
     `--remote-debugging-port=${port}`,
     "--remote-allow-origins=*",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
     `--user-data-dir=${localAppData}`,
     projectRoot,
   ], {
@@ -754,6 +771,8 @@ async function measureRapidWheel(cdp, sourceIndex, paneSelector = "#fileEditorMe
 }
 
 async function dispatchWheel(cdp, point, bursts = 4, eventsPerBurst = 20) {
+  // Windows can defer native input acknowledgements for an inactive window.
+  await cdp.send("Page.bringToFront");
   await cdp.send("Input.dispatchMouseEvent", {
     type: "mouseMoved",
     x: point.x,

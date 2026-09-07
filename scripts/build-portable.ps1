@@ -73,7 +73,7 @@ if ($ReleaseTag -ne "v$version") {
   throw "Release tag $ReleaseTag does not match package version $version."
 }
 
-$packageName = "Forkline-$ReleaseTag-windows-x64-portable"
+$packageName = "Forkline-$ReleaseTag-windows-x64-web"
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("forkline-portable-" + [guid]::NewGuid().ToString("N"))
 $packageDirectory = Join-Path $tempRoot $packageName
 $archiveName = "node-v$NodeVersion-win-x64.zip"
@@ -132,7 +132,7 @@ try {
   ) | Set-Content -LiteralPath (Join-Path $packageDirectory "Forkline.cmd") -Encoding ascii
 
   @(
-    "Forkline portable package",
+    "Forkline Web portable package (browser + bundled Node.js, Git fast-forward updates)",
     "Forkline version: $version",
     "Forkline tag: $ReleaseTag",
     "Forkline commit: $tagSha",

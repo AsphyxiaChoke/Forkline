@@ -1,4 +1,4 @@
-name: Build Windows portable package
+name: Build Windows Web package
 
 on:
   release:
@@ -31,10 +31,10 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Forkline-windows-portable
+          name: Forkline-windows-web
           path: |
-            dist/Forkline-v*-windows-x64-portable.zip
-            dist/Forkline-v*-windows-x64-portable.zip.sha256
+            dist/Forkline-v*-windows-x64-web.zip
+            dist/Forkline-v*-windows-x64-web.zip.sha256
 
       - name: Attach assets to release
         shell: pwsh
@@ -42,4 +42,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'release') { '${{ github.event.release.tag_name }}' } else { '${{ inputs.tag }}' }
-          gh release upload $tag dist/Forkline-v*-windows-x64-portable.zip dist/Forkline-v*-windows-x64-portable.zip.sha256 --clobber
+          gh release upload $tag dist/Forkline-v*-windows-x64-web.zip dist/Forkline-v*-windows-x64-web.zip.sha256

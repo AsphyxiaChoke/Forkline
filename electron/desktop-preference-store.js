@@ -12,6 +12,7 @@ const DESKTOP_PREFERENCE_KEYS = Object.freeze([
   "forkline-recovery-policy",
   "forkline-sidebar-w",
   "forkline-stage-h",
+  "forkline-stage-columns",
   "forkline-theme",
   "forkline-ui-diagnostics-v1",
 ]);

@@ -997,6 +997,7 @@ test("missing layout preferences keep the CSS defaults", () => {
       body: { classList: { add: () => {}, remove: () => {} } },
       documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
       querySelectorAll: () => [],
+      querySelector: () => null,
     },
     getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
     localStorage: { getItem: () => null },
@@ -1030,6 +1031,7 @@ test("temporarily constrained side panels recover their preferred widths", () =>
       body: { classList: { add: () => {}, remove: () => {} } },
       documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
       querySelectorAll: () => [],
+      querySelector: () => null,
     },
     getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
     localStorage: {
@@ -1045,8 +1047,8 @@ test("temporarily constrained side panels recover their preferred widths", () =>
 
   windowMock.innerWidth = 800;
   listeners.get("resize")();
-  assert.equal(values.get("--sidebar-w"), "160px");
-  assert.equal(values.get("--inspector-w"), "266px");
+  assert.equal(values.get("--sidebar-w"), "166px");
+  assert.equal(values.get("--inspector-w"), "380px");
 
   windowMock.innerWidth = 1600;
   listeners.get("resize")();
@@ -1079,6 +1081,7 @@ test("bottom panel resizer updates and saves the stage height", () => {
       },
       documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
       querySelectorAll: () => [handle],
+      querySelector: () => null,
       addEventListener: (name, listener) => documentListeners.set(name, listener),
       removeEventListener: (name) => documentListeners.delete(name),
     },
@@ -1196,8 +1199,8 @@ test("worktree, index, and commit editor share one parallel bottom row", () => {
   assert.ok(stageStart >= 0 && stageEnd > stageStart);
   assert.ok(worktreeIndex >= 0 && stagedIndex > worktreeIndex && commitIndex > stagedIndex);
   assert.doesNotMatch(stageMarkup, /class="work-diff"/);
-  assert.match(styles, /\.stage\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s);
-  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*700px\)[\s\S]*?\.stage\s*\{[^}]*grid-template-columns:\s*220px\s+220px\s+minmax\(240px,\s*1fr\);/s);
+  assert.match(styles, /\.stage\s*\{[^}]*grid-template-columns:\s*minmax\(100px, var\(--stage-worktree-w, 1fr\)\) 5px minmax\(100px, var\(--stage-index-w, 1fr\)\) 5px minmax\(100px, var\(--stage-commit-w, 1fr\)\);/s);
+  assert.equal((stageMarkup.match(/data-stage-resizer=/g) || []).length, 2);
   assert.match(worktreeSource, /els\.changeList\.innerHTML\s*=\s*`[\s\S]*?renderChangeSection\("unstaged"/s);
   assert.match(worktreeSource, /els\.stagedChangeList\.innerHTML\s*=\s*`[\s\S]*?renderChangeSection\("staged"/s);
   assert.match(contextMenuSource, /action\s*===\s*"diff"[\s\S]*?await loadWorkingDiffLazy\(context\.file\);[\s\S]*?await openDiffModalLazy\(\);/s);
@@ -1206,7 +1209,7 @@ test("worktree, index, and commit editor share one parallel bottom row", () => {
 test("narrow layout preserves commit messages and contains the commit form", () => {
   assert.match(styles, /\.main\s*\{[^}]*container-name:\s*main-workspace;/s);
   assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*700px\)/);
-  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*500px\)[\s\S]*?grid-template-columns:\s*var\(--history-graph-col-w,\s*var\(--graph-w\)\)\s+minmax\(96px,\s*1fr\)\s+var\(--history-time-w,\s*minmax\(66px,\s*72px\)\);/);
+  assert.match(styles, /@container\s+main-workspace\s*\(max-width:\s*500px\)[\s\S]*?grid-template-columns:\s*var\(--history-graph-col-w,\s*var\(--graph-w\)\)\s+var\(--history-message-w, minmax\(80px,\s*1fr\)\)\s+var\(--history-time-w,\s*minmax\(66px,\s*72px\)\);/);
   assert.match(styles, /\.commit-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.mini-btn\s*>\s*\.command-hint\s*\{[^}]*display:\s*none;/s);
 });
@@ -1230,6 +1233,7 @@ test("portrait width calculation leaves room for the graph instead of the docked
       body: { classList: { add: () => {}, remove: () => {} } },
       documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
       querySelectorAll: () => [],
+      querySelector: () => null,
     },
     getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
     localStorage: { getItem: () => null },

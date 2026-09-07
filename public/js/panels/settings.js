@@ -243,7 +243,11 @@ function settingsAppUpdateView() {
     showInstallAction: status === "available" && Boolean(update.installSupported),
     installNote: status === "available" && !update.installSupported
       ? t("当前安装方式不支持一键更新，请点击左上角更新图标打开 Release。")
-      : "",
+      : update.installMode === "portable"
+        ? t("Electron 便携版：下载 ZIP 并替换程序文件，保留同目录 data；不会运行安装器。")
+        : update.installMode === "nsis"
+          ? t("Windows 安装版：使用 Setup 安装器更新。")
+          : t("Web / 源码版：使用 Git 快进更新；内置 Node.js 需通过完整 Web 包升级。"),
   };
   if (installing) {
     return { ...shared, statusClass: "loading", statusText: t(update.installMessage || "正在更新并重启") };
@@ -283,14 +287,15 @@ async function installAppUpdate() {
   state.appUpdate.installing = true;
   state.appUpdate.installError = "";
   state.appUpdate.installState = "preparing";
-  state.appUpdate.installMessage = update.installMode === "nsis"
-    ? t("正在检查并下载安装版更新")
+  const desktopUpdate = ["nsis", "portable"].includes(update.installMode);
+  state.appUpdate.installMessage = desktopUpdate
+    ? t(update.installMode === "portable" ? "正在检查并下载便携 ZIP 更新" : "正在检查并下载安装版更新")
     : t("正在检查版本和本地更新条件");
   state.appUpdate.installStep = 1;
-  state.appUpdate.installTotal = update.installMode === "nsis" ? 4 : 6;
+  state.appUpdate.installTotal = desktopUpdate ? 4 : 6;
   state.appUpdate.lastResult = null;
   renderInspector();
-  if (update.installMode === "nsis") {
+  if (desktopUpdate) {
     try {
       await window.forklineDesktop.installInstallerUpdate(update.latestVersion);
     } catch (error) {

@@ -110,11 +110,11 @@ async function showBranchContextMenuLazy(event, branch, options = {}) {
   return window.showBranchContextMenu(event, branch, options);
 }
 
-async function showFileContextMenuLazy(event, filePath, scope = "") {
+async function showFileContextMenuLazy(event, filePath, scope = "", isDirectory = false) {
   const repoPath = repoPathSnapshot();
   await ensureContextMenusLoaded();
   if (!isCurrentRepoPath(repoPath)) return false;
-  return window.showFileContextMenu(event, filePath, scope);
+  return window.showFileContextMenu(event, filePath, scope, isDirectory);
 }
 
 async function showTagContextMenuLazy(event, tag) {

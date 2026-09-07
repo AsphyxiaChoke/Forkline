@@ -1,6 +1,6 @@
 {
   "name": "forkline",
-  "version": "0.4.22",
+  "version": "0.4.23",
   "description": "中文 Git 可视化管理工具",
   "author": "AsphyxiaChoke",
   "private": true,
@@ -8,6 +8,7 @@
   "scripts": {
     "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
     "build:installer": "electron-builder --win nsis --x64 --publish never",
+    "build:desktop-portable": "node scripts/build-electron-portable.js",
     "desktop": "electron .",
     "desktop:dev": "electron . --watch-renderer",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
@@ -24,6 +25,8 @@
     "appId": "io.github.asphyxiachoke.forkline",
     "productName": "Forkline",
     "asar": true,
+    "compression": "maximum",
+    "electronLanguages": ["zh-CN", "en-US"],
     "directories": {
       "output": "dist/installer"
     },
@@ -36,7 +39,8 @@
       "electron/**/*",
       "public/**/*",
       "vendor/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map"
     ],
     "win": {
       "target": [

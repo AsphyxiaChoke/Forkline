@@ -10,14 +10,14 @@ Forkline 是一个中文 Git 可视化管理工具，界面和操作方式参考
 
 - Windows 电脑。
 - 已安装 Git，并可在命令行执行 `git`。
-- 使用 Release 中的 Electron 安装版或 Web 便携包时不需要安装 Node.js；使用 Git 源码仓库时需安装 Node.js，并可在命令行执行 `node`。
+- 使用 Electron 安装版、Electron 便携 ZIP 或 Web 包时不需要安装 Node.js；使用 Git 源码仓库时需安装 Node.js，并可在命令行执行 `node`。
 
 运行所需文件已经放在仓库中，不需要执行 `npm install`。
 
 ### 启动 Forkline
 
-1. Electron 安装版从桌面或开始菜单打开 `Forkline`；Web 便携包双击 `Forkline.cmd`；Git 源码仓库双击 `start.cmd`。
-2. Electron 安装版会直接打开独立窗口；Web 版会自动打开浏览器。
+1. Electron 安装版从桌面或开始菜单打开 `Forkline`；Electron 便携 ZIP 解压后双击 `Forkline.exe`；Web 包双击 `Forkline.cmd`；Git 源码仓库双击 `start.cmd`。
+2. 两种 Electron 桌面版会直接打开独立窗口；Web 版会自动打开浏览器。
 3. 第一次使用时，在顶部输入或选择本机 Git 仓库路径。
 4. 点击“打开”；以后再次启动会自动恢复上次成功打开的仓库。
 
@@ -32,6 +32,8 @@ http://127.0.0.1:5177
 如果上次仓库已移动、删除或不再是 Git 仓库，Forkline 会回到示例页面，可重新选择仓库。
 
 ### Electron 桌面版
+
+v0.4.23 新增 Electron 绿色版（免安装的便携 ZIP）：`Forkline-v*-windows-x64-portable.zip`，解压后双击 `Forkline.exe`，整个文件夹可移动；不含 `.git` 和开发记录，个人设置位于软件同目录 `data/`，更新时保留。原 Web 包改名为 `Forkline-v*-windows-x64-web.zip`，继续保留 Git 快进更新。**v0.4.22 及以前名称含 `-portable.zip` 的附件仍是 Web 包**，请使用其中的 `Forkline.cmd`。三种包的构建和更新方式见 [发布包说明](docs/PACKAGING.md)。
 
 Electron 版直接复用当前 Web 界面和全部 Git 功能，不需要手动启动服务或打开浏览器。Release 中的 `Forkline-Setup-*-windows-x64.exe` 按当前用户安装，允许选择目录，并默认创建桌面和开始菜单快捷方式。源码试用可先执行 `npm.cmd install`，之后双击 `start-electron.cmd`；也可以把仓库路径作为参数传入，例如 `start-electron.cmd "D:\桌面\GitTest"`。桌面版默认使用 `90%` 界面缩放，可在“设置 -> 界面缩放”中切换，也支持 `Ctrl+-`、`Ctrl++` 和 `Ctrl+0`；关闭后会记住上次所在屏幕、普通窗口尺寸和最大化状态。详细说明见 [Electron 桌面版说明](docs/ELECTRON_DESKTOP.md)。
 
@@ -55,6 +57,8 @@ Forkline 已经运行时，再通过 `start-electron.cmd "仓库路径"` 启动�
 - 中间：提交图谱、提交列表，以及工作区、暂存区和提交编辑。
 - 右侧：当前提交详情、变更文件、同步、储藏、分支整理、恢复点等工具。
 - 分隔线：可以拖动左侧栏、右侧栏、图谱列和底部工作台，调整显示空间。
+
+v0.4.23 支持单独调整提交信息列及底部三栏宽度，过宽时横向滚动；Electron 底部状态栏显示仓库、分支、更改数和 Git 操作状态。历史列表支持 Ctrl 点选、Shift 连选，右侧按提交分组查看文件；工作区与暂存区文件夹支持右键批量操作。具体行为见 [本轮 Issue 改动说明](docs/ISSUE_FIXES_2026-09.md)。
 
 图谱列较窄时，长分支名会省略；拉宽图谱列后会自动显示更多内容，鼠标悬停也能查看完整名称。
 提交历史默认载入最近 120 条，滚动到底部后可以继续加载更早提交。
@@ -193,7 +197,8 @@ Forkline 已经运行时，再通过 `start-electron.cmd "仓库路径"` 启动�
 左上角只在发现新版本时显示更新图标；设置页“关于 Forkline”会显示当前版本和检查结果。
 
 - 使用 Git 克隆的官方仓库：位于 `main` 分支且工作区干净时，可在设置页执行“立即更新并重启”。
-- 使用 Windows 便携包：包内保留浅层 Git 仓库和官方 `origin`，同样支持“立即更新并重启”，并使用内置 Node.js 启动。
+- 使用 Web 包：包内保留浅层 Git 仓库和官方 `origin`，同样支持“立即更新并重启”，并使用内置 Node.js 启动。
+- 使用 Electron 绿色版（v0.4.23 起）：同一按钮下载对应版本 ZIP，按官方 SHA-256 校验后停止后台服务，替换程序文件并重启；保留 `data/` 与非产品文件，启动失败时尝试恢复旧程序，不运行 Setup。
 - 使用 Electron 源码桌面版：从官方 Git 克隆运行 `start-electron.cmd` 时，同一按钮会退出整个旧桌面实例，更新后重新打开 Electron；新窗口未能正常显示时会自动回退并重开旧版本。
 - 使用 Electron NSIS 安装版：同一按钮通过 `electron-updater` 检查官方 GitHub Release。`v0.4.2` 起，版本和 SHA-512 仍以 GitHub 官方 `latest.yml` 为准，安装器 EXE 与 blockmap 优先通过国内加速节点下载；节点不可用或文件校验失败时会清理失败下载，并自动回退 GitHub 官方完整安装包。下载完成后先确认没有 Git 操作仍在执行，再优雅停止 Forkline 后台服务及其持有的 Git/SSH 子进程；操作未结束或停机失败都会取消安装，不会中断正在写入仓库的命令或在后台服务仍运行时强行覆盖。随后启动安装器并重新打开 Forkline。
 - 已安装的 `v0.4.1` 本身不包含加速代码，因此首次升级到 `v0.4.2` 仍使用 GitHub 官方下载；安装或升级到 `v0.4.2` 后，后续安装版应用内更新才会优先使用国内加速。源码克隆、Electron 源码版和 Web 便携版继续使用原有 Git 快进更新，不经过安装包加速节点。
@@ -201,7 +206,7 @@ Forkline 已经运行时，再通过 `start-electron.cmd "仓库路径"` 启动�
 - 准备阶段会显示 GitHub Release 的对象百分比和已接收 KiB/MiB；连接重置、超时、DNS/TLS 或 early EOF 等瞬时下载错误会有限重试，仍失败时不会写入新版本。
 - 更新失败时会分别说明文件是否已回退、旧服务是否恢复。更新前检查失败不会修改 Forkline 文件，原版本会继续运行。
 - 也可以双击 `pull-latest.cmd` 拉取 `origin/main`。脚本遇到本地修改、冲突、网络或认证问题时会停止，不会强制覆盖。
-- GitHub 自动生成的 `Source code (zip)` 只是源码快照，不包含 `.git`、内置 Node.js 或便携启动器，不能当作 Windows 便携版使用；需要独立桌面窗口请下载 `Forkline-Setup-*-windows-x64.exe`，需要免安装 Web 版请下载 `Forkline-v*-windows-x64-portable.zip`，然后双击其中的 `Forkline.cmd`。
+- GitHub 自动生成的 `Source code (zip)` 只是源码快照，不包含 `.git`、内置 Node.js 或便携启动器。桌面安装器为 `Forkline-Setup-*-windows-x64.exe`；v0.4.23 起将免安装桌面包命名为 `Forkline-v*-windows-x64-portable.zip`，Web 包命名为 `Forkline-v*-windows-x64-web.zip`。旧版附件命名见上方兼容说明。
 
 ## 开发与测试
 

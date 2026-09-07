@@ -54,8 +54,8 @@
   --inspector-w: 340px;
   --stage-h: 300px;
   --graph-w: 176px;
-  --history-cols: var(--history-graph-col-w, var(--graph-w)) minmax(0, 1fr) var(--history-author-w, minmax(104px, 150px)) var(--history-time-w, minmax(76px, 96px)) var(--history-sha-w, minmax(70px, 96px));
-  --history-content-min-w: calc(var(--history-graph-col-w, var(--graph-w)) + var(--history-author-w, 104px) + var(--history-time-w, 76px) + var(--history-sha-w, 70px) + 140px);
+  --history-cols: var(--history-graph-col-w, var(--graph-w)) var(--history-message-w, minmax(80px, 1fr)) var(--history-author-w, minmax(104px, 150px)) var(--history-time-w, minmax(76px, 96px)) var(--history-sha-w, minmax(70px, 96px));
+  --history-content-min-w: calc(var(--history-graph-col-w, var(--graph-w)) + var(--history-author-w, 104px) + var(--history-time-w, 76px) + var(--history-sha-w, 70px) + var(--history-message-w, 80px));
   --row-h: 62px;
   --header-h: 58px;
   --font-ui: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", Arial, sans-serif;
@@ -376,7 +376,7 @@ html[data-shell="electron"] {
 }
 
 html[data-shell="electron"] .app-shell {
-  grid-template-rows: var(--electron-titlebar-h) var(--header-h) minmax(0, 1fr);
+  grid-template-rows: var(--electron-titlebar-h) var(--header-h) minmax(0, 1fr) 26px;
 }
 
 html[data-shell="electron"] .app-shell::before {
@@ -397,6 +397,22 @@ html[data-shell="electron"] .topbar {
 
 html[data-shell="electron"] .workspace {
   grid-row: 3;
+}
+
+.desktop-status { display: none; }
+
+html[data-shell="electron"] .desktop-status {
+  display: block;
+  grid-row: 4;
+  padding: 4px 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--topbar);
+  border-top: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .brand {
@@ -1021,7 +1037,7 @@ input:focus-visible,
 
 .workspace {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 7px minmax(360px, 1fr) 7px var(--inspector-w);
+  grid-template-columns: var(--sidebar-w) 7px minmax(240px, 1fr) 7px var(--inspector-w);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1875,10 +1891,10 @@ body.resizing .workspace-resizer::before {
 .stage {
   display: grid;
   position: relative;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(100px, var(--stage-worktree-w, 1fr)) 5px minmax(100px, var(--stage-index-w, 1fr)) 5px minmax(100px, var(--stage-commit-w, 1fr));
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto hidden;
   border-top: 1px solid var(--line-strong);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, var(--panel-2)), var(--surface));
   box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.16);
@@ -2302,6 +2318,30 @@ button.file-row {
 .tree-chunk {
   min-width: 0;
 }
+
+.stage-column-resizer {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--line-soft);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.stage-column-resizer:hover,
+.stage-column-resizer:focus-visible { background: var(--teal); }
+
+.multi-commit-group {
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.multi-commit-group > summary { padding: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.multi-commit-group > summary > span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.multi-commit-content { border-top: 1px solid var(--line-soft); }
 
 .change-list .file-tree .tree-chunk {
   contain: layout style paint;
@@ -3655,7 +3695,7 @@ button.file-row {
   }
 
   .workspace {
-    grid-template-columns: var(--sidebar-w) 7px minmax(360px, 1fr) 7px var(--inspector-w);
+    grid-template-columns: var(--sidebar-w) 7px minmax(240px, 1fr) 7px var(--inspector-w);
   }
 }
 
@@ -3711,12 +3751,12 @@ button.file-row {
 
 @container main-workspace (max-width: 700px) {
   .history {
-    --history-content-min-w: calc(var(--history-graph-col-w, var(--graph-w)) + var(--history-time-w, 74px) + var(--history-sha-w, 68px) + 140px);
+    --history-content-min-w: calc(var(--history-graph-col-w, var(--graph-w)) + var(--history-time-w, 74px) + var(--history-sha-w, 68px) + var(--history-message-w, 80px));
   }
 
   .history-head,
   .commit-row {
-    grid-template-columns: var(--history-graph-col-w, var(--graph-w)) minmax(140px, 1fr) var(--history-time-w, minmax(74px, 86px)) var(--history-sha-w, minmax(68px, 78px));
+    grid-template-columns: var(--history-graph-col-w, var(--graph-w)) var(--history-message-w, minmax(80px, 1fr)) var(--history-time-w, minmax(74px, 86px)) var(--history-sha-w, minmax(68px, 78px));
   }
 
   .history-head > :nth-child(3),
@@ -3725,7 +3765,6 @@ button.file-row {
   }
 
   .stage {
-    grid-template-columns: 220px 220px minmax(240px, 1fr);
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-color: var(--scroll) transparent;
@@ -3735,12 +3774,12 @@ button.file-row {
 
 @container main-workspace (max-width: 500px) {
   .history {
-    --history-content-min-w: calc(var(--history-graph-col-w, var(--graph-w)) + var(--history-time-w, 66px) + 96px);
+    --history-content-min-w: calc(var(--history-graph-col-w, var(--graph-w)) + var(--history-time-w, 66px) + var(--history-message-w, 80px));
   }
 
   .history-head,
   .commit-row {
-    grid-template-columns: var(--history-graph-col-w, var(--graph-w)) minmax(96px, 1fr) var(--history-time-w, minmax(66px, 72px));
+    grid-template-columns: var(--history-graph-col-w, var(--graph-w)) var(--history-message-w, minmax(80px, 1fr)) var(--history-time-w, minmax(66px, 72px));
   }
 
   .history-head > :nth-child(5),

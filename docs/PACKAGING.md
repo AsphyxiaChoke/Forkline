@@ -1,5 +1,15 @@
 # Forkline Windows 发布包
 
+v0.4.23 起使用以下三种发布包。v0.4.22 及以前的 `*-portable.zip` 是 Web 包，已有附件和标签不改名、不覆盖。
+
+| 类型 | 文件 | 启动 / 更新 |
+| --- | --- | --- |
+| Electron 安装版 | `Forkline-Setup-<version>-windows-x64.exe` | 安装后运行；electron-updater / NSIS |
+| Electron 绿色版（免安装） | `Forkline-v<version>-windows-x64-portable.zip` | 解压运行 Forkline.exe；ZIP 替换 |
+| Web 包 | `Forkline-v<version>-windows-x64-web.zip` | Forkline.cmd；Git 快进 |
+
+三种包均要求系统提供 Git。GitHub 自动生成的 Source code ZIP 仍是源码快照。
+
 ## Web 便携包
 
 ### 目标
@@ -13,8 +23,8 @@
 ### 产物
 
 ```text
-Forkline-v0.4.0-windows-x64-portable.zip
-Forkline-v0.4.0-windows-x64-portable.zip.sha256
+Forkline-v<version>-windows-x64-web.zip
+Forkline-v<version>-windows-x64-web.zip.sha256
 ```
 
 ZIP 内额外包含：
@@ -34,7 +44,7 @@ PORTABLE-INFO.txt
 要求：Windows、Git、PowerShell、可访问 `github.com` 和 `nodejs.org`，当前源码仓库工作区干净且 `origin` 指向官方 Forkline。
 
 ```powershell
-./scripts/build-portable.ps1 -ReleaseTag v0.4.0
+./scripts/build-portable.ps1 -ReleaseTag v<version>
 ```
 
 也可以双击 `build-portable.cmd`，默认使用 `package.json` 对应的正式 Tag。产物写入 `dist/`。
@@ -49,7 +59,7 @@ PORTABLE-INFO.txt
 
 ### Release 自动构建
 
-`.github/workflows/release-portable.yml` 在正式 Release 发布后构建并上传名称包含 `-windows-x64-portable` 的 ZIP 与 SHA256，也可以手动输入已有 Tag 重新构建并覆盖附件。GitHub 页面中的 `Source code (zip)` 只是源码快照，不是便携包。
+`.github/workflows/release-portable.yml` 在正式 Release 发布后构建并上传名称包含 `-windows-x64-web` 的 ZIP 与 SHA256，也可以手动输入已有 Tag 构建。已存在的同名附件会使上传失败，不覆盖既有附件。GitHub 页面中的 `Source code (zip)` 只是源码快照，不是 Web 运行包。
 
 `v0.3.0` 早于该工作流加入，因此首次便携附件由本地执行相同脚本构建并上传；后续 Release 走自动工作流。
 
@@ -62,7 +72,7 @@ PORTABLE-INFO.txt
 - Forkline 源码继续由现有应用内更新流程获取正式 Release Tag 并执行快进更新。
 - 内置 Node 不属于 Git 跟踪文件，普通源码更新不会替换运行时。
 - 只有需要升级 Node 运行时时，才重新下载新的完整便携包。
-- GitHub 自动生成的 `Source code (zip)` 不含 `.git`、内置 Node.js 或 `Forkline.cmd`，不能替代名称包含 `-windows-x64-portable.zip` 的便携附件，也不能执行应用内一键更新。
+- GitHub 自动生成的 `Source code (zip)` 不含 `.git`、内置 Node.js 或 `Forkline.cmd`，不能替代 Web 运行包，也不能执行应用内一键更新。
 
 ### 发布验证
 
@@ -123,6 +133,18 @@ Electron `43.4.1` 包不再通过自身生命周期脚本自动下载 Windows �
 - `Get-AuthenticodeSignature` 应如实记录签名状态；未签名版本不得写成已受信任。
 - Release 工作流完成后重新下载全部附件，校验安装器 SHA-256 与 `.sha256` 内容一致，并核对 `latest.yml` 的版本、文件名、大小和 SHA-512。
 - 通过加速 URL 下载正式 EXE 与 blockmap，确认响应对应白名单资产，并按官方 `latest.yml` 的 SHA-512 复核 EXE；再验证代理失败会回退官方完整下载、用户取消不会回退。
+
+## Electron 绿色版 / 便携 ZIP（v0.4.23 起）
+
+执行 `npm.cmd run build:desktop-portable`，产物写入 `dist/desktop-portable/`；也可以执行 `node scripts/build-electron-portable.js "C:\临时构建目录"` 指定新的输出目录。同名 ZIP 已存在时拒绝覆盖。安装器工作流在同一标签上构建并上传桌面 ZIP 及其 `.sha256`，与 Web 包分开命名。
+
+这里的便携包就是绿色版：免安装，解压后直接运行，移动整个文件夹即可继续使用。ZIP 直接包含 `Forkline.exe`、Electron 运行文件、`resources/app.asar` 和 `resources/forkline-portable.json` 产品文件清单，不包含 `.git`、`.github`、测试、进度日志或项目源码开发记录。解压到可写目录后运行 EXE，个人偏好和最近仓库保存在同目录 `data/`，移动软件时一并保留该目录。
+
+设置页“立即更新并重启”只接受官方正式 Release 的同版本 x64 桌面 ZIP，以及完整的大小和 SHA-256 元数据。官方下载失败后可尝试既有加速节点，仍以官方哈希为准。解压前拒绝越界路径、链接和 `data/`，解压后检查文件清单及版本；不会覆盖不属于旧产品清单的同名个人文件。
+
+程序退出前复用 NSIS 的繁忙检查和优雅停机：后台服务及其 Git/SSH 子进程未停止就取消更新。外部助手等待旧进程退出，先备份产品文件，再替换清单内文件并启动新 EXE；新进程须报告实际版本与窗口就绪。启动失败会恢复备份并请求重启旧版，回滚失败会保留备份位置和错误结果。结果位于 `data/portable-update-result.json`；不要在更新期间移动程序目录或手工改动产品文件。
+
+NSIS 与桌面 ZIP 统一只保留 `zh-CN`、`en-US` 两套 Electron 语言资源并使用最大压缩，不改变 Chromium 内核、MergeView 或语法高亮。原始 Electron 主 EXE 约 224.6 MiB，清理语言包只能缩小附带文件和下载包，不能把主 EXE 变成几十 MB。未签名、未知发布者和 SmartScreen 风险同样适用于便携版。
 
 ## v0.3.0 实际产物
 

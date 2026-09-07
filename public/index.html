@@ -148,12 +148,14 @@
             </label>
             <div id="changeList" class="change-list"></div>
           </div>
+          <button class="stage-column-resizer" data-stage-resizer="0" type="button" aria-label="调整工作区和暂存区宽度" title="调整工作区和暂存区宽度"></button>
           <div class="changes staged-changes">
             <div class="panel-title">
               <span>暂存区</span>
             </div>
             <div id="stagedChangeList" class="change-list"></div>
           </div>
+          <button class="stage-column-resizer" data-stage-resizer="1" type="button" aria-label="调整暂存区和提交编辑宽度" title="调整暂存区和提交编辑宽度"></button>
           <form id="commitForm" class="commit-form">
             <div class="panel-title commit-form-title">
               <span>提交编辑</span>
@@ -215,6 +217,7 @@
         <div id="detailBody" class="detail-body"></div>
       </aside>
     </div>
+    <footer id="desktopStatus" class="desktop-status" role="status">未打开仓库</footer>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
