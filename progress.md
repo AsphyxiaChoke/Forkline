@@ -11517,3 +11517,318 @@
 - `progress.md`：仅在末尾追加本轮发布闭环与边界记录。
 - 审计目录：`C:\Users\Administrator\AppData\Local\Temp\forkline-v0.4.23-release-f4ec7db3695e41cda0481888938ccfab`。
 - 回滚方式：文档提交后使用 `git revert <本轮发布验收文档提交>`；产品需要回滚时对 `09c8a5e9ad5797fa6a60fb2d11deda2efe31b3ba` 创建后续 revert 并发布更高版本。v0.4.23 及更早标签和公开附件不可覆盖；保留所有受保护文件和当前标准安装。
+
+## 2026-09-08 - Task: 修复 #3 区域与列连续拖动卡顿
+
+### What was done
+
+- 复现 v0.4.23 放宽拖动范围后暴露的卡顿：每次指针移动都会立即改写继承到全页面的布局变量，区域拖动还交替读写计算样式；图谱列调宽重复计算全部提交关系并重建可见行。
+- 三类拖动统一按动画帧合并输入，区域只更新当前网格，历史列宽只作用于历史区；松手补齐最后坐标并保存，取消时清理挂起回调和监听。
+- 图谱调宽复用提交关系和行节点，只刷新 SVG；恢复默认布局时同步恢复图谱宽度。继续保留最小尺寸、独立列宽、横向滚动、键盘调整、三栏比例和原有 Git/文件编辑器语义。
+- 本轮是本地源码修复，没有升版、提交、推送、发布、修改 Issue、安装、卸载或覆盖用户标准安装。
+
+### Testing
+
+- 新增实际拖动回归先在旧代码上失败：40 帧/320 次移动中，左右区域和底部高度各有 320 次样式写入、642 次计算样式读取；帧间隔中位数分别约 250/300/283 ms，图谱列约 150 ms，重算提交关系与重建行各 40 次。
+- 本地修复后，真实 Chromium 的 3,012 条提交/4,000 个文件夹具中七类拖动中位数约 16.7 ms，P95 最高约 33.4 ms；区域计算样式读取降至 4 次，图谱重算关系及重建行均为 0，拖动末尾的实际尺寸变化均为 160px，松手后跳变均为 0px。
+- 定向布局/选择回归 69/69 通过。完整 npm.cmd test 首轮 427/428：普通测试 425 项和两个 Electron 测试通过；新原生鼠标断言有一次在最终尺寸绘制前读取上一帧（48px 而非最终 60px）。记录确认最终输入和保存正确，稍后绘制恢复正确值；改为等待实际 pointerup 和有界的布局稳定，不改产品行为或放宽原有测试门槛。
+- 原生鼠标专项连续 10 轮，共 70 次拖动全部通过；拖动 48px 和松手 60px 均准确，最后一次输入后的额外稳定等待最大 44.4 ms（断言小于 100 ms）；10 次页面重新加载均恢复底部宽度 [438.65625, 498.671875, 378.671875]。
+- 受影响 UI 回归重跑：两个 Electron 测试再次通过，包含全部七类拖动、宽度恢复、独立文件窗口滚轮/滚动条/行对齐/冲突保存检查。该轮 Chromium 在到达新拖动检查前触发既有冷启动 API 的 500ms 门槛（实测 523.7ms），未修改此门槛；随后单独重跑 Chromium 1/1 通过，约 47.4 秒，全部新增拖动和原有交互检查通过。最终覆盖普通 425 项、Chromium 1 项、Electron 2 项；不是宣称首轮单次全绿。
+- 最终浏览器确认：提交信息列可拉宽至 1122px 并横向滚动，底部键盘调整 8px 保存正确，多提交选中/分组与目录菜单均通过。
+- 日志：临时目录 forkline-drag-unit.log、forkline-drag-full-test.log、forkline-drag-native-stress.log、forkline-drag-ui-final.log、forkline-drag-browser-final.log；调试夹具及修改前源码备份已归档到 C:\Users\Administrator\AppData\Local\Temp\forkline-drag-debug-20260908-cb320bf7bcd946fc964d30ad6503e715。
+- git diff --check 通过；既有 i18n-catalog.js、vendor/codemirror/addon/merge/merge.js、.playwright-cli 中已有快照与异常空文件的 SHA-256 均与本轮开始一致。没有全量格式化或改写这些保护对象。
+
+### Notes
+
+- public/js/app/layout-utils.js：合并拖动输入、局部预览、松手/取消收尾、历史列作用域和默认布局恢复。
+- public/js/features/history-list.js：宽度更新复用图谱关系和可见提交行。
+- public/styles.css：将历史网格组合变量移到历史区。
+- tests/helpers/layout-drag.js：共用真实浏览器/桌面拖动、帧耗时、原生指针和宽度恢复检查。
+- tests/layout-ui.test.js：验证帧合并、松手新坐标、取消和回调清理。
+- tests/issue-interactions.test.js：适配局部历史列变量，并保持原有宽度范围断言。
+- tests/browser-performance.test.js：在大仓库夹具中集成拖动回归，保持其余交互覆盖。
+- tests/electron-file-editor-performance.test.js：在独立桌面回归中加入主窗口拖动与保存验证。
+- docs/ISSUE_3_DRAG_PERFORMANCE.md：记录后续修复的行为、原因、前后测量和验证入口，明确尚未发布。
+- progress.md：仅在末尾追加本轮闭环和测试中的实际失败/复测过程。
+- 回滚点为本轮开始 HEAD 8f74eb0c2e000a223e4c2130bf830b3ff1279e02。若需撤销本轮代码，在正式仓库执行下列精确命令；保留本日志历史并另行追加回滚记录，禁止清理其他脏文件或改动旧标签。
+
+```powershell
+git restore --source=8f74eb0c2e000a223e4c2130bf830b3ff1279e02 -- public/js/app/layout-utils.js public/js/features/history-list.js public/styles.css tests/layout-ui.test.js tests/issue-interactions.test.js tests/browser-performance.test.js tests/electron-file-editor-performance.test.js
+Remove-Item -LiteralPath 'tests/helpers/layout-drag.js','docs/ISSUE_3_DRAG_PERFORMANCE.md'
+```
+
+
+## 2026-09-08 - Task: 打包 v0.4.24 并更新本机拖动优化版本
+
+### What was done
+
+- 将已验证的 #3 区域与列拖动修复打入 Windows x64 NSIS 安装版和 Electron 绿色版，版本升至 0.4.24，依赖不变。
+- 从标准安装 0.4.22 原地更新到 0.4.24，安装器退出码 0。查明桌面原本指向 D:\Forkline 的 0.4.23 副本，现桌面与开始菜单统一指向已更新的标准安装；D 盘副本未修改。
+- 保留用户设置，备份原设置、ASAR 与桌面快捷方式，保留旧安装器供回退；补充中文本地更新说明。
+- 本轮范围为打包与本机更新，未提交、推送、创建 Release、回复 Issue 或修改旧标签和附件；未执行卸载测试。
+
+### Testing
+
+- node --test tests/installer-package.test.js tests/portable-runtime.test.js：4/4 通过。
+- 安装器及绿色版构建均退出 0；新输出目录未覆盖旧包。ASAR 版本 0.4.24，layout-utils.js、history-list.js、styles.css、i18n-catalog.js、merge.js 五份文件与当前工作区逐字节一致。安装后 ASAR 与安装构建完全相同。
+- 安装 EXE、系统卸载登记版本为 0.4.24；桌面和开始菜单均指向 C:\Users\Administrator\AppData\Local\Programs\Forkline\Forkline.exe。
+- FORKLINE_ELECTRON_EXE 指向上述已安装 EXE，FORKLINE_EXPECT_INSTALL_MODE=nsis，node --test --test-concurrency=1 tests/electron-file-editor-performance.test.js：2/2 通过，98419 ms。使用隔离数据和临时仓库，七类拖动中位帧间隔约 6.1 ms、松手跳变 0 px；原生鼠标拖动最终位移 60 px 均正确；底部宽度重载恢复。快速滚轮、滚动条、行对齐、双栏/三栏及历史滚动与内存专项均通过。
+- 设置的四份 SHA-256 在安装前后及测试结束后一致；测试结束无 Forkline.exe 残留。受保护的 i18n、merge、.playwright-cli 记录与异常零字节文件哈希均未变化，未暂存。
+- latest.yml 的版本、文件名、大小、SHA-512 通过校验；绿色 ZIP 的 7zip t、SHA-256 校验通过，包内无 data。安装包 96139650 字节，SHA-256 ed07f7980e98b5fc9ab42fd8f80bc8c2999591d6016651cf24fa06f462b9e73c；绿色包 134582090 字节，SHA-256 7028f0c80c96929e6621b37db31aacf1281e5f052c6623e040ea2c809eb61b55。
+- 安装器 Authenticode 状态为 NotSigned，中文说明已披露。git diff --check 通过。
+- 证据日志：%TEMP%\forkline-0.4.24-installer-build.log、%TEMP%\forkline-0.4.24-portable-build.log、%TEMP%\forkline-0.4.24-installed-electron-test.log。源码修复的前后对照和分轮自动验证沿用上一轮记录，不将其声称为本轮全套重跑。
+
+### Notes
+
+- package.json：版本从 0.4.23 升至 0.4.24。
+- package-lock.json：同步顶层及根包版本，未更改依赖。
+- tests/installer-package.test.js：同步打包版本断言。
+- docs/ISSUE_3_DRAG_PERFORMANCE.md：更新本地包及本机安装状态。
+- docs/RELEASE_NOTES_v0.4.24.md：新增中文更新说明、验证证据、产物哈希及回退方式。
+- progress.md：仅末尾追加本轮记录，未改写前轮修复历史。
+- dist/local-0.4.24-installer/：生成安装 EXE、blockmap、latest.yml、SHA-256 及构建目录（Git 忽略）。
+- dist/local-0.4.24-portable/：生成绿色 ZIP、SHA-256 和免安装运行目录（Git 忽略）。
+- 外部落点：标准安装目录程序更新；桌面/开始菜单快捷方式由 NSIS 创建；备份位于 C:\Users\Administrator\AppData\Local\Temp\forkline-before-0.4.24-20260908-110438。
+- 回滚：退出 Forkline 后在正式仓库执行 Start-Process -FilePath '.\dist\installer\Forkline-Setup-0.4.22-windows-x64.exe'，在安装界面选择 C:\Users\Administrator\AppData\Local\Programs\Forkline；如需原桌面入口，执行 Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-before-0.4.24-20260908-110438\desktop-Forkline.lnk' -Destination 'D:\桌面\Forkline.lnk'。版本文件可用 git restore --source=8f74eb0c2e000a223e4c2130bf830b3ff1279e02 -- package.json package-lock.json tests/installer-package.test.js 回退；不要将范围扩大到其他未提交修复或受保护文件。
+
+
+## 2026-09-08 - Task: 修复默认提交列表顶部列分隔线卡顿并更新本机
+
+### What was done
+
+- 用户明确定位为提交列表顶部的图谱、提交信息等列分隔线。确认运行的是标准安装目录的 0.4.24，复现出默认 120 条与两页 240 条提交明显卡顿；首轮 3012 条夹具启用虚拟列表，漏测了不超过 240 条的普通渲染路径。
+- 对照同一 120 条历史，原实现、仅切换可见范围渲染、恢复原实现三轮中，样式计算累计约 9.56 / 2.40 / 10.72 秒；主因是屏幕外行参与反复样式计算，而非图谱关系重建。
+- 产品代码仅去掉固定 240 条阈值，改为列表内容高度超过可见区域便使用现有虚拟渲染。保留全部已加载提交、图谱、列对齐、列宽偏好及 Git 语义。
+- 新增真实 120/240 条历史下四列拖动和末尾可达的回归；原生输入检查增加作者、时间两列。同步中文说明。
+- 保持版本 0.4.24，在新的 header 输出目录构建安装版和绿色版，未覆盖首轮包。正常关闭正在运行的 Forkline，经现有退出流程停止后台后更新标准安装；未强杀、未卸载、未创建新 Release、未提交推送或改动旧标签。
+
+### Testing
+
+- 新回归在旧代码上先失败：120 条时图谱 P95 83.4 ms，提交信息 116.6 ms，作者 133.3 ms，时间 216.7 ms；门槛为 P95 < 70 ms。修复后相同专项通过，P95 最大约 33.4 ms，所有列移动 160 px，松手跳变 0 px；120/240 条分别完成 9 次原生拖动，最终 60 px 定位准确，最后一条提交可达且行高度与图谱一致。
+- node --test tests/layout-ui.test.js tests/issue-interactions.test.js tests/commit-selection-performance.test.js：69/69 通过。
+- 完整 Chromium 首轮默认倍率在新检查前触发原有大工作区冷 API 耗时门槛（385.2 ms）。使用发布工作流已有 FORKLINE_BROWSER_PERFORMANCE_SCALE=3 完整重跑：1/1 通过，约 64 秒，未修改门槛；新列拖动 70 ms 门槛不随此倍率放宽。
+- 本机安装器退出 0。实际安装 EXE 在隔离 APPDATA/LOCALAPPDATA、真实 3012 条临时 Git 历史截取 120/240 条后运行新专项：1/1 通过，约 17 秒；确认 installMode=nsis，四列中位帧间隔约 12–24 ms、P95 最大约 30.4 ms、松手跳变 0 px。复用的临时脚本测试标题仍沿用 Chromium，实际启动路径为标准安装 Forkline.exe，日志另有 Installed Electron nsis 确認。
+- 安装版/绿色版版本及五份相关源码在 ASAR 中与工作区逐字节一致；安装后 ASAR 与已核验安装构建完全一致。安装元数据版本、文件名、大小、SHA-512 通过；绿色包 7zip 完整性及 SHA-256 通过，包内无 data。
+- 本轮安装器 96139659 字节，SHA-256 c39ee1075433bc5b9f1c64d42c28e5f092ae58467766dd6fc63f24bd1c381946；绿色 ZIP 134582052 字节，SHA-256 f7a505355cc786b514aa876e73e43c7e3295482286ee4b21615d21730a21f9b4。保持未签名说明。
+- 正常退出后备份的四份设置在安装和专项结束后哈希一致；桌面/开始菜单均指向标准安装。测试进程已退出；保护对象 i18n、merge、.playwright-cli 记录和异常零字节文件哈希均未变、未暂存。git diff --check 和帮助脚本语法检查通过。
+- 日志位于 %TEMP%：forkline-header-drag-baseline.log、forkline-header-drag-differential-final.log、forkline-header-drag-red.log、forkline-header-drag-green.log、forkline-header-drag-unit.log、forkline-header-drag-browser-full.log、forkline-header-drag-browser-final.log、forkline-header-drag-installed-test.log，以及 forkline-header-drag-installer-build.log / forkline-header-drag-portable-build.log。差分脚本首轮因度量变量作用域写错而退出，修正后完成原/新/原对照，未改产品以绕过失败。
+
+### Notes
+
+- public/js/features/history-list.js：将固定条数阈值改为列表内容是否超出可见高度，复用原有虚拟渲染。
+- tests/helpers/layout-drag.js：复用既有拖动断言，新增普通 120/240 条历史的四列、节点数量和末尾可达检查，并增加作者/时间的原生拖动；允许普通历史检查在两种条数之间不重新加载页面。
+- tests/browser-performance.test.js：在大历史装载完成后、原有布局检查前调用普通提交列表专项。
+- docs/ISSUE_3_DRAG_PERFORMANCE.md：追加遗漏路径、对照证据、补修行为及安装后结果。
+- docs/RELEASE_NOTES_v0.4.24.md：补充顶部列修复、最新本地产物及验证，首轮记录和产物仍保留。
+- progress.md：仅末尾追加本轮闭环。
+- dist/local-0.4.24-header-installer/ 与 dist/local-0.4.24-header-portable/：新本地交付产物及校验文件，均在 Git 忽略范围。
+- 外部落点：C:\Users\Administrator\AppData\Local\Programs\Forkline 本机安装已更新；D:\Forkline 旧副本保持原样。临时诊断脚本、原产品文件及安装前备份归档于 C:\Users\Administrator\AppData\Local\Temp\forkline-header-drag-WjviE5，未加入产品包。
+- 回滚产品：在正式仓库执行 Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-header-drag-WjviE5\before-history-list.js' -Destination '.\public\js\features\history-list.js'，只恢复本轮产品修改，保留前轮修复。回退本机时先正常退出，再执行 Start-Process -FilePath '.\dist\local-0.4.24-installer\Forkline-Setup-0.4.24-windows-x64.exe'，选择标准安装目录；此为保留的首轮 0.4.24 安装器，会重新引入普通列表拖动卡顿。当前未执行回滚。
+
+
+## 2026-09-08 - Task: 动线 1 - 明确全部与所选文件的操作范围
+### What was done
+- 明确全量按钮文案与筛选范围提示，所选动作显示实际数量，并计入折叠/未渲染文件；保持原文件选择样式、Git 语义和危险操作确认。
+### Testing
+- node --test tests/workflow-ui.test.js tests/issue-interactions.test.js tests/file-editor-ui.test.js 通过；805 文件夹具验证初始 800 行渲染范围外的选择仍计数，且按工作区/暂存区隔离。日志 %TEMP%\forkline-workflow-step1.log。
+### Notes
+- public/index.html：全量按钮的文案和范围说明。
+- public/js/features/worktree-changes.js：批量按钮数量和作用域标记。
+- public/js/features/file-tree.js：选择变化按完整候选文件计数并更新按钮。
+- tests/workflow-ui.test.js：新增选择范围与数量回归。
+- docs/WORKFLOW_IMPROVEMENTS.md：记录使用行为与验证。
+- progress.md：仅追加本轮记录。
+- 回滚：本轮之前原文件保存在 C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx；在正式仓库执行 Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx\public\index.html' -Destination '.\public\index.html'，另外两份产品文件按相同相对路径复制恢复。不要 git restore 整个工作区，以免覆盖前轮未提交修复。
+
+
+## 2026-09-08 - Task: 动线 2 - 保护普通提交与修改上次提交的草稿
+### What was done
+- 为两种提交模式保留独立页面内草稿与普通推送选项，明确“修改上次提交”文案；异步读取检查当前请求、仓库、HEAD、模式和输入，避免迟到响应覆盖草稿。
+### Testing
+- node --test tests/workflow-ui.test.js tests/git-actions-loader.test.js tests/electron-shell.test.js 通过。新增反复切换、HEAD 变化、切换后晚到响应、读取期间继续输入测试。日志 %TEMP%\forkline-workflow-step2.log。
+### Notes
+- public/index.html：修改模式标签及改写 SHA 提示。
+- public/js/app/events.js：切换模式统一经过草稿保护流程。
+- public/js/features/git-actions-loader.js：首次加载前即可保存/恢复草稿，传递读取请求快照并同步按钮文案。
+- public/js/features/git-actions.js：迟到读取不覆盖输入，读取失败恢复普通草稿，文案与入口一致。
+- tests/workflow-ui.test.js：提交草稿切换与异步回归。
+- docs/WORKFLOW_IMPROVEMENTS.md：新增提交模式使用说明。
+- progress.md：追加本轮记录。
+- 回滚点 C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx 保留原产品文件，可用 Copy-Item -LiteralPath '<备份目录>\public\js\features\git-actions-loader.js' -Destination '.\public\js\features\git-actions-loader.js' 恢复对应文件；index.html 恢复此备份也会撤回动线 1 的标签，须同时保留前一步标签变更。尚未修改安装包或发布。
+
+
+## 2026-09-08 - Task: 动线 3 - 明确当前工作分支与历史查看分支
+### What was done
+- 提交表单标明实际提交目标和不同的查看分支；侧栏固定显示工作分支，分离 HEAD 单独提示。保持单击查看与显式切换语义。提交动作区可换行以容纳明确标签。
+### Testing
+- node --test tests/workflow-ui.test.js tests/layout-ui.test.js 通过，覆盖工作 main/查看 feature、同分支及分离 HEAD。日志 %TEMP%\forkline-workflow-step3.log。
+### Notes
+- public/index.html：提交目标显示位置。
+- public/js/core.js：绑定提交目标元素。
+- public/js/features/worktree-changes.js：渲染提交目标及查看上下文。
+- public/js/app/init.js：侧栏工作分支不再被查看分支替代。
+- public/styles.css：提交操作区在空间不足时换行。
+- tests/workflow-ui.test.js：上下文回归。
+- docs/WORKFLOW_IMPROVEMENTS.md：分支上下文说明。
+- progress.md：追加记录。
+- 回滚：产品文件原始备份位于 C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx，可用 Copy-Item -LiteralPath '<备份目录>\public\js\app\init.js' -Destination '.\public\js\app\init.js' 对应恢复；共享文件恢复需保留动线 1/2 的前序改动。最终真实窗口布局验证仍待本轮整体 UI 回归。
+
+
+## 2026-09-08 - Task: 动线 4 - 明确历史搜索范围并提供继续搜索入口
+### What was done
+- 搜索框与匹配计数明确已加载范围；搜索期间用现有分页动作继续搜索更早历史，保留分支与关键词，不更改后端接口及分页上限。
+### Testing
+- node --test tests/workflow-ui.test.js tests/commit-selection-performance.test.js tests/layout-ui.test.js 通过。验证 120->240 分页与关键词保留、历史耗尽隐藏入口；日志 %TEMP%\forkline-workflow-step4.log。
+### Notes
+- public/index.html：初始搜索范围提示。
+- public/js/features/history-list.js：动态已加载条数及继续搜索/重试文案。
+- tests/workflow-ui.test.js：搜索范围与分页行为。
+- docs/WORKFLOW_IMPROVEMENTS.md：搜索边界与使用方式。
+- progress.md：追加记录。
+- 回滚：Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx\public\js\features\history-list.js' -Destination '.\public\js\features\history-list.js' 可回到本次六项改动前、仍含顶部拖动修复的代码；index.html 只恢复搜索提示一处以保留前序按钮文案。
+
+
+## 2026-09-08 - Task: 动线 5 - 同步动作后保留历史查看位置
+### What was done
+- 同步动作按原加载深度刷新，保留选中提交并以顶部可见提交为锚恢复像素偏移，避免新增提交导致阅读位置跳走；创建提交保持定位新提交，旧目标不在结果中时回退到有效目标。
+### Testing
+- node --test tests/workflow-ui.test.js tests/action-state-refresh.test.js tests/commit-selection-performance.test.js 通过，覆盖 prepend 后 47->87px 的对应锚点、240 条请求深度、创建提交选中新 HEAD、失效 SHA 回退及原有状态失效检查。日志 %TEMP%\forkline-workflow-step5.log。
+### Notes
+- public/js/core.js：核心状态读取可沿用指定历史深度，默认调用不变。
+- public/js/features/git-actions.js：同步动作保留选择和可见锚点，创建提交沿用原行为。
+- tests/workflow-ui.test.js：同步后位置与目标回归。
+- docs/WORKFLOW_IMPROVEMENTS.md：记录刷新后停留行为。
+- progress.md：追加记录。
+- 回滚：在正式仓库按 C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx 中对应原文件用 Copy-Item 恢复；git-actions.js 恢复时须保留动线 2 的草稿保护，core.js 须保留动线 3 的提交目标元素绑定。未修改服务端协议或 Git 操作。
+
+
+## 2026-09-08 - Task: 动线 6 - 减少普通操作重复确认
+### What was done
+- 抓取、暂存全部和普通创建提交免去通用重复确认；提交并推送及其他远端/改写/丢弃动作保留确认与现有保护，保持原忙碌状态、结果反馈和 Git 执行语义。
+### Testing
+- node --test tests/workflow-ui.test.js tests/action-state-refresh.test.js tests/git-actions-loader.test.js 通过。覆盖普通动作无确认，六类保留确认动作及提交并推送取消后不发送 API 请求；日志 %TEMP%\forkline-workflow-step6.log。
+### Notes
+- public/js/features/git-actions.js：仅调整三类普通动作的通用确认条件。
+- tests/workflow-ui.test.js：免确认与取消零写入回归。
+- docs/WORKFLOW_IMPROVEMENTS.md：确认策略说明。
+- progress.md：追加记录。
+- 回滚本项：删除 needsConfirm 变量并将紧邻条件恢复为 if (!options.skipConfirm && !state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return false;，保留前五项行为。六项定向测试均已完成，接下来进行完整自动化和真实界面组合验证；当前安装仍是顶部拖动补修版本。
+
+
+## 2026-09-08 - Task: 六项日常动线组合验收与可见性补修
+### What was done
+- 在独立临时 Git 仓库和本机 Electron/Chromium 中串联六项流程，确认文件操作范围、草稿切换、工作/查看分支提示、继续搜索、同步后停留和确认策略。
+- 补修组合验收发现的两个界面问题：1280px 窗口的全量按钮换行约束；创建/修改提交后切回工作分支、清空历史搜索并滚到新提交，确保真实可见而不仅选中状态正确。
+- 本轮仅修复源码与文档，未改版本号、未打包或更新本机安装、未提交推送、未发布 Release，未修改 Git 协议、后端操作、鉴权及线程模型。用户安装版仍为上轮顶部拖动补修包。
+### Testing
+- 普通全套（排除两个真实 UI 文件）：433/433 通过，约 118 秒；日志 %TEMP%\forkline-workflow-unit-full.log。可见性补修后重跑受影响 workflow-ui/worktree-refresh/action-state-refresh/layout-ui/git-actions-loader：96/96 通过，%TEMP%\forkline-workflow-final-focused.log。
+- 最终完整 Chromium 回归：FORKLINE_BROWSER_PERFORMANCE_SCALE=3 node --test --test-concurrency=1 tests/browser-performance.test.js，1/1 通过，约 68 秒，%TEMP%\forkline-workflow-browser-acceptance.log。包含原文件比较/滚动性能、普通/大历史拖动、旧 Issue 交互及新增六项真实动线；未放宽现有拖动门槛。
+- Electron 文件编辑器/滚动回归：node --test --test-concurrency=1 tests/electron-file-editor-performance.test.js，2/2 通过，约 99 秒，%TEMP%\forkline-workflow-electron.log。使用源码 Electron，未将旧安装版冒称为新源码验证。
+- 源码 Electron 六项组合专项：1/1 通过，约 10 秒，%TEMP%\forkline-workflow-electron-acceptance.log。真实本地裸远端用于抓取、真实暂存 2 个文件和创建提交，未访问真实用户仓库或向远端发布。确认抓取零确认、普通提交零确认、丢弃取消仅一次确认且无执行；其余 3998 文件仍未暂存。
+- 组合专项明确验证工作分支 main / 查看 workflow-view；普通/修改草稿分别恢复；搜索仅已加载120条，继续到240条保留词；同步选择和滚动位置保持；创建提交结束后工作分支正确、搜索清空、新 HEAD 被选中且真实进入可见区域。
+- 1920/1280px 两种宽度相关按钮全部在所属面板内。先复现 1280px 丢弃按钮裁切并修复；截图又发现新提交只选中未滚入视野，新增可见性断言先失败后通过。截图 %TEMP%\forkline-workflow-preview.png 已人工查看。
+- 临时 Electron 脚本首次误用不存在的 supported 字段而失败，按控制器实际 installMode 断言修正；旧提交后推送的单测夹具补充真实页面必备的 searchInput 后通过，没有为测试添加产品兜底逻辑。
+- git diff --check 通过；保护对象 i18n-catalog.js、vendor merge.js、.playwright-cli 记录和异常零字节文件 SHA-256 全部与交接值一致，未改动、暂存或提交。测试脚本及初始产品备份位于 C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx。
+### Notes
+- public/index.html：本轮全量范围、修改提交、提交目标和搜索提示。
+- public/js/features/worktree-changes.js：所选文件计数、分区标记和提交目标。
+- public/js/features/file-tree.js：完整选择范围的动态计数。
+- public/js/features/git-actions-loader.js：草稿模式切换、初次异步读取请求快照及文案。
+- public/js/features/git-actions.js：草稿迟到保护、同步后阅读位置、创建后真实定位及确认策略。
+- public/js/core.js：提交目标元素绑定、核心状态沿用历史深度。
+- public/js/app/events.js：提交模式切换事件接入。
+- public/js/app/init.js：区分工作分支与查看分支。
+- public/js/features/history-list.js：已加载搜索范围和继续搜索入口。
+- public/styles.css：本轮按钮长文案在提交区/工作区内换行。
+- tests/workflow-ui.test.js：新增八项动线单测，后续强化创建提交搜索和滚动断言。
+- tests/helpers/workflow-ui.js：共享真实 UI 组合专项和两种窗口宽度可见性检查。
+- tests/browser-performance.test.js：在原回归末尾加入真实临时分支、裸远端与动线专项。
+- tests/worktree-refresh.test.js：提交并推送夹具增加搜索字段，确认提交后搜索清空且推送新 HEAD。
+- docs/WORKFLOW_IMPROVEMENTS.md：六项行为、验证和未打包的交付状态。
+- progress.md：逐项及组合验收只追加记录。
+- 回滚点：C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx 已保留本轮前的全部修改对象原文件。示例可执行命令 Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-6NWAxx\public\js\features\git-actions.js' -Destination '.\public\js\features\git-actions.js'；其余对象按相同相对路径恢复，即可保留前几轮未提交的拖动修复。不要全量 git restore/clean，也不要触碰四项保护对象；当前未执行回滚。
+
+
+## 2026-09-08 - Task: 六项动线修复的 Windows x64 本地打包
+### What was done
+- 按用户“打包”要求沿用 0.4.24，生成独立目录的 NSIS 安装包与 Electron 绿色 ZIP，包含六项动线和此前顶部列拖动修复；保留旧包作为回退点。
+- 生成安装器 SHA-256 校验文件，复核绿色 ZIP 自带校验文件，更新中文交付说明。未升版、修改产品源码、安装/卸载、提交推送或发布 Release。
+- 用户指出重复文件页面验收；本轮收窄为打包一致性、完整性及新动线实际解压启动检查，后续仅在相关代码变化或复发时执行文件页面完整回归。
+### Testing
+- 打包契约与便携运行时测试 4/4 通过。NSIS 和桌面绿色版构建退出码均为 0；日志 %TEMP%\forkline-workflow-build-installer.log、forkline-workflow-build-portable.log。
+- 安装器通过命令行 electronDist 使用本地 Electron 43.4.1，绿色构建使用原脚本；未把本机运行时路径写入正式配置。
+- 两包 ASAR SHA-256 均为 cbb994b180bc9108f675103d337014fac714a16fabe68144ef49992ed401dd9c；各核对 167 份产品文件，代码逐字节匹配工作区，vendor 包元数据核对 name/version/main/dependencies（electron-builder 会移除 scripts/bugs 等开发字段）。校验脚本首次使用非 Windows 分隔符读取 ASAR 失败，改正路径后完成检查。
+- 安装器 latest.yml 版本、文件名、大小、SHA-512 与 EXE 一致；Authenticode 为 NotSigned。安装器 SHA-256：22bae3737171c4d8b29cd66f89ec95210cb26cdd33438e13d53736b4f592de89，96,223,928 字节。
+- 绿色 ZIP 的 7-Zip 完整性通过、SHA-256 匹配 0d68c2e292ed6fb69174833990de88c3aaba2f1997b90d182c7f7fab06855513，134,583,282 字节。实际解压后 23 份文件逐一匹配构建目录与产品清单，无 data/.git/.github/tests。
+- 从 ZIP 实际解压的 EXE 使用临时仓库完成六项动线组合检查，1/1 通过（约 9.6 秒），安装模式确认 portable。日志 %TEMP%\forkline-workflow-package-portable-smoke.log；校验报告 %TEMP%\forkline-workflow-package-1xDbsY\verification.json。
+- 开始时额外运行了打包 EXE 文件页面回归，结果为 1 通过、1 失败：失败是测试命令把未安装目录的公开 installMode 误设为 unpacked，控制器按设计返回空字符串，在模式断言处结束；另一项滚动回归通过。未将此轮称为全绿，也未为打包重复重跑文件页面；已有源码回归结果见上一轮记录。
+- 源码及配置未改，四项保护对象哈希与打包前一致；git diff --check 通过。
+### Notes
+- docs/WORKFLOW_IMPROVEMENTS.md：更新源码完成后的本地包交付状态。
+- docs/RELEASE_NOTES_v0.4.24.md：新增六项更新内容、最新产物、校验值和未安装/未发布状态。
+- progress.md：仅追加本轮打包与验证记录。
+- dist/local-0.4.24-workflow-installer/：新安装器、blockmap、latest.yml、SHA-256 及构建目录，位于 Git 忽略范围。
+- dist/local-0.4.24-workflow-portable/：新绿色 ZIP、SHA-256 与构建目录，位于 Git 忽略范围。
+- 回滚点：上一轮 dist/local-0.4.24-header-installer/ 和 dist/local-0.4.24-header-portable/ 原样保留；当前未安装，无须回退已安装程序。文档备份位于 C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-package-1xDbsY\docs；可在正式仓库执行 Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-workflow-package-1xDbsY\docs\WORKFLOW_IMPROVEMENTS.md' -Destination '.\docs\WORKFLOW_IMPROVEMENTS.md'，另一份发布说明按相同路径恢复；保留 progress.md 历史，不执行全量 Git 清理。
+
+## 2026-09-24 - Task: Issue 16 增加本地仓库刷新按钮
+### What was done
+- 顶部新增“刷新仓库”，复用已有本地核心状态读取，刷新分支、历史及工作区；保留草稿、搜索、加载深度和有效选择，并按可见提交锚点保持阅读位置。
+- 刷新期间显示处理中并防重复点击，错误后恢复按钮；复用已有请求失效保护，迟到结果不覆盖已切换仓库或分支视图。
+- 确认现有自动刷新为前台 5 秒工作区检查，大量变更且不变时退避至 30 秒，后台暂停请求、恢复活动时立即检查；未修改自动频率、服务端、Git 写操作或鉴权。
+### Testing
+- node --test tests/repository-refresh.test.js tests/worktree-refresh.test.js tests/action-state-refresh.test.js tests/workflow-ui.test.js：43/43 通过。日志 C:\Users\Administrator\AppData\Local\Temp\forkline-issue16-focused.log。
+- 新增 7 项定向测试覆盖入口接线、单次 GET、草稿搜索与位置保留、重复点击、读取失败、仓库/分支切换后的迟到响应、选中提交失效/空仓库及打开过程保护；原自动刷新退避/焦点测试同时通过。
+- 独立临时仓库实际外部创建 external-refresh-check 提交、external-branch 分支和 external.txt 文件，Edge 中点击顶部刷新后全部出现，摘要“保留我的草稿”和正文“正文不能清空”仍保留。证据：%TEMP%\forkline-issue16-20260924-113755\refresh-result.txt。
+- 1280/1920 宽度下按钮在可视区且 Playwright trial click 通过；浏览器错误及警告均为零。独立 5189 测试服务与专用浏览器已关闭，未操作用户仓库。
+- node --check 校验 worktree-refresh.js 和 events.js 通过；git diff --check 通过。四项保护对象哈希与此前记录一致；未重复运行无关文件编辑器回归。
+### Notes
+- public/index.html：顶部本地仓库刷新按钮与范围提示。
+- public/js/core.js：刷新按钮元素绑定。
+- public/js/app/events.js：接入刷新按钮点击事件。
+- public/js/features/worktree-refresh.js：添加手动完整刷新，保留自动刷新实现。
+- tests/repository-refresh.test.js：新增定向回归测试。
+- docs/REPOSITORY_REFRESH.md：说明手动和自动刷新的范围、开销及验证状态。
+- progress.md：仅追加本轮记录。
+- 未打包、安装、提交、推送、评论或关闭 Issue。真实大仓库 CPU/磁盘占用尚未量化，不承诺零消耗。
+- 回滚：原四份产品文件按相对路径备份在 C:\Users\Administrator\AppData\Local\Temp\forkline-issue16-20260924-113755。可在正式仓库执行 Copy-Item -LiteralPath 'C:\Users\Administrator\AppData\Local\Temp\forkline-issue16-20260924-113755\public\js\features\worktree-refresh.js' -Destination '.\public\js\features\worktree-refresh.js'，其余三个产品文件按同样方式恢复；仅删除本轮新增的 tests/repository-refresh.test.js 和 docs/REPOSITORY_REFRESH.md 即可移除新交付，保留日志历史及既有未提交修改。当前未执行回滚。
+
+## 2026-09-24 - Task: 刷新仓库功能打包与本机更新
+### What was done
+- 按“打包更新”要求，生成独立目录的 Windows x64 NSIS 安装版和 Electron 绿色 ZIP，沿用 0.4.24，包含刷新按钮、前轮六项动线及拖动修复。
+- 完整备份既有安装、用户数据与桌面快捷方式后，通过当前用户安装器更新标准目录；保留设置，桌面和开始菜单指向更新后的程序。原程序未运行，无需终止用户进程。
+- 更新交付说明，保留旧包与回退副本；未更改产品源码、版本号、Git 语义、已有标签，未提交推送、发布 Release 或操作 Issue。
+### Testing
+- node --test tests/installer-package.test.js tests/portable-runtime.test.js tests/repository-refresh.test.js：11/11 通过。日志 %TEMP%\forkline-refresh-package-tests.log。
+- 安装版与绿色版构建退出码均为 0，日志 %TEMP%\forkline-refresh-build-installer.log 和 forkline-refresh-build-portable.log。安装版仅命令行 electronDist 指向已存在的 Electron 43.4.1，不写入正式配置。
+- 三份 ASAR（安装构建、绿色构建、ZIP 实际解压）逐一核对 140 份产品文件与源码一致，SHA-256 均为 b2c13215db0f4e439278ed0f3e01ff3a1bd03ce5aefef5eb9271df27dc479c80；明确包含按钮、事件与刷新实现。
+- 安装器为 96,224,172 字节，SHA-256 a0dbf73775c7d2e45700442a7ea597105ded31e01530b98c8a4d938c2a07c80f；latest.yml 版本/文件名/大小/SHA-512 均匹配，Authenticode 为 NotSigned。
+- 绿色 ZIP 为 134,583,390 字节，SHA-256 cf6bf11704b53e0f28809363fdfd7133a93413dd6769acb3fb4d6182fa6433e4；7-Zip 完整性通过，实际解压后 23 份清单文件逐一与构建目录一致，归档无个人 data。
+- 安装器 /S /currentuser 更新至 C:\Users\Administrator\AppData\Local\Programs\Forkline，退出码 0。已安装的 EXE、ASAR、app-update.yml 与构建完全一致；桌面和开始菜单目标正确。
+- 实际安装 EXE 使用隔离配置、绿色版使用实际解压目录，各执行一次临时 Git 仓库刷新专项：外部新提交、新分支、未跟踪文件全部刷新显示，提交摘要和正文保留，安装模式分别为 nsis/portable；正常关闭后进程退出码 0 且后台端口释放。日志 %TEMP%\forkline-refresh-installed-smoke-final.log 和 forkline-refresh-portable-smoke.log。
+- 安装版专项首次因 Windows MSIX 将临时仓库路径映射至 LocalCache，字符串路径断言失败；对实际物理路径用 realpathSync.native 核对后通过。只调整临时测试夹具，没有产品修改，未将首轮结果计作通过。
+- 六份用户设置（桌面偏好、最近仓库、界面偏好、窗口状态、Preferences、Local State）安装前后 SHA-256 一致。四项保护对象哈希一致；git diff --check 通过。没有重复文件编辑器回归或进行卸载测试。
+### Notes
+- docs/REPOSITORY_REFRESH.md：更新打包、本机安装、按钮验证及产物位置。
+- docs/WORKFLOW_IMPROVEMENTS.md：同步此前六项改进已随新包安装的交付状态。
+- docs/RELEASE_NOTES_v0.4.24.md：添加本轮功能、产物、校验值、安装结果和备份点。
+- progress.md：仅追加本轮交付记录。
+- dist/local-0.4.24-refresh-installer/：新 NSIS 安装器、blockmap、latest.yml、SHA-256 与构建目录，Git 忽略。
+- dist/local-0.4.24-refresh-portable/：新绿色 ZIP、SHA-256 与构建目录，Git 忽略。
+- 备份与验证报告物理路径：C:\Users\Administrator\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\Forkline-backups\before-refresh-20260924。旧安装 ASAR SHA-256 为 B2FB2E09B80E5BE049641F5355D27E21801887F98DAC2BC2B4440A968084BEA0；测试日志与临时仓库留作证据。
+- 回滚：先正常退出 Forkline。在 PowerShell 中设置 $backup='C:\Users\Administrator\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\Forkline-backups\before-refresh-20260924'; $target='C:\Users\Administrator\AppData\Local\Programs\Forkline'; Get-ChildItem -LiteralPath "$backup\installed" -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force }，即可用完整旧程序副本恢复此次同版本覆盖；个人设置未变，无须恢复。文档修改前副本在 $backup\docs，可按对应文件 Copy-Item 恢复，保留 progress.md 历史。当前未执行回滚。
+
+## 2026-09-24 - Task: 准备 v0.4.24 正式发布与 Issue 16 回复
+### What was done
+- 查询 GitHub 授权有效；Issue 16 为 OPEN 且无评论，线上 Latest 为 v0.4.23，远端 v0.4.24 标签不存在，main 与本地起点 8f74eb0 一致。
+- 汇总已经实现、打包及本机验证的刷新仓库按钮、六项动线和拖动改进，形成面向用户的中文正式发布说明。
+- 采用现有发布工作流从新标签生成安装器、Electron 绿色 ZIP、Web ZIP 及更新校验附件；不上传本地同名包与 CI 争抢附件，不改已有标签或旧附件。附件验证完成后再回复并关闭 Issue 16。
+### Testing
+- 发布前普通自动回归（排除两个真实 UI 专项文件）：440/440 通过，约 122 秒。日志 %TEMP%\forkline-v0.4.24-release-unit.log。
+- 本轮不重复运行本地文件页面回归；当前安装 EXE/绿色 ZIP 的按钮专项、本地构建和设置保留验证见上一条日志。正式 CI 按仓库现有工作流执行自己的发布校验。
+- 待提交内容核对属于本任务此前实现；i18n-catalog.js 和 vendor merge.js 的文本 diff 为空但保留原始字节，不暂存；异常文件和 .playwright-cli 记录不加入提交。
+### Notes
+- docs/RELEASE_v0.4.24.md：新增面向用户的中文发布正文，涵盖功能、下载类型、自动刷新边界和未签名风险，不包含本机路径或施工过程。
+- progress.md：仅追加发布准备证据；发布和工单最终结果将在后续追加。
+- 正式发布收录本任务此前已记录的产品改动、测试和文档，不增加产品功能、不变更依赖或后端协议。
+- 回滚点：发布前 main=8f74eb0c2e000a223e4c2130bf830b3ff1279e02；如发布提交有问题，使用 git revert <发布提交SHA> 生成修正提交，不移动或覆盖发布标签。仅撤销本轮文档可在提交后反向应用 docs/RELEASE_v0.4.24.md 的变更，保留日志历史。本机完整回退备份位置见上一条记录。

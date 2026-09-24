@@ -3,6 +3,7 @@ const WORKTREE_FILE_INITIAL_LIMIT = 800;
 const WORKTREE_FILE_BATCH_SIZE = 100;
 
 function renderStage(options = {}) {
+  renderCommitTarget();
   if (typeof renderDesktopStatus === "function") renderDesktopStatus();
   const refreshDiff = options.refreshDiff !== false;
   els.changeList.innerHTML = "";
@@ -91,8 +92,18 @@ function renderStage(options = {}) {
   els.draftNote.textContent = worktreeDraftSummary(groups, counts, filterText);
   const unborn = Boolean(state.data?.sync?.unborn);
   els.stashChanges.disabled = unborn;
-  els.stashChanges.title = unborn ? t("当前分支还没有首个提交，不能创建储藏") : t("储藏全部未提交更改");
+  els.stashChanges.title = unborn ? t("当前分支还没有首个提交，不能创建储藏") : t("储藏全部未提交更改，不受文件选择或筛选影响");
   if (typeof renderRecoveryUndoButton === "function") renderRecoveryUndoButton();
+}
+
+function renderCommitTarget() {
+  if (!els.commitTarget) return;
+  const branch = state.data?.repo?.branch || "";
+  const target = branch === "detached HEAD" ? t("提交到：分离的 HEAD（不在分支上）") : t("提交到：{branch}", { branch: branch || "—" });
+  const viewing = state.selectedRef && state.selectedRef !== branch
+    ? t(" · 正在查看：{branch}", { branch: state.selectedRef }) : "";
+  els.commitTarget.textContent = target + viewing;
+  els.commitTarget.title = target + viewing;
 }
 
 function worktreeDraftSummary(groups, counts, filterText = "") {
@@ -300,7 +311,7 @@ function renderChangeSection(scope, title, files, actions) {
   const renderLimit = worktreeFileRenderLimit(scope, files);
   const renderedFiles = files.slice(0, renderLimit);
   return `
-    <section class="change-section">
+    <section class="change-section" data-change-scope="${escapeAttr(scope)}">
       <div class="change-section-title">
         <div class="change-section-label">
           <span>${localizedTitle}</span>
@@ -311,8 +322,8 @@ function renderChangeSection(scope, title, files, actions) {
           ${actions
             .map(
               (item) => `
-                <button class="mini-btn bulk-action ${item.danger ? "danger" : ""}" type="button" data-bulk-file-action="${escapeAttr(item.action)}" data-scope="${escapeAttr(scope)}" ${selectedCount ? "" : "disabled"}>
-                  ${escapeHtml(t(item.bulkLabel || item.label || "操作"))}
+                <button class="mini-btn bulk-action ${item.danger ? "danger" : ""}" type="button" data-bulk-file-action="${escapeAttr(item.action)}" data-scope="${escapeAttr(scope)}" data-selection-label="${escapeAttr(t(item.bulkLabel || item.label || "操作"))}" ${selectedCount ? "" : "disabled"}>
+                  ${escapeHtml(t(item.bulkLabel || item.label || "操作"))}${selectedCount ? ` (${selectedCount})` : ""}
                 </button>
               `
             )

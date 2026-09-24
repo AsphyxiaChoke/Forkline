@@ -128,9 +128,9 @@ function invalidateStateRefreshes() {
   return state.stateRequestId;
 }
 
-async function loadStateForRepoPath(repoPath, ref = state.selectedRef) {
+async function loadStateForRepoPath(repoPath, ref = state.selectedRef, historyLimit = 120) {
   const requestId = invalidateStateRefreshes();
-  const data = await api(`/api/state?ref=${encodeURIComponent(ref)}&details=core`);
+  const data = await api(`/api/state?ref=${encodeURIComponent(ref)}&details=core${historyLimit > 120 ? `&limit=${historyLimit}` : ""}`);
   if (requestId !== state.stateRequestId || !isCurrentRepoPath(repoPath)) return null;
   state.repoDetailRequestId += 1;
   state.repoDetailLoads = {};
@@ -229,6 +229,7 @@ const els = {
   amendToggle: $("#amendToggle"),
   commitPushToggle: $("#commitPushToggle"),
   commitSubmit: $("#commitSubmit"),
+  commitTarget: $("#commitTarget"),
   draftNote: $("#draftNote"),
   workDiffTitle: $("#workDiffTitle"),
   workDiffPath: $("#workDiffPath"),
@@ -236,6 +237,7 @@ const els = {
   editWorktreeFile: $("#editWorktreeFile"),
   maximizeDiff: $("#maximizeDiff"),
   refreshChanges: $("#refreshChanges"),
+  refreshRepository: $("#refreshRepository"),
   diffModal: $("#diffModal"),
   diffModalTitle: $("#diffModalTitle"),
   diffModalPath: $("#diffModalPath"),

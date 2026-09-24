@@ -10,6 +10,8 @@ const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { promisify } = require("node:util");
+const { checkLayoutDragging, checkHistoryColumnDragging } = require("./helpers/layout-drag");
+const { checkWorkflowInteractions } = require("./helpers/workflow-ui");
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(__dirname, "..");
@@ -2787,6 +2789,19 @@ test("real Chromium keeps historical file comparison responsive", {
   t.diagnostic(
     `soak switches: ${switchMetrics.elapsed.toFixed(1)} ms; API median/min/max open ${switchMetrics.open.medianMs.toFixed(1)}/${switchMetrics.open.minMs.toFixed(1)}/${switchMetrics.open.maxMs.toFixed(1)} ms, details ${switchMetrics.openDetails.medianMs.toFixed(1)}/${switchMetrics.openDetails.minMs.toFixed(1)}/${switchMetrics.openDetails.maxMs.toFixed(1)} ms, commit ${switchMetrics.commit.medianMs.toFixed(1)}/${switchMetrics.commit.minMs.toFixed(1)}/${switchMetrics.commit.maxMs.toFixed(1)} ms; calls ${switchMetrics.open.count}/${switchMetrics.openDetails.count}/${switchMetrics.stateRef.count}/${switchMetrics.lightweightRef.count}/${switchMetrics.commit.count}; editor open-close 30x ${editorSoak.elapsed.toFixed(1)} ms; resize listeners ${soakResizeListenersBefore} -> ${soakResizeListenersAfter}; DOM documents/nodes/listeners ${soakMemoryBefore.documents}/${soakMemoryBefore.nodes}/${soakMemoryBefore.jsEventListeners} -> ${soakMemoryAfter.documents}/${soakMemoryAfter.nodes}/${soakMemoryAfter.jsEventListeners}; heap ${(soakMemoryBefore.heapUsed / 1024 / 1024).toFixed(1)} MiB -> ${(soakMemoryAfter.heapUsed / 1024 / 1024).toFixed(1)} MiB`
   );
+  await evaluate(cdp, `(async () => {
+    await openRepo(${JSON.stringify(repo)});
+    const data = await api("/api/ref-state?ref=&limit=5000");
+    state.data.commits = data.commits;
+    state.data.history = data.history;
+    state.selectedRef = "";
+    applyHistoryState(state.data);
+    renderCommits({ inspector: "never" });
+    await refreshWorktree(false);
+  })()`);
+  await checkHistoryColumnDragging(cdp, evaluate, (message) => t.diagnostic(message));
+  await checkLayoutDragging(cdp, evaluate, (message) => t.diagnostic(message));
+  await evaluate(cdp, `openRepo(${JSON.stringify(alternateRepo)})`);
   const issueInteractions = await evaluate(cdp, `(async () => {
     const commits = state.data.commits.slice(0, 3);
     await selectCommit(commits[0].sha);
@@ -2810,7 +2825,7 @@ test("real Chromium keeps historical file comparison responsive", {
     }
     result.messageGrowth = message.getBoundingClientRect().width - initialMessage;
     result.messageWidth = message.getBoundingClientRect().width;
-    result.messagePreference = document.documentElement.style.getPropertyValue('--history-message-w');
+    result.messagePreference = document.querySelector('.history').style.getPropertyValue('--history-message-w');
     result.historyColumns = getComputedStyle(document.querySelector('.history-head')).gridTemplateColumns;
     result.horizontalOverflow = document.querySelector('.history').scrollWidth > document.querySelector('.history').clientWidth;
     const worktree = document.querySelector('.worktree-changes');
@@ -2860,6 +2875,12 @@ test("real Chromium keeps historical file comparison responsive", {
   assert.equal(issueInteractions.folderFiles, 2);
   assert.deepEqual(issueInteractions.folderActions, ['stash', 'stageFile', 'discardWorktreeFile']);
   t.diagnostic('issue interactions: ' + JSON.stringify(issueInteractions));
+  const workflowRemote = path.join(root, 'workflow-remote.git');
+  await execFileAsync('git', ['init', '--bare', workflowRemote], { env: gitEnv });
+  await execFileAsync('git', ['remote', 'add', 'workflow-check', workflowRemote], { cwd: repo, env: gitEnv });
+  await execFileAsync('git', ['branch', 'workflow-view'], { cwd: repo, env: gitEnv });
+  await evaluate(cdp, `openRepo(${JSON.stringify(repo)})`);
+  await checkWorkflowInteractions(cdp, evaluate, message => t.diagnostic(message));
 });
 
 class CdpClient {

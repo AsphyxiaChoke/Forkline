@@ -395,7 +395,9 @@ function renderRepo() {
   const repoPath = repo.isSample ? t(repo.path) : repo.path;
   els.repoPath.textContent = state.selectedRef ? `${repoPath} · ${state.selectedRef}` : repoPath;
   els.sideRepoName.textContent = repo.name;
-  els.sideRepoBranch.textContent = state.selectedRef || repo.branch;
+  els.sideRepoBranch.textContent = t("工作分支：{branch}", { branch: repo.branch });
+  els.sideRepoBranch.title = state.selectedRef && state.selectedRef !== repo.branch
+    ? t("正在查看：{branch}", { branch: state.selectedRef }) : "";
   if (!repo.isSample) els.repoInput.value = repo.path;
 }
 

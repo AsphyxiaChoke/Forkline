@@ -109,8 +109,8 @@ async function runRepoOperation(action, button) {
   return runLazyGitAction("runRepoOperation", [action, button]);
 }
 
-async function fillLatestCommitMessage() {
-  return runLazyGitAction("fillLatestCommitMessage", []);
+async function fillLatestCommitMessage(request) {
+  return runLazyGitAction("fillLatestCommitMessage", [request]);
 }
 
 async function runUpstreamAction(action, ref = "", button = null) {
@@ -290,11 +290,31 @@ function remotePushUrls(remote) {
   return urls.length ? urls : [remote?.pushUrl || ""];
 }
 
+async function changeCommitMode() {
+  const enabled = Boolean(els.amendToggle.checked);
+  if (enabled && !canAmendCurrentHead()) { updateAmendMode(); return; }
+  const repoPath = repoPathSnapshot();
+  if (state.commitModeDrafts?.repoPath !== repoPath) state.commitModeDrafts = { repoPath };
+  const drafts = state.commitModeDrafts;
+  drafts[enabled ? "normal" : "amend"] = {
+    summary: els.commitSummary.value, body: els.commitBody.value,
+    push: Boolean(els.commitPushToggle?.checked), headSha: state.data?.repo?.headSha,
+  };
+  const saved = enabled && drafts.amend?.headSha !== state.data?.repo?.headSha ? null : drafts[enabled ? "amend" : "normal"];
+  updateAmendMode();
+  els.commitSummary.value = saved?.summary || "";
+  els.commitBody.value = saved?.body || "";
+  if (!enabled && els.commitPushToggle) els.commitPushToggle.checked = Boolean(saved?.push);
+  const request = { repoPath, headSha: state.data?.repo?.headSha, summary: els.commitSummary.value, body: els.commitBody.value };
+  state.commitMessageRequest = request;
+  if (enabled && !saved) await fillLatestCommitMessage(request);
+}
+
 function updateAmendMode() {
   const canAmend = canAmendCurrentHead();
   if (!canAmend && els.amendToggle.checked) els.amendToggle.checked = false;
   els.amendToggle.disabled = !canAmend;
-  els.amendToggle.title = canAmend ? t("追加到上一次提交") : t("当前分支还没有上一次提交");
+  els.amendToggle.title = canAmend ? t("修改上次提交会重写其 SHA") : t("当前分支还没有上一次提交");
   const enabled = canAmend && Boolean(els.amendToggle.checked);
   const pushToggle = els.commitPushToggle;
   if (pushToggle) {
@@ -306,8 +326,8 @@ function updateAmendMode() {
         ? t("示例模式不会执行实际推送")
         : t("提交成功后自动推送当前分支");
   }
-  els.commitSubmit.textContent = enabled ? t("追加提交") : t("创建提交");
-  els.commitSubmit.title = enabled ? t("追加到上一次提交") : t("创建新的提交");
+  els.commitSubmit.textContent = enabled ? t("修改上次提交") : t("创建提交");
+  els.commitSubmit.title = enabled ? t("修改上次提交会重写其 SHA") : t("创建新的提交");
 }
 
 function canAmendCurrentHead() {

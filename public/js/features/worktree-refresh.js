@@ -85,6 +85,39 @@ async function refreshWorktree(silent = false) {
   }
 }
 
+async function refreshRepository() {
+  if (!state.data || state.repoHydrating || els.refreshRepository.disabled) return;
+  const repoPath = repoPathSnapshot();
+  const selectedRef = state.selectedRef;
+  const label = els.refreshRepository.textContent;
+  els.refreshRepository.disabled = true;
+  els.refreshRepository.textContent = t("刷新中…");
+  try {
+    const data = await loadStateForRepoPath(repoPath, selectedRef, state.historyLimit);
+    if (!data) return;
+    const selectedSha = state.selectedSha;
+    const scrollTop = els.historyScroll.scrollTop;
+    const anchor = state.filtered?.[Math.floor(scrollTop / rowH)]?.sha;
+    state.historyRequestId += 1;
+    state.commitDetails.clear();
+    state.data = data;
+    state.selectedRef = data.repo.selectedRef ?? selectedRef;
+    state.selectedSha = data.commits.some((commit) => commit.sha === selectedSha)
+      ? selectedSha : data.commits[0]?.sha || "";
+    renderAll();
+    const anchorIndex = state.filtered.findIndex((commit) => commit.sha === anchor);
+    els.historyScroll.scrollTop = anchorIndex >= 0 ? anchorIndex * rowH + scrollTop % rowH : scrollTop;
+    renderCommitViewport();
+    await renderSelectedCommitForRepoPath(repoPath);
+    if (isCurrentRepoPath(repoPath)) toast(t("仓库状态已刷新"));
+  } catch (error) {
+    if (isCurrentRepoPath(repoPath)) toast(error.message);
+  } finally {
+    els.refreshRepository.disabled = false;
+    els.refreshRepository.textContent = label;
+  }
+}
+
 function initWorktreeAutoRefresh() {
   let timer = 0;
   let delay = WORKTREE_AUTO_REFRESH_MIN_MS;

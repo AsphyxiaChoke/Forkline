@@ -46,7 +46,7 @@
         </div>
         <label class="search">
           <span class="search-icon" aria-hidden="true"></span>
-          <input id="searchInput" type="search" placeholder="搜索提交、作者、分支或 SHA" />
+          <input id="searchInput" type="search" placeholder="搜索已加载的提交、作者、分支或 SHA" />
           <output id="searchCount" class="search-count" hidden></output>
           <button id="clearSearch" class="search-clear" type="button" title="清空搜索" aria-label="清空搜索" hidden>×</button>
         </label>
@@ -60,6 +60,7 @@
           <button id="redoRecovery" class="icon-btn recovery-undo-btn" title="恢复刚才撤销的操作" type="button" hidden>恢复</button>
         </div>
         <div class="topbar-action-group topbar-sync-actions">
+          <button id="refreshRepository" class="icon-btn" title="重新读取本地分支、提交历史和工作区状态，不抓取远端" type="button">刷新仓库</button>
           <button class="icon-btn" data-action="fetch" title="git fetch --all --prune" type="button">抓取</button>
           <button class="icon-btn" data-action="pull" title="git pull --ff-only" type="button">拉取</button>
           <button class="icon-btn" data-action="push" title="git push" type="button">推送</button>
@@ -136,9 +137,9 @@
               <span>工作区</span>
               <div class="panel-actions">
                 <button id="refreshChanges" class="mini-btn" type="button" title="刷新工作区更改">刷新</button>
-                <button id="stashChanges" class="mini-btn" type="button" title="储藏全部未提交更改">储藏</button>
-                <button id="stageAll" class="mini-btn" type="button" title="暂存全部更改">暂存</button>
-                <button id="discardAll" class="mini-btn danger" type="button" title="丢弃全部未提交更改">丢弃</button>
+                <button id="stashChanges" class="mini-btn" type="button" title="储藏全部未提交更改，不受文件选择或筛选影响">储藏全部</button>
+                <button id="stageAll" class="mini-btn" type="button" title="暂存全部更改，不受文件选择或筛选影响">暂存全部</button>
+                <button id="discardAll" class="mini-btn danger" type="button" title="丢弃所有已暂存、未暂存和未跟踪文件的更改，不受文件选择或筛选影响">丢弃全部更改</button>
               </div>
             </div>
             <label class="worktree-filter stage-filter">
@@ -158,16 +159,16 @@
           <button class="stage-column-resizer" data-stage-resizer="1" type="button" aria-label="调整暂存区和提交编辑宽度" title="调整暂存区和提交编辑宽度"></button>
           <form id="commitForm" class="commit-form">
             <div class="panel-title commit-form-title">
-              <span>提交编辑</span>
+              <span id="commitTarget">提交到：—</span>
             </div>
             <input id="commitSummary" autocomplete="off" placeholder="提交摘要" />
             <textarea id="commitBody" placeholder="提交说明"></textarea>
             <div class="commit-bottom">
               <span id="draftNote">示例模式</span>
               <div class="commit-actions">
-                <label class="amend-toggle" title="勾选后使用上一次提交信息并追加到上一次提交">
+                <label class="amend-toggle" title="修改上次提交会重写其 SHA；取消勾选可恢复普通提交草稿">
                   <input id="amendToggle" type="checkbox" />
-                  <span>追加</span>
+                  <span>修改上次提交</span>
                 </label>
                 <label class="amend-toggle" title="提交成功后自动推送当前分支">
                   <input id="commitPushToggle" type="checkbox" />

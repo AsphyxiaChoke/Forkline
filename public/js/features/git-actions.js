@@ -286,6 +286,8 @@ function isMissingCheckoutStashError(error) {
 
 async function runAction(action, options = {}) {
   if (!state.data) return false;
+  const preserveHistory = ["fetch", "pull", "pullRebase", "push", "forcePushLease"].includes(action);
+  const createsCommit = action === "commit" || action === "amendCommit";
   const names = {
     fetch: "抓取",
     pull: "拉取",
@@ -298,7 +300,8 @@ async function runAction(action, options = {}) {
     amendCommit: "追加提交",
   };
   const pushAfterCommit = action === "commit" && !options.followUp && !state.data.repo.isSample && Boolean(els.commitPushToggle?.checked);
-  if (!options.skipConfirm && !state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return false;
+  const needsConfirm = !["fetch", "stageAll", "commit"].includes(action) || pushAfterCommit;
+  if (needsConfirm && !options.skipConfirm && !state.data.repo.isSample && !confirm(actionConfirmMessage(action, names[action]))) return false;
   const repoPath = repoPathSnapshot();
   const worktreeOnly = action === "stageAll" || action === "discardAll";
   const affectedFiles = worktreeOnly ? [...new Set((state.data.workingFiles || []).map((file) => file.file).filter(Boolean))] : [];
@@ -333,12 +336,29 @@ async function runAction(action, options = {}) {
       return;
     }
     state.commitDetails.clear();
-    const data = await loadStateForRepoPath(repoPath);
+    const historyView = preserveHistory ? {
+      sha: state.selectedSha,
+      top: els.historyScroll?.scrollTop || 0,
+      anchor: state.filtered?.[Math.floor((els.historyScroll?.scrollTop || 0) / rowH)]?.sha,
+    } : null;
+    const refreshRef = createsCommit
+      ? (state.data.repo.branch === "detached HEAD" ? "" : state.data.repo.branch) : state.selectedRef;
+    const data = await loadStateForRepoPath(repoPath, refreshRef, preserveHistory ? state.historyLimit : 120);
     if (!data) return;
     state.data = data;
-    state.selectedRef = state.data.repo.selectedRef || state.selectedRef;
-    state.selectedSha = state.data.commits[0]?.sha || state.selectedSha;
+    state.selectedRef = state.data.repo.selectedRef ?? state.selectedRef;
+    state.selectedSha = historyView && state.data.commits.some((commit) => commit.sha === historyView.sha)
+      ? historyView.sha : state.data.commits[0]?.sha || "";
+    if (createsCommit) els.searchInput.value = "";
     renderAll();
+    if (historyView && els.historyScroll) {
+      const anchorIndex = state.filtered?.findIndex((commit) => commit.sha === historyView.anchor) ?? -1;
+      els.historyScroll.scrollTop = anchorIndex >= 0 ? anchorIndex * rowH + historyView.top % rowH : historyView.top;
+      if (typeof renderCommitViewport === "function") renderCommitViewport();
+    } else if (createsCommit && els.historyScroll) {
+      els.historyScroll.scrollTop = 0;
+      if (typeof renderCommitViewport === "function") renderCommitViewport();
+    }
     if (state.selectedSha) {
       await loadCommit(state.selectedSha);
       renderInspector();
@@ -441,7 +461,11 @@ async function runRepoOperation(action, button) {
   }
 }
 
-async function fillLatestCommitMessage() {
+async function fillLatestCommitMessage(request) {
+  const currentRequest = () => !request || (state.commitMessageRequest === request
+    && isCurrentRepoPath(request.repoPath) && state.data?.repo?.headSha === request.headSha
+    && els.amendToggle.checked && els.commitSummary.value === request.summary && els.commitBody.value === request.body);
+  if (!currentRequest()) return;
   const commit = currentHeadCommitForAmend();
   if (!canAmendCurrentHead() || !commit) {
     els.amendToggle.checked = false;
@@ -452,14 +476,15 @@ async function fillLatestCommitMessage() {
   const repoPath = repoPathSnapshot();
   try {
     const detail = await api(`/api/commit?sha=${encodeURIComponent(commit.sha)}`);
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentRepoPath(repoPath) || !currentRequest()) return;
     const message = commitMessageParts(commit, detail);
     els.commitSummary.value = message.summary;
     els.commitBody.value = message.body;
   } catch (error) {
-    if (!isCurrentRepoPath(repoPath)) return;
+    if (!isCurrentRepoPath(repoPath) || !currentRequest()) return;
     els.amendToggle.checked = false;
-    updateAmendMode();
+    if (request) await changeCommitMode();
+    else updateAmendMode();
     toast(error.message);
   }
 }
@@ -468,7 +493,7 @@ function updateAmendMode() {
   const canAmend = canAmendCurrentHead();
   if (!canAmend && els.amendToggle.checked) els.amendToggle.checked = false;
   els.amendToggle.disabled = !canAmend;
-  els.amendToggle.title = canAmend ? t("追加到上一次提交") : t("当前分支还没有上一次提交");
+  els.amendToggle.title = canAmend ? t("修改上次提交会重写其 SHA") : t("当前分支还没有上一次提交");
   const enabled = canAmend && Boolean(els.amendToggle.checked);
   const pushToggle = els.commitPushToggle;
   if (pushToggle) {
@@ -480,8 +505,8 @@ function updateAmendMode() {
         ? t("示例模式不会执行实际推送")
         : t("提交成功后自动推送当前分支");
   }
-  els.commitSubmit.textContent = enabled ? t("追加提交") : t("创建提交");
-  els.commitSubmit.title = enabled ? t("追加到上一次提交") : t("创建新的提交");
+  els.commitSubmit.textContent = enabled ? t("修改上次提交") : t("创建提交");
+  els.commitSubmit.title = enabled ? t("修改上次提交会重写其 SHA") : t("创建新的提交");
 }
 
 function canAmendCurrentHead() {

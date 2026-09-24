@@ -81,7 +81,7 @@ test("multiple expanded groups await one pending commit read", async () => {
 
 test("message column can shrink to 80px or expand beyond the viewport without changing neighbours", () => {
   const values = new Map();
-  const c = load("app/layout-utils.js", { document: { documentElement: { style: { setProperty: (name, value) => values.set(name, value) } } } });
+  const c = load("app/layout-utils.js", { document: { querySelector: () => ({ style: { setProperty: (name, value) => values.set(name, value) } }) } });
   c.resizeHistoryBoundary("message", "author", 300, 104, -999);
   assert.equal(values.get("--history-message-w"), "80px");
   c.resizeHistoryBoundary("message", "author", 300, 104, 2000);

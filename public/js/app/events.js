@@ -119,6 +119,7 @@ els.mainlineModal.addEventListener("click", (event) => {
   if (event.target === els.mainlineModal) closeMainlineModal();
 });
 els.refreshChanges.addEventListener("click", () => refreshWorktree(false));
+els.refreshRepository.addEventListener("click", refreshRepository);
 els.editWorktreeFile.addEventListener("click", () => openFileEditorLazy(state.activeDiff?.path || state.selectedFile, state.activeDiff?.previousFile || "").catch((error) => toast(error.message)));
 els.maximizeDiff.addEventListener("click", () => openDiffModalLazy().catch((error) => toast(error.message)));
 els.workDiffView.addEventListener("click", (event) => {
@@ -173,12 +174,7 @@ els.stashChanges.addEventListener("click", () => createStashFromSelection(null))
 els.stageAll.addEventListener("click", () => runAction("stageAll"));
 els.discardAll.addEventListener("click", () => runAction("discardAll"));
 els.amendToggle.addEventListener("change", () => {
-  updateAmendMode();
-  if (els.amendToggle.checked) {
-    fillLatestCommitMessage().finally(reportDesktopRecoveryState);
-  } else {
-    reportDesktopRecoveryState();
-  }
+  changeCommitMode().finally(reportDesktopRecoveryState);
 });
 els.commitSummary.addEventListener("input", reportDesktopRecoveryState);
 els.commitBody.addEventListener("input", reportDesktopRecoveryState);

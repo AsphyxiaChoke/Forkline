@@ -1057,11 +1057,14 @@ test("temporarily constrained side panels recover their preferred widths", () =>
 });
 
 test("bottom panel resizer updates and saves the stage height", () => {
+  const frames = layoutAnimationFrames();
   const values = new Map([
     ["--sidebar-w", "240px"],
     ["--inspector-w", "340px"],
     ["--stage-h", "300px"],
   ]);
+  const gridValues = new Map();
+  const grid = { style: { setProperty: (name, value) => gridValues.set(name, value), removeProperty: (name) => gridValues.delete(name) } };
   const stored = new Map();
   const handleListeners = new Map();
   const documentListeners = new Map();
@@ -1081,31 +1084,41 @@ test("bottom panel resizer updates and saves the stage height", () => {
       },
       documentElement: { style: { setProperty: (name, value) => values.set(name, value) } },
       querySelectorAll: () => [handle],
-      querySelector: () => null,
+      querySelector: (selector) => selector === ".main" ? grid : null,
       addEventListener: (name, listener) => documentListeners.set(name, listener),
       removeEventListener: (name) => documentListeners.delete(name),
     },
-    getComputedStyle: () => ({ getPropertyValue: (name) => values.get(name) || "" }),
+    getComputedStyle: () => ({ getPropertyValue: (name) => name === "grid-template-rows" ? "46px 500px 300px" : values.get(name) || "" }),
     localStorage: {
       getItem: (name) => stored.get(name) ?? null,
       setItem: (name, value) => stored.set(name, String(value)),
     },
-    window: { addEventListener: () => {}, innerHeight: 900, innerWidth: 1600 },
+    window: { ...frames, addEventListener: () => {}, innerHeight: 900, innerWidth: 1600 },
   });
   vm.runInContext(layoutSource, context);
   context.initLayoutResizers();
 
   handleListeners.get("pointerdown")({ clientY: 500, pointerId: 1, preventDefault: () => {} });
+  documentListeners.get("pointermove")({ clientY: 450 });
   documentListeners.get("pointermove")({ clientY: 420 });
-  assert.equal(values.get("--stage-h"), "380px");
+  assert.equal(values.get("--stage-h"), "300px");
+  frames.flush();
+  assert.equal(gridValues.get("grid-template-rows"), "46px minmax(0, 1fr) 380px");
+  assert.equal(values.get("--stage-h"), "300px");
   assert.equal(bodyClasses.has("resizing"), true);
 
-  documentListeners.get("pointerup")();
-  assert.equal(stored.get("forkline-stage-h"), "380");
+  documentListeners.get("pointermove")({ clientY: 400 });
+  documentListeners.get("pointerup")({ type: "pointerup", clientY: 390 });
+  assert.equal(stored.get("forkline-stage-h"), "410");
+  assert.equal(values.get("--stage-h"), "410px");
+  assert.equal(gridValues.has("grid-template-rows"), false);
+  frames.flush();
+  assert.equal(gridValues.has("grid-template-rows"), false);
   assert.equal(bodyClasses.has("resizing"), false);
 });
 
 test("history header resizer updates the graph column and saves all visible widths", () => {
+  const frames = layoutAnimationFrames();
   const values = new Map([["--graph-w", "176px"]]);
   const stored = new Map();
   const handleListeners = new Map();
@@ -1123,7 +1136,7 @@ test("history header resizer updates the graph column and saves all visible widt
     closest: () => cells[0],
     setPointerCapture: () => {},
   };
-  const history = {};
+  const history = { style: { setProperty: (name, value) => values.set(name, value) } };
   const head = { clientWidth: 788 };
   const documentElement = {
     style: {
@@ -1156,21 +1169,28 @@ test("history header resizer updates the graph column and saves all visible widt
     scheduleCommitGraphResize: () => {
       graphResizeRequests += 1;
     },
-    window: { addEventListener: () => {}, innerWidth: 1600 },
+    window: { ...frames, addEventListener: () => {}, innerWidth: 1600 },
   });
   vm.runInContext(layoutSource, context);
   context.initHistoryColumnResizers();
 
   handleListeners.get("pointerdown")({ clientX: 200, pointerId: 1, preventDefault: () => {} });
   graphResizeRequests = 0;
+  documentListeners.get("pointermove")({ clientX: 220 });
   documentListeners.get("pointermove")({ clientX: 240 });
+  assert.equal(values.get("--history-graph-col-w"), "176px");
+  frames.flush();
   assert.equal(values.get("--history-graph-col-w"), "216px");
   assert.equal(graphResizeRequests, 1);
   assert.equal(bodyClasses.has("resizing"), true);
 
-  documentListeners.get("pointerup")();
+  documentListeners.get("pointermove")({ clientX: 256 });
+  documentListeners.get("pointercancel")();
   const saved = JSON.parse(stored.get("forkline-history-columns"));
-  assert.equal(saved.graph, 216);
+  assert.equal(saved.graph, 232);
+  frames.flush();
+  assert.equal(values.get("--history-graph-col-w"), "232px");
+  assert.equal(documentListeners.has("pointermove"), false);
   assert.equal(saved.author, 140);
   assert.equal(saved.time, 90);
   assert.equal(saved.sha, 82);
@@ -1425,4 +1445,14 @@ function commandButton(command, title = "") {
   const hint = { parentElement: button, textContent: command };
   const root = { querySelectorAll: () => [hint] };
   return { button, root };
+}
+
+function layoutAnimationFrames() {
+  let next = 0;
+  const pending = new Map();
+  return {
+    requestAnimationFrame: (callback) => { pending.set(++next, callback); return next; },
+    cancelAnimationFrame: (id) => pending.delete(id),
+    flush: () => { const callbacks = [...pending.values()]; pending.clear(); callbacks.forEach((callback) => callback()); },
+  };
 }

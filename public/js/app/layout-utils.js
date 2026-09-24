@@ -113,10 +113,43 @@ function resetLayoutPreferences() {
   historyColumnPreferences = {};
   (window.ForklinePreferenceStorage?.storage || localStorage).removeItem("forkline-stage-columns");
   ["--stage-worktree-w", "--stage-index-w", "--stage-commit-w"].forEach((variable) => document.documentElement.style.removeProperty(variable));
-  Object.values(historyColumnVariables).forEach((variable) => document.documentElement.style.removeProperty(variable));
+  Object.values(historyColumnVariables).forEach((variable) => document.querySelector(".history").style.removeProperty(variable));
   if (typeof scheduleCommitViewportRender === "function") scheduleCommitViewportRender();
+  if (typeof scheduleCommitGraphResize === "function") scheduleCommitGraphResize();
   toast(t("布局已恢复默认"));
   renderInspector();
+}
+
+function beginResizeDrag(event, handle, update, finish) {
+  event.preventDefault();
+  handle.setPointerCapture?.(event.pointerId);
+  document.body.classList.add("resizing");
+  let frame = 0;
+  let latest = null;
+  const flush = () => {
+    frame = 0;
+    if (!latest) return;
+    const input = latest;
+    latest = null;
+    update(input);
+  };
+  const move = (input) => {
+    latest = input;
+    if (!frame) frame = window.requestAnimationFrame(flush);
+  };
+  const stop = (input) => {
+    if (frame) window.cancelAnimationFrame(frame);
+    if (input?.type === "pointerup") latest = input;
+    flush();
+    document.body.classList.remove("resizing");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    document.removeEventListener("pointercancel", stop);
+    finish();
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop, { once: true });
+  document.addEventListener("pointercancel", stop, { once: true });
 }
 
 function initLayoutResizers() {
@@ -130,29 +163,30 @@ function initLayoutResizers() {
     const config = configs[handle.dataset.resizer];
     if (!config) return;
     handle.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      handle.setPointerCapture?.(event.pointerId);
+      if (event.button > 0) return;
       const startPoint = config.axis === "x" ? event.clientX : event.clientY;
       const startSize = numericCssVar(config.varName);
-      document.body.classList.add("resizing");
-      const onMove = (moveEvent) => {
-        const point = config.axis === "x" ? moveEvent.clientX : moveEvent.clientY;
-        const next = clamp(startSize + (point - startPoint) * config.sign, config.min, configMax(config));
-        root.style.setProperty(config.varName, `${next}px`);
+      const max = configMax(config);
+      const grid = document.querySelector(config.axis === "y" ? ".main" : ".workspace");
+      const property = config.axis === "y" ? "grid-template-rows" : "grid-template-columns";
+      const tracks = getComputedStyle(grid).getPropertyValue(property).split(" ");
+      const track = config.axis === "y" ? 2 : handle.dataset.resizer === "sidebar" ? 0 : 4;
+      tracks[config.axis === "y" ? 1 : 2] = "minmax(0, 1fr)";
+      let current = startSize;
+      beginResizeDrag(event, handle, (input) => {
+        const point = config.axis === "x" ? input.clientX : input.clientY;
+        const next = clamp(startSize + (point - startPoint) * config.sign, config.min, max);
+        if (next === current) return;
+        current = next;
+        tracks[track] = `${next}px`;
+        grid.style.setProperty(property, tracks.join(" "));
         if (config.axis === "y" && typeof scheduleCommitViewportRender === "function") scheduleCommitViewportRender();
-      };
-      const onUp = () => {
-        const current = numericCssVar(config.varName);
+      }, () => {
+        root.style.setProperty(config.varName, `${current}px`);
+        grid.style.removeProperty(property);
         (window.ForklinePreferenceStorage?.storage || localStorage).setItem(config.store, String(current));
         applyHistoryColumnPreferences();
-        document.body.classList.remove("resizing");
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-        document.removeEventListener("pointercancel", onUp);
-      };
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp, { once: true });
-      document.addEventListener("pointercancel", onUp, { once: true });
+      });
     });
   });
   window.addEventListener("resize", () => clampLayoutVars(configs));
@@ -175,13 +209,14 @@ function initStageColumnResizers() {
   } catch {}
   stage.querySelectorAll("[data-stage-resizer]").forEach((handle) => {
     const sizes = () => [...stage.querySelectorAll(":scope > .changes, :scope > .commit-form")].map((panel) => panel.getBoundingClientRect().width);
-    const resize = (widths, delta) => {
+    const resize = (widths, delta, preview = false) => {
       const index = Number(handle.dataset.stageResizer);
       const pair = widths[index] + widths[index + 1];
       const next = [...widths];
       next[index] = clamp(widths[index] + delta, 100, pair - 100);
       next[index + 1] = pair - next[index];
-      apply(next);
+      if (preview) stage.style.gridTemplateColumns = next.map((width) => `minmax(100px, ${width}fr)`).join(" 5px ");
+      else apply(next);
       return next;
     };
     handle.addEventListener("pointerdown", (event) => {
@@ -190,19 +225,13 @@ function initStageColumnResizers() {
       const widths = sizes();
       const startX = event.clientX;
       let next = widths;
-      handle.setPointerCapture?.(event.pointerId);
-      document.body.classList.add("resizing");
-      const move = (input) => { next = resize(widths, input.clientX - startX); };
-      const stop = () => {
+      beginResizeDrag(event, handle, (input) => {
+        next = resize(widths, input.clientX - startX, true);
+      }, () => {
+        apply(next);
+        stage.style.removeProperty("grid-template-columns");
         storage.setItem("forkline-stage-columns", JSON.stringify(next));
-        document.body.classList.remove("resizing");
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", stop);
-        document.removeEventListener("pointercancel", stop);
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", stop, { once: true });
-      document.addEventListener("pointercancel", stop, { once: true });
+      });
     });
     handle.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
@@ -225,28 +254,17 @@ function initHistoryColumnResizers() {
 }
 
 function beginHistoryColumnResize(event, handle) {
+  if (event.button > 0) return;
   const boundary = historyResizeBoundary(handle);
   if (!boundary) return;
-  event.preventDefault();
-  freezeVisibleHistoryColumnWidths(boundary.cells);
-  handle.setPointerCapture?.(event.pointerId);
   const startX = event.clientX;
+  const leftName = boundary.left.dataset.historyColumn;
   const leftWidth = boundary.left.getBoundingClientRect().width;
-  const rightWidth = boundary.right.getBoundingClientRect().width;
-  document.body.classList.add("resizing");
-  const onMove = (moveEvent) => {
-    resizeHistoryBoundary(boundary.left.dataset.historyColumn, boundary.right.dataset.historyColumn, leftWidth, rightWidth, moveEvent.clientX - startX);
-  };
-  const onUp = () => {
-    saveHistoryColumnPreferences();
-    document.body.classList.remove("resizing");
-    document.removeEventListener("pointermove", onMove);
-    document.removeEventListener("pointerup", onUp);
-    document.removeEventListener("pointercancel", onUp);
-  };
-  document.addEventListener("pointermove", onMove);
-  document.addEventListener("pointerup", onUp, { once: true });
-  document.addEventListener("pointercancel", onUp, { once: true });
+  const limit = historyColumnLimit(leftName);
+  freezeVisibleHistoryColumnWidths(boundary.cells);
+  beginResizeDrag(event, handle, (input) => {
+    updateHistoryColumnPreference(leftName, clamp(leftWidth + input.clientX - startX, limit.min, limit.max));
+  }, saveHistoryColumnPreferences);
 }
 
 function resizeHistoryColumnFromKeyboard(event, handle) {
@@ -279,10 +297,9 @@ function visibleHistoryColumnCells() {
 }
 
 function freezeVisibleHistoryColumnWidths(cells = visibleHistoryColumnCells()) {
-  cells.forEach((cell) => {
-    const name = cell.dataset.historyColumn;
+  const widths = cells.map((cell) => [cell.dataset.historyColumn, Math.round(cell.getBoundingClientRect().width)]);
+  widths.forEach(([name, width]) => {
     if (!historyColumnVariables[name]) return;
-    const width = Math.round(cell.getBoundingClientRect().width);
     historyColumnPreferences[name] = width;
     setHistoryColumnWidth(name, width);
   });
@@ -296,13 +313,14 @@ function resizeHistoryBoundary(leftName, rightName, leftWidth, rightWidth, delta
 
 function updateHistoryColumnPreference(name, width) {
   const next = Math.round(width);
+  if (historyColumnPreferences[name] === next) return;
   historyColumnPreferences[name] = next;
   setHistoryColumnWidth(name, next);
 }
 
 function setHistoryColumnWidth(name, width) {
   const variable = historyColumnVariables[name];
-  if (variable) document.documentElement.style.setProperty(variable, `${Math.round(width)}px`);
+  if (variable) document.querySelector(".history").style.setProperty(variable, `${Math.round(width)}px`);
   if (name === "graph" && typeof scheduleCommitGraphResize === "function") scheduleCommitGraphResize();
 }
 

@@ -1,5 +1,4 @@
 // Commit list rendering and commit search.
-const COMMIT_VIRTUALIZATION_THRESHOLD = 240;
 const COMMIT_VIEWPORT_OVERSCAN_ROWS = 12;
 let commitGraphResizeFrame = 0;
 let commitViewportFrame = 0;
@@ -41,7 +40,7 @@ function renderCommits(options = {}) {
   commitLayoutCache = layoutGraphCommits(state.filtered, state.selectedRef);
   commitRenderedGraphWidth = graphRenderWidth(commitLayoutCache, state.selectedRef);
   commitHighlightPattern = highlightPattern;
-  commitVirtualized = state.filtered.length > COMMIT_VIRTUALIZATION_THRESHOLD;
+  commitVirtualized = state.filtered.length * rowH > (els.historyScroll?.clientHeight || rowH * 12);
   commitViewportStart = -1;
   commitViewportEnd = -1;
   els.commitGraph.classList.toggle("virtualized", commitVirtualized);
@@ -174,7 +173,7 @@ function appendHistoryLoadMore(graphHeight = Math.max(rowH, (state.filtered?.len
     ? t("正在加载更早提交...")
     : reachedLimit
       ? t("已达到 {count} 条显示上限", { count: maxLimit })
-      : t("加载更早提交");
+      : commitSearchTerms().length ? t("继续搜索更早历史") : t("加载更早提交");
   els.commitGraph.insertAdjacentHTML(
     "beforeend",
     `<div class="history-load-more" style="top:${graphHeight}px"><button class="mini-btn" data-load-more-commits type="button" ${state.historyLoading || reachedLimit ? "disabled" : ""}>${escapeHtml(label)}</button><span>${escapeHtml(t("已载入 {count} 条", { count: loaded }))}</span></div>`
@@ -216,7 +215,7 @@ async function loadMoreCommits(button) {
     state.historyLoading = false;
     if (button) {
       button.disabled = false;
-      button.textContent = t("加载更早提交");
+      button.textContent = commitSearchTerms().length ? t("继续搜索更早历史") : t("加载更早提交");
     }
     toast(error.message);
   }
@@ -239,14 +238,12 @@ function cancelScheduledCommitGraphResize() {
 function refreshCommitGraphForColumnWidth() {
   const currentGraph = els.commitGraph.querySelector(".graph-lines");
   if (!currentGraph || !Array.isArray(state.filtered)) return;
-  commitLayoutCache = layoutGraphCommits(state.filtered, state.selectedRef);
-  commitRenderedGraphWidth = graphRenderWidth(commitLayoutCache, state.selectedRef);
-  if (commitVirtualized) {
-    renderCommitViewport(true);
-    return;
-  }
+  const width = graphRenderWidth(commitLayoutCache, state.selectedRef);
+  if (width === commitRenderedGraphWidth) return;
+  commitRenderedGraphWidth = width;
   const minHeight = Math.max(rowH, state.filtered.length * rowH);
-  currentGraph.outerHTML = renderGraphSvg(commitLayoutCache, minHeight, state.selectedRef, commitRenderedGraphWidth);
+  const range = commitVirtualized ? { start: commitViewportStart, end: commitViewportEnd } : undefined;
+  currentGraph.outerHTML = renderGraphSvg(commitLayoutCache, minHeight, state.selectedRef, commitRenderedGraphWidth, range);
 }
 
 function renderCommitInspector(mode, previousSelectedSha) {
@@ -374,8 +371,9 @@ function isHeadCommit(commit) {
 
 function updateCommitSearchMeta(terms, visibleCount, totalCount) {
   const active = terms.length > 0;
-  els.searchCount.textContent = active ? `${visibleCount}/${totalCount}` : "";
-  els.searchCount.title = active ? t("搜索结果：{visible} / {total} 个提交", { visible: visibleCount, total: totalCount }) : "";
+  els.searchInput.placeholder = t("搜索已加载的 {count} 条提交", { count: totalCount });
+  els.searchCount.textContent = active ? t("{visible} / 已加载 {total}", { visible: visibleCount, total: totalCount }) : "";
+  els.searchCount.title = active ? t("仅搜索已加载的 {total} 条提交，匹配 {visible} 条；更早历史需继续加载", { visible: visibleCount, total: totalCount }) : "";
   els.searchCount.hidden = !active;
   els.clearSearch.hidden = !active;
   els.searchInput.closest(".search")?.classList.toggle("active", active);

@@ -9,6 +9,7 @@ const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { promisify } = require("node:util");
+const { checkLayoutDragging } = require("./helpers/layout-drag");
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(__dirname, "..");
@@ -244,6 +245,7 @@ test("Electron standalone file editor stays responsive during rapid scrolling", 
     "MergeView conflict result was not written to disk"
   );
   assert.equal(await evaluate(editorCdp, "document.title"), "Forkline 编辑器");
+  await checkLayoutDragging(mainCdp, evaluate, (message) => t.diagnostic(message));
 });
 
 test("Electron standalone history comparison stays responsive and memory-bounded after rapid scrollbar dragging", {

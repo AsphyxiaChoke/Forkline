@@ -578,7 +578,8 @@ function refreshChangeSelectionUi() {
     });
     root.querySelectorAll(".change-section").forEach((section) => {
       const rows = [...section.querySelectorAll("[data-select-file][data-scope]")];
-      const selectedCount = rows.filter((row) => row.classList.contains("multi-selected")).length;
+      const scope = section.dataset.changeScope || rows[0]?.dataset.scope || "";
+      const selectedCount = selectedFilesInScope(scope, filteredGroups[scope] || []).length;
       const actions = section.querySelector(".change-section-actions");
       let count = actions?.querySelector(".selected-count");
       if (selectedCount && actions) {
@@ -593,6 +594,7 @@ function refreshChangeSelectionUi() {
       }
       actions?.querySelectorAll("[data-bulk-file-action]").forEach((button) => {
         button.disabled = selectedCount === 0;
+        if (button.dataset.selectionLabel) button.textContent = `${button.dataset.selectionLabel}${selectedCount ? ` (${selectedCount})` : ""}`;
       });
     });
     root.querySelectorAll("[data-select-folder]").forEach((button) => {

@@ -877,6 +877,7 @@ test("commit can push the current branch after refreshing the new HEAD", async (
   };
   const els = {
     commitSummary: { value: "new commit" },
+    searchInput: { value: "previous search" },
     commitBody: { value: "" },
     commitPushToggle: { checked: true },
   };
@@ -917,5 +918,6 @@ test("commit can push the current branch after refreshing the new HEAD", async (
   assert.deepEqual(actions.map((item) => item.action), ["commit", "push"]);
   assert.equal(actions[0].expectedHead, "a");
   assert.equal(actions[1].expectedHead, "b");
+  assert.equal(els.searchInput.value, "");
   assert.equal(confirmations.length, 1);
 });
