@@ -29,4 +29,4 @@
 
 - 安装版：`dist/local-0.4.24-refresh-installer/Forkline-Setup-0.4.24-windows-x64.exe`。
 - 绿色版：`dist/local-0.4.24-refresh-portable/Forkline-v0.4.24-windows-x64-portable.zip`。
-- 校验值与备份信息见 [本地更新说明](RELEASE_NOTES_v0.4.24.md)。本地安装已更新，尚未发布 GitHub Release。
+- 本地构建校验值与备份信息见 [本地更新说明](RELEASE_NOTES_v0.4.24.md)。2026-09-24 已正式发布 [v0.4.24](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.24)，提供安装版、绿色版和 Web 包；正式附件使用发布页随附的校验值。

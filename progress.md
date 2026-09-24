@@ -11868,3 +11868,25 @@ Remove-Item -LiteralPath 'tests/helpers/layout-drag.js','docs/ISSUE_3_DRAG_PERFO
 - docs/PACKAGING.md：说明正常三栏交互与慢构建降级分开验收。
 - progress.md：追加 CI 首次重试失败、最小复现及修正验证。
 - 回滚：使用 git revert <本轮测试隔离提交SHA> 撤销测试/工作流变更，保留日志历史；不移动 v0.4.24 标签，不覆盖已有 Web 附件。
+
+## 2026-09-24 - Task: 完成 v0.4.24 正式发布与 Issue 16 回复关闭
+### What was done
+- 完成 Windows x64 安装版、绿色版、Web 包及更新元数据发布，中文 Release 已公开并设为 Latest。产品提交为 befdd75ccddf6921840b526553d511def5ac9f50，v0.4.24 标签保持不变，未覆盖同名附件。
+- 下载八份正式附件完成独立校验，并将本地交付文档更新为正式发布状态；本机构建记录与正式 CI 附件哈希分开保留。
+- 操作前确认 Issue 16 为 OPEN 且无评论；只发送一次中文回复，说明按钮位置、刷新效果、草稿与阅读位置保留、自动刷新及资源开销、验证和下载入口，随后按 completed 关闭。评论 https://github.com/AsphyxiaChoke/Forkline/issues/16#issuecomment-5808135130，关闭时间 2026-09-24T05:14:42Z。
+### Testing
+- Web 工作流 35956207063 与最终安装器工作流 35957505959 均 success。最终 CI 普通测试 440/440、Chromium 1/1、Electron 2/2 全部通过；前两次安装器任务 35956207133、35956970792 的失败与测试夹具修正已在前两条日志记录，没有改动产品标签或放宽产品断言。
+- 八份正式附件字节数和 SHA-256 与 GitHub API digest 一致，三份 .sha256 正确，latest.yml 的版本、名称、大小和 SHA-512 与安装器匹配；远端中文正文与本地正式发布说明一致。
+- 两个 ZIP 完整性及解压通过。绿色包 140 份产品文件匹配原 v0.4.24 标签，版本与 portable 标记正确，不含用户 data。文本仅归一化 CRLF/LF：初次本机审计将无扩展名 LICENSE 当成二进制而失败，确认许可证仅有 201 处换行差异后修正审计脚本的文本分类，完整重验通过，未修改任何附件。
+- 正式 Web 包 main、origin、HEAD 和干净工作区验证通过，Node v24.13.0，实际启动 HTTP 200 并包含刷新按钮。安装器 Authenticode 为 NotSigned，与发布说明风险提示一致；本轮未重复安装或卸载。
+- 核验 Latest=v0.4.24、远端 tag object=6d0ebd4609a14e212cd3360f733db238e9848a4d、本地 peeled commit=befdd75ccddf6921840b526553d511def5ac9f50；Issue 16 复查为 CLOSED 且仅本轮一条评论。
+- 审计结果保存于 dist/release-0.4.24-verified/verification.json、web-smoke.json、release.json、issue16-final.json；最终 CI 完整日志位于 %TEMP%\forkline-v0.4.24-installer-ci-final-full.log。Git diff --check 通过，四项保护对象 SHA-256 与任务接手记录一致。
+### Notes
+- docs/REPOSITORY_REFRESH.md：更新刷新功能正式发布状态与入口。
+- docs/WORKFLOW_IMPROVEMENTS.md：更新六项操作动线改进的正式交付状态。
+- docs/RELEASE_NOTES_v0.4.24.md：增加正式发布入口，明确本机历史构建与 CI 附件分别校验。
+- docs/PACKAGING.md：追加最终 CI、正式附件哈希、包内容与工单验收结果。
+- progress.md：仅追加发布与工单闭环证据。
+- dist/release-0.4.24-verified/：Git 忽略的正式附件与审计证据；本机备份目录的 release-verify.cjs 仅修正许可证文本分类，不加入产品或提交。
+- 下载大附件时仅对本轮 curl 命令使用已有 http://127.0.0.1:7897 代理断点续传，未改变系统或 Git 全局代理，未重新授权。
+- 回滚点：本轮文档前 main=5784a2e。若需撤销文档，在正式仓库执行 git restore --source=5784a2e -- docs/REPOSITORY_REFRESH.md docs/WORKFLOW_IMPROVEMENTS.md docs/RELEASE_NOTES_v0.4.24.md docs/PACKAGING.md 后单独提交，保留 progress.md 历史。工单如需重开可执行 gh issue reopen 16 --repo AsphyxiaChoke/Forkline；产品回退应另发修正版本，不移动既有标签或覆盖附件。本轮未执行回滚。

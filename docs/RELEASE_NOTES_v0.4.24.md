@@ -1,5 +1,9 @@
 # v0.4.24 本地更新
 
+## 正式发布状态
+
+2026-09-24 已正式发布 [Forkline v0.4.24](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.24)，提供安装版、绿色版、Web 包及安装版更新元数据。更新内容见 [正式发布说明](RELEASE_v0.4.24.md)。本页保留本机构建、安装及回退记录；以下本地构建哈希不适用于正式 CI 附件，正式下载请使用发布页随附的 SHA-256。
+
 ## 更新内容
 
 - 顶部新增“刷新仓库”：更新本地分支、提交历史和工作区状态，保留提交草稿、搜索条件及有效阅读位置；刷新期间显示进度并阻止重复点击。
@@ -19,7 +23,7 @@
 
 - 安装版：运行 `Forkline-Setup-0.4.24-windows-x64.exe` 更新现有安装，继续通过桌面或开始菜单启动。
 - 绿色版：解压 `Forkline-v0.4.24-windows-x64-portable.zip`，双击 `Forkline.exe`；个人设置保存在同目录 `data`。
-- 本轮交付为本地打包更新，尚未创建 GitHub Release，线上自动更新暂不提供此版本。
+- 本地打包阶段尚未发布；现已完成正式发布，安装版更新元数据已随 Release 提供。
 - Windows 包未签名，可能显示“未知发布者”或 SmartScreen 提示；交付文件附有 SHA-256 校验文件。
 
 ## 首轮验证
@@ -45,7 +49,7 @@
 - 两包均附 `.sha256`；安装更新元数据与 EXE 匹配，ZIP 完整性通过。140 份产品文件与当前源码逐字节一致，两包 ASAR SHA-256 均为 `b2c13215db0f4e439278ed0f3e01ff3a1bd03ce5aefef5eb9271df27dc479c80`。
 - 本机安装退出码 0；已安装 EXE、ASAR 和更新配置与构建一致。桌面、开始菜单均指向 `C:\Users\Administrator\AppData\Local\Programs\Forkline\Forkline.exe`。
 - 打包契约与按钮测试 11/11 通过；已安装程序及实际解压绿色版均通过临时仓库外部提交、分支、文件刷新和草稿保留检查，正常退出后后台端口释放。六份设置文件哈希与安装前一致。
-- 版本仍为 0.4.24，本地安装已更新，未发布 GitHub Release。Windows 包仍未签名。
+- 版本为 0.4.24，本地安装已更新；同日完成正式发布，正式附件与此处本地产物分别校验。Windows 包未签名。
 - 完整旧程序、设置及快捷方式备份：`C:\Users\Administrator\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\Forkline-backups\before-refresh-20260924`。需要回退时，先正常退出 Forkline，再将其中 `installed` 下的文件复制回标准安装目录；仅在需要恢复设置时使用 `user-data` 副本。
 
 ## 历史本地产物（六项动线修复）

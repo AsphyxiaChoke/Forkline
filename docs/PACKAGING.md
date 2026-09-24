@@ -624,3 +624,20 @@ v0.4.24 首次安装器任务在原生作者列拖动检查失败。独立 Headl
 手动执行安装器工作流并指定 `tag=v0.4.24` 时，仅从工作流提交借用 `tests/helpers/layout-drag.js` 和 `tests/browser-performance.test.js`；测试后恢复为不可变标签中的文件，再构建发布附件。产品源码仍固定为 v0.4.24，已有标签和已上传附件不覆盖。
 
 小冲突文件的 MergeView 应用按钮检查与自动慢构建降级检查分别验收：前者仅在首次构建该夹具时绕开计时降级，立即恢复保护函数；后者继续用真实保护与 300ms 注入验证轻量降级和记忆重开。这样共享 Runner 的负载不会把两条互斥界面模式混为同一断言，产品阈值、三栏和写入结果检查均不变。
+
+## v0.4.24 正式发布验收（2026-09-24）
+
+- [正式发布页](https://github.com/AsphyxiaChoke/Forkline/releases/tag/v0.4.24) 已公开并设为 Latest，正文为中文。不可变标签指向产品提交 `befdd75ccddf6921840b526553d511def5ac9f50`。
+- Web 工作流 `35956207063`、安装器与绿色版最终工作流 `35957505959` 均成功；最终安装器流程普通测试 440/440、Chromium 1/1、Electron 2/2 通过。前两次安装器流程失败及测试夹具修正见前节，构建前已恢复原标签测试文件。
+- 八份正式附件全部实际下载，字节数和 SHA-256 与 GitHub API digest 一致；三份校验文件和 `latest.yml` 的版本、名称、大小、SHA-512 全部匹配。中文正文与 `docs/RELEASE_v0.4.24.md` 一致。
+
+| 正式主附件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| Forkline-Setup-0.4.24-windows-x64.exe | 96,136,850 | `eecafad71b61bba678043a937d6609dbe1ff68c71ead080f60afbdb7efe5186f` |
+| Forkline-v0.4.24-windows-x64-portable.zip | 134,579,874 | `991864408752052ed4eef5fc01d9f93eef602d8b845ef59cdd0ca2203195283d` |
+| Forkline-v0.4.24-windows-x64-web.zip | 37,152,931 | `c76e0f26316497284c5d262e09de8acf9a42bc3a67534a137e52e839aee8a7dd` |
+
+- 两个 ZIP 的完整性与解压检查通过。绿色 ASAR 内 140 份产品文件与原标签一致（文本仅归一化 CRLF/LF，二进制逐字节比较），版本和绿色标记正确，未包含用户 `data`；ASAR SHA-256 为 `c62fce2ac9fea7f5e300ff9a1570482a486beb9de341e895634d177d743a11fb`。
+- 正式 Web 包为 main、官方 origin、产品标签提交及干净工作区；内置 Node v24.13.0，实际启动 HTTP 200 且首页包含刷新按钮，验证服务已停止。
+- 正式安装器签名状态为 `NotSigned`，发布说明已提示未知发布者和 SmartScreen 风险。本轮没有再次安装或卸载；本机安装与绿色版实际操作验证见 [本地更新记录](RELEASE_NOTES_v0.4.24.md)。本地包与 CI 正式包的哈希分别保留，不混用。
+- 本地审计目录为 `dist/release-0.4.24-verified/`（Git 忽略），包含下载附件、`release.json`、`verification.json`、`web-smoke.json` 和 `issue16-final.json`。Issue #16 已详细回复并按完成关闭：[回复记录](https://github.com/AsphyxiaChoke/Forkline/issues/16#issuecomment-5808135130)。
