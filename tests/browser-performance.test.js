@@ -1666,7 +1666,14 @@ test("real Chromium keeps historical file comparison responsive", {
       lastTick = now;
     }, 25);
     const smallStarted = performance.now();
-    const smallOpened = await openFileEditorLazy("small-conflict.c");
+    const originalConflictGuard = createFileEditorWithPerformanceGuard;
+    let smallOpened = false;
+    try {
+      createFileEditorWithPerformanceGuard = createFileEditorInstance;
+      smallOpened = await openFileEditorLazy("small-conflict.c");
+    } finally {
+      createFileEditorWithPerformanceGuard = originalConflictGuard;
+    }
     const smallOpenMs = performance.now() - smallStarted;
     await new Promise((resolve) => setTimeout(resolve, 75));
     const incomingButton = document.querySelector("#fileEditorMerge .CodeMirror-merge-copybuttons-right .CodeMirror-merge-copy");

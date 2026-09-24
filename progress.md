@@ -11851,3 +11851,20 @@ Remove-Item -LiteralPath 'tests/helpers/layout-drag.js','docs/ISSUE_3_DRAG_PERFO
 - docs/PACKAGING.md：记录不可变标签的测试重试流程。
 - progress.md：仅追加失败、复现与定向验证证据。
 - 回滚点：产品发布标签 v0.4.24 保持 befdd75ccddf6921840b526553d511def5ac9f50；如需撤销本轮 CI 修正，执行 git revert <本轮CI修正提交SHA>，不移动标签，不改既有附件，保留日志历史。
+
+## 2026-09-24 - Task: 隔离正式发布中的冲突编辑器模式测试
+### What was done
+- 手动重试 35956970792 在原生拖动场景之前的小冲突文件检查失败：测试要求 MergeView 三栏，但慢构建保护切到了轻量三栏；首次发布运行此项已通过，产品保护在两次运行间没有改动。
+- 将小冲突 MergeView 应用按钮的首次构建与已存在的慢构建降级场景分离，沿用相邻测试已有的局部保护替换方式；try/finally 在构建后立即恢复真实保护。未改变产品计时阈值、轻量模式、三栏、应用按钮或保存结果断言。
+- v0.4.24 手动发布借用测试清单增加 browser-performance.test.js，仍在测试后恢复两份原标签文件再构建。产品标签和已发布 Web 包保持不变。
+### Testing
+- 独立临时冲突仓库注入 300ms MergeView 构建延迟，真实保护确实得到 mergeViews=0/lightweight=true/reason=slow；在局部隔离计时的另一冲突文件中得到 MergeView=1、三栏=3，应用对方版本结果为 side\n，保护函数已恢复。证据 %TEMP%\forkline-ci-conflict-probe.log。
+- node --test tests/installer-package.test.js tests/layout-ui.test.js tests/file-editor-performance.test.js：60/60 通过，日志 %TEMP%\forkline-v0.4.24-ci-isolation-tests.log。
+- 正式 Web ZIP 已下载，GitHub API digest 与 SHA-256 文件均匹配；实际解压确认 main、HEAD=befdd75、官方 origin、干净 Git 工作区、内置 Node v24.13.0，启动 HTTP 200 且首页含刷新按钮。测试服务已关闭。
+### Notes
+- tests/browser-performance.test.js：仅隔离小冲突文件首次构建的模式选择，立即恢复保护。
+- .github/workflows/release-installer.yml：v0.4.24 手动验证同时借用两份修正测试，构建前恢复。
+- tests/installer-package.test.js：同步限定测试借用清单断言。
+- docs/PACKAGING.md：说明正常三栏交互与慢构建降级分开验收。
+- progress.md：追加 CI 首次重试失败、最小复现及修正验证。
+- 回滚：使用 git revert <本轮测试隔离提交SHA> 撤销测试/工作流变更，保留日志历史；不移动 v0.4.24 标签，不覆盖已有 Web 附件。
