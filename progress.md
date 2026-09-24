@@ -11832,3 +11832,22 @@ Remove-Item -LiteralPath 'tests/helpers/layout-drag.js','docs/ISSUE_3_DRAG_PERFO
 - progress.md：仅追加发布准备证据；发布和工单最终结果将在后续追加。
 - 正式发布收录本任务此前已记录的产品改动、测试和文档，不增加产品功能、不变更依赖或后端协议。
 - 回滚点：发布前 main=8f74eb0c2e000a223e4c2130bf830b3ff1279e02；如发布提交有问题，使用 git revert <发布提交SHA> 生成修正提交，不移动或覆盖发布标签。仅撤销本轮文档可在提交后反向应用 docs/RELEASE_v0.4.24.md 的变更，保留日志历史。本机完整回退备份位置见上一条记录。
+
+## 2026-09-24 - Task: 修正 v0.4.24 发布 CI 原生拖动夹具
+### What was done
+- 首次安装器工作流 35956207133 在 Chromium 作者列原生拖动处失败，Web 工作流 35956207063 已成功；尚未回复或关闭 Issue 16。
+- 仅对失败的原生拖动场景建立 Headless Edge 最小复现。观察到起点读为 x=1434，移动指针后真实作者分隔线回到 x=1374，pointerdown 落在时间单元格，因此作者宽度变化为 0；不是刷新按钮或产品拖动处理失败。
+- 修正测试为先悬停、等待两帧、重新测量分隔线位置并增加实际命中断言，再发出原生按下/拖动/松手。产品源码、48px 拖动、60px 最终位置、1.1px 误差和性能门槛保持不变。
+- 为不可变 v0.4.24 增加手动工作流的测试 helper 借用与恢复步骤，测试后恢复标签原文件再构建；不移动标签，不另发版本。
+### Testing
+- 独立最小复现修改前连续两次重现作者列 0px，证据 %TEMP%\forkline-ci-drag-probe.log 与 forkline-ci-drag-events.log；临时事件记录确认真实 pointerdown 目标为时间单元格。
+- 修正后九处分隔线全部实际拖动 48px、松手定位 60px，通过原生检查；日志 %TEMP%\forkline-ci-drag-fixed.log。调试探针和日志仅位于本机备份目录，不加入产品或提交。
+- node --test tests/installer-package.test.js tests/layout-ui.test.js：58/58 通过；新增工作流测试确认 helper 仅用于 v0.4.24 手动执行并在构建前恢复。日志 %TEMP%\forkline-v0.4.24-ci-harness-tests.log。
+- 正式 CI 将在推送后从原 v0.4.24 标签重新执行，最终结果待后续记录。没有把首次失败记成成功。
+### Notes
+- tests/helpers/layout-drag.js：悬停后重新测量坐标并断言命中正确分隔线。
+- .github/workflows/release-installer.yml：仅 v0.4.24 手动重试借用修正 helper，并在构建前恢复标签内容。
+- tests/installer-package.test.js：增加上述工作流边界回归。
+- docs/PACKAGING.md：记录不可变标签的测试重试流程。
+- progress.md：仅追加失败、复现与定向验证证据。
+- 回滚点：产品发布标签 v0.4.24 保持 befdd75ccddf6921840b526553d511def5ac9f50；如需撤销本轮 CI 修正，执行 git revert <本轮CI修正提交SHA>，不移动标签，不改既有附件，保留日志历史。

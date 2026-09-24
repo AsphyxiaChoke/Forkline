@@ -151,6 +151,16 @@ async function checkNativeDragging(cdp, evaluate, diagnostic, reload = true) {
       button: type === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: 1,
     });
     await input('mouseMoved', 0, 0);
+    Object.assign(start, await evaluate(cdp, `(async () => {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const handle = document.querySelector(${JSON.stringify(selector)});
+      const rect = handle.getBoundingClientRect();
+      const panel = document.querySelector(${JSON.stringify(panelSelector)}).getBoundingClientRect();
+      const pointerX = rect.x + rect.width / 2, pointerY = rect.y + rect.height / 2;
+      return { x: pointerX, y: pointerY, size: panel[${JSON.stringify(axis)}], hit: document.elementFromPoint(pointerX, pointerY) === handle };
+    })()`));
+    assert.equal(start.hit, true, `${selector}: native pointer must hit the resize handle`);
+    await input('mouseMoved', 0, 0);
     await input('mousePressed', 0, 1);
     for (let delta = 4; delta <= 48; delta += 4) await input('mouseMoved', delta, 1);
     const dragging = await evaluate(cdp, `(async () => {

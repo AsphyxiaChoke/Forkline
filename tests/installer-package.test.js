@@ -38,6 +38,12 @@ test("Windows installer is per-user, assisted, x64, and creates standard shortcu
   assert.equal(pkg.scripts["build:desktop-portable"], "node scripts/build-electron-portable.js");
 });
 
+test("v0.4.24 manual retry restores the tag after borrowing only the corrected native drag harness", () => {
+  assert.match(workflow, /name: Use corrected v0\.4\.24 native drag harness\s+if: github\.event_name == 'workflow_dispatch' && steps\.release\.outputs\.tag == 'v0\.4\.24'\s+shell: pwsh\s+run: git restore --source='\$\{\{ github\.sha \}\}' --worktree -- tests\/helpers\/layout-drag\.js/);
+  assert.match(workflow, /name: Restore v0\.4\.24 native drag harness\s+if: always\(\) && github\.event_name == 'workflow_dispatch' && steps\.release\.outputs\.tag == 'v0\.4\.24'\s+shell: pwsh\s+run: git restore --worktree -- tests\/helpers\/layout-drag\.js/);
+  assert.ok(workflow.indexOf('Restore v0.4.24 native drag harness') < workflow.indexOf('Build unsigned Windows x64 installer'));
+});
+
 test("installer release workflow publishes updater metadata and checksums", () => {
   assert.match(workflow, /release:\s*\r?\n\s*types:\s*\[published\]/);
   assert.match(workflow, /ref:\s*\$\{\{ steps\.release\.outputs\.tag \}\}/);

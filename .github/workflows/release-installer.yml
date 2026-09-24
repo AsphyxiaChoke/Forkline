@@ -61,6 +61,11 @@ jobs:
         shell: pwsh
         run: git restore --source='${{ github.sha }}' --worktree -- tests/browser-performance.test.js
 
+      - name: Use corrected v0.4.24 native drag harness
+        if: github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.24'
+        shell: pwsh
+        run: git restore --source='${{ github.sha }}' --worktree -- tests/helpers/layout-drag.js
+
       - name: Run automated tests
         env:
           TEMP: ${{ runner.temp }}
@@ -89,6 +94,11 @@ jobs:
         if: always() && github.event_name == 'workflow_dispatch' && (steps.release.outputs.tag == 'v0.4.1' || steps.release.outputs.tag == 'v0.4.3' || steps.release.outputs.tag == 'v0.4.22')
         shell: pwsh
         run: git restore --worktree -- tests/browser-performance.test.js
+
+      - name: Restore v0.4.24 native drag harness
+        if: always() && github.event_name == 'workflow_dispatch' && steps.release.outputs.tag == 'v0.4.24'
+        shell: pwsh
+        run: git restore --worktree -- tests/helpers/layout-drag.js
 
       - name: Build unsigned Windows x64 installer
         shell: pwsh
